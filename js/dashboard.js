@@ -94,7 +94,7 @@ function switchView(view){
 
   if(view === 'journal') renderJournalTable();
   if(view === 'config'){ renderColumnConfigUI(); renderOptionsEditor(); renderFormFieldConfigUI(); }
-  if(view === 'alerts'){ loadTradingSignals(); startAlertsPolling(); } else { stopAlertsPolling(); }
+  if(view === 'alerts'){ loadSignalAlerts(); startAlertsPolling(); } else { stopAlertsPolling(); }
   if(view === 'achievements') loadAchievements();
   if(view === 'news') loadMarketNewsWidget();
   if(view === 'challenges') renderChallenges();
@@ -111,7 +111,7 @@ function escapeHtml(str){
 let alertsPollTimer = null;
 function startAlertsPolling(){
   stopAlertsPolling();
-  alertsPollTimer = setInterval(() => { if(currentView === 'alerts') loadTradingSignals(); }, 30000);
+  alertsPollTimer = setInterval(() => { if(currentView === 'alerts') loadSignalAlerts(); }, 30000);
 }
 function stopAlertsPolling(){
   if(alertsPollTimer){ clearInterval(alertsPollTimer); alertsPollTimer = null; }
@@ -1875,13 +1875,13 @@ function showToast(msg){
   toastTimer = setTimeout(() => el.classList.remove('show'), 2600);
 }
 
-/* ---------------- Trade Alerts (bot signals from Supabase) ---------------- */
-let TRADING_SIGNALS = [];
+/* ---------------- Trade Alerts (individual bot alerts, from signal_alerts) ---------------- */
+let SIGNAL_ALERTS = [];
 
 async function manualRefreshAlerts(){
-  await loadTradingSignals();
-  const newCount = TRADING_SIGNALS.filter(isNewSignal).length;
-  showToast(newCount === 0 ? '✅ Data refreshed — no new signals' : `✅ Data refreshed — ${newCount} new signal${newCount>1?'s':''}`);
+  await loadSignalAlerts();
+  const newCount = SIGNAL_ALERTS.filter(isNewSignal).length;
+  showToast(newCount === 0 ? '✅ Data refreshed — no new alerts' : `✅ Data refreshed — ${newCount} new alert${newCount>1?'s':''}`);
 }
 
 let alertsSeenFilter = 'all';
@@ -1891,19 +1891,19 @@ function switchAlertsSeenFilter(f){
   renderAlertsTables();
 }
 
-async function loadTradingSignals(){
+async function loadSignalAlerts(){
   try{
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/trading_signals?select=*&order=symbol.asc`, {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/signal_alerts?select=*&order=alert_at.desc`, {
       headers: {
         "apikey": SUPABASE_KEY,
         "Authorization": `Bearer ${USER_ACCESS_TOKEN}`
       }
     });
     if(!res.ok) throw new Error(await res.text());
-    TRADING_SIGNALS = await res.json();
+    SIGNAL_ALERTS = await res.json();
   }catch(e){
-    console.error("Couldn't load trading signals:", e);
-    TRADING_SIGNALS = [];
+    console.error("Couldn't load signal alerts:", e);
+    SIGNAL_ALERTS = [];
   }
   if(isAdminUser()) await loadSignalOutcomes();
   renderAlertsTables();
@@ -1965,7 +1965,7 @@ async function recordSignalOutcome(symbol, setup, outcome){
   }
   await loadSignalOutcomes();
   renderAlertsTables();
-  openAlertDetail(symbol);
+  if(currentAlertDetailId !== null) openAlertDetail(currentAlertDetailId);
 }
 
 function fmtSignalVolume(vol){
@@ -1984,23 +1984,78 @@ function fmtSignalTime(ts){
   return d.toLocaleString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
 }
 
-function getSeenSignalState(){
-  try{ return JSON.parse(localStorage.getItem('ledger-seen-signals') || '{}'); }catch(e){ return {}; }
-}
-
-function saveSeenSignalState(state){
-  try{ localStorage.setItem('ledger-seen-signals', JSON.stringify(state)); }catch(e){}
-}
-
 function isNewSignal(s){
-  const seen = getSeenSignalState();
-  return seen[s.symbol] !== s.closest_setup;
+  return !s.seen;
 }
 
-function markSignalSeen(symbol, closestSetup){
-  const seen = getSeenSignalState();
-  seen[symbol] = closestSetup;
-  saveSeenSignalState(seen);
+async function markAlertSeen(id){
+  try{
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/signal_alerts?id=eq.${id}`, {
+      method: 'PATCH',
+      headers: {
+        "apikey": SUPABASE_KEY,
+        "Authorization": `Bearer ${USER_ACCESS_TOKEN}`,
+        "Content-Type": "application/json",
+        "Prefer": "return=minimal"
+      },
+      body: JSON.stringify({ seen: true })
+    });
+    if(!res.ok) throw new Error(await res.text());
+  }catch(e){
+    console.error("Couldn't mark alert as seen:", e);
+  }
+}
+
+async function deleteAlert(id){
+  if(!confirm('Delete this alert? This cannot be undone.')) return;
+  try{
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/signal_alerts?id=eq.${id}`, {
+      method: 'DELETE',
+      headers: {
+        "apikey": SUPABASE_KEY,
+        "Authorization": `Bearer ${USER_ACCESS_TOKEN}`,
+        "Prefer": "return=minimal"
+      }
+    });
+    if(!res.ok) throw new Error(await res.text());
+  }catch(e){
+    console.error("Couldn't delete alert:", e);
+    showToast("Couldn't delete that alert — please try again.");
+    return;
+  }
+  SIGNAL_ALERTS = SIGNAL_ALERTS.filter(s => s.id !== id);
+  renderAlertsTables();
+}
+
+function activeAlertsTab(){
+  const el = document.querySelector('#view-alerts .subnav-item.active');
+  return el ? el.dataset.tab : 'bitcoin';
+}
+
+async function markAllAlertsSeen(){
+  const category = activeAlertsTab();
+  const unseenIds = SIGNAL_ALERTS.filter(s => s.category === category && !s.seen).map(s => s.id);
+  if(!unseenIds.length){ showToast('No new alerts to mark as read.'); return; }
+  try{
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/signal_alerts?id=in.(${unseenIds.join(',')})`, {
+      method: 'PATCH',
+      headers: {
+        "apikey": SUPABASE_KEY,
+        "Authorization": `Bearer ${USER_ACCESS_TOKEN}`,
+        "Content-Type": "application/json",
+        "Prefer": "return=minimal"
+      },
+      body: JSON.stringify({ seen: true })
+    });
+    if(!res.ok) throw new Error(await res.text());
+  }catch(e){
+    console.error("Couldn't mark alerts as read:", e);
+    showToast("Couldn't mark alerts as read — please try again.");
+    return;
+  }
+  SIGNAL_ALERTS.forEach(s => { if(unseenIds.includes(s.id)) s.seen = true; });
+  renderAlertsTables();
+  showToast(`✅ Marked ${unseenIds.length} alert${unseenIds.length>1?'s':''} as read`);
 }
 
 function renderAlertsTables(){
@@ -2008,11 +2063,11 @@ function renderAlertsTables(){
   renderAlertsTableFor('altcoin');
   const label = document.getElementById('alertsCountLabel');
   if(label){
-    if(!TRADING_SIGNALS.length){
-      label.textContent = 'No signals yet — check your bot scripts are running.';
+    if(!SIGNAL_ALERTS.length){
+      label.textContent = 'No alerts yet — check your bot scripts are running.';
     }else{
-      const newCount = TRADING_SIGNALS.filter(isNewSignal).length;
-      label.textContent = `${TRADING_SIGNALS.length} symbol${TRADING_SIGNALS.length===1?'':'s'} tracked`
+      const newCount = SIGNAL_ALERTS.filter(isNewSignal).length;
+      label.textContent = `${SIGNAL_ALERTS.length} alert${SIGNAL_ALERTS.length===1?'':'s'}`
         + (newCount ? ` · 🆕 ${newCount} new` : '');
     }
   }
@@ -2021,12 +2076,12 @@ function renderAlertsTables(){
 function renderAlertsTableFor(category){
   const table = document.getElementById('alertsTable-' + category);
   if(!table) return;
-  let rows = TRADING_SIGNALS.filter(s => s.category === category);
+  let rows = SIGNAL_ALERTS.filter(s => s.category === category);
   if(alertsSeenFilter === 'new') rows = rows.filter(isNewSignal);
   else if(alertsSeenFilter === 'seen') rows = rows.filter(s => !isNewSignal(s));
 
   if(rows.length === 0){
-    table.innerHTML = `<tr><td style="padding:24px;color:var(--muted);">No signals ${alertsSeenFilter === 'all' ? 'yet' : `in "${alertsSeenFilter}"`}.</td></tr>`;
+    table.innerHTML = `<tr><td style="padding:24px;color:var(--muted);">No alerts ${alertsSeenFilter === 'all' ? 'yet' : `in "${alertsSeenFilter}"`}.</td></tr>`;
     return;
   }
 
@@ -2034,19 +2089,21 @@ function renderAlertsTableFor(category){
   const tbody = `<tbody>${rows.map(r => {
     let outcomeIcon = '';
     if(r.category === 'bitcoin' && isAdminUser()){
-      const o = outcomeFor(r.symbol, r.closest_setup || r.last_setup || '');
+      const o = outcomeFor(r.symbol, r.setup || '');
       if(o) outcomeIcon = o.outcome === 'played_out' ? ' ✅' : ' ❌';
     }
+    const isNew = isNewSignal(r);
     return `
-    <tr onclick='openAlertDetail(${JSON.stringify(r.symbol)})' style="cursor:pointer;">
+    <tr onclick='openAlertDetail(${r.id})' style="cursor:pointer;">
       <td>${r.symbol}</td>
-      <td>${r.setup || '—'}${outcomeIcon}</td>
+      <td>${escapeHtml(r.setup) || '—'}${outcomeIcon}</td>
       <td>${fmtSignalVolume(r.volume)}</td>
-      <td>${fmtSignalTime(r.heartbeat_at)}</td>
+      <td>${fmtSignalTime(r.alert_at)}</td>
       <td onclick="event.stopPropagation();" style="text-align:right;">
         <div style="display:inline-flex;align-items:center;gap:8px;">
           ${r.tradingview_url ? `<a class="link-btn" href="${r.tradingview_url}" target="_blank">🔗</a>` : `<span class="link-btn disabled">—</span>`}
-          ${isNewSignal(r) ? '<span class="pill pill-blue">NEW</span>' : '<span class="pill pill-muted">Seen</span>'}
+          ${isNew ? '<span class="pill pill-blue">NEW</span>' : '<span class="pill pill-muted">Seen</span>'}
+          ${!isNew ? `<button class="drawer-danger-btn" style="padding:4px 10px;font-size:11px;" onclick='deleteAlert(${r.id})'>🗑</button>` : ''}
         </div>
       </td>
     </tr>
@@ -2060,28 +2117,15 @@ function switchAlertsTab(tab){
   document.querySelectorAll('#view-alerts .subnav-panel').forEach(el => el.classList.toggle('active', el.id === 'alertsPanel-' + tab));
 }
 
-function openAlertDetail(symbol){
-  const s = TRADING_SIGNALS.find(x => x.symbol === symbol);
+let currentAlertDetailId = null;
+
+function openAlertDetail(id){
+  const s = SIGNAL_ALERTS.find(x => x.id === id);
   if(!s) return;
+  currentAlertDetailId = id;
 
-  const bias = s.market_bias || {};
-  const biasLine = Object.keys(bias).length
-    ? Object.entries(bias).map(([tf, color]) => {
-        const dot = color === 'green' ? '🟢' : color === 'red' ? '🔴' : '⚪';
-        return `<span style="margin-right:14px;">${tf} ${dot}</span>`;
-      }).join('')
-    : '—';
-
-  const met = Array.isArray(s.confluence_met) ? s.confluence_met : [];
-  const metLines = met.map(label => `<div style="color:var(--win);margin-bottom:4px;">✅ ${label}</div>`).join('')
-    || '<div class="empty-state" style="padding:6px 0;">—</div>';
-
-  const unmet = Array.isArray(s.confluence_not_met) ? s.confluence_not_met : [];
-  const unmetLines = unmet.map(u => `<div style="color:var(--loss);margin-bottom:4px;">❌ ${u.condition} — <span style="color:var(--muted);">${u.note}</span></div>`).join('')
-    || '<div class="empty-state" style="padding:6px 0;">—</div>';
-
-  const heartbeatTime = s.heartbeat_at
-    ? new Date(s.heartbeat_at).toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'2-digit',minute:'2-digit'})
+  const alertTime = s.alert_at
+    ? new Date(s.alert_at).toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'2-digit',minute:'2-digit'})
     : '—';
 
   let outcomeBlock = '';
@@ -2090,7 +2134,7 @@ function openAlertDetail(symbol){
     const accLine = acc.total
       ? `${acc.played}/${acc.total} played out so far (${acc.pct}%)`
       : `No history logged yet — start tracking below.`;
-    const setupKey = s.closest_setup || s.last_setup || '';
+    const setupKey = s.setup || '';
     const setupArg = JSON.stringify(setupKey);
     const existing = outcomeFor(s.symbol, setupKey);
     const playedCls = existing?.outcome === 'played_out' ? ' active-played' : '';
@@ -2107,23 +2151,21 @@ function openAlertDetail(symbol){
     `;
   }
 
-  document.getElementById('modalTitle').textContent = `🤖 ${s.symbol} Bot Heartbeat`;
-  document.getElementById('modalSub').textContent = `Time: ${heartbeatTime}`;
+  document.getElementById('modalTitle').textContent = `${s.symbol} — ${s.setup || 'Alert'}`;
+  document.getElementById('modalSub').textContent = `Time: ${alertTime}`;
   document.getElementById('modalBody').innerHTML = `
-    <div style="margin-bottom:14px;"><strong>Last Setup:</strong> ${s.last_setup || '—'}</div>
-    <div style="margin-bottom:14px;"><strong>Market Bias:</strong><br>${biasLine}</div>
-    <div style="margin-bottom:14px;"><strong>Closest to Triggering:</strong> ${s.closest_setup || '—'}</div>
-    <div style="margin-bottom:10px;"><strong>Met:</strong></div>
-    ${metLines}
-    <div style="margin:14px 0 10px;"><strong>Not Met:</strong></div>
-    ${unmetLines}
+    <div style="margin-bottom:14px;white-space:pre-line;">${escapeHtml(s.message) || '—'}</div>
+    <div style="margin-bottom:14px;"><strong>Volume:</strong> ${fmtSignalVolume(s.volume)}</div>
     ${s.tradingview_url ? `<div style="margin-top:16px;"><a href="${s.tradingview_url}" target="_blank" style="color:var(--accent);">View on TradingView →</a></div>` : ''}
     ${outcomeBlock}
   `;
   document.getElementById('tradeModal').classList.add('open');
 
-  markSignalSeen(s.symbol, s.closest_setup);
-  renderAlertsTables();
+  if(!s.seen){
+    s.seen = true;
+    markAlertSeen(s.id);
+    renderAlertsTables();
+  }
 }
 
 /* ---------------- Achievements (private per-user gallery) ---------------- */
