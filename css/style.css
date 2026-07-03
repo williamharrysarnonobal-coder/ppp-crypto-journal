@@ -153,6 +153,7 @@
   /* ---------- Calendar ---------- */
   .cal-grid{display:grid;grid-template-columns:repeat(7,1fr) 0.9fr;grid-auto-rows:1fr;gap:4px;flex:1;min-height:0;}
   .panel-fixed-h{height:460px;display:flex;flex-direction:column;}
+  .panel-fixed-h-tall{height:560px;display:flex;flex-direction:column;}
   .chart-fill{flex:1;min-height:0;position:relative;}
   .chart-fill canvas{max-height:100%;}
   .cal-dow{font-size:10px;color:var(--muted);text-align:center;padding-bottom:4px;text-transform:uppercase;letter-spacing:.05em;}
