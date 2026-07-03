@@ -9,6 +9,7 @@ create table achievements (
   category text not null check (category in ('Tournament', 'Withdrawal')),
   subject text not null,
   body text,
+  amount numeric,
   image_path text not null,
   created_at timestamptz not null default now()
 );

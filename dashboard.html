@@ -27,6 +27,7 @@
     </div>
     <div class="nav-item active" data-view="profile" onclick="switchView('profile')"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg> <span class="nav-label">Profile</span><span class="nav-tooltip">Profile</span></div>
     <div class="nav-item" data-view="dashboard" onclick="switchView('dashboard')"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg> <span class="nav-label">Dashboard</span><span class="nav-tooltip">Dashboard</span></div>
+    <div class="nav-item" data-view="accounts" onclick="switchView('accounts')"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg> <span class="nav-label">My Accounts</span><span class="nav-tooltip">My Accounts</span></div>
     <div class="nav-item" data-view="journal" onclick="switchView('journal')"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V4a1 1 0 0 0-1-1H6.5A2.5 2.5 0 0 0 4 5.5v14z"/><path d="M4 19.5A2.5 2.5 0 0 0 6.5 22H20"/></svg> <span class="nav-label">Trade Journals</span><span class="nav-tooltip">Trade Journals</span></div>
     <div class="nav-item" data-view="alerts" onclick="switchView('alerts')"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg> <span class="nav-label">Trade Alerts</span><span class="nav-tooltip">Trade Alerts</span></div>
     <div class="nav-item" data-view="achievements" onclick="switchView('achievements')"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="6"/><path d="M8.21 13.89 7 22l5-3 5 3-1.21-8.11"/></svg> <span class="nav-label">Achievements</span><span class="nav-tooltip">Achievements</span></div>
@@ -188,9 +189,11 @@
         <h1>Profile</h1>
         <div class="sub">Your trading identity, rules, and inspiration.</div>
       </div>
-      <button class="drawer-secondary-btn" id="profileEditBtn" onclick="enterProfileEditMode()">✏️ Edit</button>
-      <button class="drawer-secondary-btn" id="profileCancelBtn" style="display:none;" onclick="cancelProfileEdit()">Cancel</button>
-      <button class="ai-btn" id="profileSaveBtn" style="display:none;" onclick="saveProfile()">Save changes</button>
+      <div class="header-actions">
+        <button class="drawer-secondary-btn" id="profileEditBtn" onclick="enterProfileEditMode()"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg> Edit</button>
+        <button class="drawer-secondary-btn" id="profileCancelBtn" style="display:none;" onclick="cancelProfileEdit()">Cancel</button>
+        <button class="ai-btn" id="profileSaveBtn" style="display:none;" onclick="saveProfile()">Save changes</button>
+      </div>
     </header>
 
     <div class="panel profile-header-card" style="margin-bottom:20px;">
@@ -200,11 +203,19 @@
         <div class="profile-header-badges" id="profileHeaderBadges"></div>
         <div class="profile-header-why" id="profileHeaderWhy"></div>
       </div>
+      <div class="profile-rank-badge" id="profileRankBadge" onclick="switchView('challenges')" title="View Challenges">
+        <span class="profile-rank-icon" id="profileRankIcon"></span>
+        <span class="profile-rank-title" id="profileRankTitle">—</span>
+      </div>
     </div>
 
     <div class="panel" id="profileEditPanel" style="display:none;margin-bottom:20px;">
       <h2>Edit Trader Profile</h2>
       <div id="profileFieldsPanel"></div>
+      <div class="field-row">
+        <label>Vision Board Image</label>
+        <button class="drawer-secondary-btn" onclick="document.getElementById('profileInspoInput').click()" id="profileInspoUploadBtn">Upload image</button>
+      </div>
     </div>
 
     <div class="row profile-layout" style="grid-template-columns:1fr 1fr;align-items:start;">
@@ -222,14 +233,29 @@
         <h2>My Vision Board</h2>
         <div class="profile-inspo-wrap" id="profileInspoWrap">
           <div class="profile-inspo-placeholder" id="profileInspoPlaceholder">
-            <div>No inspiration image yet — upload your vision board, goals, or anything that keeps you disciplined.</div>
-            <button class="ai-btn" onclick="document.getElementById('profileInspoInput').click()">Upload image</button>
+            <div>No inspiration image yet — add one from Edit mode.</div>
           </div>
           <img id="profileInspoImg" style="display:none;">
-          <button class="drawer-secondary-btn profile-inspo-change" id="profileInspoChangeBtn" style="display:none;" onclick="document.getElementById('profileInspoInput').click()">Change image</button>
+          <div class="profile-inspo-edit-hint" id="profileInspoEditHint" style="display:none;" onclick="document.getElementById('profileInspoInput').click()">Click to change image</div>
         </div>
         <input type="file" id="profileInspoInput" accept="image/*" style="display:none;" onchange="uploadInspirationImage(this.files[0])">
       </div>
+    </div>
+
+  </div>
+
+  <div class="view" id="view-accounts">
+    <header class="top">
+      <div>
+        <h1>My Accounts</h1>
+        <div class="sub">Your prop firm / trading accounts and their rules — used for account-compliance challenges.</div>
+      </div>
+      <div class="header-actions">
+        <button class="ai-btn" onclick="openAccountModal()">+ Add Account</button>
+      </div>
+    </header>
+    <div class="panel">
+      <div class="account-grid" id="accountsList"></div>
     </div>
   </div>
 
@@ -307,6 +333,10 @@
       </div>
     </header>
 
+    <div class="challenge-caution-banner">
+      ⚠️ These reflect your trading — they shouldn't decide it. If a challenge ever tempts you to force a trade, skip a valid setup, or hold back a good exit just to protect a number, ignore the challenge. Your trading plan comes first, always.
+    </div>
+
     <div class="panel challenge-rank-panel" style="margin-bottom:20px;">
       <div class="challenge-rank-label" id="challengeRankLabel">—</div>
       <div class="challenge-points-total" id="challengePointsTotal">0</div>
@@ -367,16 +397,159 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="accountModal" onclick="if(event.target===this) closeAccountModal()">
+  <div class="modal-box" style="position:relative;">
+    <button class="modal-close" onclick="closeAccountModal()">✕</button>
+    <h3 id="accountModalTitle">+ Add Account</h3>
+    <div class="field-row" style="margin-top:14px;">
+      <label>Account Type</label>
+      <select id="accType" onchange="toggleAccountTypeFields()">
+        <option value="Prop Firm">Prop Firm</option>
+        <option value="Exchange">Exchange</option>
+      </select>
+    </div>
+    <div class="field-row">
+      <label>Account Name</label>
+      <input id="accName" placeholder="e.g. Upscale Trade 50K">
+    </div>
+    <div class="field-row">
+      <label>Current Balance ($)</label>
+      <input id="accBalance" type="number" step="0.01" placeholder="e.g. 51200">
+    </div>
+    <div class="field-row">
+      <label>Start Date</label>
+      <input id="accStartDate" type="date">
+    </div>
+
+    <div id="accPropFirmFields">
+      <div class="field-row">
+        <label>Account Size ($)</label>
+        <input id="accSize" type="number" step="0.01" placeholder="e.g. 50000">
+      </div>
+      <div class="field-row">
+        <label>Prop Firm</label>
+        <input id="accPropFirm" placeholder="e.g. Upscale Trade">
+      </div>
+      <div class="field-row">
+        <label>Phase</label>
+        <select id="accPhase">
+          <option value="Evaluation Phase 1">Evaluation Phase 1</option>
+          <option value="Evaluation Phase 2">Evaluation Phase 2</option>
+          <option value="Funded">Funded</option>
+          <option value="Other">Other</option>
+        </select>
+      </div>
+      <div class="field-row">
+        <label>Status</label>
+        <select id="accStatus">
+          <option value="Ongoing">Ongoing</option>
+          <option value="Passed">Passed</option>
+          <option value="Failed">Failed</option>
+        </select>
+      </div>
+      <div class="field-row">
+        <label>Phase Start Date</label>
+        <input id="accPhaseStartDate" type="date">
+      </div>
+      <div class="field-row">
+        <label>Balance at Phase Start ($)</label>
+        <input id="accPhaseStartBalance" type="number" step="0.01" placeholder="e.g. 10520">
+      </div>
+      <div class="sub" style="font-size:11px;color:var(--muted);margin:-4px 0 12px;">Set these whenever you move to a new phase — resets "Total Earn" progress so profit from the previous phase doesn't carry over into this one's target.</div>
+      <div class="field-row">
+        <label>Max Daily Loss (%)</label>
+        <input id="accMaxDailyLoss" type="number" step="0.1" placeholder="e.g. 5">
+      </div>
+      <div class="field-row">
+        <label>Max Total Drawdown (%)</label>
+        <input id="accMaxDrawdown" type="number" step="0.1" placeholder="e.g. 10">
+      </div>
+      <div class="field-row">
+        <label>Profit Target (%)</label>
+        <input id="accProfitTarget" type="number" step="0.1" placeholder="e.g. 8">
+      </div>
+      <div class="field-row">
+        <label>Minimum Trading Days</label>
+        <input id="accMinDays" type="number" step="1" placeholder="e.g. 5">
+      </div>
+      <div class="field-row">
+        <label>Consistency Rule (%)</label>
+        <input id="accConsistency" type="number" step="0.1" placeholder="e.g. 30">
+      </div>
+    </div>
+
+    <div id="accExchangeFields" style="display:none;">
+      <div class="field-row">
+        <label>Exchange</label>
+        <select id="accExchangeName">
+          <option value="Binance">Binance</option>
+          <option value="Bybit">Bybit</option>
+          <option value="OKX">OKX</option>
+          <option value="Kraken">Kraken</option>
+          <option value="Coinbase">Coinbase</option>
+          <option value="Other">Other</option>
+        </select>
+      </div>
+      <div class="sub" style="font-size:11px;color:var(--muted);margin:-4px 0 12px;">Auto-import of trades via API isn't wired up yet — for now, add this account for tracking and keep logging trades in your Journal as usual.</div>
+    </div>
+
+    <div id="accountError" class="auth-error"></div>
+    <div style="display:flex;gap:10px;">
+      <button class="ai-btn" id="accountSaveBtn" style="flex:1;" onclick="saveAccount()">Save Account</button>
+      <button class="drawer-danger-btn" id="accountDeleteBtn" style="display:none;" onclick="deleteAccount()">Delete</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="accountDetailModal" onclick="if(event.target===this) closeAccountDetail()">
+  <div class="modal-box" style="max-width:640px;position:relative;">
+    <button class="modal-close" onclick="closeAccountDetail()">✕</button>
+    <h3 id="accDetailName" style="margin:0;">Account</h3>
+    <div class="sub" id="accDetailSub" style="margin-bottom:14px;"></div>
+
+    <div class="acc-stepper" id="accDetailStepper"></div>
+
+    <div class="acc-stat-grid">
+      <div class="acc-stat-box">
+        <div class="acc-stat-label">Daily Drawdown</div>
+        <div class="acc-stat-value" id="accDetailDailyLoss">—</div>
+        <div class="acc-stat-range" id="accDetailDailyRange"></div>
+      </div>
+      <div class="acc-stat-box">
+        <div class="acc-stat-label">Profitable Trading Days</div>
+        <div class="acc-stat-value" id="accDetailProfitDays">—</div>
+      </div>
+    </div>
+
+    <div class="acc-stat-box" style="margin-top:12px;">
+      <div class="acc-stat-label">Trade Balance</div>
+      <div class="acc-stat-value" id="accDetailBalance">—</div>
+      <div class="account-progress-bar" style="margin-top:8px;"><div class="account-progress-fill" id="accDetailBalanceFill" style="width:0%;"></div></div>
+      <div class="acc-stat-range" id="accDetailBalanceRange"></div>
+    </div>
+
+    <div class="acc-stat-box" style="margin-top:12px;">
+      <div class="acc-stat-label">Total Earn</div>
+      <div class="acc-stat-value" id="accDetailEarn">—</div>
+      <div class="chart-fill" style="height:160px;margin-top:8px;"><canvas id="accDetailChart"></canvas></div>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="achievementModal" onclick="if(event.target===this) closeAchievementModal()">
   <div class="modal-box" style="position:relative;">
     <button class="modal-close" onclick="closeAchievementModal()">✕</button>
     <h3 id="achModalTitle">+ Add Achievement</h3>
     <div class="field-row" style="margin-top:14px;">
       <label>Category</label>
-      <select id="achCategory">
+      <select id="achCategory" onchange="toggleAchAmountField()">
         <option value="Tournament">Tournament</option>
         <option value="Withdrawal">Withdrawal</option>
       </select>
+    </div>
+    <div class="field-row" id="achAmountRow" style="display:none;">
+      <label>Amount Withdrawn ($)</label>
+      <input id="achAmount" type="number" step="0.01" placeholder="e.g. 500">
     </div>
     <div class="field-row">
       <label>Subject</label>
@@ -403,7 +576,7 @@
     <h3 id="challengeDetailTitle">—</h3>
     <div class="modal-sub" id="challengeDetailPoints"></div>
     <div style="margin-top:16px;font-size:13px;color:var(--ink);line-height:1.6;" id="challengeDetailHowTo"></div>
-    <div class="challenge-progress-bar" style="margin-top:18px;height:8px;"><div class="challenge-progress-fill" id="challengeDetailBarFill" style="width:0%;"></div></div>
+    <div id="challengeDetailProgressWrap" style="margin-top:18px;"></div>
     <div class="challenge-stat" id="challengeDetailStat" style="margin-top:8px;font-size:12px;"></div>
   </div>
 </div>
@@ -415,6 +588,7 @@
     <h3 id="achDetailSubject" style="margin-bottom:8px;">—</h3>
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
       <span class="pill" id="achDetailCategory">—</span>
+      <span class="pill pill-orange" id="achDetailAmount" style="display:none;">—</span>
       <span style="font-size:11px;color:var(--muted);" id="achDetailDate">—</span>
     </div>
     <div style="font-size:13px;color:var(--ink);white-space:pre-wrap;margin-bottom:20px;" id="achDetailBody"></div>
@@ -428,7 +602,7 @@
 <div class="modal-overlay" id="lightboxModal" onclick="if(event.target===this) closeLightbox()">
   <div class="modal-box" style="position:relative;max-width:min(90vw,900px);">
     <button class="modal-close" onclick="closeLightbox()">✕</button>
-    <img id="lightboxImg" style="width:100%;height:auto;border-radius:8px;display:block;">
+    <img id="lightboxImg" style="max-width:100%;max-height:85vh;width:auto;height:auto;border-radius:8px;display:block;margin:0 auto;">
   </div>
 </div>
 

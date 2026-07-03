@@ -291,6 +291,7 @@
   /* Solid variant — used only for Rules Followed */
   .box-solid-win{background:var(--win);color:#fff;}
   .box-solid-loss{background:var(--loss);color:#fff;}
+  .box-solid-info{background:var(--info);color:#fff;}
 
   /* ---------- Toast notification ---------- */
   .toast{
@@ -332,6 +333,10 @@
   .news-embed-wrap{height:calc(100vh - 170px);padding:0;overflow:hidden;}
 
   /* ---------- Challenges ---------- */
+  .challenge-caution-banner{
+    background:rgba(208,143,78,.12);border:1px solid rgba(208,143,78,.35);color:var(--ink);
+    border-radius:8px;padding:12px 16px;font-size:12.5px;line-height:1.5;margin-bottom:20px;
+  }
   .challenge-rank-panel{text-align:center;}
   .challenge-rank-label{font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--accent);margin-bottom:6px;}
   .challenge-points-total{font-size:42px;font-weight:700;color:var(--ink);font-family:'Inter',sans-serif;line-height:1;}
@@ -416,6 +421,17 @@
   .challenge-points{flex-shrink:0;font-size:12px;font-weight:700;color:var(--accent);}
   .challenge-card.done .challenge-points{color:var(--win);}
 
+  /* Segmented tier bar — used instead of a plain line for challenges with
+     multiple milestone levels (e.g. 20 / 50 / 100), so you can see exactly
+     which level you're on rather than one smooth continuous progress bar. */
+  .tier-bar{display:flex;gap:5px;align-items:flex-end;margin-bottom:2px;}
+  .tier-segment{flex:1;display:flex;flex-direction:column;gap:5px;min-width:0;}
+  .tier-track{height:6px;border-radius:4px;background:var(--surface);overflow:hidden;}
+  .tier-fill{height:100%;background:var(--accent);transition:width .3s ease;}
+  .tier-fill.reached{background:var(--win);}
+  .tier-mark{font-size:9.5px;text-align:center;color:var(--muted);font-weight:600;}
+  .tier-mark.reached{color:var(--win);}
+
   /* ---------- Profile (inspiration board + trader identity) ---------- */
   .profile-layout{margin-bottom:20px;align-items:stretch !important;}
   @media(max-width:900px){ .profile-layout{grid-template-columns:1fr !important;} }
@@ -424,7 +440,8 @@
      list scrolls internally instead of stretching the picture panel to
      match (which used to leave a big empty gap above the image). */
   .profile-layout .panel{height:480px;display:flex;flex-direction:column;overflow:hidden;}
-  .profile-layout .panel h2, .profile-layout .panel > .sub{flex-shrink:0;}
+  .profile-layout .panel h2{flex-shrink:0;padding-bottom:14px;margin-bottom:14px;border-bottom:1px solid var(--rule);}
+  .profile-layout .panel > .sub{flex-shrink:0;margin-top:-8px !important;}
   #profileRulesList{flex:1;min-height:0;overflow-y:auto;}
   #profileRulesAddRow{flex-shrink:0;}
 
@@ -442,18 +459,73 @@
   .profile-header-badges{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;}
   .profile-header-why{font-size:13px;color:var(--muted);font-style:italic;line-height:1.5;}
 
+  /* Rank badge — mirrors the current rank from Challenges (points ->
+     Novice/Apprentice/.../Legendary Trader), clickable through to there. */
+  .profile-rank-badge{
+    flex-shrink:0;display:flex;flex-direction:column;align-items:center;gap:6px;
+    padding:10px 18px;border-radius:10px;cursor:pointer;text-align:center;
+    background:linear-gradient(135deg, #f6c453, #e0703f);color:#fff;
+    box-shadow:0 4px 14px rgba(224,112,63,.35);transition:transform .15s ease;
+  }
+  .profile-rank-badge:hover{transform:scale(1.05);}
+  .profile-rank-icon svg{width:22px;height:22px;}
+  .profile-rank-title{font-size:11px;font-weight:700;letter-spacing:.02em;white-space:nowrap;}
+  @media(max-width:640px){ .profile-rank-badge{display:none;} }
+
   .profile-inspo-wrap{
-    position:relative;width:100%;flex:1;min-height:0;background:var(--surface-2);padding:10px;
+    position:relative;width:100%;flex:1;min-height:0;background:transparent;padding:0;
     display:flex;align-items:center;justify-content:center;
   }
   .profile-inspo-wrap img{max-width:100%;max-height:100%;width:auto;height:auto;object-fit:contain;display:block;margin:0 auto;border-radius:6px;}
+  .profile-inspo-edit-hint{
+    position:absolute;inset:0;background:rgba(0,0,0,.55);color:#fff;
+    display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;
+    border-radius:6px;cursor:pointer;z-index:5;
+  }
   .profile-inspo-placeholder{
     display:flex;flex-direction:column;align-items:center;gap:16px;color:var(--muted);
     font-size:13px;padding:60px 30px;text-align:center;max-width:420px;margin:0 auto;
   }
-  .profile-inspo-change{position:absolute;bottom:14px;right:14px;}
-  .profile-rule-static{padding:8px 2px;border-bottom:1px solid var(--rule);font-size:12.5px;color:var(--ink);}
+  .profile-rule-static{padding:10px 4px;border-bottom:1px solid var(--rule);font-size:12.5px;color:var(--ink);line-height:1.5;}
   .profile-rule-static:last-child{border-bottom:none;}
+
+  /* ---------- My Accounts (prop firm accounts + their rules) ---------- */
+  .account-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(400px,1fr));gap:20px;}
+  .account-card{position:relative;background:var(--surface-2);border:1px solid var(--rule);border-radius:10px;padding:26px 28px;cursor:pointer;transition:border-color .15s ease;}
+  .account-card:hover{border-color:var(--accent);}
+  .account-card-status{position:absolute;top:16px;right:16px;}
+  .account-card-name{font-size:19px;font-weight:700;color:var(--ink);margin-bottom:4px;padding-right:70px;}
+  .account-card-meta{font-size:13.5px;color:var(--muted);margin-bottom:16px;}
+  .account-card-balance{font-size:22px;font-weight:700;color:var(--ink);margin-bottom:8px;}
+  .account-pl-pos{font-size:13.5px;font-weight:600;color:var(--win);}
+  .account-pl-neg{font-size:13.5px;font-weight:600;color:var(--loss);}
+  .account-progress-bar{height:8px;border-radius:5px;background:var(--surface);overflow:hidden;margin-bottom:4px;}
+  .account-progress-fill{height:100%;background:var(--accent);transition:width .3s ease;}
+  .account-progress-label{font-size:11.5px;color:var(--muted);margin-bottom:16px;}
+  .account-card-rules{display:flex;flex-wrap:wrap;gap:7px;}
+  .account-card-rules .pill{font-size:11.5px;padding:5px 10px;}
+  .account-card-risk{margin-top:14px;padding-top:14px;border-top:1px solid var(--rule);font-size:13px;color:var(--muted);display:flex;flex-direction:column;gap:6px;}
+  .account-card-risk span{color:var(--ink);font-weight:700;}
+  .account-card-risk .account-risk-pct{color:var(--muted);font-weight:400;font-size:11.5px;}
+  .account-edit-btn-corner{position:absolute;bottom:14px;right:14px;background:none;border:none;color:var(--muted);cursor:pointer;padding:6px;border-radius:6px;display:flex;}
+  .account-edit-btn-corner:hover{color:var(--ink);background:var(--surface);}
+
+  /* ---------- Account detail (per-account compliance analytics) ---------- */
+  .acc-stepper{display:flex;align-items:flex-start;gap:0;margin:18px 0 20px;}
+  .acc-step{display:flex;flex-direction:column;align-items:center;flex:1;position:relative;}
+  .acc-step-line{position:absolute;top:14px;left:-50%;width:100%;height:2px;background:var(--rule);z-index:0;}
+  .acc-step:first-child .acc-step-line{display:none;}
+  .acc-step.done .acc-step-line{background:var(--win);}
+  .acc-step-circle{position:relative;z-index:1;width:28px;height:28px;border-radius:50%;background:var(--surface);border:2px solid var(--rule);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:var(--muted);}
+  .acc-step.done .acc-step-circle{background:var(--win);border-color:var(--win);color:#fff;}
+  .acc-step.current .acc-step-circle{background:var(--accent);border-color:var(--accent);color:#fff;}
+  .acc-step-label{font-size:10.5px;color:var(--muted);margin-top:6px;text-align:center;}
+  .acc-step.current .acc-step-label, .acc-step.done .acc-step-label{color:var(--ink);font-weight:600;}
+  .acc-stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+  .acc-stat-box{background:var(--surface-2);border:1px solid var(--rule);border-radius:8px;padding:14px 16px;}
+  .acc-stat-label{font-size:11px;color:var(--muted);margin-bottom:6px;}
+  .acc-stat-value{font-size:18px;font-weight:700;color:var(--ink);}
+  .acc-stat-range{font-size:11px;color:var(--muted);margin-top:6px;display:flex;justify-content:space-between;}
 
   /* ---------- Side drawer (view/edit/create trade) ---------- */
   .drawer-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:300;}

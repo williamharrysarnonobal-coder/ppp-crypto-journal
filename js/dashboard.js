@@ -99,6 +99,7 @@ function switchView(view){
   if(view === 'news') loadMarketNewsWidget();
   if(view === 'challenges') renderChallenges();
   if(view === 'profile') loadProfile();
+  if(view === 'accounts') loadAccounts();
 }
 
 function escapeHtml(str){
@@ -126,6 +127,7 @@ async function initApp(){
   loadColumnConfig();
   loadOptionsConfig();
   loadFormFieldConfig();
+  loadAccounts();
 
   setLoading(30);
 
@@ -1025,7 +1027,6 @@ const OPTIONS_FIELD_META = [
   {key:'account_type', label:'Account Type'},
   {key:'exit_type', label:'Exit Type'},
   {key:'post_be_result', label:'Post-BE Result'},
-  {key:'account', label:'Account'},
   {key:'session', label:'Session'},
   {key:'day_of_week', label:'Day of Week'},
   {key:'unfollowed_rules', label:'Unfollowed Rules (checklist)'}
@@ -1657,7 +1658,8 @@ function renderDrawerFields(){
 
     if(f.widget === 'select'){
       const opts = f.options.map(o => `<option value="${o}" ${raw===o?'selected':''}>${o}</option>`).join('');
-      return `<div class="field-row"><label>${f.label}</label><select data-field="${f.key}"><option value="">—</option>${opts}</select></div>`;
+      const onchange = f.key === 'account' ? ` onchange="syncAccountTypeFromAccount(this.value)"` : '';
+      return `<div class="field-row"><label>${f.label}</label><select data-field="${f.key}"${onchange}><option value="">—</option>${opts}</select></div>`;
     }
     if(f.widget === 'checklist'){
       const selected = (raw || '').split(/[,;]/).map(s=>s.trim()).filter(Boolean);
@@ -1757,6 +1759,18 @@ async function saveDrawer(){
     populateJournalFilters();
     applyFilters();
     renderJournalTable();
+
+    const oldAccount = drawerMode === 'create' ? null : (drawerRowData.account || null);
+    const oldPL = drawerMode === 'create' ? 0 : (parseFloat(drawerRowData.profit_loss) || 0);
+    const newAccount = patch.account || null;
+    const newPL = parseFloat(patch.profit_loss) || 0;
+    if(oldAccount === newAccount){
+      if(newAccount) await adjustAccountBalance(newAccount, newPL - oldPL);
+    }else{
+      if(oldAccount) await adjustAccountBalance(oldAccount, -oldPL);
+      if(newAccount) await adjustAccountBalance(newAccount, newPL);
+    }
+
     closeDrawer();
 
   }catch(e){
@@ -1782,12 +1796,18 @@ async function deleteDrawer(){
     });
     if(!res.ok) throw new Error(await res.text());
 
+    const deletedAccount = drawerRowData.account || null;
+    const deletedPL = parseFloat(drawerRowData.profit_loss) || 0;
+
     RAW_TRADES = RAW_TRADES.filter(r => r.position_id !== drawerPositionId);
     ALL_TRADES = RAW_TRADES.map(normalizeTrade);
     populateAccountFilter();
     populateJournalFilters();
     applyFilters();
     renderJournalTable();
+
+    if(deletedAccount) await adjustAccountBalance(deletedAccount, -deletedPL);
+
     closeDrawer();
 
   }catch(e){
@@ -2266,7 +2286,10 @@ function renderAchievementGrid(){
         <div class="subject">${escapeHtml(a.subject)}</div>
         ${a.body ? `<div class="body-text">${escapeHtml(a.body)}</div>` : ''}
         <div class="meta-row">
-          <span class="pill ${a.category==='Tournament'?'pill-blue':'pill-green'}">${a.category}</span>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;">
+            <span class="pill ${a.category==='Tournament'?'pill-blue':'pill-green'}">${a.category}</span>
+            ${a.category === 'Withdrawal' && a.amount != null ? `<span class="pill pill-orange">$${Number(a.amount).toFixed(2)}</span>` : ''}
+          </div>
           <span class="date">${new Date(a.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</span>
         </div>
       </div>
@@ -2276,18 +2299,25 @@ function renderAchievementGrid(){
 
 let editingAchievementId = null;
 
+function toggleAchAmountField(){
+  const isWithdrawal = document.getElementById('achCategory').value === 'Withdrawal';
+  document.getElementById('achAmountRow').style.display = isWithdrawal ? 'block' : 'none';
+}
+
 function openAchievementModal(id){
   editingAchievementId = id || null;
   const a = id ? ACHIEVEMENTS.find(x => x.id === id) : null;
 
   document.getElementById('achModalTitle').textContent = a ? 'Edit Achievement' : '+ Add Achievement';
   document.getElementById('achCategory').value = a ? a.category : 'Tournament';
+  document.getElementById('achAmount').value = a && a.amount != null ? a.amount : '';
   document.getElementById('achSubject').value = a ? a.subject : '';
   document.getElementById('achBody').value = a ? (a.body || '') : '';
   document.getElementById('achImage').value = '';
   document.getElementById('achImageHint').textContent = a ? 'Leave empty to keep the current image.' : '';
   document.getElementById('achUploadError').textContent = '';
   document.getElementById('achUploadBtn').textContent = a ? 'Save changes' : 'Upload';
+  toggleAchAmountField();
   document.getElementById('achievementModal').classList.add('open');
 }
 function closeAchievementModal(){
@@ -2296,6 +2326,9 @@ function closeAchievementModal(){
 
 async function saveAchievement(){
   const category = document.getElementById('achCategory').value;
+  const amount = category === 'Withdrawal' && document.getElementById('achAmount').value !== ''
+    ? parseFloat(document.getElementById('achAmount').value)
+    : null;
   const subject = document.getElementById('achSubject').value.trim();
   const body = document.getElementById('achBody').value.trim();
   const fileInput = document.getElementById('achImage');
@@ -2332,7 +2365,7 @@ async function saveAchievement(){
             "Content-Type": "application/json",
             "Prefer": "return=minimal"
           },
-          body: JSON.stringify({ category, subject, body, image_path: imagePath })
+          body: JSON.stringify({ category, subject, body, amount, image_path: imagePath })
         })
       : await fetch(`${SUPABASE_URL}/rest/v1/achievements`, {
           method: 'POST',
@@ -2342,7 +2375,7 @@ async function saveAchievement(){
             "Content-Type": "application/json",
             "Prefer": "return=minimal"
           },
-          body: JSON.stringify([{ category, subject, body, image_path: imagePath }])
+          body: JSON.stringify([{ category, subject, body, amount, image_path: imagePath }])
         });
     if(!res.ok) throw new Error(await res.text());
 
@@ -2390,6 +2423,13 @@ function openAchievementDetail(id){
   document.getElementById('achDetailSubject').textContent = a.subject;
   document.getElementById('achDetailCategory').textContent = a.category;
   document.getElementById('achDetailCategory').className = 'pill ' + (a.category === 'Tournament' ? 'pill-blue' : 'pill-green');
+  const amountEl = document.getElementById('achDetailAmount');
+  if(a.category === 'Withdrawal' && a.amount != null){
+    amountEl.textContent = `$${Number(a.amount).toFixed(2)}`;
+    amountEl.style.display = 'inline-flex';
+  }else{
+    amountEl.style.display = 'none';
+  }
   document.getElementById('achDetailDate').textContent = new Date(a.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
   document.getElementById('achDetailBody').textContent = a.body || '—';
   document.getElementById('achDetailEditBtn').onclick = () => { closeAchievementDetail(); openAchievementModal(id); };
@@ -2456,19 +2496,31 @@ const CHALLENGE_ICONS = {
   clock: '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
   calendar: '<rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>',
   medal: '<circle cx="12" cy="9" r="5"/><path d="M9 13.5 7 21l5-2.5 5 2.5-2-7.5"/>',
-  lock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>'
+  lock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
+  globe: '<circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>',
+  shuffle: '<polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/>',
+  hash: '<line x1="4" y1="9" x2="20" y2="9"/><line x1="4" y1="15" x2="20" y2="15"/><line x1="10" y1="3" x2="8" y2="21"/><line x1="16" y1="3" x2="14" y2="21"/>',
+  book: '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V4a1 1 0 0 0-1-1H6.5A2.5 2.5 0 0 0 4 5.5v14z"/><path d="M4 19.5A2.5 2.5 0 0 0 6.5 22H20"/>',
+  list: '<line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>',
+  image: '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>',
+  'check-circle': '<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>',
+  zap: '<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>'
 };
 function challengeIconSVG(name){
   return `<svg viewBox="0 0 24 24" fill="currentColor" fill-opacity="0.22" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${CHALLENGE_ICONS[name] || CHALLENGE_ICONS.star}</svg>`;
 }
 
+// Thresholds are spaced across the full point pool from all 26 challenges
+// (~1980 points max) so "Legendary" still means having done nearly
+// everything, instead of capping out with lots of unused headroom.
 const CHALLENGE_RANKS = [
   {min:0, label:'Novice Trader'},
-  {min:200, label:'Apprentice Trader'},
-  {min:400, label:'Skilled Trader'},
-  {min:600, label:'Expert Trader'},
-  {min:800, label:'Master Trader'},
-  {min:1000, label:'Legendary Trader'}
+  {min:250, label:'Apprentice Trader'},
+  {min:500, label:'Skilled Trader'},
+  {min:800, label:'Expert Trader'},
+  {min:1150, label:'Master Trader'},
+  {min:1500, label:'Elite Trader'},
+  {min:1850, label:'Legendary Trader'}
 ];
 function rankForPoints(points){
   let current = CHALLENGE_RANKS[0], next = null;
@@ -2489,7 +2541,7 @@ function getWeekKey(d){
 
 async function loadAchievementSummaryForChallenges(){
   try{
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/achievements?select=category,created_at`, {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/achievements?select=category,created_at,amount`, {
       headers: {
         "apikey": SUPABASE_KEY,
         "Authorization": `Bearer ${USER_ACCESS_TOKEN}`
@@ -2522,8 +2574,8 @@ function computeChallenges(trades, achRows){
   const c1 = {
     icon:'shield', title:'No Overtrading', points:60,
     desc:'Max 3 trades per day, for consecutive days.',
-    howTo:'We look at your closed trades grouped by day. Any day with 3 or fewer trades counts toward the streak; a day with 4+ trades resets it to zero. Reach a 14-day streak to complete this.',
-    current: maxDayStreak, target: 14, done: maxDayStreak >= 14
+    howTo:'We look at your closed trades grouped by day. Any day with 3 or fewer trades counts toward the streak; a day with 4+ trades resets it to zero. Levels: 3, 7, 14, 21, 30 days in a row.',
+    current: maxDayStreak, tiers: [3, 7, 14, 21, 30], target: 30, done: maxDayStreak >= 30
   };
 
   // 2. Risk:Reward Discipline — streak of RR >= 2 (most recent first)
@@ -2535,8 +2587,8 @@ function computeChallenges(trades, achRows){
   const c2 = {
     icon:'scale', title:'Risk:Reward Discipline', points:80,
     desc:'Consecutive trades with an RR of at least 1:2.',
-    howTo:'Counted from your most recent trade backwards, using the RR value you log per trade. As soon as one trade has RR below 2, the streak resets. Reach 10 in a row to complete this.',
-    current: rrStreak, target: 10, done: rrStreak >= 10
+    howTo:'Counted from your most recent trade backwards, using the RR value you log per trade. As soon as one trade has RR below 2, the streak resets. Levels: 2, 5, 10, 15, 20 in a row.',
+    current: rrStreak, tiers: [2, 5, 10, 15, 20], target: 20, done: rrStreak >= 20
   };
 
   // 3. Iron Discipline — streak of rules_followed = Yes
@@ -2548,8 +2600,8 @@ function computeChallenges(trades, achRows){
   const c3 = {
     icon:'shield-check', title:'Iron Discipline', points:100,
     desc:'Consecutive trades where you followed your rules 100%.',
-    howTo:'Based on the "Rules Followed" field you set on each trade. Mark it "Yes" on consecutive trades (most recent first) to build this streak — one "No" resets it to zero. Reach 10 in a row to complete this.',
-    current: rulesStreak, target: 10, done: rulesStreak >= 10
+    howTo:'Based on the "Rules Followed" field you set on each trade. Mark it "Yes" on consecutive trades (most recent first) to build this streak — one "No" resets it to zero. Levels: 2, 5, 10, 15, 20 in a row.',
+    current: rulesStreak, tiers: [2, 5, 10, 15, 20], target: 20, done: rulesStreak >= 20
   };
 
   // 4. Hot Streak — consecutive winning weeks (grouped Mon-Sun)
@@ -2567,40 +2619,44 @@ function computeChallenges(trades, achRows){
   const c4 = {
     icon:'flame', title:'Hot Streak', points:90,
     desc:'Consecutive winning weeks (positive total P/L per week).',
-    howTo:'Your closed trades are grouped into Monday–Sunday weeks and summed by total P/L. Every week with a positive total extends the streak; a negative week resets it. Reach 3 winning weeks in a row to complete this.',
-    current: maxWeekStreak, target: 3, done: maxWeekStreak >= 3
+    howTo:'Your closed trades are grouped into Monday–Sunday weeks and summed by total P/L. Every week with a positive total extends the streak; a negative week resets it. Levels: 1, 2, 3, 4, 5 winning weeks in a row.',
+    current: maxWeekStreak, tiers: [1, 2, 3, 4, 5], target: 5, done: maxWeekStreak >= 5
   };
 
-  // 5. Efficient Edge — profit factor > 1.5 over the last 20 trades
-  const last20 = recentFirst.slice(0, 20);
-  const gw = last20.filter(t => t.profit_loss > 0).reduce((s,t) => s + t.profit_loss, 0);
-  const gl = Math.abs(last20.filter(t => t.profit_loss < 0).reduce((s,t) => s + t.profit_loss, 0));
+  // 5. Efficient Edge — profit factor over the last 100 trades, leveled up
+  const last100 = recentFirst.slice(0, 100);
+  const gw = last100.filter(t => t.profit_loss > 0).reduce((s,t) => s + t.profit_loss, 0);
+  const gl = Math.abs(last100.filter(t => t.profit_loss < 0).reduce((s,t) => s + t.profit_loss, 0));
   const pf = gl > 0 ? gw / gl : (gw > 0 ? Infinity : 0);
+  const pfDisplay = last100.length >= 100 ? Math.min(pf === Infinity ? 2 : pf, 2) : 0;
   const c5 = {
     icon:'trending-up', title:'Efficient Edge', points:100,
-    desc:'Profit factor above 1.5 over your last 20 trades.',
-    howTo:'Profit factor = total gross wins ÷ total gross losses, calculated over your most recent 20 closed trades. You need at least 20 trades logged and a ratio above 1.5 to complete this.',
-    current: last20.length, target: 20, done: last20.length >= 20 && pf > 1.5,
-    statOverride: last20.length >= 20 ? `Profit factor: ${pf===Infinity?'∞':pf.toFixed(2)}` : `${last20.length}/20 trades so far`
+    desc:'Profit factor over your last 100 trades.',
+    howTo:'Profit factor = total gross wins ÷ total gross losses, over your most recent 100 closed trades (needs at least 100 logged). Levels: 1.0, 1.2, 1.5, 1.8, 2.0 profit factor.',
+    current: pfDisplay, tiers: [1, 1.2, 1.5, 1.8, 2], target: 2, done: last100.length >= 100 && pf >= 2,
+    statOverride: last100.length >= 100 ? `Profit factor: ${pf===Infinity?'∞':pf.toFixed(2)}` : `${last100.length}/100 trades so far`
   };
 
-  // 6. Shrinking Losses — avg loss size improved vs the previous 20 trades
+  // 6. Shrinking Losses — % your avg loss size improved vs the previous 20 trades
+  const last20 = recentFirst.slice(0, 20);
   const prev20 = recentFirst.slice(20, 40);
   const avgLoss = arr => {
     const losses = arr.filter(t => t.profit_loss < 0);
     return losses.length ? losses.reduce((s,t) => s + t.profit_loss, 0) / losses.length : 0;
   };
   const recentAvgLoss = avgLoss(last20), prevAvgLoss = avgLoss(prev20);
-  const improved = prevAvgLoss !== 0 && Math.abs(recentAvgLoss) < Math.abs(prevAvgLoss);
+  const improvementPct = prev20.length > 0 && prevAvgLoss !== 0
+    ? Math.max(0, ((Math.abs(prevAvgLoss) - Math.abs(recentAvgLoss)) / Math.abs(prevAvgLoss)) * 100)
+    : 0;
   const c6 = {
     icon:'trending-down', title:'Shrinking Losses', points:70,
-    desc:'Your average loss size is smaller than your previous 20 trades.',
-    howTo:'We compare the average losing trade size in your most recent 20 trades against the 20 before that. You need at least 20 older trades to compare against, and your recent average loss must be smaller.',
-    current: prev20.length > 0 ? (improved ? 1 : 0) : 0, target: 1, done: prev20.length > 0 && improved,
+    desc:'Your average loss size, shrinking vs your previous 20 trades.',
+    howTo:'We compare the average losing trade size in your most recent 20 trades against the 20 before that. Levels: 5%, 10%, 20%, 35%, 50% smaller average loss.',
+    current: improvementPct, tiers: [5, 10, 20, 35, 50], target: 50, done: prev20.length > 0 && improvementPct >= 50,
     statOverride: prev20.length > 0 ? `Now: $${Math.abs(recentAvgLoss).toFixed(2)} · Before: $${Math.abs(prevAvgLoss).toFixed(2)}` : 'Needs more trades to compare.'
   };
 
-  // 7. Drawdown Guard — max drawdown from peak cumulative equity stays under 20%
+  // 7. Drawdown Guard — tighter max-drawdown control over time
   let peak = 0, maxDD = 0, cum = 0;
   closed.forEach(t => {
     cum += t.profit_loss || 0;
@@ -2608,56 +2664,63 @@ function computeChallenges(trades, achRows){
     const dd = peak > 0 ? (peak - cum) / peak * 100 : 0;
     maxDD = Math.max(maxDD, dd);
   });
+  const ddSafety = peak > 0 ? Math.max(0, 100 - maxDD) : 0;
   const c7 = {
     icon:'octagon', title:'Drawdown Guard', points:90,
-    desc:'Keep your max drawdown under 20% from peak equity.',
-    howTo:'Built from your cumulative equity curve — we track the biggest drop from any peak to the lowest point after it, as a percentage of that peak. Stay under 20% at all times to keep this active.',
-    current: Math.min(maxDD, 20), target: 20, done: peak > 0 && maxDD < 20,
+    desc:'Keep your max drawdown tight against peak equity.',
+    howTo:'Built from your cumulative equity curve — the biggest drop from any peak to the lowest point after it, as a percentage of that peak. Levels: staying under 50%, 40%, 30%, 20%, 10% max drawdown.',
+    current: ddSafety, tiers: [50, 60, 70, 80, 90], target: 90, done: peak > 0 && maxDD < 10,
     statOverride: peak > 0 ? `Max drawdown: ${maxDD.toFixed(1)}%` : 'Not enough data yet.'
   };
 
-  // 8. Consistent Volume — 20 trades logged this month
+  // 8. Consistent Volume — trades logged this month
   const now = new Date();
   const thisMonthTrades = closed.filter(t => t.close_date.getFullYear() === now.getFullYear() && t.close_date.getMonth() === now.getMonth());
   const c8 = {
     icon:'bar-chart', title:'Consistent Volume', points:60,
-    desc:'20 trades logged this month.',
-    howTo:'A simple count of your closed trades where the close date falls in the current calendar month. Log 20 trades this month to complete this — it resets at the start of each new month.',
-    current: thisMonthTrades.length, target: 20, done: thisMonthTrades.length >= 20
+    desc:'Trades logged this month — showing up consistently, not a quota.',
+    howTo:'A simple count of your closed trades where the close date falls in the current calendar month. Levels: 5, 10, 20, 40, 60 trades — resets each month. This tracks consistency, not a target; never force a trade just to move this number.',
+    current: thisMonthTrades.length, tiers: [5, 10, 20, 40, 60], target: 60, done: thisMonthTrades.length >= 60
   };
 
-  // 9. Explorer — at least 3 different setups used this month
+  // 9. Explorer — different setups used this month
   const setupsThisMonth = new Set(thisMonthTrades.map(t => t.trade_setup).filter(Boolean));
   const c9 = {
     icon:'compass', title:'Explorer', points:50,
-    desc:'Used at least 3 different setups this month.',
-    howTo:'Counts the number of distinct values in your "Trade Setup" field across this month\'s closed trades. Trade at least 3 different setups (not just your usual one) to complete this.',
-    current: setupsThisMonth.size, target: 3, done: setupsThisMonth.size >= 3
+    desc:'Different setups used this month.',
+    howTo:'Counts the number of distinct values in your "Trade Setup" field across this month\'s closed trades. Levels: 1, 2, 3, 5, 8 different setups. Only count setups you\'d genuinely take — don\'t force an unfamiliar one just to add to this.',
+    current: setupsThisMonth.size, tiers: [1, 2, 3, 5, 8], target: 8, done: setupsThisMonth.size >= 8
   };
 
   // 10. Clean Week — most recent week had zero losses
   const lastWeekKey = weekKeys[weekKeys.length - 1];
   const lastWeekTrades = closed.filter(t => getWeekKey(t.close_date) === lastWeekKey);
   const lastWeekLossCount = lastWeekTrades.filter(t => (t.win_loss || '').toLowerCase() === 'loss').length;
+  let cleanWeekStreak = 0, maxCleanWeekStreak = 0;
+  weekKeys.forEach(w => {
+    const weekTrades = closed.filter(t => getWeekKey(t.close_date) === w);
+    const hasLoss = weekTrades.some(t => (t.win_loss || '').toLowerCase() === 'loss');
+    if(weekTrades.length > 0 && !hasLoss){ cleanWeekStreak++; maxCleanWeekStreak = Math.max(maxCleanWeekStreak, cleanWeekStreak); }
+    else cleanWeekStreak = 0;
+  });
   const c10 = {
     icon:'star', title:'Clean Week', points:40,
-    desc:'Your most recent week had zero losses.',
-    howTo:'Looks at your current Monday–Sunday week and checks whether any closed trade is marked "Loss." A week with wins, breakevens, or no trades at all still counts as clean.',
-    current: lastWeekTrades.length > 0 ? (lastWeekLossCount === 0 ? 1 : 0) : 0, target: 1,
-    done: lastWeekTrades.length > 0 && lastWeekLossCount === 0,
-    statOverride: lastWeekTrades.length ? `${lastWeekTrades.length} trades, ${lastWeekLossCount} loss${lastWeekLossCount===1?'':'es'}` : 'No trades yet this week.'
+    desc:'Consecutive weeks with zero losses.',
+    howTo:'Looks at each Monday–Sunday week and checks whether any closed trade in it is marked "Loss." A week with wins, breakevens, or no trades still counts as clean; one loss resets the streak. Levels: 1, 2, 3, 4, 5 clean weeks in a row.',
+    current: maxCleanWeekStreak, tiers: [1, 2, 3, 4, 5], target: 5, done: maxCleanWeekStreak >= 5,
+    statOverride: lastWeekTrades.length ? `This week so far: ${lastWeekTrades.length} trades, ${lastWeekLossCount} loss${lastWeekLossCount===1?'':'es'}` : 'No trades yet this week.'
   };
 
-  // 11. Comeback Kid — a losing week immediately followed by a winning week
-  let comeback = false;
+  // 11. Comeback Kid — how many times a losing week was followed by a winning week
+  let comebackCount = 0;
   for(let i = 1; i < weekKeys.length; i++){
-    if(byWeek[weekKeys[i-1]] < 0 && byWeek[weekKeys[i]] > 0){ comeback = true; break; }
+    if(byWeek[weekKeys[i-1]] < 0 && byWeek[weekKeys[i]] > 0) comebackCount++;
   }
   const c11 = {
     icon:'refresh', title:'Comeback Kid', points:70,
     desc:'Bounced back from a losing week into a winning week.',
-    howTo:'Scans your weekly P/L history for any losing week (negative total) that is immediately followed by a winning week (positive total). Once it happens even once in your history, this stays completed.',
-    current: comeback ? 1 : 0, target: 1, done: comeback
+    howTo:'Scans your weekly P/L history for every losing week (negative total) immediately followed by a winning week (positive total). Levels: 1, 2, 3, 4, 5 comebacks, lifetime.',
+    current: comebackCount, tiers: [1, 2, 3, 4, 5], target: 5, done: comebackCount >= 5
   };
 
   // 12/13. Achievements-based
@@ -2665,18 +2728,228 @@ function computeChallenges(trades, achRows){
   const tournaments = achRows.filter(a => a.category === 'Tournament');
   const c12 = {
     icon:'dollar', title:'Funded & Withdrawing', points:150,
-    desc:'3 successful withdrawals logged in Achievements.',
-    howTo:'Counts your Achievements entries where Category = "Withdrawal." Upload a new achievement each time you get a successful payout — reach 3 to complete this.',
-    current: withdrawals.length, target: 3, done: withdrawals.length >= 3
+    desc:'Successful withdrawals logged in Achievements.',
+    howTo:'Counts your Achievements entries where Category = "Withdrawal." Upload a new achievement each time you get a successful payout. Levels: 1, 2, 3, 4, 5 withdrawals.',
+    current: withdrawals.length, tiers: [1, 2, 3, 4, 5], target: 5, done: withdrawals.length >= 5
+  };
+
+  // 27. Cash Out — total amount withdrawn, lifetime (uses the Amount field on Withdrawal achievements)
+  const totalWithdrawn = withdrawals.reduce((s,a) => s + (parseFloat(a.amount) || 0), 0);
+  const c27 = {
+    icon:'dollar', title:'Cash Out', points:120,
+    desc:'Total amount withdrawn, lifetime.',
+    howTo:'Sums the "Amount" field on your Achievements entries where Category = "Withdrawal." Fill in the amount when you upload a withdrawal achievement. Levels: $100, $500, $1,000, $5,000, $10,000 total withdrawn.',
+    current: totalWithdrawn, tiers: [100, 500, 1000, 5000, 10000], target: 10000, done: totalWithdrawn >= 10000,
+    statOverride: `$${totalWithdrawn.toFixed(2)} withdrawn so far`
   };
   const c13 = {
     icon:'trophy', title:'Tournament Grinder', points:130,
-    desc:'5 tournaments logged in Achievements.',
-    howTo:'Counts your Achievements entries where Category = "Tournament." Upload a new achievement each time you join or place in a tournament — reach 5 to complete this.',
-    current: tournaments.length, target: 5, done: tournaments.length >= 5
+    desc:'Tournaments logged in Achievements.',
+    howTo:'Counts your Achievements entries where Category = "Tournament." Upload a new achievement each time you join or place in a tournament. Levels: 1, 3, 5, 7, 10 tournaments.',
+    current: tournaments.length, tiers: [1, 3, 5, 7, 10], target: 10, done: tournaments.length >= 10
   };
 
-  return [c1,c2,c3,c4,c5,c6,c7,c8,c9,c10,c11,c12,c13];
+  // 14. Global Trader — different sessions traded this month
+  const sessionsThisMonth = new Set(thisMonthTrades.map(t => t.session).filter(s => s && s !== 'Unspecified'));
+  const c14 = {
+    icon:'globe', title:'Global Trader', points:60,
+    desc:'Different sessions traded this month.',
+    howTo:'Counts the distinct values in your "Session" field (Asia, London, London + NY Overlap, New York, Low Liquidity) across this month\'s closed trades. Levels: 1, 2, 3, 4, 5 different sessions. Only trade a session when there\'s a real setup — don\'t trade a session just to check it off.',
+    current: sessionsThisMonth.size, tiers: [1, 2, 3, 4, 5], target: 5, done: sessionsThisMonth.size >= 5
+  };
+
+  // 15. Setup Specialist — win rate on your best setup, 10+ trades using it
+  const setupStats = {};
+  closed.forEach(t => {
+    const key = t.trade_setup;
+    if(!key || key === 'Unspecified') return;
+    if(!setupStats[key]) setupStats[key] = { wins: 0, total: 0 };
+    setupStats[key].total++;
+    if((t.win_loss || '').toLowerCase() === 'win') setupStats[key].wins++;
+  });
+  let bestSetup = null, bestSetupRate = 0;
+  Object.entries(setupStats).forEach(([name, s]) => {
+    if(s.total >= 10 && s.wins / s.total > bestSetupRate){ bestSetupRate = s.wins / s.total; bestSetup = name; }
+  });
+  const c15 = {
+    icon:'target', title:'Setup Specialist', points:110,
+    desc:'Win rate on your best setup, across at least 10 trades using it.',
+    howTo:'Groups your closed trades by "Trade Setup" and checks each one with at least 10 trades for its win rate. Levels: 40%, 50%, 60%, 70%, 80% win rate on any single setup. This is an observation, not a target — don\'t skip a valid setup just to protect the percentage.',
+    current: bestSetup ? Math.round(bestSetupRate * 100) : 0, tiers: [40, 50, 60, 70, 80], target: 80,
+    done: !!bestSetup && bestSetupRate >= 0.8,
+    statOverride: bestSetup ? `Best: "${bestSetup}" at ${Math.round(bestSetupRate*100)}%` : 'No setup with 10+ trades yet'
+  };
+
+  // (Retired: a "trade both directions" challenge used to live here — removed
+  // because rewarding a minimum Long/Short count could tempt forcing a trade
+  // in whichever direction you're short on, just to hit the number. That's
+  // the opposite of what this page should encourage.)
+
+  // 17. Century Club — trades logged, all-time
+  const c17 = {
+    icon:'hash', title:'Century Club', points:100,
+    desc:'Trades logged, all-time.',
+    howTo:'A simple lifetime count of every closed trade you\'ve logged. Levels: 20, 50, 100, 250, 500 trades — no time limit.',
+    current: closed.length, tiers: [20, 50, 100, 250, 500], target: 500, done: closed.length >= 500
+  };
+
+  // 18. Green Month — fully completed calendar months with positive total P/L
+  const monthTotals = {};
+  closed.forEach(t => {
+    const key = `${t.close_date.getFullYear()}-${t.close_date.getMonth()}`;
+    monthTotals[key] = (monthTotals[key] || 0) + (t.profit_loss || 0);
+  });
+  const thisMonthKey = `${now.getFullYear()}-${now.getMonth()}`;
+  const greenMonthCount = Object.keys(monthTotals).filter(k => k !== thisMonthKey && monthTotals[k] > 0).length;
+  const c18 = {
+    icon:'calendar', title:'Green Month', points:90,
+    desc:'Fully completed calendar months with positive total P/L.',
+    howTo:'Groups your closed trades by calendar month (excluding the current, still-in-progress month) and sums P/L for each. Levels: 1, 2, 3, 4, 6 green months, lifetime.',
+    current: greenMonthCount, tiers: [1, 2, 3, 4, 6], target: 6, done: greenMonthCount >= 6
+  };
+
+  // 19. Journal Keeper — 10 consecutive trades with notes filled in
+  let notesStreak = 0;
+  for(const t of recentFirst){
+    if((t.notes || '').trim()) notesStreak++;
+    else break;
+  }
+  const c19 = {
+    icon:'book', title:'Journal Keeper', points:60,
+    desc:'Consecutive trades with notes filled in.',
+    howTo:'Checks your most recent trades (newest first) for a filled-in "Notes" field. One trade without notes resets the streak. Levels: 5, 10, 20, 50, 100 in a row.',
+    current: notesStreak, tiers: [5, 10, 20, 50, 100], target: 100, done: notesStreak >= 100
+  };
+
+  // 20. Rule Setter — personal trading rules saved in Profile
+  const ruleCount = (PROFILE_DATA?.trading_rules || []).length;
+  const c20 = {
+    icon:'list', title:'Rule Setter', points:40,
+    desc:'Personal trading rules saved in your Profile.',
+    howTo:'Counts the rules you\'ve added under "My Trading Rules" on your Profile page. Levels: 1, 2, 3, 5, 10 rules.',
+    current: ruleCount, tiers: [1, 2, 3, 5, 10], target: 10, done: ruleCount >= 10
+  };
+
+  // 21. Vision Board Set — uploaded an inspiration image on Profile
+  const hasVisionBoard = !!PROFILE_DATA?.inspiration_image_path;
+  const c21 = {
+    icon:'image', title:'Vision Board Set', points:30,
+    desc:'Uploaded an inspiration image on your Profile.',
+    howTo:'Checks whether you\'ve uploaded an image under "My Vision Board" on your Profile page. Upload one from Edit mode to complete this.',
+    current: hasVisionBoard ? 1 : 0, target: 1, done: hasVisionBoard
+  };
+
+  // 22. Breakeven Saver — trades where you secured profit after moving SL to breakeven
+  const beSaves = closed.filter(t => t.post_be_result === 'TP After BE').length;
+  const c22 = {
+    icon:'check-circle', title:'Breakeven Saver', points:70,
+    desc:'Trades where you secured profit after moving SL to breakeven.',
+    howTo:'Counts trades where your "Post-BE Result" is "TP After BE" — meaning you moved your stop to breakeven and still walked away with profit instead of just avoiding a loss. Levels: 2, 5, 10, 20, 30 trades.',
+    current: beSaves, tiers: [2, 5, 10, 20, 30], target: 30, done: beSaves >= 30
+  };
+
+  // 23. Weekday Ace — win rate on your best day of the week, 10+ trades on it
+  const dayStats = {};
+  closed.forEach(t => {
+    const key = t.day_of_week;
+    if(!key || key === 'Unspecified') return;
+    if(!dayStats[key]) dayStats[key] = { wins: 0, total: 0 };
+    dayStats[key].total++;
+    if((t.win_loss || '').toLowerCase() === 'win') dayStats[key].wins++;
+  });
+  let bestDay = null, bestDayRate = 0;
+  Object.entries(dayStats).forEach(([name, s]) => {
+    if(s.total >= 10 && s.wins / s.total > bestDayRate){ bestDayRate = s.wins / s.total; bestDay = name; }
+  });
+  const c23 = {
+    icon:'medal', title:'Weekday Ace', points:90,
+    desc:'Win rate on your best day of the week, across at least 10 trades.',
+    howTo:'Groups your closed trades by day of the week and checks each day with at least 10 trades for its win rate. Levels: 40%, 50%, 60%, 70%, 80% win rate on any single day. Don\'t avoid trading a good setup on a given day just to protect this number.',
+    current: bestDay ? Math.round(bestDayRate * 100) : 0, tiers: [40, 50, 60, 70, 80], target: 80,
+    done: !!bestDay && bestDayRate >= 0.8,
+    statOverride: bestDay ? `Best: ${bestDay} at ${Math.round(bestDayRate*100)}%` : 'No day with 10+ trades yet'
+  };
+
+  // 24. Fee Control — fees this month kept low relative to gross win (resets monthly)
+  const monthGrossWin = thisMonthTrades.filter(t => t.profit_loss > 0).reduce((s,t) => s + t.profit_loss, 0);
+  const monthFees = thisMonthTrades.reduce((s,t) => s + (t.fee || 0), 0);
+  const monthFeePct = monthGrossWin > 0 ? (monthFees / monthGrossWin) * 100 : 0;
+  const feeSafety = monthGrossWin > 0 ? Math.max(0, 100 - monthFeePct) : 0;
+  const c24 = {
+    icon:'percent', title:'Fee Control', points:60,
+    desc:'Fees this month, kept low relative to your gross win.',
+    howTo:'Fees this month ÷ gross win this month, as a percentage — lower is better. Levels: staying under 50%, 40%, 30%, 20%, 10% of gross win. Resets every month, so there\'s always a fresh shot at it.',
+    current: feeSafety, tiers: [50, 60, 70, 80, 90], target: 90, done: monthGrossWin > 0 && monthFeePct <= 10
+  };
+
+  // 25. Monthly Win Rate — win rate for this month's trades (resets monthly)
+  const monthWins = thisMonthTrades.filter(t => (t.win_loss || '').toLowerCase() === 'win').length;
+  const monthWinRate = thisMonthTrades.length > 0 ? (monthWins / thisMonthTrades.length) * 100 : 0;
+  const c25 = {
+    icon:'zap', title:'Monthly Win Rate', points:70,
+    desc:'Win rate for this month\'s trades.',
+    howTo:'Wins ÷ total closed trades this month. Levels: 40%, 50%, 60%, 70%, 80% win rate. Resets every month — a fresh scoreboard each time. Never sit out a valid trade near month-end just to protect this number.',
+    current: thisMonthTrades.length > 0 ? monthWinRate : 0, tiers: [40, 50, 60, 70, 80], target: 80,
+    done: thisMonthTrades.length > 0 && monthWinRate >= 80
+  };
+
+  // 26. Weeks Won — winning weeks within this month (resets monthly)
+  const weeksThisMonthKeys = [...new Set(thisMonthTrades.map(t => getWeekKey(t.close_date)))];
+  const weeksWonThisMonth = weeksThisMonthKeys.filter(w => (byWeek[w] || 0) > 0).length;
+  const c26 = {
+    icon:'calendar', title:'Weeks Won', points:60,
+    desc:'Winning weeks within this month.',
+    howTo:'Counts how many Monday–Sunday weeks touching this month had a positive total P/L. Levels: 1, 2, 3, 4, 5 winning weeks. Resets every month. Keep trading your plan as usual — don\'t go quiet just because a week is already green.',
+    current: weeksWonThisMonth, tiers: [1, 2, 3, 4, 5], target: 5, done: weeksWonThisMonth >= 5
+  };
+
+  // 28-30. Account compliance guards — pass/fail checks against your real prop
+  // firm account rules (My Accounts), not performance targets to chase. These
+  // only appear once you've added at least one Prop Firm account.
+  const propAccounts = TRADING_ACCOUNTS.filter(a => a.account_type !== 'Exchange' && a.account_size && a.status !== 'Failed');
+  const accStatsCache = propAccounts.map(a => ({ acc: a, stats: computeAccountStats(a) }));
+
+  let c28 = null;
+  const accountsWithDailyLimit = accStatsCache.filter(x => x.stats.dailyLossLimit > 0);
+  if(accountsWithDailyLimit.length){
+    const breached = accountsWithDailyLimit.some(x => x.stats.dailyLossUsed >= x.stats.dailyLossLimit);
+    c28 = {
+      icon:'shield', title:'Daily Loss Guard', points:40,
+      desc:"Stay within today's Max Daily Loss on every account.",
+      howTo:"Checks each Prop Firm account's trades closed today against its Max Daily Loss % rule. This is a same-day pass/fail check, not a target — a day with no trades on that account stays passed by default. Never keep trading past a breach just to \"fix\" this.",
+      current: breached ? 0 : 1, target: 1, done: !breached
+    };
+  }
+
+  let c29 = null;
+  const accountsWithDrawdownFloor = accStatsCache.filter(x => x.stats.drawdownFloor > 0);
+  if(accountsWithDrawdownFloor.length){
+    const breached = accountsWithDrawdownFloor.some(x => x.stats.currentBalance < x.stats.drawdownFloor);
+    c29 = {
+      icon:'shield-check', title:'Drawdown Guard', points:40,
+      desc:'Keep every account above its Max Total Drawdown floor.',
+      howTo:"Compares each Prop Firm account's current balance to its Max Total Drawdown % rule. Pass/fail, not a target to push toward — the further above the floor, the safer, but there's no reason to trade more just to widen the gap.",
+      current: breached ? 0 : 1, target: 1, done: !breached
+    };
+  }
+
+  let c30 = null;
+  const accountsWithDayTarget = accStatsCache.filter(x => x.stats.profitableDaysTarget);
+  if(accountsWithDayTarget.length){
+    let best = null;
+    accountsWithDayTarget.forEach(x => {
+      const frac = x.stats.profitableDaysCount / x.stats.profitableDaysTarget;
+      if(!best || frac > best.frac) best = { frac, current: x.stats.profitableDaysCount, target: x.stats.profitableDaysTarget };
+    });
+    c30 = {
+      icon:'medal', title:'Profitable Days Met', points:50,
+      desc:'Hit the minimum profitable trading days required by your account.',
+      howTo:"Counts distinct days where an account's trades netted positive, against its Minimum Trading Days rule. There's no reason to force a trade on a slow day just to add to this count — an unprofitable or no-trade day simply doesn't count, without penalty.",
+      current: best.current, target: best.target, done: best.current >= best.target
+    };
+  }
+
+  return [c1,c2,c3,c4,c5,c6,c7,c8,c9,c10,c11,c12,c13,c14,c15,c17,c18,c19,c20,c21,c22,c23,c24,c25,c26,c27,c28,c29,c30].filter(Boolean);
 }
 
 const LOCKED_CHALLENGES = [
@@ -2689,11 +2962,31 @@ const LOCKED_CHALLENGES = [
   {icon:'medal', title:'Tournament Placement', desc:'Placing Top 10 or winning a tournament.', needs:'Needs a structured "placement" field on Achievements (currently just free text in subject/body).'}
 ];
 
+function tierBarHTML(current, tiers){
+  return `
+    <div class="tier-bar">
+      ${tiers.map((t, i) => {
+        const prev = i === 0 ? 0 : tiers[i-1];
+        const reached = current >= t;
+        const pct = reached ? 100 : Math.max(0, Math.min(100, ((current - prev) / (t - prev)) * 100));
+        return `
+          <div class="tier-segment">
+            <div class="tier-track"><div class="tier-fill ${reached ? 'reached' : ''}" style="width:${pct}%;"></div></div>
+            <div class="tier-mark ${reached ? 'reached' : ''}">${t}</div>
+          </div>
+        `;
+      }).join('')}
+    </div>
+  `;
+}
+
 function activeCardHTML(c, status){
-  const pct = c.target ? Math.min(100, (c.current / c.target) * 100) : 0;
-  const statText = c.statOverride || `${c.current} / ${c.target}`;
   const badgeCls = status === 'done' ? 'badge-done' : status === 'next' ? 'badge-next' : '';
   const tagText = status === 'done' ? 'Achieved' : status === 'next' ? 'Next up' : 'In Progress';
+  const progressHTML = c.tiers
+    ? tierBarHTML(c.current, c.tiers)
+    : `<div class="challenge-progress-bar"><div class="challenge-progress-fill" style="width:${c.target ? Math.min(100, (c.current / c.target) * 100) : 0}%;"></div></div>`;
+  const statText = c.statOverride || `${c.current} / ${c.target}`;
   return `
     <div class="challenge-card ${status}" onclick='openChallengeDetail(${JSON.stringify(c.title)})'>
       <div class="challenge-hover-tip">${c.howTo || c.desc}</div>
@@ -2705,7 +2998,7 @@ function activeCardHTML(c, status){
         <div class="card-tag">${tagText}</div>
         <div class="challenge-title">${c.title}</div>
         <div class="challenge-desc">${c.desc}</div>
-        <div class="challenge-progress-bar"><div class="challenge-progress-fill" style="width:${pct}%;"></div></div>
+        ${progressHTML}
         <div class="challenge-stat">${statText}</div>
       </div>
       <div class="challenge-points">+${c.points}</div>
@@ -2742,7 +3035,7 @@ function renderRankLadder(totalPoints){
   const n = CHALLENGE_RANKS.length;
   const maxMin = CHALLENGE_RANKS[n - 1].min;
   const overallPct = Math.min(100, (totalPoints / maxMin) * 100);
-  const rankIcons = ['star', 'flame', 'shield-check', 'trending-up', 'medal', 'trophy'];
+  const rankIcons = ['star', 'flame', 'shield-check', 'trending-up', 'medal', 'octagon', 'trophy'];
 
   const medals = CHALLENGE_RANKS.map((r, i) => {
     const reached = totalPoints >= r.min;
@@ -2770,6 +3063,7 @@ const RANK_DESCRIPTIONS = {
   'Skilled Trader': "Your discipline is becoming routine rather than effort. Keep stacking consistent decisions.",
   'Expert Trader': "You've shown consistency across several different areas of your trading, not just one.",
   'Master Trader': "A high, well-rounded level of discipline — this takes sustained, deliberate practice to reach.",
+  'Elite Trader': "You're clearing the hardest levels on most challenges, not just the easy first steps.",
   'Legendary Trader': "You've worked through nearly every challenge here. This reflects a long track record, not luck."
 };
 
@@ -2844,10 +3138,14 @@ function renderChallengeGrid(){
     : `Max rank reached — ${maxPoints} points available`;
   renderRankLadder(totalPoints);
 
-  // Achieved challenges come first, then whatever's still open — ordered
-  // easiest to hardest so the very next one to go for is always up top.
+  // Achieved challenges come first, then whatever's still open — ordered by
+  // how close each one is to finishing, so the nearest-to-done is always up top.
+  const progressFraction = c => {
+    const finalTarget = c.tiers ? c.tiers[c.tiers.length - 1] : c.target;
+    return finalTarget > 0 ? Math.min(1, c.current / finalTarget) : 0;
+  };
   const done = [...COMPUTED_CHALLENGES].filter(c => c.done).sort((a,b) => a.points - b.points);
-  const notDone = [...COMPUTED_CHALLENGES].filter(c => !c.done).sort((a,b) => a.points - b.points);
+  const notDone = [...COMPUTED_CHALLENGES].filter(c => !c.done).sort((a,b) => progressFraction(b) - progressFraction(a));
   const withStatus = [
     ...done.map(c => ({ c, status: 'done' })),
     ...notDone.map((c, i) => ({ c, status: i === 0 ? 'next' : 'upcoming' }))
@@ -2874,7 +3172,6 @@ async function renderChallenges(){
 function openChallengeDetail(title){
   const c = COMPUTED_CHALLENGES.find(x => x.title === title);
   if(!c) return;
-  const pct = c.target ? Math.min(100, (c.current / c.target) * 100) : 0;
   const statText = c.statOverride || `${c.current} / ${c.target}`;
   const badge = document.getElementById('challengeDetailBadge');
   badge.className = 'challenge-badge' + (c.done ? ' badge-done' : '');
@@ -2882,7 +3179,9 @@ function openChallengeDetail(title){
   document.getElementById('challengeDetailTitle').textContent = c.title;
   document.getElementById('challengeDetailPoints').textContent = `+${c.points} points${c.done ? ' · Achieved' : ''}`;
   document.getElementById('challengeDetailHowTo').textContent = c.howTo || c.desc;
-  document.getElementById('challengeDetailBarFill').style.width = `${pct}%`;
+  document.getElementById('challengeDetailProgressWrap').innerHTML = c.tiers
+    ? tierBarHTML(c.current, c.tiers)
+    : `<div class="challenge-progress-bar" style="height:8px;"><div class="challenge-progress-fill" style="width:${c.target ? Math.min(100, (c.current / c.target) * 100) : 0}%;"></div></div>`;
   document.getElementById('challengeDetailStat').textContent = statText;
   document.getElementById('challengeDetailModal').classList.add('open');
 }
@@ -2945,6 +3244,20 @@ async function renderProfile(){
   `;
   document.getElementById('profileHeaderWhy').textContent = p.my_why ? `"${p.my_why}"` : '';
 
+  // Rank badge — mirrors your current rank from the Challenges page.
+  try{
+    const rankIcons = ['star', 'flame', 'shield-check', 'trending-up', 'medal', 'octagon', 'trophy'];
+    const achRowsForRank = await loadAchievementSummaryForChallenges();
+    const challengesForRank = computeChallenges(ALL_TRADES, achRowsForRank);
+    const totalPointsForRank = challengesForRank.filter(c => c.done).reduce((s,c) => s + c.points, 0);
+    const { current: currentRank } = rankForPoints(totalPointsForRank);
+    const rankIdx = CHALLENGE_RANKS.findIndex(r => r.label === currentRank.label);
+    document.getElementById('profileRankIcon').innerHTML = challengeIconSVG(rankIcons[rankIdx] || 'star');
+    document.getElementById('profileRankTitle').textContent = currentRank.label;
+  }catch(e){
+    console.error("Couldn't compute rank for profile badge:", e);
+  }
+
   const fields = document.getElementById('profileFieldsPanel');
   if(profileEditing){
     fields.innerHTML = `
@@ -2966,7 +3279,11 @@ async function renderProfile(){
 
   const img = document.getElementById('profileInspoImg');
   const placeholder = document.getElementById('profileInspoPlaceholder');
-  const changeBtn = document.getElementById('profileInspoChangeBtn');
+  const uploadBtn = document.getElementById('profileInspoUploadBtn');
+  const editHint = document.getElementById('profileInspoEditHint');
+  if(uploadBtn) uploadBtn.textContent = p.inspiration_image_path ? 'Change image' : 'Upload image';
+  img.onclick = profileEditing ? null : () => openLightbox(img.src);
+  img.style.cursor = profileEditing ? 'default' : 'zoom-in';
 
   if(p.inspiration_image_path){
     try{
@@ -2975,25 +3292,19 @@ async function renderProfile(){
       img.src = data.signedUrl;
       img.style.display = 'block';
       placeholder.style.display = 'none';
-      changeBtn.style.display = 'inline-block';
+      editHint.style.display = profileEditing ? 'flex' : 'none';
     }catch(e){
       console.error("Couldn't load inspiration image:", e);
       img.style.display = 'none';
-      changeBtn.style.display = 'none';
+      editHint.style.display = 'none';
       placeholder.style.display = 'flex';
-      placeholder.innerHTML = `
-        <div>Couldn't load your inspiration image (${escapeHtml(e?.message || String(e))}). Try uploading it again.</div>
-        <button class="ai-btn" onclick="document.getElementById('profileInspoInput').click()">Upload image</button>
-      `;
+      placeholder.innerHTML = `<div>Couldn't load your inspiration image (${escapeHtml(e?.message || String(e))}). Try uploading it again from Edit mode.</div>`;
     }
   }else{
     img.style.display = 'none';
-    changeBtn.style.display = 'none';
+    editHint.style.display = 'none';
     placeholder.style.display = 'flex';
-    placeholder.innerHTML = `
-      <div>No inspiration image yet — upload your vision board, goals, or anything that keeps you disciplined.</div>
-      <button class="ai-btn" onclick="document.getElementById('profileInspoInput').click()">Upload image</button>
-    `;
+    placeholder.innerHTML = `<div>No inspiration image yet — add one from Edit mode.</div>`;
   }
 }
 
@@ -3096,5 +3407,418 @@ async function saveProfile(){
   }finally{
     btn.disabled = false;
     btn.textContent = 'Save changes';
+  }
+}
+
+/* ---------------- My Accounts (prop firm accounts + their rules) ---------------- */
+let TRADING_ACCOUNTS = [];
+let editingAccountId = null;
+
+async function loadAccounts(){
+  try{
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/trading_accounts?select=*&order=created_at.asc`, {
+      headers: {
+        "apikey": SUPABASE_KEY,
+        "Authorization": `Bearer ${USER_ACCESS_TOKEN}`
+      }
+    });
+    if(!res.ok) throw new Error(await res.text());
+    TRADING_ACCOUNTS = await res.json();
+  }catch(e){
+    console.error("Couldn't load trading accounts:", e);
+    TRADING_ACCOUNTS = [];
+  }
+  syncAccountFieldOptions();
+  renderAccountsList();
+}
+
+// Keeps the Journal's "Account" dropdown in sync with the real accounts from
+// My Accounts, instead of a manually-maintained list — mutated in place so
+// ALL_DRAWER_FIELDS' captured reference to FIELD_OPTIONS.account stays in sync.
+// Falls back to whatever's already there if no accounts exist yet.
+function syncAccountFieldOptions(){
+  if(!TRADING_ACCOUNTS.length) return;
+  FIELD_OPTIONS.account.length = 0;
+  FIELD_OPTIONS.account.push(...TRADING_ACCOUNTS.map(a => a.account_name));
+}
+
+// Applies a +/- delta to an account's current_balance whenever a trade tagged
+// to that account is added, edited, or deleted — so balance/progress stays
+// live without retyping it after every trade. Silently no-ops if the trade's
+// "Account" text doesn't match a real account (legacy/free-text values).
+async function adjustAccountBalance(accountName, delta){
+  if(!accountName || !delta) return;
+  const acc = TRADING_ACCOUNTS.find(a => a.account_name === accountName);
+  if(!acc) return;
+  const newBalance = (parseFloat(acc.current_balance) || 0) + delta;
+  try{
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/trading_accounts?id=eq.${acc.id}`, {
+      method: 'PATCH',
+      headers: {
+        "apikey": SUPABASE_KEY,
+        "Authorization": `Bearer ${USER_ACCESS_TOKEN}`,
+        "Content-Type": "application/json",
+        "Prefer": "return=minimal"
+      },
+      body: JSON.stringify({ current_balance: newBalance })
+    });
+    if(!res.ok) throw new Error(await res.text());
+    acc.current_balance = newBalance;
+    if(currentView === 'accounts') renderAccountsList();
+  }catch(e){
+    console.error("Couldn't auto-update account balance:", e);
+  }
+}
+
+// Auto-fills the Journal's "Account Type" (Demo/Evaluation/Funded) from the
+// selected account's Phase, so it doesn't need to be typed twice.
+function syncAccountTypeFromAccount(accountName){
+  const acc = TRADING_ACCOUNTS.find(a => a.account_name === accountName);
+  if(!acc) return;
+  let mapped = null;
+  if(acc.phase === 'Funded') mapped = 'Funded';
+  else if(acc.phase && acc.phase.startsWith('Evaluation')) mapped = 'Evaluation';
+  else if(acc.account_type === 'Exchange') mapped = 'Demo';
+  if(!mapped) return;
+  const sel = document.querySelector('#drawerBody [data-field="account_type"]');
+  if(sel) sel.value = mapped;
+}
+
+// Derives all the compliance/progress numbers for one account from the real
+// trades tagged to it (ALL_TRADES where account === account_name) — no extra
+// table needed, since account_size/rules are fixed and current_balance is
+// already kept live by adjustAccountBalance().
+function computeAccountStats(acc){
+  const trades = ALL_TRADES.filter(t => t.account === acc.account_name && t.close_date);
+  const accountSize = Number(acc.account_size) || 0;
+  const currentBalance = acc.current_balance != null ? Number(acc.current_balance) : accountSize;
+
+  const today = new Date(); today.setHours(0,0,0,0);
+  const todaysPL = trades
+    .filter(t => { const d = new Date(t.close_date); d.setHours(0,0,0,0); return d.getTime() === today.getTime(); })
+    .reduce((s,t) => s + (t.profit_loss || 0), 0);
+  const dailyLossUsed = todaysPL < 0 ? Math.abs(todaysPL) : 0;
+  const dailyLossLimit = accountSize * (Number(acc.max_daily_loss_pct) || 0) / 100;
+  const dayStartBalance = currentBalance - todaysPL;
+  const dailyStopBalance = dayStartBalance - dailyLossLimit;
+
+  const drawdownFloor = accountSize - accountSize * (Number(acc.max_total_drawdown_pct) || 0) / 100;
+  const profitGoal = accountSize + accountSize * (Number(acc.profit_target_pct) || 0) / 100;
+  const balanceRangeFraction = (profitGoal > drawdownFloor)
+    ? Math.max(0, Math.min(1, (currentBalance - drawdownFloor) / (profitGoal - drawdownFloor)))
+    : 0;
+
+  // Trades since the current phase began — Total Earn and Profitable Days
+  // reset here so profit made during a previous phase doesn't carry over
+  // into this phase's target (set "Phase Start Date"/"Balance at Phase
+  // Start" on the account whenever you move to a new phase).
+  const phaseStart = acc.phase_start_date ? new Date(acc.phase_start_date + 'T00:00:00') : null;
+  const phaseTrades = phaseStart ? trades.filter(t => t.close_date >= phaseStart) : trades;
+
+  const dayPL = {};
+  phaseTrades.forEach(t => {
+    const key = new Date(t.close_date).toDateString();
+    dayPL[key] = (dayPL[key] || 0) + (t.profit_loss || 0);
+  });
+  const profitableDaysCount = Object.values(dayPL).filter(v => v > 0).length;
+  const profitableDaysTarget = Number(acc.min_trading_days) || null;
+
+  const sortedTrades = [...phaseTrades].sort((a,b) => a.close_date - b.close_date);
+  let cum = 0;
+  const series = sortedTrades.map(t => { cum += (t.profit_loss || 0); return { date: t.close_date, cum }; });
+  const totalEarn = acc.phase_start_balance != null ? (currentBalance - Number(acc.phase_start_balance)) : cum;
+  const targetEarn = accountSize * (Number(acc.profit_target_pct) || 0) / 100;
+
+  return {
+    accountSize, currentBalance, todaysPL, dailyLossUsed, dailyLossLimit, dayStartBalance, dailyStopBalance,
+    drawdownFloor, profitGoal, balanceRangeFraction, profitableDaysCount, profitableDaysTarget,
+    series, totalEarn, targetEarn
+  };
+}
+
+let accountDetailChartRef = null;
+
+function openAccountDetail(id){
+  const a = TRADING_ACCOUNTS.find(x => x.id === id);
+  if(!a) return;
+  const s = computeAccountStats(a);
+
+  document.getElementById('accDetailName').textContent = a.account_name;
+  const startLabel = a.start_date ? `· start ${new Date(a.start_date + 'T00:00:00').toLocaleDateString(undefined,{day:'numeric',month:'short'})}` : '';
+  const statusLabel = a.status && a.status !== 'Ongoing' ? ` · ${a.status}` : '';
+  document.getElementById('accDetailSub').textContent = `${a.prop_firm || ''} ${startLabel}${statusLabel}`.trim();
+
+  const stages = ['Evaluation Phase 1','Evaluation Phase 2','Funded'];
+  const stageIdx = stages.indexOf(a.phase);
+  document.getElementById('accDetailStepper').innerHTML = stages.map((label,i) => {
+    const cls = stageIdx < 0 ? '' : (i < stageIdx ? 'done' : (i === stageIdx ? 'current' : ''));
+    return `<div class="acc-step ${cls}"><div class="acc-step-line"></div><div class="acc-step-circle">${i < stageIdx ? '✓' : i+1}</div><div class="acc-step-label">${label.replace('Evaluation ','')}</div></div>`;
+  }).join('');
+
+  if(s.dailyLossLimit > 0){
+    document.getElementById('accDetailDailyLoss').textContent = `$${s.dailyLossUsed.toLocaleString(undefined,{maximumFractionDigits:2})} / $${s.dailyLossLimit.toLocaleString(undefined,{maximumFractionDigits:2})}`;
+    document.getElementById('accDetailDailyRange').innerHTML = `<span>start ${s.dayStartBalance.toLocaleString(undefined,{maximumFractionDigits:2})}</span><span>stop ${s.dailyStopBalance.toLocaleString(undefined,{maximumFractionDigits:2})}</span>`;
+  }else{
+    document.getElementById('accDetailDailyLoss').textContent = '—';
+    document.getElementById('accDetailDailyRange').innerHTML = '';
+  }
+
+  document.getElementById('accDetailProfitDays').textContent = s.profitableDaysTarget
+    ? `${s.profitableDaysCount} of ${s.profitableDaysTarget}`
+    : `${s.profitableDaysCount} days`;
+
+  document.getElementById('accDetailBalance').textContent = `$${s.currentBalance.toLocaleString(undefined,{maximumFractionDigits:2})}`;
+  document.getElementById('accDetailBalanceFill').style.width = `${(s.balanceRangeFraction*100).toFixed(1)}%`;
+  document.getElementById('accDetailBalanceRange').innerHTML = s.profitGoal
+    ? `<span>stop ${s.drawdownFloor.toLocaleString(undefined,{maximumFractionDigits:0})}</span><span>goal ${s.profitGoal.toLocaleString(undefined,{maximumFractionDigits:0})}</span>`
+    : '';
+
+  document.getElementById('accDetailEarn').textContent = `$${s.totalEarn.toLocaleString(undefined,{maximumFractionDigits:2})}`;
+
+  renderAccountEarnChart(s);
+  document.getElementById('accountDetailModal').classList.add('open');
+}
+
+function closeAccountDetail(){
+  document.getElementById('accountDetailModal').classList.remove('open');
+}
+
+function renderAccountEarnChart(s){
+  const canvas = document.getElementById('accDetailChart');
+  const ctx = canvas.getContext('2d');
+  if(accountDetailChartRef){ accountDetailChartRef.destroy(); accountDetailChartRef = null; }
+  if(!s.series.length) return;
+
+  const labels = s.series.map(p => p.date.toLocaleDateString('en-US',{month:'short', day:'numeric'}));
+  const values = s.series.map(p => p.cum);
+  const finalVal = values[values.length - 1];
+  const lineColor = finalVal >= 0 ? cssVar('--win') : cssVar('--loss');
+
+  accountDetailChartRef = new Chart(ctx, {
+    type: 'line',
+    data: { labels, datasets: [{
+      data: values, borderColor: lineColor, backgroundColor: lineColor + '22',
+      fill: 'origin', tension: 0.25, pointRadius: 0, borderWidth: 2
+    }]},
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: (c) => 'Cumulative: ' + fmtMoney(c.parsed.y) } }
+      },
+      scales: { x: { display: true, grid: { display: false } }, y: { display: true } }
+    }
+  });
+}
+
+function renderAccountsList(){
+  const wrap = document.getElementById('accountsList');
+  if(!wrap) return;
+  if(!TRADING_ACCOUNTS.length){
+    wrap.innerHTML = `<div class="empty-state">No accounts yet — add your prop firm account and its rules.</div>`;
+    return;
+  }
+  wrap.innerHTML = TRADING_ACCOUNTS.map(a => {
+    const isExchange = a.account_type === 'Exchange';
+
+    const rules = [];
+    if(isExchange){
+      rules.push(`<span class="pill pill-muted">Manual entry — API sync not connected yet</span>`);
+    } else {
+      if(a.max_daily_loss_pct != null) rules.push(`<span class="pill pill-red">Daily Loss ${a.max_daily_loss_pct}%</span>`);
+      if(a.max_total_drawdown_pct != null) rules.push(`<span class="pill pill-red">Max DD ${a.max_total_drawdown_pct}%</span>`);
+      if(a.profit_target_pct != null) rules.push(`<span class="pill pill-green">Target ${a.profit_target_pct}%</span>`);
+      if(a.min_trading_days != null) rules.push(`<span class="pill pill-blue">Min ${a.min_trading_days} days</span>`);
+      if(a.consistency_rule_pct != null) rules.push(`<span class="pill pill-orange">Consistency ${a.consistency_rule_pct}%</span>`);
+    }
+
+    let balanceHTML = '';
+    if(a.current_balance != null && a.account_size){
+      const pl = a.current_balance - a.account_size;
+      const plPct = (pl / a.account_size) * 100;
+      const plClass = pl >= 0 ? 'account-pl-pos' : 'account-pl-neg';
+      const sign = pl >= 0 ? '+' : '';
+      balanceHTML += `<div class="account-card-balance">$${Number(a.current_balance).toLocaleString()} <span class="${plClass}">(${sign}$${Math.abs(pl).toLocaleString()} · ${sign}${plPct.toFixed(1)}%)</span></div>`;
+
+      if(a.profit_target_pct){
+        const progressFraction = Math.max(0, Math.min(1, plPct / a.profit_target_pct));
+        balanceHTML += `
+          <div class="account-progress-bar"><div class="account-progress-fill" style="width:${(progressFraction*100).toFixed(1)}%;"></div></div>
+          <div class="account-progress-label">${Math.max(0, plPct).toFixed(1)}% of ${a.profit_target_pct}% target</div>
+        `;
+      }
+    } else if(a.current_balance != null){
+      balanceHTML += `<div class="account-card-balance">$${Number(a.current_balance).toLocaleString()}</div>`;
+    }
+
+    const startLabel = a.start_date ? `· start ${new Date(a.start_date + 'T00:00:00').toLocaleDateString(undefined,{day:'numeric',month:'short'})}` : '';
+    const metaLabel = isExchange
+      ? `${escapeHtml(a.exchange_name || 'Exchange')} ${startLabel}`
+      : `${escapeHtml(a.prop_firm || '—')} ${a.account_size ? `· $${Number(a.account_size).toLocaleString()}` : ''} ${a.phase ? `· ${escapeHtml(a.phase)}` : ''} ${startLabel}`;
+
+    const status = a.status || 'Ongoing';
+    const statusBoxClass = status === 'Passed' ? 'box-solid-win' : (status === 'Failed' ? 'box-solid-loss' : 'box-solid-info');
+    const statusBadge = !isExchange ? `<div class="account-card-status box-badge ${statusBoxClass}">${status}</div>` : '';
+
+    const riskBase = a.current_balance != null ? Number(a.current_balance) : (a.account_size ? Number(a.account_size) : null);
+    const tradeCount = ALL_TRADES.filter(t => t.account === a.account_name).length;
+    const riskHTML = (riskBase != null || tradeCount > 0)
+      ? `<div class="account-card-risk">
+          <div>Total Trades: <span>${tradeCount}</span></div>
+          ${riskBase != null ? `<div>Risk Per Trade: <span>$${(riskBase * 0.003).toLocaleString(undefined,{maximumFractionDigits:2})}</span> <span class="account-risk-pct">(0.3%)</span></div>` : ''}
+        </div>`
+      : '';
+
+    const cardClick = isExchange ? `openAccountModal(${a.id})` : `openAccountDetail(${a.id})`;
+
+    return `
+      <div class="account-card" onclick='${cardClick}'>
+        ${statusBadge}
+        <div class="account-card-name">${escapeHtml(a.account_name)}</div>
+        <div class="account-card-meta">${metaLabel}</div>
+        ${balanceHTML}
+        <div class="account-card-rules">${rules.join('') || '<span class="pill pill-muted">No rules set</span>'}</div>
+        ${riskHTML}
+        <button class="account-edit-btn-corner" onclick='event.stopPropagation(); openAccountModal(${a.id})' title="Edit account">${accountEditIconSVG()}</button>
+      </div>
+    `;
+  }).join('');
+}
+
+function accountEditIconSVG(){
+  return `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>`;
+}
+
+function openAccountModal(id){
+  editingAccountId = id || null;
+  const a = id ? TRADING_ACCOUNTS.find(x => x.id === id) : null;
+
+  document.getElementById('accountModalTitle').textContent = a ? 'Edit Account' : '+ Add Account';
+  document.getElementById('accType').value = a ? (a.account_type || 'Prop Firm') : 'Prop Firm';
+  document.getElementById('accName').value = a ? a.account_name : '';
+  document.getElementById('accPropFirm').value = a ? (a.prop_firm || '') : '';
+  document.getElementById('accExchangeName').value = a ? (a.exchange_name || 'Binance') : 'Binance';
+  document.getElementById('accSize').value = a && a.account_size != null ? a.account_size : '';
+  document.getElementById('accBalance').value = a && a.current_balance != null ? a.current_balance : '';
+  document.getElementById('accPhase').value = a ? (a.phase || 'Evaluation Phase 1') : 'Evaluation Phase 1';
+  document.getElementById('accStatus').value = a ? (a.status || 'Ongoing') : 'Ongoing';
+  document.getElementById('accStartDate').value = a && a.start_date ? a.start_date : '';
+  document.getElementById('accPhaseStartDate').value = a && a.phase_start_date ? a.phase_start_date : '';
+  document.getElementById('accPhaseStartBalance').value = a && a.phase_start_balance != null ? a.phase_start_balance : '';
+  document.getElementById('accMaxDailyLoss').value = a && a.max_daily_loss_pct != null ? a.max_daily_loss_pct : '';
+  document.getElementById('accMaxDrawdown').value = a && a.max_total_drawdown_pct != null ? a.max_total_drawdown_pct : '';
+  document.getElementById('accProfitTarget').value = a && a.profit_target_pct != null ? a.profit_target_pct : '';
+  document.getElementById('accMinDays').value = a && a.min_trading_days != null ? a.min_trading_days : '';
+  document.getElementById('accConsistency').value = a && a.consistency_rule_pct != null ? a.consistency_rule_pct : '';
+  document.getElementById('accountError').textContent = '';
+  document.getElementById('accountSaveBtn').textContent = a ? 'Save changes' : 'Save Account';
+  document.getElementById('accountDeleteBtn').style.display = a ? 'inline-block' : 'none';
+  toggleAccountTypeFields();
+  document.getElementById('accountModal').classList.add('open');
+}
+function closeAccountModal(){
+  document.getElementById('accountModal').classList.remove('open');
+}
+
+function toggleAccountTypeFields(){
+  const isExchange = document.getElementById('accType').value === 'Exchange';
+  document.getElementById('accPropFirmFields').style.display = isExchange ? 'none' : 'block';
+  document.getElementById('accExchangeFields').style.display = isExchange ? 'block' : 'none';
+}
+
+function _numOrNull(id){
+  const v = document.getElementById(id).value;
+  return v === '' ? null : parseFloat(v);
+}
+
+async function saveAccount(){
+  const errEl = document.getElementById('accountError');
+  const btn = document.getElementById('accountSaveBtn');
+  errEl.textContent = '';
+
+  const accountName = document.getElementById('accName').value.trim();
+  if(!accountName){ errEl.textContent = 'Account name is required.'; return; }
+
+  btn.disabled = true;
+  btn.textContent = 'Saving…';
+
+  const accountType = document.getElementById('accType').value;
+  const isExchange = accountType === 'Exchange';
+
+  const payload = {
+    account_type: accountType,
+    account_name: accountName,
+    account_size: isExchange ? null : _numOrNull('accSize'),
+    current_balance: _numOrNull('accBalance'),
+    start_date: document.getElementById('accStartDate').value || null,
+    prop_firm: isExchange ? null : (document.getElementById('accPropFirm').value.trim() || null),
+    status: isExchange ? 'Ongoing' : document.getElementById('accStatus').value,
+    phase: isExchange ? null : document.getElementById('accPhase').value,
+    phase_start_date: isExchange ? null : (document.getElementById('accPhaseStartDate').value || null),
+    phase_start_balance: isExchange ? null : _numOrNull('accPhaseStartBalance'),
+    max_daily_loss_pct: isExchange ? null : _numOrNull('accMaxDailyLoss'),
+    max_total_drawdown_pct: isExchange ? null : _numOrNull('accMaxDrawdown'),
+    profit_target_pct: isExchange ? null : _numOrNull('accProfitTarget'),
+    min_trading_days: isExchange ? null : (document.getElementById('accMinDays').value === '' ? null : parseInt(document.getElementById('accMinDays').value, 10)),
+    consistency_rule_pct: isExchange ? null : _numOrNull('accConsistency'),
+    exchange_name: isExchange ? document.getElementById('accExchangeName').value : null
+  };
+
+  try{
+    const res = editingAccountId
+      ? await fetch(`${SUPABASE_URL}/rest/v1/trading_accounts?id=eq.${editingAccountId}`, {
+          method: 'PATCH',
+          headers: {
+            "apikey": SUPABASE_KEY,
+            "Authorization": `Bearer ${USER_ACCESS_TOKEN}`,
+            "Content-Type": "application/json",
+            "Prefer": "return=minimal"
+          },
+          body: JSON.stringify(payload)
+        })
+      : await fetch(`${SUPABASE_URL}/rest/v1/trading_accounts`, {
+          method: 'POST',
+          headers: {
+            "apikey": SUPABASE_KEY,
+            "Authorization": `Bearer ${USER_ACCESS_TOKEN}`,
+            "Content-Type": "application/json",
+            "Prefer": "return=minimal"
+          },
+          body: JSON.stringify([payload])
+        });
+    if(!res.ok) throw new Error(await res.text());
+
+    closeAccountModal();
+    await loadAccounts();
+    showToast(editingAccountId ? '✅ Account updated' : '✅ Account added');
+  }catch(e){
+    console.error("Couldn't save account:", e);
+    errEl.textContent = "Couldn't save — please try again.";
+  }finally{
+    btn.disabled = false;
+    btn.textContent = editingAccountId ? 'Save changes' : 'Save Account';
+  }
+}
+
+async function deleteAccount(){
+  if(!editingAccountId) return;
+  if(!confirm('Delete this account? This cannot be undone.')) return;
+  try{
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/trading_accounts?id=eq.${editingAccountId}`, {
+      method: 'DELETE',
+      headers: {
+        "apikey": SUPABASE_KEY,
+        "Authorization": `Bearer ${USER_ACCESS_TOKEN}`,
+        "Prefer": "return=minimal"
+      }
+    });
+    if(!res.ok) throw new Error(await res.text());
+    closeAccountModal();
+    await loadAccounts();
+    showToast('🗑 Account deleted');
+  }catch(e){
+    console.error("Couldn't delete account:", e);
+    alert("Couldn't delete — please try again.");
   }
 }
