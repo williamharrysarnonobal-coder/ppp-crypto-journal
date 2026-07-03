@@ -26,8 +26,9 @@
     <div class="nav-item active" data-view="dashboard" onclick="switchView('dashboard')">📊 <span class="nav-label">Dashboard</span></div>
     <div class="nav-item" data-view="journal" onclick="switchView('journal')">📓 <span class="nav-label">Trade Journals</span></div>
     <div class="nav-item" data-view="alerts" onclick="switchView('alerts')">🔔 <span class="nav-label">Trade Alerts</span></div>
-    <div class="nav-item" onclick="confirmLogout()">🚪 <span class="nav-label">Log out</span></div>
+    <div class="nav-item" data-view="config" onclick="switchView('config')">⚙️ <span class="nav-label">Configuration</span></div>
     <div class="theme-toggle" onclick="toggleTheme()" id="themeToggleBtn">🌙 <span class="nav-label">Dark mode</span></div>
+    <div class="nav-item" onclick="confirmLogout()" style="margin-top:8px;">🚪 <span class="nav-label">Log out</span></div>
   </nav>
 
   <main class="content">
@@ -143,6 +144,35 @@
     </header>
     <div class="empty-state">
       🔔 Coming soon — this will show real-time alerts pushed here from your Python setup scanner, in addition to Telegram.
+    </div>
+  </div>
+
+  <div class="view" id="view-config">
+    <header class="top">
+      <div>
+        <h1>Configuration</h1>
+        <div class="sub">Customize which columns show in Trade Journals, their order, and dropdown options.</div>
+      </div>
+    </header>
+
+    <div class="row-2">
+      <div class="panel">
+        <h2>Trade Journal Columns</h2>
+        <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">Check to show a column, uncheck to hide. Use the arrows to reorder.</div>
+        <div id="columnConfigList"></div>
+        <button class="drawer-secondary-btn" style="margin-top:14px;" onclick="resetColumnConfig()">Reset to default</button>
+      </div>
+
+      <div class="panel">
+        <h2>Dropdown Options</h2>
+        <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">Add or remove the choices available for each dropdown field.</div>
+        <select id="optionsFieldPicker" onchange="renderOptionsListFor(this.value)"></select>
+        <div id="optionsList" style="margin-top:14px;"></div>
+        <div class="config-add-row">
+          <input id="newOptionInput" placeholder="New option…" onkeydown="if(event.key==='Enter'){ event.preventDefault(); addOption(); }">
+          <button class="ai-btn" style="padding:8px 14px;" onclick="addOption()">Add</button>
+        </div>
+      </div>
     </div>
   </div>
 

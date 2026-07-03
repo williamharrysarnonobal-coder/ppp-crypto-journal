@@ -64,12 +64,16 @@ function switchView(view){
   document.querySelectorAll('.nav-item').forEach(n => n.classList.toggle('active', n.dataset.view === view));
 
   if(view === 'journal') renderJournalTable();
+  if(view === 'config'){ renderColumnConfigUI(); renderOptionsEditor(); }
 }
 
 async function initApp(){
   const session = await requireSession(); // redirects to login.html if not logged in
   if(!session) return;
   USER_ACCESS_TOKEN = session.access_token;
+
+  loadColumnConfig();
+  loadOptionsConfig();
 
   setLoading(30);
 
@@ -213,11 +217,8 @@ function renderKPIs(){
     else break;
   }
 
-  const winRateColor = winRate >= 50 ? cssVar('--win') : cssVar('--loss');
   const pfDisplay = profitFactor===Infinity ? 100 : Math.min(profitFactor/3*100, 100);
-  const pfColor = profitFactor >= 1 ? cssVar('--win') : cssVar('--loss');
   const rrDisplay = avgRR === null ? 0 : Math.min(Math.max(avgRR,0)/3*100, 100);
-  const rrColor = (avgRR !== null && avgRR >= 1) ? cssVar('--win') : cssVar('--loss');
   const winBarPct = (Math.abs(avgWin)+Math.abs(avgLoss)) > 0 ? Math.abs(avgWin)/(Math.abs(avgWin)+Math.abs(avgLoss))*100 : 50;
 
   const kpis = [
@@ -225,9 +226,9 @@ function renderKPIs(){
     {label:"Win rate", value: fmtNum(winRate,1)+"%", cls:'',
       bar: `<div class="kpi-gauge-wrap"><canvas id="winRateGauge"></canvas></div>`},
     {label:"Profit factor", value: profitFactor===Infinity?"∞":fmtNum(profitFactor,2), cls:'',
-      bar: `<div class="kpi-bar"><div class="kpi-bar-fill" style="width:${pfDisplay}%;background:${pfColor};"></div></div>`},
+      bar: `<div class="kpi-dual-bar"><div style="width:${pfDisplay}%;background:${cssVar('--win')};"></div><div style="width:${100-pfDisplay}%;background:${cssVar('--loss')};"></div></div>`},
     {label:"Avg RR", value: avgRR===null?"—":fmtNum(avgRR,2), cls:'',
-      bar: `<div class="kpi-bar"><div class="kpi-bar-fill" style="width:${rrDisplay}%;background:${rrColor};"></div></div>`},
+      bar: `<div class="kpi-dual-bar"><div style="width:${rrDisplay}%;background:${cssVar('--win')};"></div><div style="width:${100-rrDisplay}%;background:${cssVar('--loss')};"></div></div>`},
     {label:"Total trades", value: t.length, cls:''},
     {label:"Avg win / loss", value: fmtMoney(avgWin).replace('+','')+" / "+fmtMoney(avgLoss), cls:'',
       bar: `<div class="kpi-dual-bar"><div style="width:${winBarPct}%;background:${cssVar('--win')};"></div><div style="width:${100-winBarPct}%;background:${cssVar('--loss')};"></div></div>`},
@@ -239,11 +240,11 @@ function renderKPIs(){
     `<div class="kpi"><div class="label">${k.label}</div><div class="value ${k.cls}">${k.value}</div>${k.bar||''}</div>`
   ).join('');
 
-  renderWinRateGauge(winRate, winRateColor);
+  renderWinRateGauge(winRate);
 }
 
 let winRateGaugeRef = null;
-function renderWinRateGauge(winRate, color){
+function renderWinRateGauge(winRate){
   const canvas = document.getElementById('winRateGauge');
   if(!canvas) return;
   const ctx = canvas.getContext('2d');
@@ -254,7 +255,7 @@ function renderWinRateGauge(winRate, color){
     data: {
       datasets: [{
         data: [winRate, 100 - winRate],
-        backgroundColor: [color, cssVar('--rule')],
+        backgroundColor: [cssVar('--win'), cssVar('--loss')],
         borderWidth: 0
       }]
     },
@@ -361,6 +362,7 @@ function renderEquityCurve(){
 
   const finalVal = values[values.length-1];
   const lineColor = finalVal >= 0 ? cssVar('--win') : cssVar('--loss');
+  const segColor = (ctx) => (ctx.p0.parsed.y < 0 || ctx.p1.parsed.y < 0) ? cssVar('--loss') : cssVar('--win');
 
   equityChartRef = new Chart(ctx, {
     type: 'line',
@@ -370,7 +372,11 @@ function renderEquityCurve(){
         data: values,
         borderColor: lineColor,
         backgroundColor: lineColor + '22',
-        fill: true,
+        segment: {
+          borderColor: segColor,
+          backgroundColor: (ctx) => segColor(ctx) + '22'
+        },
+        fill: 'origin',
         tension: 0.25,
         pointRadius: 0,
         borderWidth: 2
@@ -379,7 +385,15 @@ function renderEquityCurve(){
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      plugins: { legend: { display:false } },
+      plugins: {
+        legend: { display:false },
+        tooltip: {
+          callbacks: {
+            title: (items) => items[0]?.label || '',
+            label: (ctx) => 'Cumulative P/L: ' + fmtMoney(ctx.parsed.y)
+          }
+        }
+      },
       scales: {
         x: { display: labels.length < 25, ticks:{color:cssVar('--muted'), font:{size:10}}, grid:{color:cssVar('--rule')} },
         y: { ticks:{color:cssVar('--muted'), font:{size:10}, callback:v=>'$'+v}, grid:{color:cssVar('--rule')} }
@@ -497,7 +511,27 @@ function renderDisciplineRadar(){
           pointLabels: { color: cssVar('--ink'), font:{size:11} }
         }
       },
-      plugins: { legend: { display:false } }
+      plugins: {
+        legend: { display:false },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => {
+              const explanations = {
+                'Win Rate': 'Wins ÷ total trades in view.',
+                'Discipline': '"Rules Followed" trades ÷ all trades with a discipline note logged.',
+                'Reward (RR)': 'Average risk:reward ratio, scaled so RR 3.0+ = 100.',
+                'Consistency (PF)': 'Profit factor (gross wins ÷ gross losses), scaled so PF 3.0+ = 100.',
+                'Risk Control': '100 minus the % of trades that hit stop-loss or were liquidated.'
+              };
+              const label = ctx.label;
+              const val = ctx.parsed.r;
+              const lines = [`${label}: ${val.toFixed(0)} / 100`];
+              if(explanations[label]) lines.push(explanations[label]);
+              return lines;
+            }
+          }
+        }
+      }
     }
   });
 }
@@ -616,7 +650,6 @@ const BREAKDOWN_FIELDS = [
   {key:'pattern_type', label:'Pattern'},
   {key:'session', label:'Session'},
   {key:'day_of_week', label:'Day of week'},
-  {key:'emotion', label:'Emotion'},
 ];
 
 function renderBreakdownTabs(){
@@ -779,6 +812,95 @@ const UNFOLLOWED_RULES_OPTIONS = [
   'Non-BnB Setup','No Scalping Trade','Moved Take Profit','Lack of Confluence','BTC Only'
 ];
 
+const OPTIONS_FIELD_META = [
+  {key:'win_loss', label:'Win/Loss'},
+  {key:'trade_type', label:'Trade Type'},
+  {key:'trade_setup', label:'Trade Setup'},
+  {key:'pattern_type', label:'Pattern Type'},
+  {key:'execution_tf', label:'Execution TF'},
+  {key:'aof_phase', label:'AOF Phase'},
+  {key:'rules_followed', label:'Rules Followed?'},
+  {key:'account_type', label:'Account Type'},
+  {key:'exit_type', label:'Exit Type'},
+  {key:'post_be_result', label:'Post-BE Result'},
+  {key:'account', label:'Account'},
+  {key:'unfollowed_rules', label:'Unfollowed Rules (checklist)'}
+];
+
+function getOptionsArray(key){
+  return key === 'unfollowed_rules' ? UNFOLLOWED_RULES_OPTIONS : FIELD_OPTIONS[key];
+}
+
+function saveOptionsConfig(){
+  try{
+    localStorage.setItem('ledger-field-options', JSON.stringify(FIELD_OPTIONS));
+    localStorage.setItem('ledger-unfollowed-rules-options', JSON.stringify(UNFOLLOWED_RULES_OPTIONS));
+  }catch(e){}
+}
+
+function loadOptionsConfig(){
+  try{
+    const savedFieldOpts = JSON.parse(localStorage.getItem('ledger-field-options') || 'null');
+    if(savedFieldOpts){
+      Object.keys(savedFieldOpts).forEach(k => {
+        if(FIELD_OPTIONS[k]){
+          FIELD_OPTIONS[k].length = 0;
+          FIELD_OPTIONS[k].push(...savedFieldOpts[k]);
+        }
+      });
+    }
+    const savedUnfollowed = JSON.parse(localStorage.getItem('ledger-unfollowed-rules-options') || 'null');
+    if(savedUnfollowed){
+      UNFOLLOWED_RULES_OPTIONS.length = 0;
+      UNFOLLOWED_RULES_OPTIONS.push(...savedUnfollowed);
+    }
+  }catch(e){}
+}
+
+function renderOptionsEditor(){
+  const picker = document.getElementById('optionsFieldPicker');
+  if(!picker) return;
+  if(!picker.dataset.filled){
+    picker.innerHTML = OPTIONS_FIELD_META.map(f => `<option value="${f.key}">${f.label}</option>`).join('');
+    picker.dataset.filled = '1';
+  }
+  renderOptionsListFor(picker.value);
+}
+
+function renderOptionsListFor(key){
+  const arr = getOptionsArray(key) || [];
+  const list = document.getElementById('optionsList');
+  if(!list) return;
+  list.innerHTML = arr.map((opt, i) => `
+    <div class="config-option-row">
+      <span>${opt}</span>
+      <button onclick="removeOption('${key}', ${i})" title="Remove">✕</button>
+    </div>
+  `).join('') || `<div class="empty-state" style="padding:12px 0;">No options yet.</div>`;
+}
+
+function addOption(){
+  const picker = document.getElementById('optionsFieldPicker');
+  const input = document.getElementById('newOptionInput');
+  const key = picker.value;
+  const val = input.value.trim();
+  if(!val) return;
+  const arr = getOptionsArray(key);
+  if(!arr || arr.includes(val)){ input.value = ''; return; }
+  arr.push(val); // mutated in place so DRAWER_FIELDS' captured references stay in sync
+  input.value = '';
+  saveOptionsConfig();
+  renderOptionsListFor(key);
+}
+
+function removeOption(key, index){
+  const arr = getOptionsArray(key);
+  if(!arr) return;
+  arr.splice(index, 1);
+  saveOptionsConfig();
+  renderOptionsListFor(key);
+}
+
 // widget: 'text' | 'number' | 'date' | 'select' | 'checklist' | 'textarea'
 // editable: true = this field gets its widget in VIEW mode too (an "Easy Edit" field).
 //           In CREATE mode, every field renders its widget regardless of `editable`.
@@ -807,23 +929,121 @@ const DRAWER_FIELDS = [
   {key:'trade_summary', label:'Trade Summary', widget:'textarea', editable:false}
 ];
 
-const JOURNAL_COLUMNS = [
-  {key:'link', label:''},
+const ALL_JOURNAL_COLUMNS = [
   {key:'no', label:'No.'},
   {key:'symbol', label:'Symbol'},
   {key:'win_loss', label:'Win/Loss'},
   {key:'trade_type', label:'Trade Type'},
   {key:'trade_setup', label:'Trade Setup'},
+  {key:'pattern_type', label:'Pattern Type'},
+  {key:'execution_tf', label:'Execution TF'},
+  {key:'aof_phase', label:'AOF Phase'},
   {key:'profit_loss', label:'Profit/Loss'},
   {key:'pnl_percent', label:'PNL Percent'},
   {key:'rr', label:'RR'},
   {key:'rules_followed', label:'Rules Followed?'},
   {key:'unfollowed_rules', label:'Unfollowed Rules'},
   {key:'exit_type', label:'Exit Type'},
+  {key:'post_be_result', label:'Post-BE Result'},
+  {key:'account_type', label:'Account Type'},
   {key:'account', label:'Account'},
   {key:'session', label:'Session'},
-  {key:'open_date', label:'Open Date'}
+  {key:'day_of_week', label:'Day of Week'},
+  {key:'open_date', label:'Open Date'},
+  {key:'close_date', label:'Close Date'},
+  {key:'duration', label:'Duration'},
+  {key:'objective', label:'Objective'},
+  {key:'fee', label:'Fee'},
+  {key:'trade_summary', label:'Trade Summary'}
 ];
+
+const DEFAULT_JOURNAL_COLUMN_ORDER = [
+  'rules_followed','symbol','win_loss','profit_loss','exit_type','objective',
+  'trade_type','pattern_type','aof_phase','execution_tf','account','account_type',
+  'session','day_of_week','duration','unfollowed_rules'
+];
+
+let COLUMN_CONFIG = []; // [{key, visible}] for every ALL_JOURNAL_COLUMNS entry, in display order
+let JOURNAL_COLUMNS = []; // derived: 'link' + visible columns from COLUMN_CONFIG, in order
+
+function loadColumnConfig(){
+  let saved = null;
+  try{ saved = JSON.parse(localStorage.getItem('ledger-column-config') || 'null'); }catch(e){}
+
+  if(saved && Array.isArray(saved) && saved.length){
+    const savedKeys = new Set(saved.map(c => c.key));
+    const extra = ALL_JOURNAL_COLUMNS.filter(c => !savedKeys.has(c.key)).map(c => ({key:c.key, visible:false}));
+    COLUMN_CONFIG = [...saved.filter(c => ALL_JOURNAL_COLUMNS.some(m => m.key === c.key)), ...extra];
+  }else{
+    COLUMN_CONFIG = ALL_JOURNAL_COLUMNS
+      .map(c => ({key:c.key, visible: DEFAULT_JOURNAL_COLUMN_ORDER.includes(c.key)}))
+      .sort((a,b) => {
+        const ai = DEFAULT_JOURNAL_COLUMN_ORDER.indexOf(a.key);
+        const bi = DEFAULT_JOURNAL_COLUMN_ORDER.indexOf(b.key);
+        if(ai===-1 && bi===-1) return 0;
+        if(ai===-1) return 1;
+        if(bi===-1) return -1;
+        return ai-bi;
+      });
+  }
+  rebuildJournalColumns();
+}
+
+function rebuildJournalColumns(){
+  JOURNAL_COLUMNS = [{key:'link', label:''}, ...COLUMN_CONFIG
+    .filter(c => c.visible)
+    .map(c => ALL_JOURNAL_COLUMNS.find(m => m.key === c.key))
+    .filter(Boolean)];
+}
+
+function saveColumnConfig(){
+  try{ localStorage.setItem('ledger-column-config', JSON.stringify(COLUMN_CONFIG)); }catch(e){}
+  rebuildJournalColumns();
+  renderJournalTable();
+}
+
+function toggleColumnVisible(key, visible){
+  const c = COLUMN_CONFIG.find(c => c.key === key);
+  if(c) c.visible = visible;
+  saveColumnConfig();
+}
+
+function moveColumn(key, dir){
+  const i = COLUMN_CONFIG.findIndex(c => c.key === key);
+  const j = i + dir;
+  if(i < 0 || j < 0 || j >= COLUMN_CONFIG.length) return;
+  [COLUMN_CONFIG[i], COLUMN_CONFIG[j]] = [COLUMN_CONFIG[j], COLUMN_CONFIG[i]];
+  saveColumnConfig();
+  renderColumnConfigUI();
+}
+
+function resetColumnConfig(){
+  if(!confirm('Reset columns to default?')) return;
+  try{ localStorage.removeItem('ledger-column-config'); }catch(e){}
+  loadColumnConfig();
+  renderColumnConfigUI();
+  renderJournalTable();
+}
+
+function renderColumnConfigUI(){
+  const container = document.getElementById('columnConfigList');
+  if(!container) return;
+  container.innerHTML = COLUMN_CONFIG.map((c, i) => {
+    const meta = ALL_JOURNAL_COLUMNS.find(m => m.key === c.key);
+    return `
+      <div class="config-col-row">
+        <label class="config-col-check">
+          <input type="checkbox" ${c.visible?'checked':''} onchange="toggleColumnVisible('${c.key}', this.checked)">
+          ${meta ? meta.label : c.key}
+        </label>
+        <div class="config-col-actions">
+          <button ${i===0?'disabled':''} onclick="moveColumn('${c.key}', -1)" title="Move up">↑</button>
+          <button ${i===COLUMN_CONFIG.length-1?'disabled':''} onclick="moveColumn('${c.key}', 1)" title="Move down">↓</button>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
 
 const JOURNAL_FILTER_FIELDS = [
   {key:'win_loss', selectId:'filterWinLoss', prefix:'Win/Loss'},

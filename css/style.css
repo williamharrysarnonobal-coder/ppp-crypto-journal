@@ -297,3 +297,18 @@
     border-radius:6px;font-size:13px;cursor:pointer;margin-left:auto;
   }
   .drawer-danger-btn:hover{background:rgba(193,101,79,.12);}
+
+  /* ---------- Configuration page ---------- */
+  .config-col-row{display:flex;align-items:center;justify-content:space-between;padding:8px 4px;border-bottom:1px solid var(--rule);}
+  .config-col-row:last-child{border-bottom:none;}
+  .config-col-check{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--ink);cursor:pointer;}
+  .config-col-check input{width:auto;accent-color:var(--accent);}
+  .config-col-actions{display:flex;gap:4px;}
+  .config-col-actions button{background:none;border:1px solid var(--rule);color:var(--muted);width:24px;height:24px;border-radius:4px;cursor:pointer;font-size:12px;}
+  .config-col-actions button:hover:not(:disabled){color:var(--ink);border-color:var(--accent);}
+  .config-col-actions button:disabled{opacity:.3;cursor:default;}
+  .config-option-row{display:flex;align-items:center;justify-content:space-between;padding:7px 10px;background:var(--surface-2);border:1px solid var(--rule);border-radius:6px;margin-bottom:6px;font-size:12.5px;}
+  .config-option-row button{background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;}
+  .config-option-row button:hover{color:var(--loss);}
+  .config-add-row{display:flex;gap:8px;margin-top:10px;}
+  .config-add-row input{flex:1;}
