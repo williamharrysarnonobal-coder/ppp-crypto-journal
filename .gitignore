@@ -1,0 +1,9 @@
+# Local bot scripts — contain hardcoded Telegram + Supabase secrets,
+# never push these to GitHub.
+btc_live_bot.py
+crypto_live_bot.py
+*.env
+
+# Python bytecode cache
+__pycache__/
+*.pyc
