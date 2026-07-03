@@ -223,7 +223,7 @@ function renderKPIs(){
   const kpis = [
     {label:"Total PnL", value: fmtMoney(totalPnl), cls: totalPnl>=0?'pos':'neg'},
     {label:"Win rate", value: fmtNum(winRate,1)+"%", cls:'',
-      bar: `<canvas id="winRateGauge" height="58"></canvas>`},
+      bar: `<div class="kpi-gauge-wrap"><canvas id="winRateGauge"></canvas></div>`},
     {label:"Profit factor", value: profitFactor===Infinity?"∞":fmtNum(profitFactor,2), cls:'',
       bar: `<div class="kpi-bar"><div class="kpi-bar-fill" style="width:${pfDisplay}%;background:${pfColor};"></div></div>`},
     {label:"Avg RR", value: avgRR===null?"—":fmtNum(avgRR,2), cls:'',

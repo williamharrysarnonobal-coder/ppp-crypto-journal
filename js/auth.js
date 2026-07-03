@@ -15,6 +15,10 @@ async function authSignOut(){
   window.location.href = "login.html";
 }
 
+function confirmLogout(){
+  if(confirm("Log out of your trading journal?")) authSignOut();
+}
+
 async function requireSession(){
   const { data: { session } } = await sb.auth.getSession();
   if(!session){
