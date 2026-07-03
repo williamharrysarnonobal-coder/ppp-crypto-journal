@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Log in — Trading Ledger</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body class="auth-page">
+
+<div class="auth-card">
+  <h1>Welcome back</h1>
+  <p>Log in to your trading journal.</p>
+
+  <label>Email</label>
+  <input id="loginEmail" type="email" placeholder="you@example.com">
+
+  <label>Password</label>
+  <input id="loginPassword" type="password" placeholder="••••••••">
+
+  <button id="loginBtn">Log in</button>
+  <div id="loginError" class="auth-error"></div>
+
+  <div class="auth-switch">Don't have an account? <a href="signup.html">Sign up</a></div>
+</div>
+
+<script src="js/supabase.js"></script>
+<script src="js/auth.js"></script>
+<script>
+redirectIfLoggedIn("dashboard.html");
+
+async function doLogin(){
+  const email = document.getElementById('loginEmail').value.trim();
+  const password = document.getElementById('loginPassword').value;
+  const errEl = document.getElementById('loginError');
+  const btn = document.getElementById('loginBtn');
+  errEl.textContent = '';
+
+  if(!email || !password){
+    errEl.textContent = "Please fill in both fields.";
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = "Logging in…";
+  try{
+    await authSignIn(email, password);
+    window.location.href = "dashboard.html";
+  }catch(e){
+    errEl.textContent = e.message || "Couldn't log in.";
+  }finally{
+    btn.disabled = false;
+    btn.textContent = "Log in";
+  }
+}
+
+document.getElementById('loginBtn').addEventListener('click', doLogin);
+document.getElementById('loginPassword').addEventListener('keydown', (e) => {
+  if(e.key === 'Enter') doLogin();
+});
+</script>
+</body>
+</html>
