@@ -417,8 +417,16 @@
   .challenge-card.done .challenge-points{color:var(--win);}
 
   /* ---------- Profile (inspiration board + trader identity) ---------- */
-  .profile-layout{margin-bottom:20px;}
+  .profile-layout{margin-bottom:20px;align-items:stretch !important;}
   @media(max-width:900px){ .profile-layout{grid-template-columns:1fr !important;} }
+
+  /* Both columns share one fixed height so they always line up — the rules
+     list scrolls internally instead of stretching the picture panel to
+     match (which used to leave a big empty gap above the image). */
+  .profile-layout .panel{height:480px;display:flex;flex-direction:column;overflow:hidden;}
+  .profile-layout .panel h2, .profile-layout .panel > .sub{flex-shrink:0;}
+  #profileRulesList{flex:1;min-height:0;overflow-y:auto;}
+  #profileRulesAddRow{flex-shrink:0;}
 
   /* Compact header card — avatar + name + badges + why, replaces a long
      label/value list so the page reads as a "profile" rather than a form. */
@@ -435,10 +443,10 @@
   .profile-header-why{font-size:13px;color:var(--muted);font-style:italic;line-height:1.5;}
 
   .profile-inspo-wrap{
-    position:relative;width:100%;background:var(--surface-2);padding:10px;
-    display:flex;align-items:center;justify-content:center;min-height:160px;
+    position:relative;width:100%;flex:1;min-height:0;background:var(--surface-2);padding:10px;
+    display:flex;align-items:center;justify-content:center;
   }
-  .profile-inspo-wrap img{max-width:100%;max-height:100%;height:auto;display:block;margin:0 auto;border-radius:6px;}
+  .profile-inspo-wrap img{max-width:100%;max-height:100%;width:auto;height:auto;object-fit:contain;display:block;margin:0 auto;border-radius:6px;}
   .profile-inspo-placeholder{
     display:flex;flex-direction:column;align-items:center;gap:16px;color:var(--muted);
     font-size:13px;padding:60px 30px;text-align:center;max-width:420px;margin:0 auto;
