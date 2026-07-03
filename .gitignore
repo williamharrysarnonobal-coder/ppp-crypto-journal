@@ -4,6 +4,10 @@ btc_live_bot.py
 crypto_live_bot.py
 *.env
 
+# The bots write their own console output here when run with a redirect
+# (e.g. `python btc_live_bot.py > bot.log`) — local runtime noise, not code.
+*.log
+
 # Python bytecode cache
 __pycache__/
 *.pyc

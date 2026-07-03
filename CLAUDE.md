@@ -35,8 +35,8 @@ Netlify, connected to a GitHub repo.
 - `js/supabase.js` — `SUPABASE_URL`, `SUPABASE_KEY` (anon), `sb` client.
 - `js/auth.js` — signup/signin/signout/session helpers.
 - `js/dashboard.js` — everything else (~2900+ lines): KPIs/charts, Trade
-  Journal (with per-user RLS), Trade Alerts (bot signals from
-  `trading_signals`, shared table, admin-only accuracy tracking), Achievements
+  Journal (with per-user RLS), Trade Alerts (bot alert history from
+  `signal_alerts`, shared table, admin-only accuracy tracking), Achievements
   (private image gallery), Challenges (auto-computed gamification + points +
   rank ladder), Market News (TradingView embed), Profile (trader identity +
   inspiration board image), Configuration (column/field/dropdown customization).
@@ -45,20 +45,47 @@ Netlify, connected to a GitHub repo.
   dashboard UI (SQL alone can't create buckets) — see comments in each file
   for exact bucket name and required settings (Public on/off, etc.).
 - `btc_live_bot.py` / `crypto_live_bot.py` — user's existing Python bots
-  (MACD/confluence scanners) that push signals into `trading_signals` and
-  send Telegram alerts independently of this web app.
+  (MACD/confluence scanners) that send Telegram alerts and mirror the same
+  alert (same message, same moment) into Supabase so the dashboard's Trade
+  Alerts page matches Telegram. **The `btc_live_bot.py` actually run by the
+  user is this exact file in the repo root** — it's launched with a shell
+  redirect (`> bot.log`), so `bot.log` in the repo root is the live log to
+  check when debugging (not `.gitignore`d code, just runtime output —
+  see the `.gitignore` note below). Restarting the bot process is required
+  for any code edit to take effect (Python doesn't hot-reload).
+
+### Trade Alerts data model (two tables, don't confuse them)
+
+- **`signal_alerts`** (`supabase_signal_alerts.sql`) — what the Trade Alerts
+  UI actually reads. One **inserted** row per fired alert (never
+  overwritten), so it's a real history/notification feed. Columns include
+  `seen` (bool) and support the "Read All" / per-row "🗑 Delete" (only shown
+  once `seen`) buttons in `js/dashboard.js`. RLS lets any logged-in user
+  select/update(`seen`)/delete; only the bots' secret key can insert.
+- **`trading_signals`** (`supabase_trading_signals.sql`) — the older
+  "current state per symbol" table, upserted every ~5 min bot cycle
+  (`on_conflict=symbol`). Still written by the bots and still used for the
+  bots' own Telegram heartbeat/"closest to triggering" logic, but **no
+  longer read by the dashboard** — don't reintroduce a dependency on it for
+  UI display, or the overwrite bug from before will resurface (each alert's
+  detail got clobbered by the next cycle's "closest setup" forecast within
+  minutes, since it was never actually a history table).
 
 ## Conventions established in this project
 
 - Multi-user data (trading_journal, achievements, user_profile) uses
   `user_id uuid default auth.uid()` + RLS policies scoped to `auth.uid() =
-  user_id`. Shared data (trading_signals) has no `user_id`, RLS just requires
-  `auth.uid() is not null` for select.
+  user_id`. Shared data (trading_signals, signal_alerts) has no `user_id`,
+  RLS just requires `auth.uid() is not null` for select (and, for
+  signal_alerts, also for update/delete — it's a shared notification inbox,
+  not scoped per user).
 - Storage buckets are private, folder-per-user (`{user_id}/...`), with RLS on
   `storage.objects` checking `auth.uid()::text = (storage.foldername(name))[1]`.
 - Client-side config (column visibility/order, form field visibility/order,
-  dropdown options, "seen" signal state) persists via `localStorage`, not
-  Supabase — per-browser only, not synced across devices.
+  dropdown options) persists via `localStorage`, not Supabase — per-browser
+  only, not synced across devices. Trade Alerts "seen" state is the
+  exception: it lives in Supabase (`signal_alerts.seen`), so it's synced
+  across devices/browsers on purpose.
 - Modals reuse a small set of shared overlays (`#tradeModal`,
   `#achievementDetailModal`, `#challengeDetailModal`, `#lightboxModal`, etc.)
   rather than creating a new modal per feature where a generic one already fits.
