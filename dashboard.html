@@ -146,9 +146,13 @@
       <div>
         <h1>Trade Alerts</h1>
         <div class="sub" id="alertsCountLabel">—</div>
+        <div class="sub" id="alertsLastSync" style="font-size:11px;"></div>
       </div>
-      <button class="drawer-secondary-btn" onclick="markAllAlertsSeen()">✅ Read All</button>
-      <button class="drawer-secondary-btn" onclick="manualRefreshAlerts()">🔄 Refresh</button>
+      <div class="header-actions">
+        <button class="drawer-secondary-btn" onclick="markAllAlertsSeen()">✅ Read All</button>
+        <button class="drawer-secondary-btn" onclick="deleteOldAlerts()">🗑 Delete Old</button>
+        <button class="drawer-secondary-btn" onclick="manualRefreshAlerts()">🔄 Refresh</button>
+      </div>
     </header>
 
     <div class="tabs" id="alertsSeenFilterTabs">
@@ -189,24 +193,21 @@
       <button class="ai-btn" id="profileSaveBtn" style="display:none;" onclick="saveProfile()">Save changes</button>
     </header>
 
-    <div class="panel" style="margin-bottom:20px;padding:0;overflow:hidden;">
-      <div class="profile-inspo-wrap" id="profileInspoWrap">
-        <div class="profile-inspo-placeholder" id="profileInspoPlaceholder">
-          <div>No inspiration image yet — upload your vision board, goals, or anything that keeps you disciplined.</div>
-          <button class="ai-btn" onclick="document.getElementById('profileInspoInput').click()">Upload image</button>
-        </div>
-        <img id="profileInspoImg" style="display:none;">
-        <button class="drawer-secondary-btn profile-inspo-change" id="profileInspoChangeBtn" style="display:none;" onclick="document.getElementById('profileInspoInput').click()">Change image</button>
+    <div class="panel profile-header-card" style="margin-bottom:20px;">
+      <div class="profile-avatar" id="profileAvatar">?</div>
+      <div class="profile-header-info">
+        <div class="profile-header-name" id="profileHeaderName">Set your name</div>
+        <div class="profile-header-badges" id="profileHeaderBadges"></div>
+        <div class="profile-header-why" id="profileHeaderWhy"></div>
       </div>
-      <input type="file" id="profileInspoInput" accept="image/*" style="display:none;" onchange="uploadInspirationImage(this.files[0])">
     </div>
 
-    <div class="row" style="grid-template-columns:1fr 1fr;align-items:start;">
-      <div class="panel">
-        <h2>Trader Profile</h2>
-        <div id="profileFieldsPanel"></div>
-      </div>
+    <div class="panel" id="profileEditPanel" style="display:none;margin-bottom:20px;">
+      <h2>Edit Trader Profile</h2>
+      <div id="profileFieldsPanel"></div>
+    </div>
 
+    <div class="row profile-layout" style="grid-template-columns:1fr 1fr;align-items:start;">
       <div class="panel">
         <h2>My Trading Rules</h2>
         <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">Your personal checklist — a reminder every time you open your profile.</div>
@@ -215,6 +216,18 @@
           <input id="newRuleInput" placeholder="New rule…" onkeydown="if(event.key==='Enter'){ event.preventDefault(); addProfileRule(); }">
           <button class="ai-btn" style="padding:8px 14px;" onclick="addProfileRule()">Add</button>
         </div>
+      </div>
+
+      <div class="panel profile-picture-panel" style="padding:0;overflow:hidden;">
+        <div class="profile-inspo-wrap" id="profileInspoWrap">
+          <div class="profile-inspo-placeholder" id="profileInspoPlaceholder">
+            <div>No inspiration image yet — upload your vision board, goals, or anything that keeps you disciplined.</div>
+            <button class="ai-btn" onclick="document.getElementById('profileInspoInput').click()">Upload image</button>
+          </div>
+          <img id="profileInspoImg" style="display:none;">
+          <button class="drawer-secondary-btn profile-inspo-change" id="profileInspoChangeBtn" style="display:none;" onclick="document.getElementById('profileInspoInput').click()">Change image</button>
+        </div>
+        <input type="file" id="profileInspoInput" accept="image/*" style="display:none;" onchange="uploadInspirationImage(this.files[0])">
       </div>
     </div>
   </div>

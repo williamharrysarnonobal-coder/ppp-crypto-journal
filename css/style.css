@@ -128,7 +128,9 @@
   }
   #view-journal .top{flex-shrink:0;margin-bottom:14px;}
   #view-journal .journal-toolbar{flex-shrink:0;}
-  header.top{display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:24px;border-bottom:1px solid var(--rule);padding-bottom:18px;}
+  header.top{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:24px;border-bottom:1px solid var(--rule);padding-bottom:18px;}
+  header.top > div:first-child{display:flex;flex-direction:column;gap:4px;}
+  header.top .header-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
   header.top h1{font-family:'Inter',sans-serif;font-weight:500;font-size:26px;margin:0;letter-spacing:.01em;}
   header.top .sub{color:var(--muted);font-size:13px;}
   .filters{display:flex;gap:8px;align-items:center;}
@@ -415,8 +417,28 @@
   .challenge-card.done .challenge-points{color:var(--win);}
 
   /* ---------- Profile (inspiration board + trader identity) ---------- */
-  .profile-inspo-wrap{position:relative;width:100%;background:var(--surface-2);padding:10px;}
-  .profile-inspo-wrap img{max-width:100%;height:auto;display:block;margin:0 auto;border-radius:6px;}
+  .profile-layout{margin-bottom:20px;}
+  @media(max-width:900px){ .profile-layout{grid-template-columns:1fr !important;} }
+
+  /* Compact header card — avatar + name + badges + why, replaces a long
+     label/value list so the page reads as a "profile" rather than a form. */
+  .profile-header-card{display:flex;align-items:center;gap:20px;}
+  .profile-avatar{
+    flex-shrink:0;width:64px;height:64px;border-radius:50%;
+    background:linear-gradient(135deg, var(--accent), #c9891f);color:#fff;
+    display:flex;align-items:center;justify-content:center;
+    font-size:26px;font-weight:700;font-family:'Inter',sans-serif;
+  }
+  .profile-header-info{flex:1;min-width:0;}
+  .profile-header-name{font-size:20px;font-weight:700;color:var(--ink);margin-bottom:8px;}
+  .profile-header-badges{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;}
+  .profile-header-why{font-size:13px;color:var(--muted);font-style:italic;line-height:1.5;}
+
+  .profile-inspo-wrap{
+    position:relative;width:100%;background:var(--surface-2);padding:10px;
+    display:flex;align-items:center;justify-content:center;min-height:160px;
+  }
+  .profile-inspo-wrap img{max-width:100%;max-height:100%;height:auto;display:block;margin:0 auto;border-radius:6px;}
   .profile-inspo-placeholder{
     display:flex;flex-direction:column;align-items:center;gap:16px;color:var(--muted);
     font-size:13px;padding:60px 30px;text-align:center;max-width:420px;margin:0 auto;

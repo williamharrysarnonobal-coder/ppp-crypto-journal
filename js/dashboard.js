@@ -1891,6 +1891,8 @@ function switchAlertsSeenFilter(f){
   renderAlertsTables();
 }
 
+let lastAlertsSyncAt = null;
+
 async function loadSignalAlerts(){
   try{
     const res = await fetch(`${SUPABASE_URL}/rest/v1/signal_alerts?select=*&order=alert_at.desc`, {
@@ -1901,6 +1903,7 @@ async function loadSignalAlerts(){
     });
     if(!res.ok) throw new Error(await res.text());
     SIGNAL_ALERTS = await res.json();
+    lastAlertsSyncAt = new Date();
   }catch(e){
     console.error("Couldn't load signal alerts:", e);
     SIGNAL_ALERTS = [];
@@ -2058,6 +2061,31 @@ async function markAllAlertsSeen(){
   showToast(`✅ Marked ${unseenIds.length} alert${unseenIds.length>1?'s':''} as read`);
 }
 
+async function deleteOldAlerts(){
+  const category = activeAlertsTab();
+  const seenIds = SIGNAL_ALERTS.filter(s => s.category === category && s.seen).map(s => s.id);
+  if(!seenIds.length){ showToast('No seen alerts to delete.'); return; }
+  if(!confirm(`Delete ${seenIds.length} seen alert${seenIds.length>1?'s':''}? This cannot be undone.`)) return;
+  try{
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/signal_alerts?id=in.(${seenIds.join(',')})`, {
+      method: 'DELETE',
+      headers: {
+        "apikey": SUPABASE_KEY,
+        "Authorization": `Bearer ${USER_ACCESS_TOKEN}`,
+        "Prefer": "return=minimal"
+      }
+    });
+    if(!res.ok) throw new Error(await res.text());
+  }catch(e){
+    console.error("Couldn't delete old alerts:", e);
+    showToast("Couldn't delete old alerts — please try again.");
+    return;
+  }
+  SIGNAL_ALERTS = SIGNAL_ALERTS.filter(s => !seenIds.includes(s.id));
+  renderAlertsTables();
+  showToast(`🗑 Deleted ${seenIds.length} seen alert${seenIds.length>1?'s':''}`);
+}
+
 function renderAlertsTables(){
   renderAlertsTableFor('bitcoin');
   renderAlertsTableFor('altcoin');
@@ -2070,6 +2098,12 @@ function renderAlertsTables(){
       label.textContent = `${SIGNAL_ALERTS.length} alert${SIGNAL_ALERTS.length===1?'':'s'}`
         + (newCount ? ` · 🆕 ${newCount} new` : '');
     }
+  }
+  const syncLabel = document.getElementById('alertsLastSync');
+  if(syncLabel){
+    syncLabel.textContent = lastAlertsSyncAt
+      ? `Last synced: ${lastAlertsSyncAt.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',second:'2-digit'})}`
+      : '';
   }
 }
 
@@ -2898,6 +2932,18 @@ async function renderProfile(){
   document.getElementById('profileEditBtn').style.display = profileEditing ? 'none' : 'inline-block';
   document.getElementById('profileCancelBtn').style.display = profileEditing ? 'inline-block' : 'none';
   document.getElementById('profileSaveBtn').style.display = profileEditing ? 'inline-block' : 'none';
+  document.getElementById('profileEditPanel').style.display = profileEditing ? 'block' : 'none';
+
+  // Header card — always shows the saved values, whether editing or not.
+  const initial = (p.display_name || '').trim().charAt(0).toUpperCase() || '?';
+  document.getElementById('profileAvatar').textContent = initial;
+  document.getElementById('profileHeaderName').textContent = p.display_name || 'Set your name';
+  document.getElementById('profileHeaderBadges').innerHTML = `
+    <span class="pill pill-blue">${escapeHtml(p.trading_style || 'Trading style')}</span>
+    <span class="pill pill-orange">${escapeHtml(p.primary_market || 'Market')}</span>
+    ${p.risk_per_trade != null ? `<span class="pill pill-green">Risk ${p.risk_per_trade}%</span>` : ''}
+  `;
+  document.getElementById('profileHeaderWhy').textContent = p.my_why ? `"${p.my_why}"` : '';
 
   const fields = document.getElementById('profileFieldsPanel');
   if(profileEditing){
@@ -2913,13 +2959,7 @@ async function renderProfile(){
       <div class="field-row"><label>My Why</label><textarea id="profileWhy" placeholder="Why are you doing this?">${escapeHtml(p.my_why || '')}</textarea></div>
     `;
   }else{
-    fields.innerHTML = `
-      <div class="field-row"><label>Display Name</label><div class="field-static">${p.display_name ? escapeHtml(p.display_name) : '—'}</div></div>
-      <div class="field-row"><label>Trading Style</label><div class="field-static">${p.trading_style || '—'}</div></div>
-      <div class="field-row"><label>Primary Market</label><div class="field-static">${p.primary_market || '—'}</div></div>
-      <div class="field-row"><label>Risk Per Trade</label><div class="field-static">${p.risk_per_trade != null ? p.risk_per_trade + '%' : '—'}</div></div>
-      <div class="field-row"><label>My Why</label><div class="field-static">${p.my_why ? escapeHtml(p.my_why) : '—'}</div></div>
-    `;
+    fields.innerHTML = '';
   }
 
   renderProfileRules(p.trading_rules || []);
