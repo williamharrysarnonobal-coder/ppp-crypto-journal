@@ -3,13 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Trading Ledger — Analytics</title>
+<title>Forgefolio — Analytics</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Public+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/style.css?v=44">
 </head>
 <body>
 
@@ -17,25 +17,38 @@
 <div id="toast" class="toast"></div>
 <div id="sidebarTooltip" class="sidebar-tooltip"></div>
 
+<div id="pendingApprovalScreen" style="display:none;">
+  <div class="auth-card">
+    <h1 id="pendingScreenTitle">Waiting for approval</h1>
+    <p id="pendingScreenText">—</p>
+    <button onclick="confirmLogout()">Log out</button>
+  </div>
+</div>
+
 <!-- ============ APP ============ -->
 <div id="app">
 <div class="shell">
   <nav class="sidebar" id="sidebar">
     <div class="brand">
-      <span class="brand-text">Trading Ledger</span>
+      <span class="brand-mark">
+        <img src="img/Forgefolio-removebg-preview.png" alt="Forgefolio" class="brand-logo-img">
+        <span class="brand-text">Forgefolio</span>
+      </span>
       <button class="toggle-btn" onclick="toggleSidebar()" title="Collapse menu">☰</button>
     </div>
     <div class="nav-item active" data-view="profile" onclick="switchView('profile')"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg> <span class="nav-label">Profile</span><span class="nav-tooltip">Profile</span></div>
     <div class="nav-item" data-view="dashboard" onclick="switchView('dashboard')"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg> <span class="nav-label">Dashboard</span><span class="nav-tooltip">Dashboard</span></div>
-    <div class="nav-item" data-view="accounts" onclick="switchView('accounts')"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg> <span class="nav-label">My Accounts</span><span class="nav-tooltip">My Accounts</span></div>
     <div class="nav-item" data-view="journal" onclick="switchView('journal')"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V4a1 1 0 0 0-1-1H6.5A2.5 2.5 0 0 0 4 5.5v14z"/><path d="M4 19.5A2.5 2.5 0 0 0 6.5 22H20"/></svg> <span class="nav-label">Trade Journals</span><span class="nav-tooltip">Trade Journals</span></div>
+    <div class="nav-item" data-view="accounts" onclick="switchView('accounts')"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg> <span class="nav-label">My Accounts</span><span class="nav-tooltip">My Accounts</span></div>
     <div class="nav-item" data-view="alerts" onclick="switchView('alerts')"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg> <span class="nav-label">Trade Alerts</span><span class="nav-tooltip">Trade Alerts</span></div>
+    <div class="nav-item" data-view="notebook" onclick="switchView('notebook')"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg> <span class="nav-label">Notebook</span><span class="nav-tooltip">Notebook</span></div>
     <div class="nav-item" data-view="achievements" onclick="switchView('achievements')"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="6"/><path d="M8.21 13.89 7 22l5-3 5 3-1.21-8.11"/></svg> <span class="nav-label">Achievements</span><span class="nav-tooltip">Achievements</span></div>
     <div class="nav-item" data-view="challenges" onclick="switchView('challenges')"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5.5"/><circle cx="12" cy="12" r="2"/></svg> <span class="nav-label">Challenges</span><span class="nav-tooltip">Challenges</span></div>
-    <div class="nav-item" data-view="news" onclick="switchView('news')"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> <span class="nav-label">Market News</span><span class="nav-tooltip">Market News</span></div>
+    <div class="nav-item" data-view="news" onclick="switchView('news')"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> <span class="nav-label">Economic Calendar</span><span class="nav-tooltip">Economic Calendar</span></div>
+    <div class="nav-item" data-view="admin" onclick="switchView('admin')" style="display:none;"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 3 6v6c0 5 4 8.5 9 10 5-1.5 9-5 9-10V6l-9-4Z"/><path d="m9 12 2 2 4-4"/></svg> <span class="nav-label">Admin Console</span><span class="nav-tooltip">Admin Console</span></div>
     <div class="nav-item" data-view="config" onclick="switchView('config')"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg> <span class="nav-label">Configuration</span><span class="nav-tooltip">Configuration</span></div>
-    <div class="theme-toggle" onclick="toggleTheme()" id="themeToggleBtn"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg> <span class="nav-label">Dark mode</span><span class="nav-tooltip">Dark mode</span></div>
-    <div class="nav-item" onclick="confirmLogout()" style="margin-top:8px;"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg> <span class="nav-label">Log out</span><span class="nav-tooltip">Log out</span></div>
+    <div class="nav-item" data-view="settings" onclick="switchView('settings')"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="6" x2="20" y2="6"/><circle cx="9" cy="6" r="2" fill="currentColor" stroke="none"/><line x1="4" y1="12" x2="20" y2="12"/><circle cx="16" cy="12" r="2" fill="currentColor" stroke="none"/><line x1="4" y1="18" x2="20" y2="18"/><circle cx="11" cy="18" r="2" fill="currentColor" stroke="none"/></svg> <span class="nav-label">Settings</span><span class="nav-tooltip">Settings</span></div>
+    <div class="nav-item" onclick="confirmLogout()" style="margin-top:auto;"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg> <span class="nav-label">Log out</span><span class="nav-tooltip">Log out</span></div>
   </nav>
 
   <main class="content">
@@ -79,7 +92,7 @@
     </div>
   </div>
 
-  <div class="row-4">
+  <div class="row-3">
     <div class="panel panel-fixed-h-sm">
       <h2>Win / Loss split</h2>
       <div class="chart-fill"><canvas id="winLossChart"></canvas></div>
@@ -92,14 +105,22 @@
     </div>
 
     <div class="panel panel-fixed-h-sm">
-      <h2>Discipline radar</h2>
-      <div class="chart-fill"><canvas id="disciplineRadar"></canvas></div>
-    </div>
-
-    <div class="panel panel-fixed-h-sm">
       <h2>Most traded symbols</h2>
       <div class="chart-fill"><canvas id="symbolFrequencyChart"></canvas></div>
     </div>
+  </div>
+
+  <div class="panel discipline-panel" style="margin-bottom:20px;">
+    <h2>Discipline radar</h2>
+    <div class="chart-fill" style="height:300px;"><canvas id="disciplineRadar"></canvas></div>
+    <div class="discipline-score-row">
+      <div>
+        <div class="discipline-score-label">Discipline Score</div>
+        <div class="discipline-score-tag" id="disciplineScoreTag"></div>
+      </div>
+      <div class="discipline-score-value" id="disciplineScoreValue">—</div>
+    </div>
+    <div class="discipline-score-bar"><div class="discipline-score-marker" id="disciplineScoreMarker"></div></div>
   </div>
 
   <div class="panel" style="margin-bottom:20px;">
@@ -134,11 +155,47 @@
       <select id="filterAccount" onchange="renderJournalTable()"><option value="all">Account: All</option></select>
       <select id="filterDay" onchange="renderJournalTable()"><option value="all">Day: All</option></select>
       <button class="ai-btn" style="padding:8px 14px;" onclick="clearJournalFilters()">Clear filters</button>
-      <button class="drawer-secondary-btn" style="margin-left:auto;" onclick="openEasyAddModal()">📋 Easy Add</button>
+      <button class="drawer-secondary-btn" style="margin-left:auto;" onclick="openEasyAddModal()">Easy Add</button>
       <button class="ai-btn" style="padding:8px 14px;" onclick="openDrawer('create')">+ Add Trade</button>
     </div>
     <div class="journal-wrap">
       <table class="journal" id="journalTable"></table>
+    </div>
+  </div>
+
+  <div class="view" id="view-notebook">
+    <header class="top">
+      <div>
+        <h1>Notebook</h1>
+        <div class="sub">Your trading thoughts, strategy notes, and reflections — kept separate from the structured Trade Journal.</div>
+      </div>
+      <div class="header-actions">
+        <button class="ai-btn" onclick="openNoteModal()">+ New Note</button>
+      </div>
+    </header>
+
+    <div class="notebook-layout">
+      <div class="panel note-list-panel">
+        <input class="note-search" id="noteSearchInput" placeholder="Search notes…" oninput="renderNoteList()">
+        <div class="tag-filter-row" id="noteTagFilterRow"></div>
+        <div id="noteListItems"></div>
+      </div>
+
+      <div class="panel note-detail-panel">
+        <div class="empty-state" id="noteDetailEmpty">Select a note to view it here.</div>
+        <div id="noteDetailWrap" style="display:none;">
+          <div class="note-detail-top">
+            <span class="pill" id="noteDetailTag">—</span>
+            <div class="note-detail-actions">
+              <button class="drawer-secondary-btn" onclick="editSelectedNote()"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px;"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>Edit</button>
+              <button class="note-delete-btn" onclick="deleteSelectedNote()"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px;"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>Delete</button>
+            </div>
+          </div>
+          <h3 id="noteDetailTitle" style="margin:14px 0 4px;">—</h3>
+          <div class="note-detail-date" id="noteDetailDate">—</div>
+          <div class="note-detail-text" id="noteDetailText"></div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -150,9 +207,9 @@
         <div class="sub" id="alertsLastSync" style="font-size:11px;"></div>
       </div>
       <div class="header-actions">
-        <button class="drawer-secondary-btn" onclick="markAllAlertsSeen()">✅ Read All</button>
-        <button class="drawer-secondary-btn" onclick="deleteOldAlerts()">🗑 Delete Old</button>
-        <button class="drawer-secondary-btn" onclick="manualRefreshAlerts()">🔄 Refresh</button>
+        <button class="drawer-secondary-btn" onclick="markAllAlertsSeen()">Read All</button>
+        <button class="drawer-secondary-btn" onclick="deleteOldAlerts()"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px;"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>Delete Old</button>
+        <button class="drawer-secondary-btn" onclick="manualRefreshAlerts()"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px;"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>Refresh</button>
       </div>
     </header>
 
@@ -254,8 +311,16 @@
         <button class="ai-btn" onclick="openAccountModal()">+ Add Account</button>
       </div>
     </header>
-    <div class="panel">
-      <div class="account-grid" id="accountsList"></div>
+    <div class="empty-state" id="accountsEmptyState" style="display:none;">No accounts yet — add your prop firm account and its rules.</div>
+
+    <div class="panel" id="accountsPropFirmPanel" style="margin-bottom:20px;display:none;">
+      <h2>Prop Firm Accounts</h2>
+      <div class="account-grid" id="accountsListPropFirm"></div>
+    </div>
+
+    <div class="panel" id="accountsExchangePanel" style="display:none;">
+      <h2>Exchange Accounts</h2>
+      <div class="account-grid" id="accountsListExchange"></div>
     </div>
   </div>
 
@@ -309,6 +374,51 @@
     </div>
   </div>
 
+  <div class="view" id="view-settings">
+    <header class="top">
+      <div>
+        <h1>Settings</h1>
+        <div class="sub">Customize how the app looks for you.</div>
+      </div>
+    </header>
+
+    <div class="panel" style="margin-bottom:20px;max-width:560px;">
+      <h2>Theme</h2>
+      <div class="settings-option-grid" id="themeOptionGrid"></div>
+    </div>
+
+    <div class="panel" style="margin-bottom:20px;max-width:560px;">
+      <h2>Accent Color</h2>
+      <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:14px;">The highlight color used for buttons, active nav items, and chart lines — combines with whichever Theme you're using.</div>
+      <div class="settings-option-grid" id="accentOptionGrid"></div>
+    </div>
+
+    <div class="panel" style="max-width:560px;">
+      <h2>Font</h2>
+      <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:14px;">Changes the interface font across the app. Numbers and data still use IBM Plex Mono.</div>
+      <div class="settings-option-grid" id="fontOptionGrid"></div>
+    </div>
+  </div>
+
+  <div class="view" id="view-admin">
+    <header class="top">
+      <div>
+        <h1>Admin Console</h1>
+        <div class="sub">Approve, reject, or manage everyone who has signed up.</div>
+      </div>
+    </header>
+
+    <div class="panel" style="margin-bottom:20px;">
+      <h2>Pending approval <span class="pill pill-orange" id="adminPendingCount">0</span></h2>
+      <div class="admin-user-list" id="adminPendingList"></div>
+    </div>
+
+    <div class="panel">
+      <h2>All users</h2>
+      <div class="admin-user-list" id="adminAllUsersList"></div>
+    </div>
+  </div>
+
   <div class="view" id="view-achievements">
     <header class="top">
       <div>
@@ -334,7 +444,7 @@
     </header>
 
     <div class="challenge-caution-banner">
-      ⚠️ These reflect your trading — they shouldn't decide it. If a challenge ever tempts you to force a trade, skip a valid setup, or hold back a good exit just to protect a number, ignore the challenge. Your trading plan comes first, always.
+      These reflect your trading — they shouldn't decide it. If a challenge ever tempts you to force a trade, skip a valid setup, or hold back a good exit just to protect a number, ignore the challenge. Your trading plan comes first, always.
     </div>
 
     <div class="panel challenge-rank-panel" style="margin-bottom:20px;">
@@ -346,7 +456,7 @@
     </div>
 
     <div class="panel" style="margin-bottom:20px;">
-      <h2>Active Challenges</h2>
+      <h2>On the Anvil</h2>
       <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">Automatically tracked from your logged trades and achievements — nothing to mark manually.</div>
       <div class="tabs" id="challengeFilterTabs">
         <div class="tab active" data-f="all" onclick="switchChallengeFilter('all')">All</div>
@@ -357,7 +467,7 @@
     </div>
 
     <div class="panel">
-      <h2>Coming Soon</h2>
+      <h2>Still in the Furnace</h2>
       <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">These need extra data before we can track them — this shows what's still missing.</div>
       <div class="challenge-grid" id="challengesLockedGrid"></div>
     </div>
@@ -366,11 +476,28 @@
   <div class="view" id="view-news">
     <header class="top">
       <div>
-        <h1>Market News</h1>
+        <h1>Economic Calendar</h1>
         <div class="sub">Upcoming economic events — check impact before you trade around news.</div>
+        <div class="sub" id="econLastSync" style="font-size:11px;"></div>
       </div>
     </header>
-    <div class="panel news-embed-wrap" id="newsWidgetContainer"></div>
+    <div class="econ-cal-layout">
+      <div class="panel econ-cal-list-panel">
+        <h2>Calendar
+          <span class="nav">
+            <button onclick="shiftEconCalMonth(-1)">‹</button>
+            <span id="econCalLabel">—</span>
+            <button onclick="shiftEconCalMonth(1)">›</button>
+          </span>
+        </h2>
+        <div class="tag-filter-row" id="econImpactFilterRow"></div>
+        <div class="econ-cal-grid" id="econCalGrid"></div>
+      </div>
+      <div class="panel econ-cal-detail-panel">
+        <h2 id="econCalDetailTitle">Select a day</h2>
+        <div id="econCalDetailBody"></div>
+      </div>
+    </div>
   </div>
 
   </main>
@@ -386,11 +513,34 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="tradeViewModal" onclick="if(event.target===this) closeTradeViewModal()">
+  <div class="modal-box" style="position:relative;max-width:min(90vw,640px);max-height:85vh;display:flex;flex-direction:column;">
+    <button class="modal-close" onclick="closeTradeViewModal()">✕</button>
+    <h3 id="tradeViewTitle" style="margin:0 36px 12px 0;flex-shrink:0;">—</h3>
+    <div id="tradeViewBody" class="trade-view-grid" style="overflow-y:auto;flex:1;min-height:0;padding-right:4px;"></div>
+
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:14px;padding-top:14px;border-top:1px solid var(--rule);flex-shrink:0;">
+      <div style="display:flex;gap:8px;">
+        <button class="drawer-secondary-btn" id="tradeViewPrevBtn" onclick="navigateTradeView(-1)">‹ Previous</button>
+        <button class="drawer-secondary-btn" id="tradeViewNextBtn" onclick="navigateTradeView(1)">Next ›</button>
+      </div>
+      <button class="modal-icon-btn" onclick="editFromTradeView()" title="Edit trade"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="easyAddModal" onclick="if(event.target===this) closeEasyAddModal()">
   <div class="modal-box" style="position:relative;">
     <button class="modal-close" onclick="closeEasyAddModal()">✕</button>
-    <h3>📋 Easy Add</h3>
+    <h3>Easy Add</h3>
     <div class="modal-sub">Copy the position card from your exchange (select the text and copy) and paste it below.</div>
+    <div class="field-row" style="margin-top:12px;">
+      <label>Broker / Format</label>
+      <select id="easyAddBroker" onchange="switchEasyAddBroker()">
+        <option value="manual">Manual Template</option>
+        <option value="upscale">Upscale</option>
+      </select>
+    </div>
     <textarea id="easyAddInput" placeholder="Paste here…" style="width:100%;min-height:200px;margin-top:10px;padding:10px 12px;background:var(--surface-2);border:1px solid var(--rule);border-radius:6px;color:var(--ink);font-size:13px;font-family:'IBM Plex Mono',monospace;resize:vertical;"></textarea>
     <div id="easyAddError" class="auth-error"></div>
     <button class="ai-btn" style="margin-top:14px;width:100%;" onclick="parseEasyAddText()">Proceed</button>
@@ -536,6 +686,65 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="econEventModal" onclick="if(event.target===this) closeEconEventModal()">
+  <div class="modal-box" style="position:relative;">
+    <button class="modal-close" onclick="closeEconEventModal()">✕</button>
+    <h3 id="econEventTitle" style="margin:0 36px 8px 0;">—</h3>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;">
+      <span class="pill" id="econEventImpact">—</span>
+      <span style="font-size:11px;color:var(--muted);" id="econEventDate">—</span>
+    </div>
+    <div class="acc-stat-grid" id="econEventValues" style="margin-bottom:16px;"></div>
+
+    <div id="econEventGlossaryWrap" style="display:none;margin-bottom:18px;">
+      <div class="discipline-score-label" style="margin-bottom:8px;">What is this?</div>
+      <div style="font-size:13px;color:var(--ink);line-height:1.7;" id="econEventGlossaryText"></div>
+    </div>
+
+    <div id="econEventCommentWrap" style="display:none;">
+      <div class="discipline-score-label" style="margin-bottom:8px;">Comments</div>
+      <div style="font-size:13px;color:var(--ink);line-height:1.7;" id="econEventComment"></div>
+    </div>
+
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:18px;padding-top:14px;border-top:1px solid var(--rule);">
+      <div style="display:flex;gap:8px;">
+        <button class="drawer-secondary-btn" id="econEventPrevBtn" onclick="navigateEconEvent(-1)">‹ Previous</button>
+        <button class="drawer-secondary-btn" id="econEventNextBtn" onclick="navigateEconEvent(1)">Next ›</button>
+      </div>
+      <button class="drawer-secondary-btn" id="econEventLangBtn" style="display:none;padding:6px 12px;font-size:12px;" onclick="toggleEconEventLang()">Translate</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="noteModal" onclick="if(event.target===this) closeNoteModal()">
+  <div class="modal-box" style="position:relative;">
+    <button class="modal-close" onclick="closeNoteModal()">✕</button>
+    <h3 id="noteModalTitle">+ New Note</h3>
+    <div class="field-row" style="margin-top:14px;">
+      <label>Title</label>
+      <input id="noteTitleInput" placeholder="Note title…">
+    </div>
+    <div class="field-row">
+      <label>Tag</label>
+      <select id="noteTagSelect">
+        <option value="General">General</option>
+        <option value="Strategy">Strategy</option>
+        <option value="Psychology">Psychology</option>
+        <option value="Market Notes">Market Notes</option>
+        <option value="Trade Review">Trade Review</option>
+        <option value="Accounts">Accounts</option>
+      </select>
+    </div>
+    <div class="field-row">
+      <label>Body</label>
+      <textarea id="noteBodyInput" placeholder="Write your note…" style="min-height:220px;"></textarea>
+    </div>
+    <div id="noteModalError" class="auth-error"></div>
+    <button class="ai-btn" id="noteSaveBtn" style="width:100%;" onclick="saveNote()">Save</button>
+  </div>
+</div>
+
+
 <div class="modal-overlay" id="achievementModal" onclick="if(event.target===this) closeAchievementModal()">
   <div class="modal-box" style="position:relative;">
     <button class="modal-close" onclick="closeAchievementModal()">✕</button>
@@ -593,8 +802,20 @@
     </div>
     <div style="font-size:13px;color:var(--ink);white-space:pre-wrap;margin-bottom:20px;" id="achDetailBody"></div>
     <div style="display:flex;gap:10px;">
-      <button class="drawer-secondary-btn" style="flex:1;" id="achDetailEditBtn">✏️ Edit</button>
-      <button class="drawer-danger-btn" style="flex:1;" id="achDetailDeleteBtn">🗑 Delete</button>
+      <button class="drawer-secondary-btn" style="flex:1;" id="achDetailEditBtn"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px;"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>Edit</button>
+      <button class="drawer-danger-btn" style="flex:1;" id="achDetailDeleteBtn"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px;"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>Delete</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="logoutConfirmModal" onclick="if(event.target===this) closeLogoutConfirm()">
+  <div class="modal-box" style="position:relative;max-width:380px;">
+    <button class="modal-close" onclick="closeLogoutConfirm()">✕</button>
+    <h3 style="margin:0 24px 10px 0;">Log out?</h3>
+    <p style="font-size:13.5px;color:var(--muted);line-height:1.6;margin:0 0 20px;">You'll need to log back in to see your trades, accounts, and everything else.</p>
+    <div style="display:flex;gap:10px;">
+      <button class="drawer-secondary-btn" style="flex:1;" onclick="closeLogoutConfirm()">Cancel</button>
+      <button class="drawer-danger-btn" style="flex:1;" onclick="authSignOut()">Log out</button>
     </div>
   </div>
 </div>
@@ -614,7 +835,7 @@
   </div>
   <div id="drawerBody"></div>
   <div class="drawer-actions">
-    <button class="drawer-secondary-btn" id="drawerEditBtn" onclick="enterEditMode()">✏️ Edit</button>
+    <button class="drawer-secondary-btn" id="drawerEditBtn" onclick="enterEditMode()"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px;"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>Edit</button>
     <button class="ai-btn" id="drawerSaveBtn" onclick="saveDrawer()">Save changes</button>
     <button class="drawer-secondary-btn" onclick="closeDrawer()">Cancel</button>
     <button class="drawer-danger-btn" id="drawerDeleteBtn" onclick="deleteDrawer()">Delete trade</button>
@@ -624,7 +845,7 @@
 
 
 <script src="js/supabase.js"></script>
-<script src="js/auth.js"></script>
-<script src="js/dashboard.js"></script>
+<script src="js/auth.js?v=1"></script>
+<script src="js/dashboard.js?v=44"></script>
 </body>
 </html>

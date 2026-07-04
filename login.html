@@ -3,33 +3,94 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Log in — Trading Ledger</title>
+<title>Log in — Forgefolio</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Public+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/style.css?v=8">
 </head>
-<body class="auth-page">
+<body>
 
-<div class="auth-card">
-  <h1>Welcome back</h1>
-  <p>Log in to your trading journal.</p>
+<header class="site-header">
+  <span class="brand-mark">
+    <img src="img/Forgefolio-removebg-preview.png" alt="Forgefolio" class="brand-logo-img brand-logo-img-lg">
+    <span class="site-header-name">Forgefolio</span>
+  </span>
+</header>
 
-  <label>Email</label>
-  <input id="loginEmail" type="email" placeholder="you@example.com">
+<div class="login-page">
 
-  <label>Password</label>
-  <input id="loginPassword" type="password" placeholder="••••••••">
+  <div class="login-marketing">
+    <h1 class="login-headline">Trade with <span class="hl">discipline</span>,<br>not guesswork.</h1>
+    <p class="login-sub">Every trade, every prop firm account, every decision — logged and measured, so you know exactly where your edge really is.</p>
+    <div class="login-trust-badges">
+      <span>Funded Traders</span>
+      <span>Profitable Traders</span>
+      <span>Disciplined Traders</span>
+    </div>
 
-  <button id="loginBtn">Log in</button>
-  <div id="loginError" class="auth-error"></div>
+    <div class="login-preview-card">
+      <div class="login-preview-dot"></div>
+      <div class="login-preview-kpis">
+        <div class="login-preview-kpi"><span class="lp-label">Win Rate</span><span class="lp-value">64.2%</span></div>
+        <div class="login-preview-kpi"><span class="lp-label">Total P/L</span><span class="lp-value lp-pos">+$2,480.50</span></div>
+        <div class="login-preview-kpi"><span class="lp-label">Avg RR</span><span class="lp-value">2.1</span></div>
+      </div>
+      <svg class="login-preview-chart" viewBox="0 0 280 70" preserveAspectRatio="none">
+        <polyline points="0,55 30,48 60,58 90,30 120,38 150,20 180,26 210,10 240,16 280,4" fill="none" stroke="var(--win)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+        <polygon points="0,55 30,48 60,58 90,30 120,38 150,20 180,26 210,10 240,16 280,4 280,70 0,70" fill="var(--win)" opacity="0.12"/>
+      </svg>
+    </div>
 
-  <div class="auth-switch">Don't have an account? <a href="signup.html">Sign up</a></div>
+    <div class="login-features">
+      <div class="login-feature">
+        <div class="login-feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V4a1 1 0 0 0-1-1H6.5A2.5 2.5 0 0 0 4 5.5v14z"/><path d="M4 19.5A2.5 2.5 0 0 0 6.5 22H20"/></svg></div>
+        <div><strong>Easy Log Every Trade</strong><span>Every trade logged in seconds — setup, RR, exit type, and a real post-trade review.</span></div>
+      </div>
+      <div class="login-feature">
+        <div class="login-feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg></div>
+        <div><strong>Account Compliance</strong><span>Phase targets and drawdown rules tracked automatically for every Prop Firm Challenge.</span></div>
+      </div>
+      <div class="login-feature">
+        <div class="login-feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></div>
+        <div><strong>Economic Calendar</strong><span>See high-impact news before it moves your trades, not after.</span></div>
+      </div>
+      <div class="login-feature">
+        <div class="login-feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5.5"/><circle cx="12" cy="12" r="2"/></svg></div>
+        <div><strong>Gamified Challenges</strong><span>Turn discipline into a game — challenges that keep your habits honest, not just your P/L.</span></div>
+      </div>
+      <div class="login-feature">
+        <div class="login-feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15h11l3-4h2v4a2 2 0 0 1-2 2H8L4 15z"/><path d="M7 17v4M17 17v4"/></svg></div>
+        <div><strong>Climb the Ranks</strong><span>From Raw Ore to Legendary Blade as your discipline compounds.</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="login-form-side">
+    <div class="auth-card">
+      <h1>Welcome back</h1>
+      <p>Log in to Forgefolio.</p>
+
+      <label>Email</label>
+      <input id="loginEmail" type="email" placeholder="you@example.com">
+
+      <label>Password</label>
+      <input id="loginPassword" type="password" placeholder="••••••••">
+
+      <button id="loginBtn">Log in</button>
+      <div id="loginError" class="auth-error"></div>
+
+      <div class="auth-switch">Don't have an account? <a href="signup.html">Sign up</a></div>
+    </div>
+  </div>
+
 </div>
 
+<footer class="site-footer">© 2026 Forgefolio. All rights reserved.</footer>
+
 <script src="js/supabase.js"></script>
-<script src="js/auth.js"></script>
+<script src="js/auth.js?v=1"></script>
 <script>
 redirectIfLoggedIn("dashboard.html");
 

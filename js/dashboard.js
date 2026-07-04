@@ -1,7 +1,8 @@
 let USER_ACCESS_TOKEN = null;
 let CURRENT_USER_EMAIL = null;
-const ADMIN_EMAIL = 'williamharry.s.arnonobal@gmail.com';
-function isAdminUser(){ return CURRENT_USER_EMAIL === ADMIN_EMAIL; }
+let CURRENT_USER_ROLE = null;   // 'admin' | 'user' — from user_access, not hardcoded
+let CURRENT_USER_STATUS = null; // 'pending' | 'approved' | 'rejected'
+function isAdminUser(){ return CURRENT_USER_ROLE === 'admin'; }
 
 let ALL_TRADES = [];
 let RAW_TRADES = [];
@@ -53,16 +54,17 @@ function toggleSidebar(){
   });
 })();
 
-function toggleTheme(){
+function applyTheme(mode){
   const root = document.documentElement;
-  const isLight = root.getAttribute('data-theme') === 'light';
-  const next = isLight ? 'dark' : 'light';
-  root.setAttribute('data-theme', next);
-  try{ localStorage.setItem('ledger-theme', next); }catch(e){}
+  root.setAttribute('data-theme', mode);
+  try{ localStorage.setItem('ledger-theme', mode); }catch(e){}
 
-  document.getElementById('themeToggleBtn').innerHTML = next === 'light'
-    ? `${SUN_ICON_SVG} <span class="nav-label">Light mode</span><span class="nav-tooltip">Light mode</span>`
-    : `${MOON_ICON_SVG} <span class="nav-label">Dark mode</span><span class="nav-tooltip">Dark mode</span>`;
+  const btn = document.getElementById('themeToggleBtn');
+  if(btn){
+    btn.innerHTML = mode === 'light'
+      ? `${SUN_ICON_SVG} <span class="nav-label">Light mode</span><span class="nav-tooltip">Light mode</span>`
+      : `${MOON_ICON_SVG} <span class="nav-label">Dark mode</span><span class="nav-tooltip">Dark mode</span>`;
+  }
 
   // re-render charts so their colors match the new theme
   if(FILTERED.length || ALL_TRADES.length){
@@ -73,6 +75,117 @@ function toggleTheme(){
     renderDayOfWeekChart();
     renderSymbolFrequencyChart();
     renderBreakdown();
+  }
+  if(currentView === 'settings') renderSettingsPage();
+}
+
+function toggleTheme(){
+  const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+  applyTheme(isLight ? 'dark' : 'light');
+}
+
+const FONT_OPTIONS = [
+  { name: 'Public Sans', family: "'Public Sans',sans-serif" },
+  { name: 'Manrope', family: "'Manrope',sans-serif" },
+  { name: 'IBM Plex Sans', family: "'IBM Plex Sans',sans-serif" },
+  { name: 'Inter', family: "'Inter',sans-serif" }
+];
+
+function applyFont(name){
+  const opt = FONT_OPTIONS.find(f => f.name === name) || FONT_OPTIONS[0];
+  document.documentElement.style.setProperty('--font-ui', opt.family);
+  try{ localStorage.setItem('ledger-font', opt.name); }catch(e){}
+}
+
+function setFontPreference(name){
+  applyFont(name);
+  if(currentView === 'settings') renderSettingsPage();
+}
+
+// value:null means "follow the current Theme's own accent" (gold in dark,
+// amber in light) — any other value is a flat hex that overrides both themes,
+// so it combines with whichever Theme (dark/light) is active.
+const ACCENT_OPTIONS = [
+  { name: 'Gold (Default)', value: null },
+  { name: 'Amber', value: '#F59E0B' },
+  { name: 'Orange', value: '#FB923C' },
+  { name: 'Red', value: '#EF4444' },
+  { name: 'Coral', value: '#F97066' },
+  { name: 'Rose', value: '#F43F5E' },
+  { name: 'Pink', value: '#EC4899' },
+  { name: 'Purple', value: '#A855F7' },
+  { name: 'Violet', value: '#8B5CF6' },
+  { name: 'Indigo', value: '#6366F1' },
+  { name: 'Blue', value: '#3B82F6' },
+  { name: 'Sky', value: '#0EA5E9' },
+  { name: 'Teal', value: '#14B8A6' },
+  { name: 'Green', value: '#22C55E' },
+  { name: 'Lime', value: '#84CC16' }
+];
+
+function applyAccent(name){
+  const opt = ACCENT_OPTIONS.find(a => a.name === name) || ACCENT_OPTIONS[0];
+  if(opt.value){
+    document.documentElement.style.setProperty('--accent', opt.value);
+  }else{
+    document.documentElement.style.removeProperty('--accent');
+  }
+  try{ localStorage.setItem('ledger-accent', name); }catch(e){}
+}
+
+function setAccentPreference(name){
+  applyAccent(name);
+  if(FILTERED.length || ALL_TRADES.length){
+    renderKPIs();
+    renderEquityCurve();
+    renderWinLossChart();
+    renderDisciplineRadar();
+    renderDayOfWeekChart();
+    renderSymbolFrequencyChart();
+    renderBreakdown();
+  }
+  if(currentView === 'settings') renderSettingsPage();
+}
+
+function renderSettingsPage(){
+  const currentThemeMode = document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
+  const themeGrid = document.getElementById('themeOptionGrid');
+  if(themeGrid){
+    themeGrid.innerHTML = `
+      <div class="settings-option ${currentThemeMode==='dark'?'active':''}" onclick="applyTheme('dark')">
+        <div class="settings-option-name">Dark</div>
+        <div class="settings-option-sub">Default — easier on the eyes at night.</div>
+      </div>
+      <div class="settings-option ${currentThemeMode==='light'?'active':''}" onclick="applyTheme('light')">
+        <div class="settings-option-name">Light</div>
+        <div class="settings-option-sub">Bright background, dark text.</div>
+      </div>
+    `;
+  }
+
+  let savedFont = 'Public Sans';
+  try{ savedFont = localStorage.getItem('ledger-font') || 'Public Sans'; }catch(e){}
+  const fontGrid = document.getElementById('fontOptionGrid');
+  if(fontGrid){
+    fontGrid.innerHTML = FONT_OPTIONS.map(f => `
+      <div class="settings-option ${savedFont===f.name?'active':''}" style="font-family:${f.family};" onclick="setFontPreference('${f.name}')">
+        <div class="settings-option-name">${f.name}</div>
+        <div class="settings-option-sub">Aa Bb Cc 123</div>
+      </div>
+    `).join('');
+  }
+
+  let savedAccent = 'Gold (Default)';
+  try{ savedAccent = localStorage.getItem('ledger-accent') || 'Gold (Default)'; }catch(e){}
+  const themeDefaultAccent = currentThemeMode === 'light' ? '#D69E2E' : '#F0B429';
+  const accentGrid = document.getElementById('accentOptionGrid');
+  if(accentGrid){
+    accentGrid.innerHTML = ACCENT_OPTIONS.map(a => `
+      <div class="settings-option ${savedAccent===a.name?'active':''}" onclick="setAccentPreference('${a.name}')">
+        <div class="settings-accent-swatch" style="background:${a.value || themeDefaultAccent};"></div>
+        <div class="settings-option-name">${a.name}</div>
+      </div>
+    `).join('');
   }
 }
 
@@ -86,6 +199,35 @@ function toggleTheme(){
   }
 })();
 
+(function initFont(){
+  let saved = null;
+  try{ saved = localStorage.getItem('ledger-font'); }catch(e){}
+  if(saved) applyFont(saved);
+})();
+
+(function initAccent(){
+  let saved = null;
+  try{ saved = localStorage.getItem('ledger-accent'); }catch(e){}
+  if(saved) applyAccent(saved);
+})();
+
+// Clears the "needs-input" red flag the moment a flagged field gets a value
+// (and re-flags it if cleared back to empty) — bound once on the stable
+// #drawerBody container since its contents get rebuilt on every render.
+(function initDrawerEmptyFieldTracking(){
+  const body = document.getElementById('drawerBody');
+  if(!body) return;
+  const handler = (e) => {
+    const field = e.target.closest('[data-field]');
+    if(!field) return;
+    const row = field.closest('.field-row');
+    if(!row) return;
+    row.classList.toggle('needs-input', field.value.trim() === '');
+  };
+  body.addEventListener('input', handler);
+  body.addEventListener('change', handler);
+})();
+
 function switchView(view){
   currentView = view;
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
@@ -96,10 +238,13 @@ function switchView(view){
   if(view === 'config'){ renderColumnConfigUI(); renderOptionsEditor(); renderFormFieldConfigUI(); }
   if(view === 'alerts'){ loadSignalAlerts(); startAlertsPolling(); } else { stopAlertsPolling(); }
   if(view === 'achievements') loadAchievements();
-  if(view === 'news') loadMarketNewsWidget();
+  if(view === 'news'){ loadMarketNewsWidget(); } else { clearInterval(econSyncLabelTimer); }
   if(view === 'challenges') renderChallenges();
   if(view === 'profile') loadProfile();
   if(view === 'accounts') loadAccounts();
+  if(view === 'settings') renderSettingsPage();
+  if(view === 'notebook') loadNotes();
+  if(view === 'admin') renderAdminConsole();
 }
 
 function escapeHtml(str){
@@ -123,6 +268,26 @@ async function initApp(){
   if(!session) return;
   USER_ACCESS_TOKEN = session.access_token;
   CURRENT_USER_EMAIL = session.user?.email || null;
+
+  try{
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/user_access?select=role,status`, {
+      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}` }
+    });
+    if(!res.ok) throw new Error(await res.text());
+    const rows = await res.json();
+    CURRENT_USER_ROLE = rows[0]?.role || null;
+    CURRENT_USER_STATUS = rows[0]?.status || null;
+  }catch(e){
+    console.error("Couldn't load account access status:", e);
+    CURRENT_USER_STATUS = null;
+  }
+
+  if(CURRENT_USER_STATUS !== 'approved'){
+    showPendingApprovalScreen(CURRENT_USER_STATUS);
+    return;
+  }
+
+  document.querySelectorAll('[data-view="admin"]').forEach(el => el.style.display = isAdminUser() ? '' : 'none');
 
   loadColumnConfig();
   loadOptionsConfig();
@@ -164,6 +329,117 @@ async function initApp(){
   }
 }
 
+function showPendingApprovalScreen(status){
+  document.getElementById('app').style.display = 'none';
+  const screen = document.getElementById('pendingApprovalScreen');
+  const title = document.getElementById('pendingScreenTitle');
+  const text = document.getElementById('pendingScreenText');
+  if(status === 'rejected'){
+    title.textContent = 'Access denied';
+    text.textContent = "Hindi pinayagan ng admin ang account na ito. Kung sa tingin mo ay pagkakamali ito, makipag-ugnayan sa nag-imbita sa'yo.";
+  }else{
+    title.textContent = 'Waiting for approval';
+    text.textContent = "Nakapag-sign up ka na — naghihintay na lang ito ng approval mula sa admin bago mo magamit ang app. Subukan mo ulit mamaya.";
+  }
+  screen.style.display = 'flex';
+}
+
+/* ---------------- Admin Console (user permissions) ---------------- */
+async function renderAdminConsole(){
+  const pendingList = document.getElementById('adminPendingList');
+  const allList = document.getElementById('adminAllUsersList');
+  if(!pendingList || !allList) return;
+  pendingList.innerHTML = `<div class="empty-state">Loading…</div>`;
+  allList.innerHTML = '';
+  try{
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/user_access?select=*&order=requested_at.desc`, {
+      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}` }
+    });
+    if(!res.ok) throw new Error(await res.text());
+    renderAdminUserList(await res.json());
+  }catch(e){
+    console.error("Couldn't load user list:", e);
+    pendingList.innerHTML = `<div class="empty-state">Couldn't load users.</div>`;
+  }
+}
+
+function renderAdminUserList(rows){
+  const pending = rows.filter(r => r.status === 'pending');
+  const others = rows.filter(r => r.status !== 'pending');
+
+  document.getElementById('adminPendingCount').textContent = pending.length;
+
+  document.getElementById('adminPendingList').innerHTML = pending.length
+    ? pending.map(r => `
+        <div class="admin-user-row">
+          <div>
+            <div class="admin-user-email">${escapeHtml(r.email)}</div>
+            <div class="admin-user-meta">Requested ${new Date(r.requested_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</div>
+          </div>
+          <div class="admin-user-actions">
+            <button class="drawer-secondary-btn" onclick="approveUser('${r.user_id}')">Approve</button>
+            <button class="drawer-danger-btn" onclick="rejectUser('${r.user_id}')">Reject</button>
+          </div>
+        </div>
+      `).join('')
+    : `<div class="empty-state">No pending requests.</div>`;
+
+  document.getElementById('adminAllUsersList').innerHTML = others.length
+    ? others.map(r => `
+        <div class="admin-user-row">
+          <div>
+            <div class="admin-user-email">${escapeHtml(r.email)}</div>
+            <div class="admin-user-meta">
+              <span class="pill ${r.status==='approved'?'pill-green':'pill-red'}">${escapeHtml(r.status)}</span>
+              <span class="pill ${r.role==='admin'?'pill-orange':'pill-muted'}">${escapeHtml(r.role)}</span>
+            </div>
+          </div>
+          <div class="admin-user-actions">
+            ${r.status === 'approved'
+              ? `<button class="drawer-secondary-btn" onclick="revokeUser('${r.user_id}')">Revoke</button>`
+              : `<button class="drawer-secondary-btn" onclick="approveUser('${r.user_id}')">Approve</button>`}
+            <button class="drawer-secondary-btn" onclick="toggleAdminRole('${r.user_id}','${r.role}')">${r.role === 'admin' ? 'Make user' : 'Make admin'}</button>
+          </div>
+        </div>
+      `).join('')
+    : `<div class="empty-state">No other users yet.</div>`;
+}
+
+async function _patchUserAccess(userId, patch){
+  try{
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/user_access?user_id=eq.${userId}`, {
+      method: 'PATCH',
+      headers: {
+        "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}`,
+        "Content-Type": "application/json", "Prefer": "return=minimal"
+      },
+      body: JSON.stringify(patch)
+    });
+    if(!res.ok) throw new Error(await res.text());
+    renderAdminConsole();
+  }catch(e){
+    console.error("Couldn't update user access:", e);
+    alert("Couldn't update — please try again.");
+  }
+}
+
+function approveUser(userId){
+  _patchUserAccess(userId, { status: 'approved', decided_at: new Date().toISOString() });
+}
+function rejectUser(userId){
+  if(!confirm('Reject this signup? They will not be able to use the app.')) return;
+  _patchUserAccess(userId, { status: 'rejected', decided_at: new Date().toISOString() });
+}
+function revokeUser(userId){
+  if(!confirm("Revoke this user's access? They will be moved back to pending.")) return;
+  _patchUserAccess(userId, { status: 'pending', decided_at: new Date().toISOString() });
+}
+function toggleAdminRole(userId, currentRole){
+  const nextRole = currentRole === 'admin' ? 'user' : 'admin';
+  if(!confirm(`Set this user's role to "${nextRole}"?`)) return;
+  _patchUserAccess(userId, { role: nextRole });
+}
+
 window.addEventListener('DOMContentLoaded', initApp);
 
 function normalizeTrade(r){
@@ -178,6 +454,9 @@ function normalizeTrade(r){
     fee: r.fee != null ? parseFloat(r.fee) : 0,
     pnl_percent: r.pnl_percent != null ? parseFloat(r.pnl_percent) : null,
     rr: r.rr != null ? parseFloat(r.rr) : null,
+    entry_price: r.entry_price != null ? parseFloat(r.entry_price) : null,
+    close_price: r.close_price != null ? parseFloat(r.close_price) : null,
+    position_size: r.position_size != null ? parseFloat(r.position_size) : null,
     trade_setup: r.trade_setup || "Unspecified",
     pattern_type: r.pattern_type || "Unspecified",
     execution_tf: r.execution_tf || "Unspecified",
@@ -328,6 +607,21 @@ function fmtMoney(n){
 function fmtNum(n, d=2){
   if(n === null || isNaN(n)) return "—";
   return n.toFixed(d);
+}
+
+// "2 minutes ago" / "1 hour ago" style relative time, so nothing needs to
+// count elapsed minutes by hand.
+function timeAgo(date){
+  if(!date) return '';
+  const seconds = Math.floor((new Date() - date) / 1000);
+  if(seconds < 5) return 'just now';
+  if(seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.floor(seconds / 60);
+  if(minutes < 60) return `${minutes} minute${minutes !== 1 ? 's' : ''} ago`;
+  const hours = Math.floor(minutes / 60);
+  if(hours < 24) return `${hours} hour${hours !== 1 ? 's' : ''} ago`;
+  const days = Math.floor(hours / 24);
+  return `${days} day${days !== 1 ? 's' : ''} ago`;
 }
 
 /* ---------------- KPIs ---------------- */
@@ -509,23 +803,52 @@ function renderEquityCurve(){
   const lineColor = finalVal >= 0 ? cssVar('--win') : cssVar('--loss');
   const segColor = (ctx) => (ctx.p0.parsed.y < 0 || ctx.p1.parsed.y < 0) ? cssVar('--loss') : cssVar('--win');
 
+  // Fades win color from the top down to the zero line, then loss color
+  // fading back out from zero down to the bottom — matches the "green above
+  // zero, red below" look, without needing per-segment clip gradients.
+  const zeroFadeGradient = (context) => {
+    const {chart} = context;
+    const {ctx: c, chartArea, scales} = chart;
+    if(!chartArea || !(chartArea.bottom > chartArea.top)) return lineColor + '22';
+    const winColor = cssVar('--win'), lossColor = cssVar('--loss');
+    const yZero = scales?.y?.getPixelForValue ? scales.y.getPixelForValue(0) : NaN;
+    if(!Number.isFinite(yZero)) return lineColor + '22';
+    const zeroRatio = Math.min(1, Math.max(0, (yZero - chartArea.top) / (chartArea.bottom - chartArea.top)));
+    const gradient = c.createLinearGradient(0, chartArea.top, 0, chartArea.bottom);
+    gradient.addColorStop(0, winColor + '55');
+    gradient.addColorStop(Math.max(0, zeroRatio - 0.001), winColor + '05');
+    gradient.addColorStop(Math.min(1, zeroRatio + 0.001), lossColor + '05');
+    gradient.addColorStop(1, lossColor + '55');
+    return gradient;
+  };
+
   equityChartRef = new Chart(ctx, {
     type: 'line',
     data: {
       labels,
-      datasets: [{
-        data: values,
-        borderColor: lineColor,
-        backgroundColor: lineColor + '22',
-        segment: {
-          borderColor: segColor,
-          backgroundColor: (ctx) => segColor(ctx) + '22'
+      datasets: [
+        {
+          data: values,
+          borderColor: lineColor,
+          backgroundColor: zeroFadeGradient,
+          segment: { borderColor: segColor },
+          fill: 'origin',
+          tension: 0.25,
+          pointRadius: 0,
+          borderWidth: 2,
+          order: 1
         },
-        fill: 'origin',
-        tension: 0.25,
-        pointRadius: 0,
-        borderWidth: 2
-      }]
+        {
+          // dotted zero-reference line
+          data: labels.map(() => 0),
+          borderColor: cssVar('--muted'),
+          borderWidth: 1,
+          borderDash: [4, 4],
+          pointRadius: 0,
+          fill: false,
+          order: 0
+        }
+      ]
     },
     options: {
       responsive: true,
@@ -534,6 +857,7 @@ function renderEquityCurve(){
       plugins: {
         legend: { display:false },
         tooltip: {
+          filter: (item) => item.datasetIndex === 0,
           callbacks: {
             title: (items) => items[0]?.label || '',
             label: (ctx) => 'Cumulative P/L: ' + fmtMoney(ctx.parsed.y)
@@ -607,6 +931,12 @@ function renderDisciplineRadar(){
 
   const t = FILTERED;
   if(t.length === 0){
+    const scoreValueEl = document.getElementById('disciplineScoreValue');
+    const scoreMarkerEl = document.getElementById('disciplineScoreMarker');
+    const scoreTagEl = document.getElementById('disciplineScoreTag');
+    if(scoreValueEl) scoreValueEl.textContent = '—';
+    if(scoreMarkerEl) scoreMarkerEl.style.left = '0%';
+    if(scoreTagEl){ scoreTagEl.textContent = ''; scoreTagEl.className = 'discipline-score-tag'; }
     return;
   }
 
@@ -634,6 +964,22 @@ function renderDisciplineRadar(){
   }).length;
   const riskControlScore = t.length ? Math.max(0, 100 - (badExits/t.length*100)) : 0;
 
+  const disciplineScore = (winRate + disciplinePct + rewardScore + consistencyScore + riskControlScore) / 5;
+  const scoreValueEl = document.getElementById('disciplineScoreValue');
+  const scoreMarkerEl = document.getElementById('disciplineScoreMarker');
+  const scoreTagEl = document.getElementById('disciplineScoreTag');
+  if(scoreValueEl) scoreValueEl.textContent = disciplineScore.toFixed(1);
+  if(scoreMarkerEl) scoreMarkerEl.style.left = `${Math.max(0, Math.min(100, disciplineScore))}%`;
+  if(scoreTagEl){
+    const tier = disciplineScore >= 80 ? {label:'Excellent', cls:'tag-excellent'}
+      : disciplineScore >= 60 ? {label:'Good', cls:'tag-good'}
+      : disciplineScore >= 40 ? {label:'Average', cls:'tag-average'}
+      : disciplineScore >= 20 ? {label:'Needs Work', cls:'tag-needswork'}
+      : {label:'Poor', cls:'tag-poor'};
+    scoreTagEl.textContent = tier.label;
+    scoreTagEl.className = 'discipline-score-tag ' + tier.cls;
+  }
+
   disciplineRadarRef = new Chart(ctx, {
     type: 'radar',
     data: {
@@ -642,8 +988,12 @@ function renderDisciplineRadar(){
         data: [winRate, disciplinePct, rewardScore, consistencyScore, riskControlScore],
         backgroundColor: cssVar('--accent') + '33',
         borderColor: cssVar('--accent'),
+        borderWidth: 1,
         pointBackgroundColor: cssVar('--accent'),
-        borderWidth: 2
+        pointBorderColor: cssVar('--surface'),
+        pointBorderWidth: 2,
+        pointRadius: 4,
+        pointHoverRadius: 6
       }]
     },
     options: {
@@ -664,11 +1014,15 @@ function renderDisciplineRadar(){
           callbacks: {
             label: (ctx) => {
               const explanations = {
-                'Win Rate': 'Wins ÷ total trades in view.',
-                'Discipline': '"Rules Followed" trades ÷ all trades with a discipline note logged.',
-                'Reward (RR)': 'Average risk:reward ratio, scaled so RR 3.0+ = 100.',
-                'Consistency (PF)': 'Profit factor (gross wins ÷ gross losses), scaled so PF 3.0+ = 100.',
-                'Risk Control': '100 minus the % of trades that hit stop-loss or were liquidated.'
+                'Win Rate': `${wins} win${wins!==1?'s':''} out of ${t.length} trade${t.length!==1?'s':''} in view (wins ÷ total).`,
+                'Discipline': disciplineTotal
+                  ? `${followed} "Rules Followed" out of ${disciplineTotal} trade${disciplineTotal!==1?'s':''} with a discipline note logged.`
+                  : 'No discipline notes logged yet — log "Rules Followed" or an unfollowed rule per trade to fill this in.',
+                'Reward (RR)': rrVals.length
+                  ? `Average RR is ${avgRR.toFixed(2)} across ${rrVals.length} trade${rrVals.length!==1?'s':''} with RR logged — scaled so 3.0+ RR = 100.`
+                  : 'No RR logged on any trade in view yet.',
+                'Consistency (PF)': `Profit factor is ${profitFactor===Infinity?'∞':profitFactor.toFixed(2)} — gross win ${fmtMoney(grossWin)} ÷ gross loss ${fmtMoney(grossLoss)}, scaled so PF 3.0+ = 100.`,
+                'Risk Control': `${badExits} of ${t.length} trade${t.length!==1?'s':''} hit stop-loss or were liquidated (100 minus that %).`
               };
               const label = ctx.label;
               const val = ctx.parsed.r;
@@ -774,22 +1128,22 @@ function renderTradeCards(trades){
 
   return sorted.map(t => {
     const isWin = t.win_loss.toLowerCase() === 'win';
-    const dot = isWin ? '🟢' : (t.win_loss.toLowerCase()==='loss' ? '🔴' : '⚪');
+    const dotCls = isWin ? 'win' : (t.win_loss.toLowerCase()==='loss' ? 'loss' : 'be');
     const dateStr = t.close_date ? t.close_date.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : '—';
     return `
       <div class="trade-card">
         <div class="tc-top">
-          <span class="tc-symbol">${dot} ${t.symbol} <span style="color:var(--muted);font-weight:400;">${t.trade_type}</span></span>
+          <span class="tc-symbol"><span class="tc-dot ${dotCls}"></span>${t.symbol} <span style="color:var(--muted);font-weight:400;">${t.trade_type}</span></span>
           <span class="tc-pnl ${t.profit_loss>=0?'pos':'neg'}">${fmtMoney(t.profit_loss)}</span>
         </div>
         <div class="tc-meta">
           <span>${dateStr}</span>
-          ${t.trade_setup && t.trade_setup!=='Unspecified' ? `<span>📐 ${t.trade_setup}</span>` : ''}
-          ${t.session && t.session!=='Unspecified' ? `<span>🕒 ${t.session}</span>` : ''}
-          ${t.rr!==null && !isNaN(t.rr) ? `<span>🎯 RR ${fmtNum(t.rr,2)}</span>` : ''}
-          ${t.emotion && t.emotion!=='Unspecified' ? `<span>🧠 ${t.emotion}</span>` : ''}
+          ${t.trade_setup && t.trade_setup!=='Unspecified' ? `<span>${t.trade_setup}</span>` : ''}
+          ${t.session && t.session!=='Unspecified' ? `<span>${t.session}</span>` : ''}
+          ${t.rr!==null && !isNaN(t.rr) ? `<span>RR ${fmtNum(t.rr,2)}</span>` : ''}
+          ${t.emotion && t.emotion!=='Unspecified' ? `<span>${t.emotion}</span>` : ''}
         </div>
-        ${t.unfollowed_rules ? `<div class="tc-notes" style="color:var(--loss);">⚠️ ${t.unfollowed_rules}</div>` : ''}
+        ${t.unfollowed_rules ? `<div class="tc-notes" style="color:var(--loss);">${t.unfollowed_rules}</div>` : ''}
         ${t.notes ? `<div class="tc-notes">${t.notes}</div>` : ''}
         ${t.link ? `<div style="margin-top:6px;"><a href="${t.link}" target="_blank" style="color:var(--accent);font-size:11.5px;">View →</a></div>` : ''}
       </div>
@@ -839,7 +1193,7 @@ function showDisciplineTrades(kind){
     : FILTERED.filter(t => t.unfollowed_rules.trim() !== '' && t.unfollowed_rules.trim().toLowerCase() !== 'rules followed');
   const pnl = trades.reduce((s,t)=>s+t.profit_loss,0);
 
-  document.getElementById('modalTitle').textContent = kind === 'followed' ? '✅ Rules followed' : '⚠️ Rules broken';
+  document.getElementById('modalTitle').textContent = kind === 'followed' ? 'Rules followed' : 'Rules broken';
   document.getElementById('modalSub').textContent = `${trades.length} trade${trades.length===1?'':'s'} · ${fmtMoney(pnl)}`;
   document.getElementById('modalBody').innerHTML = renderTradeCards(trades);
   document.getElementById('tradeModal').classList.add('open');
@@ -895,20 +1249,20 @@ function renderBreakdown(){
       <table class="breakdown">
         <tr><th></th><th>Trades</th><th>Total PnL</th><th>Win rate</th></tr>
         <tr onclick="showDisciplineTrades('followed')">
-          <td style="font-family:'Inter',sans-serif;">✅ Rules followed</td>
+          <td style="font-family:'Public Sans',sans-serif;">Rules followed</td>
           <td>${followed.length}</td>
           <td class="${followedPnl>=0?'pos':'neg'}">${fmtMoney(followedPnl)}</td>
           <td>${followed.length ? fmtNum(followed.filter(t=>t.win_loss.toLowerCase()==='win').length/followed.length*100,1)+'%' : '—'}</td>
         </tr>
         <tr onclick="showDisciplineTrades('broken')">
-          <td style="font-family:'Inter',sans-serif;">⚠️ Rules broken</td>
+          <td style="font-family:'Public Sans',sans-serif;">Rules broken</td>
           <td>${broken.length}</td>
           <td class="${brokenPnl>=0?'pos':'neg'}">${fmtMoney(brokenPnl)}</td>
           <td>${broken.length ? fmtNum(broken.filter(t=>t.win_loss.toLowerCase()==='win').length/broken.length*100,1)+'%' : '—'}</td>
         </tr>
       </table>
       ${topRules.length ? `<div style="margin-top:16px;font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">Most common breaks</div>
-      <table class="breakdown">${topRules.map(([rule,count])=>`<tr style="cursor:default;"><td style="font-family:'Inter',sans-serif;">${rule}</td><td>${count}×</td></tr>`).join('')}</table>` : ''}
+      <table class="breakdown">${topRules.map(([rule,count])=>`<tr style="cursor:default;"><td style="font-family:'Public Sans',sans-serif;">${rule}</td><td>${count}×</td></tr>`).join('')}</table>` : ''}
     `;
     return;
   }
@@ -948,7 +1302,7 @@ function renderBreakdown(){
       <tr><th>${BREAKDOWN_FIELDS.find(f=>f.key===activeTab)?.label||''}</th><th>Trades</th><th>Win rate</th><th>Avg RR</th><th>Total PnL</th></tr>
       ${rows.map(r => `
         <tr onclick="showCategoryTrades('${activeTab}', ${JSON.stringify(r.key)})">
-          <td style="font-family:'Inter',sans-serif;">${r.key}</td>
+          <td style="font-family:'Public Sans',sans-serif;">${r.key}</td>
           <td>${r.count}</td>
           <td>${fmtNum(r.winRate,1)}%</td>
           <td>${r.avgRR===null?'—':fmtNum(r.avgRR,2)}</td>
@@ -1119,6 +1473,9 @@ const ALL_DRAWER_FIELDS = [
   {key:'pnl_percent', label:'PNL Percent', widget:'number', editable:true},
   {key:'fee', label:'Fee', widget:'number', editable:false},
   {key:'rr', label:'RR', widget:'number', editable:false},
+  {key:'entry_price', label:'Entry Price', widget:'number', editable:true},
+  {key:'close_price', label:'Close Price', widget:'number', editable:true},
+  {key:'position_size', label:'Position Size', widget:'number', editable:true},
   {key:'win_loss', label:'Win/Loss', widget:'select', editable:true, options:FIELD_OPTIONS.win_loss},
   {key:'trade_type', label:'Trade Type', widget:'select', editable:true, options:FIELD_OPTIONS.trade_type},
   {key:'trade_setup', label:'Trade Setup', widget:'select', editable:true, options:FIELD_OPTIONS.trade_setup},
@@ -1129,8 +1486,8 @@ const ALL_DRAWER_FIELDS = [
   {key:'unfollowed_rules', label:'Unfollowed Rules', widget:'checklist', editable:true, options:UNFOLLOWED_RULES_OPTIONS},
   {key:'exit_type', label:'Exit Type', widget:'select', editable:true, options:FIELD_OPTIONS.exit_type},
   {key:'post_be_result', label:'Post-BE Result', widget:'select', editable:true, options:FIELD_OPTIONS.post_be_result},
-  {key:'account_type', label:'Account Type', widget:'select', editable:true, options:FIELD_OPTIONS.account_type},
   {key:'account', label:'Account', widget:'select', editable:true, options:FIELD_OPTIONS.account},
+  {key:'account_type', label:'Account Type', widget:'select', editable:true, options:FIELD_OPTIONS.account_type},
   {key:'session', label:'Session', widget:'select', editable:true, options:FIELD_OPTIONS.session},
   {key:'day_of_week', label:'Day of Week', widget:'select', editable:true, options:FIELD_OPTIONS.day_of_week},
   {key:'notes', label:'Notes', widget:'textarea', editable:true},
@@ -1209,12 +1566,15 @@ const ALL_JOURNAL_COLUMNS = [
   {key:'profit_loss', label:'Profit/Loss'},
   {key:'pnl_percent', label:'PNL Percent'},
   {key:'rr', label:'RR'},
+  {key:'entry_price', label:'Entry Price'},
+  {key:'close_price', label:'Close Price'},
+  {key:'position_size', label:'Position Size'},
   {key:'rules_followed', label:'Rules Followed?'},
   {key:'unfollowed_rules', label:'Unfollowed Rules'},
   {key:'exit_type', label:'Exit Type'},
   {key:'post_be_result', label:'Post-BE Result'},
-  {key:'account_type', label:'Account Type'},
   {key:'account', label:'Account'},
+  {key:'account_type', label:'Account Type'},
   {key:'session', label:'Session'},
   {key:'day_of_week', label:'Day of Week'},
   {key:'open_date', label:'Open Date'},
@@ -1229,7 +1589,8 @@ const ALL_JOURNAL_COLUMNS = [
 const DEFAULT_JOURNAL_COLUMN_ORDER = [
   'rules_followed','symbol','win_loss','profit_loss','exit_type','objective',
   'trade_type','pattern_type','aof_phase','execution_tf','account','account_type',
-  'session','day_of_week','duration','unfollowed_rules'
+  'session','day_of_week','duration','unfollowed_rules',
+  'entry_price','close_price','position_size'
 ];
 
 let COLUMN_CONFIG = []; // [{key, visible}] for every ALL_JOURNAL_COLUMNS entry, in display order
@@ -1382,11 +1743,24 @@ function _journalCellValue(row, key){
   let v = row[key];
   if(v === null || v === undefined || v === '') return '—';
 
-  if(['profit_loss','fee','pnl_percent','rr'].includes(key)){
+  if(key === 'profit_loss'){
+    const num = parseFloat(v);
+    return isNaN(num) ? v : fmtMoney(num);
+  }
+  if(key === 'fee'){
+    const num = parseFloat(v);
+    return isNaN(num) ? v : '$' + Math.abs(num).toFixed(2);
+  }
+  if(['pnl_percent','rr','entry_price','close_price'].includes(key)){
     const num = parseFloat(v);
     if(isNaN(num)) return v;
     if(key === 'pnl_percent') return num.toFixed(2) + '%';
     return num.toFixed(2);
+  }
+  if(key === 'position_size'){
+    const num = parseFloat(v);
+    if(isNaN(num)) return v;
+    return num.toFixed(6).replace(/\.?0+$/,'') || '0';
   }
   if(['open_date','close_date','created_at','updated_at'].includes(key)){
     const d = new Date(v);
@@ -1437,10 +1811,7 @@ function _journalColoredCell(key, row, plainVal){
   return null;
 }
 
-function renderJournalTable(){
-  const table = document.getElementById('journalTable');
-  if(!table) return;
-
+function getFilteredJournalRows(){
   const query = (document.getElementById('journalSearch')?.value || '').trim().toLowerCase();
 
   let rows = RAW_TRADES;
@@ -1460,7 +1831,7 @@ function renderJournalTable(){
   });
 
   // sort by No. (ascending); rows without a number fall to the end
-  rows = [...rows].sort((a,b) => {
+  return [...rows].sort((a,b) => {
     const an = parseFloat(a.no), bn = parseFloat(b.no);
     const aValid = !isNaN(an), bValid = !isNaN(bn);
     if(aValid && bValid) return an - bn;
@@ -1468,6 +1839,13 @@ function renderJournalTable(){
     if(bValid) return 1;
     return 0;
   });
+}
+
+function renderJournalTable(){
+  const table = document.getElementById('journalTable');
+  if(!table) return;
+
+  const rows = getFilteredJournalRows();
 
   document.getElementById('journalCountLabel').textContent = `${rows.length} trade${rows.length===1?'':'s'}`;
 
@@ -1478,11 +1856,11 @@ function renderJournalTable(){
 
   const thead = `<thead><tr>${JOURNAL_COLUMNS.map(c => `<th>${c.label}</th>`).join('')}</tr></thead>`;
   const tbody = `<tbody>${rows.map(r => `
-    <tr onclick='openDrawer("view", ${JSON.stringify(r.position_id)})' style="cursor:pointer;">
+    <tr onclick='openTradeViewModal(${JSON.stringify(r.position_id)})' style="cursor:pointer;">
       ${JOURNAL_COLUMNS.map(c => {
         if(c.key === 'link'){
           return r.link
-            ? `<td onclick="event.stopPropagation();"><a class="link-btn" href="${r.link}" target="_blank">🔗</a></td>`
+            ? `<td onclick="event.stopPropagation();"><a class="link-btn" href="${r.link}" target="_blank">${linkIconSVG()}</a></td>`
             : `<td><span class="link-btn disabled">—</span></td>`;
         }
         const val = _journalCellValue(r, c.key);
@@ -1540,19 +1918,32 @@ Fee
 `;
 
 function openEasyAddModal(){
-  const input = document.getElementById('easyAddInput');
-  input.value = EASY_ADD_TEMPLATE;
+  document.getElementById('easyAddBroker').value = 'manual';
   document.getElementById('easyAddError').textContent = '';
   document.getElementById('easyAddModal').classList.add('open');
-
-  // put the cursor right on the blank line under "Open Date"
-  const pos = EASY_ADD_TEMPLATE.indexOf('Open Date') + 'Open Date'.length + 1;
-  input.focus();
-  input.setSelectionRange(pos, pos);
+  switchEasyAddBroker();
 }
 
 function closeEasyAddModal(){
   document.getElementById('easyAddModal').classList.remove('open');
+}
+
+function switchEasyAddBroker(){
+  const broker = document.getElementById('easyAddBroker').value;
+  const input = document.getElementById('easyAddInput');
+  document.getElementById('easyAddError').textContent = '';
+
+  if(broker === 'manual'){
+    input.value = EASY_ADD_TEMPLATE;
+    input.placeholder = 'Paste here…';
+    const pos = EASY_ADD_TEMPLATE.indexOf('Open Date') + 'Open Date'.length + 1;
+    input.focus();
+    input.setSelectionRange(pos, pos);
+  }else{
+    input.value = '';
+    input.placeholder = 'Paste the full position card from Upscale here…';
+    input.focus();
+  }
 }
 
 function _parseExchangeDateTime(dateStr, timeStr){
@@ -1568,42 +1959,195 @@ function _parseExchangeDateTime(dateStr, timeStr){
   return `${year}-${mm}-${dd}T${hh}:${min}:${ss}`;
 }
 
+// Upscale's "Positions" export pastes as multiple blocks (the aggregate
+// position row, then one row per fill/order) — we only need the aggregate
+// numbers (first Pnl:/Fee: found) plus the earliest/latest timestamp across
+// every block (open vs. close time), since Upscale doesn't label them.
+function parseUpscaleEasyAddText(raw){
+  const lines = raw.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  const parsed = {};
+
+  const symLine = lines.find(l => /^[A-Z0-9]{2,10}\/[A-Z0-9]{2,10}$/.test(l));
+  if(symLine) parsed.symbol = symLine;
+
+  const dirLine = lines.find(l => /^(LONG|SHORT)\b/i.test(l));
+  if(dirLine) parsed.trade_type = /^LONG/i.test(dirLine) ? 'Long' : 'Short';
+
+  const pnlLine = lines.find(l => /^Pnl:/i.test(l));
+  if(pnlLine){
+    const m = pnlLine.match(/Pnl:\s*(-?[\d,]+\.?\d*)/i);
+    if(m) parsed.profit_loss = parseFloat(m[1].replace(/,/g,''));
+  }
+
+  const feeLine = lines.find(l => /^Fee:/i.test(l));
+  if(feeLine){
+    const m = feeLine.match(/Fee:\s*(-?[\d,]+\.?\d*)/i);
+    if(m) parsed.fee = parseFloat(m[1].replace(/,/g,''));
+  }
+
+  const avgLine = lines.find(l => /^Avg:/i.test(l));
+  if(avgLine){
+    const m = avgLine.match(/Avg:\s*\$?([\d,]+\.?\d*)/i);
+    if(m) parsed.entry_price = parseFloat(m[1].replace(/,/g,''));
+  }
+
+  const closePriceLine = lines.find(l => /^Close:/i.test(l));
+  if(closePriceLine){
+    const m = closePriceLine.match(/Close:\s*\$?([\d,]+\.?\d*)/i);
+    if(m) parsed.close_price = parseFloat(m[1].replace(/,/g,''));
+  }
+
+  // Position size — the first bare decimal number with no "$" and no comma
+  // (Collateral values always have a comma, e.g. "20,198.4").
+  const sizeLine = lines.find(l => /^\d+\.\d+$/.test(l));
+  if(sizeLine) parsed.position_size = parseFloat(sizeLine);
+
+  // PNL % — price move from entry to close, sign-flipped for Short so a
+  // profitable trade always shows positive (matches profit_loss's sign
+  // convention). This is the price's % move, not an account-equity return.
+  if(parsed.entry_price && parsed.close_price){
+    const rawPct = (parsed.close_price - parsed.entry_price) / parsed.entry_price * 100;
+    parsed.pnl_percent = parsed.trade_type === 'Short' ? -rawPct : rawPct;
+  }
+
+  // Win/Loss follows directly from the sign of the realized P&L we just parsed.
+  if(parsed.profit_loss != null){
+    parsed.win_loss = parsed.profit_loss > 0 ? 'Win' : (parsed.profit_loss < 0 ? 'Loss' : 'Breakeven');
+  }
+
+  // Exit type — Upscale's per-fill row says "Close" then the reason on the
+  // next line (SL/TP). "SL" alone doesn't mean a loss — Upscale uses it for
+  // any stop-type order, including a trailing/breakeven stop that locks in
+  // profit — so we only call it "SL Hit" when the P&L was actually negative;
+  // otherwise it's a stop that closed in profit ("Stop Profit").
+  // "Market" (a manual close) isn't mapped — we can't tell from this alone
+  // whether it was a valid early exit or a cut loss.
+  const closeIdx = lines.findIndex(l => /^Close$/i.test(l));
+  if(closeIdx !== -1 && lines[closeIdx+1]){
+    const reason = lines[closeIdx+1].toUpperCase();
+    if(reason === 'SL'){
+      parsed.exit_type = (parsed.profit_loss != null && parsed.profit_loss < 0) ? 'SL Hit' : 'Stop Profit';
+    }else if(reason === 'TP'){
+      parsed.exit_type = 'TP Hit';
+    }
+  }
+
+  const timestamps = [];
+  for(let i = 0; i < lines.length - 1; i++){
+    if(/^\d{1,2}\.\d{1,2}\.\d{2,4}$/.test(lines[i]) && /^\d{1,2}:\d{2}(:\d{2})?$/.test(lines[i+1])){
+      const iso = _parseExchangeDateTime(lines[i], lines[i+1]);
+      if(iso) timestamps.push(iso);
+    }
+  }
+  if(timestamps.length){
+    timestamps.sort();
+    parsed.open_date = timestamps[0];
+    parsed.close_date = timestamps[timestamps.length - 1];
+  }
+
+  return parsed;
+}
+
 function parseEasyAddText(){
   const raw = document.getElementById('easyAddInput').value;
   const errEl = document.getElementById('easyAddError');
   errEl.textContent = '';
+  const broker = document.getElementById('easyAddBroker').value;
 
-  const lines = raw.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-  const parsed = {};
-  let foundAny = false;
+  let parsed;
+  if(broker === 'upscale'){
+    parsed = parseUpscaleEasyAddText(raw);
+  }else{
+    const lines = raw.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    parsed = {};
+    EASY_ADD_FIELD_SPECS.forEach(spec => {
+      const idx = lines.findIndex(l => l.toLowerCase() === spec.label);
+      if(idx === -1) return;
+      const values = lines.slice(idx+1, idx+1+spec.valueLines);
+      if(values.length < spec.valueLines) return;
 
-  EASY_ADD_FIELD_SPECS.forEach(spec => {
-    const idx = lines.findIndex(l => l.toLowerCase() === spec.label);
-    if(idx === -1) return;
-    const values = lines.slice(idx+1, idx+1+spec.valueLines);
-    if(values.length < spec.valueLines) return;
+      if(spec.key === 'open_date' || spec.key === 'close_date'){
+        const iso = _parseExchangeDateTime(values[0], values[1]);
+        if(iso) parsed[spec.key] = iso;
+      }else if(spec.key === 'symbol'){
+        let sym = values[0].toUpperCase();
+        if(!sym.includes('/')) sym += '/USD';
+        parsed.symbol = sym;
+      }else{
+        const num = parseFloat(values[0].replace(/,/g,''));
+        if(!isNaN(num)) parsed[spec.key] = num;
+      }
+    });
+  }
 
-    if(spec.key === 'open_date' || spec.key === 'close_date'){
-      const iso = _parseExchangeDateTime(values[0], values[1]);
-      if(iso){ parsed[spec.key] = iso; foundAny = true; }
-    }else if(spec.key === 'symbol'){
-      let sym = values[0].toUpperCase();
-      if(!sym.includes('/')) sym += '/USD';
-      parsed.symbol = sym;
-      foundAny = true;
-    }else{
-      const num = parseFloat(values[0].replace(/,/g,''));
-      if(!isNaN(num)){ parsed[spec.key] = num; foundAny = true; }
-    }
-  });
-
-  if(!foundAny){
+  if(!Object.keys(parsed).length){
     errEl.textContent = "Couldn't recognize any fields in that text. Make sure you copied the full position card.";
     return;
   }
 
   closeEasyAddModal();
   openDrawer('create', null, parsed);
+}
+
+/* ---------------- Trade View popup (read-only, with Previous/Next) ---------------- */
+let tradeViewList = [];
+let tradeViewIndex = -1;
+
+function openTradeViewModal(positionId){
+  tradeViewList = getFilteredJournalRows();
+  tradeViewIndex = tradeViewList.findIndex(r => r.position_id === positionId);
+  renderTradeViewModal();
+  document.getElementById('tradeViewModal').classList.add('open');
+}
+
+function renderTradeViewModal(){
+  const row = tradeViewList[tradeViewIndex];
+  if(!row) return;
+
+  document.getElementById('tradeViewTitle').textContent = (row.symbol || 'Trade') + (row.no ? ` · #${row.no}` : '');
+
+  const wideFields = new Set(['notes','trade_summary','unfollowed_rules']);
+  document.getElementById('tradeViewBody').innerHTML = DRAWER_FIELDS.map(f => {
+    const spanCls = wideFields.has(f.key) ? ' span-2' : '';
+    if(f.key === 'objective' || f.key === 'duration'){
+      const computed = f.key === 'objective' ? computeObjective(row) : computeDuration(row);
+      return `<div class="field-row${spanCls}"><label>${f.label}</label><div class="field-static">${computed || '—'}</div></div>`;
+    }
+    if(f.key === 'trade_summary'){
+      return `<div class="field-row${spanCls}"><label>${f.label}</label><div class="field-static">${computeTradeSummary(row)}</div></div>`;
+    }
+    if(f.key === 'open_date' || f.key === 'close_date'){
+      const raw = row[f.key];
+      const display = raw ? new Date(raw).toLocaleString(undefined,{dateStyle:'medium', timeStyle:'short'}) : '—';
+      return `<div class="field-row${spanCls}"><label>${f.label}</label><div class="field-static">${display}</div></div>`;
+    }
+    const display = _journalCellValue(row, f.key);
+    const colored = _journalColoredCell(f.key, row, escapeHtml(String(display)));
+    const valueHtml = colored || escapeHtml(String(display));
+    return `<div class="field-row${spanCls}"><label>${f.label}</label><div class="field-static">${valueHtml}</div></div>`;
+  }).join('');
+
+  document.getElementById('tradeViewPrevBtn').disabled = tradeViewIndex <= 0;
+  document.getElementById('tradeViewNextBtn').disabled = tradeViewIndex < 0 || tradeViewIndex >= tradeViewList.length - 1;
+}
+
+function navigateTradeView(dir){
+  const newIndex = tradeViewIndex + dir;
+  if(newIndex < 0 || newIndex >= tradeViewList.length) return;
+  tradeViewIndex = newIndex;
+  renderTradeViewModal();
+}
+
+function closeTradeViewModal(){
+  document.getElementById('tradeViewModal').classList.remove('open');
+}
+
+function editFromTradeView(){
+  const row = tradeViewList[tradeViewIndex];
+  if(!row) return;
+  closeTradeViewModal();
+  openDrawer('view', row.position_id);
+  enterEditMode();
 }
 
 function openDrawer(mode, positionId, prefill){
@@ -1656,28 +2200,39 @@ function renderDrawerFields(){
       return `<div class="field-row"><label>${f.label}</label><div class="field-static">${display}</div></div>`;
     }
 
+    // In create mode, flag still-empty fields red so nothing gets missed
+    // after Easy Add prefills only some of them.
+    const isEmpty = raw === undefined || raw === null || raw === '';
+    const rowCls = (mode === 'create' && isEmpty) ? 'field-row needs-input' : 'field-row';
+
     if(f.widget === 'select'){
-      const opts = f.options.map(o => `<option value="${o}" ${raw===o?'selected':''}>${o}</option>`).join('');
-      const onchange = f.key === 'account' ? ` onchange="syncAccountTypeFromAccount(this.value)"` : '';
-      return `<div class="field-row"><label>${f.label}</label><select data-field="${f.key}"${onchange}><option value="">—</option>${opts}</select></div>`;
+      let selectOptions = f.options;
+      if(f.key === 'pattern_type' && row.trade_setup && TRADE_SETUP_PATTERN_MAP[row.trade_setup]){
+        selectOptions = TRADE_SETUP_PATTERN_MAP[row.trade_setup];
+      }
+      const opts = selectOptions.map(o => `<option value="${o}" ${raw===o?'selected':''}>${o}</option>`).join('');
+      const onchange = f.key === 'account' ? ` onchange="syncAccountTypeFromAccount(this.value)"`
+        : f.key === 'trade_setup' ? ` onchange="syncPatternTypeFromSetup(this.value)"`
+        : '';
+      return `<div class="${rowCls}"><label>${f.label}</label><select data-field="${f.key}"${onchange}><option value="">—</option>${opts}</select></div>`;
     }
     if(f.widget === 'checklist'){
       const selected = (raw || '').split(/[,;]/).map(s=>s.trim()).filter(Boolean);
       const boxes = f.options.map(o => `
         <label><input type="checkbox" data-checklist="${f.key}" value="${o}" ${selected.includes(o)?'checked':''}> ${o}</label>
       `).join('');
-      return `<div class="field-row"><label>${f.label}</label><div class="checklist-box">${boxes}</div></div>`;
+      return `<div class="${rowCls}"><label>${f.label}</label><div class="checklist-box">${boxes}</div></div>`;
     }
     if(f.widget === 'date'){
-      return `<div class="field-row"><label>${f.label}</label><input type="datetime-local" data-field="${f.key}" value="${_toISODateInput(raw)}"></div>`;
+      return `<div class="${rowCls}"><label>${f.label}</label><input type="datetime-local" data-field="${f.key}" value="${_toISODateInput(raw)}"></div>`;
     }
     if(f.widget === 'number'){
-      return `<div class="field-row"><label>${f.label}</label><input type="number" step="any" data-field="${f.key}" value="${raw!==undefined&&raw!==null?raw:''}"></div>`;
+      return `<div class="${rowCls}"><label>${f.label}</label><input type="number" step="any" data-field="${f.key}" value="${raw!==undefined&&raw!==null?raw:''}"></div>`;
     }
     if(f.widget === 'textarea'){
-      return `<div class="field-row"><label>${f.label}</label><textarea data-field="${f.key}">${raw||''}</textarea></div>`;
+      return `<div class="${rowCls}"><label>${f.label}</label><textarea data-field="${f.key}">${raw||''}</textarea></div>`;
     }
-    return `<div class="field-row"><label>${f.label}</label><input type="text" data-field="${f.key}" value="${raw!==undefined&&raw!==null?raw:''}"></div>`;
+    return `<div class="${rowCls}"><label>${f.label}</label><input type="text" data-field="${f.key}" value="${raw!==undefined&&raw!==null?raw:''}"></div>`;
   }).join('');
 }
 
@@ -1901,7 +2456,7 @@ let SIGNAL_ALERTS = [];
 async function manualRefreshAlerts(){
   await loadSignalAlerts();
   const newCount = SIGNAL_ALERTS.filter(isNewSignal).length;
-  showToast(newCount === 0 ? '✅ Data refreshed — no new alerts' : `✅ Data refreshed — ${newCount} new alert${newCount>1?'s':''}`);
+  showToast(newCount === 0 ? 'Data refreshed — no new alerts' : `Data refreshed — ${newCount} new alert${newCount>1?'s':''}`);
 }
 
 let alertsSeenFilter = 'all';
@@ -2078,7 +2633,7 @@ async function markAllAlertsSeen(){
   }
   SIGNAL_ALERTS.forEach(s => { if(unseenIds.includes(s.id)) s.seen = true; });
   renderAlertsTables();
-  showToast(`✅ Marked ${unseenIds.length} alert${unseenIds.length>1?'s':''} as read`);
+  showToast(`Marked ${unseenIds.length} alert${unseenIds.length>1?'s':''} as read`);
 }
 
 async function deleteOldAlerts(){
@@ -2103,7 +2658,7 @@ async function deleteOldAlerts(){
   }
   SIGNAL_ALERTS = SIGNAL_ALERTS.filter(s => !seenIds.includes(s.id));
   renderAlertsTables();
-  showToast(`🗑 Deleted ${seenIds.length} seen alert${seenIds.length>1?'s':''}`);
+  showToast(`Deleted ${seenIds.length} seen alert${seenIds.length>1?'s':''}`);
 }
 
 function renderAlertsTables(){
@@ -2121,9 +2676,7 @@ function renderAlertsTables(){
   }
   const syncLabel = document.getElementById('alertsLastSync');
   if(syncLabel){
-    syncLabel.textContent = lastAlertsSyncAt
-      ? `Last synced: ${lastAlertsSyncAt.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',second:'2-digit'})}`
-      : '';
+    syncLabel.textContent = lastAlertsSyncAt ? `Last synced: ${timeAgo(lastAlertsSyncAt)}` : '';
   }
 }
 
@@ -2144,7 +2697,7 @@ function renderAlertsTableFor(category){
     let outcomeIcon = '';
     if(r.category === 'bitcoin' && isAdminUser()){
       const o = outcomeFor(r.symbol, r.setup || '');
-      if(o) outcomeIcon = o.outcome === 'played_out' ? ' ✅' : ' ❌';
+      if(o) outcomeIcon = o.outcome === 'played_out' ? ' (Played Out)' : ' (Invalidated)';
     }
     const isNew = isNewSignal(r);
     return `
@@ -2155,9 +2708,9 @@ function renderAlertsTableFor(category){
       <td>${fmtSignalTime(r.alert_at)}</td>
       <td onclick="event.stopPropagation();" style="text-align:right;">
         <div style="display:inline-flex;align-items:center;gap:8px;">
-          ${r.tradingview_url ? `<a class="link-btn" href="${r.tradingview_url}" target="_blank">🔗</a>` : `<span class="link-btn disabled">—</span>`}
+          ${r.tradingview_url ? `<a class="link-btn" href="${r.tradingview_url}" target="_blank">${linkIconSVG()}</a>` : `<span class="link-btn disabled">—</span>`}
           ${isNew ? '<span class="pill pill-blue">NEW</span>' : '<span class="pill pill-muted">Seen</span>'}
-          ${!isNew ? `<button class="drawer-danger-btn" style="padding:4px 10px;font-size:11px;" onclick='deleteAlert(${r.id})'>🗑</button>` : ''}
+          ${!isNew ? `<button class="drawer-danger-btn" style="padding:4px 10px;font-size:11px;" onclick='deleteAlert(${r.id})'>${deleteIconSVG()}</button>` : ''}
         </div>
       </td>
     </tr>
@@ -2195,10 +2748,10 @@ function openAlertDetail(id){
     const notCls = existing?.outcome === 'not_played_out' ? ' active-not' : '';
     outcomeBlock = `
       <div style="margin-top:18px;padding-top:14px;border-top:1px solid var(--rule);">
-        <div style="margin-bottom:10px;font-size:12.5px;color:var(--muted);">📊 <strong style="color:var(--ink);">Your accuracy:</strong> ${accLine}</div>
+        <div style="margin-bottom:10px;font-size:12.5px;color:var(--muted);"><strong style="color:var(--ink);">Your accuracy:</strong> ${accLine}</div>
         <div style="display:flex;gap:10px;">
-          <button class="outcome-btn${playedCls}" style="flex:1;" onclick='recordSignalOutcome(${JSON.stringify(s.symbol)}, ${setupArg}, "played_out")'>✅ Played Out</button>
-          <button class="outcome-btn${notCls}" style="flex:1;" onclick='recordSignalOutcome(${JSON.stringify(s.symbol)}, ${setupArg}, "not_played_out")'>❌ Invalidated</button>
+          <button class="outcome-btn${playedCls}" style="flex:1;" onclick='recordSignalOutcome(${JSON.stringify(s.symbol)}, ${setupArg}, "played_out")'>Played Out</button>
+          <button class="outcome-btn${notCls}" style="flex:1;" onclick='recordSignalOutcome(${JSON.stringify(s.symbol)}, ${setupArg}, "not_played_out")'>Invalidated</button>
         </div>
         <div style="margin-top:8px;font-size:11px;color:var(--muted);">Tracking setup: "${setupKey || '—'}" — click again to change your answer.</div>
       </div>
@@ -2448,79 +3001,408 @@ function closeLightbox(){
   document.getElementById('lightboxModal').classList.remove('open');
 }
 
-/* ---------------- Market News (TradingView economic calendar embed) ---------------- */
-let newsWidgetLoaded = false;
-function loadMarketNewsWidget(){
-  if(newsWidgetLoaded) return;
-  newsWidgetLoaded = true;
-  const container = document.getElementById('newsWidgetContainer');
-  if(!container) return;
-  container.innerHTML = `<div class="tradingview-widget-container" style="height:100%;width:100%;"><div class="tradingview-widget-container__widget"></div></div>`;
-  const isLight = document.documentElement.getAttribute('data-theme') === 'light';
-  const script = document.createElement('script');
-  script.type = 'text/javascript';
-  script.src = 'https://s3.tradingview.com/external-embedding/embed-widget-events.js';
-  script.async = true;
-  script.text = JSON.stringify({
-    colorTheme: isLight ? 'light' : 'dark',
-    isTransparent: false,
-    width: "100%",
-    height: "100%",
-    locale: "en",
-    importanceFilter: "-1,0,1",
-    countryFilter: "us,eu,gb,jp,cn,au,ca,nz,ch"
+/* ---------------- Economic Calendar (own data, fed by economic_calendar_bot.py) ---------------- */
+let ECON_EVENTS = [];
+let selectedEconDate = null;
+let econCalMonth = new Date();
+let activeEconImpactFilters = new Set(['High','Medium','Low','Holiday']);
+const ECON_IMPACT_LEVELS = ['High','Medium','Low','Holiday'];
+const ECON_IMPACT_RANK = {high:0, medium:1, low:2, holiday:3};
+
+function sortEconEventsByImpact(events){
+  return [...events].sort((a,b) => {
+    const rankDiff = (ECON_IMPACT_RANK[(a.impact||'').toLowerCase()] ?? 9) - (ECON_IMPACT_RANK[(b.impact||'').toLowerCase()] ?? 9);
+    if(rankDiff !== 0) return rankDiff;
+    return new Date(a.event_date) - new Date(b.event_date);
   });
-  container.querySelector('.tradingview-widget-container').appendChild(script);
+}
+let lastEconSyncAt = null;
+let econSyncLabelTimer = null;
+
+async function loadMarketNewsWidget(){
+  try{
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/economic_events?select=*&order=event_date.asc`, {
+      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}` }
+    });
+    if(!res.ok) throw new Error(await res.text());
+    ECON_EVENTS = await res.json();
+    lastEconSyncAt = new Date();
+  }catch(e){
+    console.error("Couldn't load economic events:", e);
+    ECON_EVENTS = [];
+  }
+  renderEconSyncLabel();
+  clearInterval(econSyncLabelTimer);
+  econSyncLabelTimer = setInterval(renderEconSyncLabel, 30000);
+
+  // A previously-selected date or displayed month can go stale once a fresh
+  // sync replaces the underlying data (e.g. old "this week" rows superseded
+  // by a full month) — drop them so we re-pick sensibly below instead of
+  // showing a day/month that no longer matches what's actually loaded.
+  if(ECON_EVENTS.length){
+    const selectionStillValid = selectedEconDate && ECON_EVENTS.some(e => new Date(e.event_date).toDateString() === selectedEconDate);
+    if(!selectionStillValid) selectedEconDate = null;
+
+    // No valid prior selection (first visit, or it just went stale) —
+    // default to today so there's something to see right away.
+    if(!selectedEconDate){
+      selectedEconDate = new Date().toDateString();
+      econCalMonth = new Date();
+    }
+
+    const displayedMonthHasData = ECON_EVENTS.some(e => {
+      const d = new Date(e.event_date);
+      return d.getFullYear() === econCalMonth.getFullYear() && d.getMonth() === econCalMonth.getMonth();
+    });
+    if(!displayedMonthHasData){
+      econCalMonth = new Date(ECON_EVENTS[0].event_date);
+    }
+  }
+
+  renderEconImpactFilterRow();
+  renderEconCalGrid();
+}
+
+function renderEconSyncLabel(){
+  const el = document.getElementById('econLastSync');
+  if(el) el.textContent = lastEconSyncAt ? `Last synced: ${timeAgo(lastEconSyncAt)}` : '';
+}
+
+function renderEconImpactFilterRow(){
+  const row = document.getElementById('econImpactFilterRow');
+  if(!row) return;
+  const allActive = ECON_IMPACT_LEVELS.every(l => activeEconImpactFilters.has(l));
+  const tags = [`<span class="tag-filter ${allActive?'active':''}" onclick="setEconImpactFilterAll()">All</span>`]
+    .concat(ECON_IMPACT_LEVELS.map(l =>
+      `<span class="tag-filter ${activeEconImpactFilters.has(l)?'active':''}" onclick="toggleEconImpactFilter('${l}')">${l}</span>`
+    ));
+  row.innerHTML = tags.join('');
+}
+
+function toggleEconImpactFilter(level){
+  if(activeEconImpactFilters.has(level)){
+    if(activeEconImpactFilters.size === 1) return; // keep at least one level selected
+    activeEconImpactFilters.delete(level);
+  }else{
+    activeEconImpactFilters.add(level);
+  }
+  renderEconImpactFilterRow();
+  renderEconCalGrid();
+}
+
+function setEconImpactFilterAll(){
+  activeEconImpactFilters = new Set(ECON_IMPACT_LEVELS);
+  renderEconImpactFilterRow();
+  renderEconCalGrid();
+}
+
+function filteredEconEvents(){
+  return ECON_EVENTS.filter(e => {
+    const level = ECON_IMPACT_LEVELS.find(l => l.toLowerCase() === (e.impact||'').toLowerCase());
+    return level && activeEconImpactFilters.has(level);
+  });
+}
+
+function shiftEconCalMonth(dir){
+  econCalMonth.setMonth(econCalMonth.getMonth() + dir);
+  renderEconCalGrid();
+}
+
+function renderEconCalGrid(){
+  const grid = document.getElementById('econCalGrid');
+  if(!grid) return;
+
+  const y = econCalMonth.getFullYear(), m = econCalMonth.getMonth();
+  const labelEl = document.getElementById('econCalLabel');
+  if(labelEl) labelEl.textContent = econCalMonth.toLocaleDateString('en-US',{month:'long', year:'numeric'});
+
+  const byDay = {};
+  filteredEconEvents().forEach(e => {
+    const d = new Date(e.event_date);
+    if(d.getFullYear() !== y || d.getMonth() !== m) return;
+    const key = d.getDate();
+    if(!byDay[key]) byDay[key] = [];
+    byDay[key].push(e);
+  });
+
+  const firstDow = new Date(y, m, 1).getDay();
+  const daysInMonth = new Date(y, m+1, 0).getDate();
+  const todayStr = new Date().toDateString();
+
+  const dows = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  let html = dows.map(d => `<div class="cal-dow">${d}</div>`).join('');
+
+  for(let i=0;i<firstDow;i++) html += `<div class="cal-cell empty"></div>`;
+
+  for(let d=1; d<=daysInMonth; d++){
+    const dateObj = new Date(y, m, d);
+    const dateStr = dateObj.toDateString();
+    const events = byDay[d] || [];
+    const impacts = new Set(events.map(e => (e.impact||'').toLowerCase()));
+    const dots = ['high','medium','low'].filter(i => impacts.has(i)).map(i => `<span class="econ-impact-dot econ-impact-${i}"></span>`).join('');
+    const cls = [
+      events.length ? 'has-events' : '',
+      dateStr === todayStr ? 'today' : '',
+      dateStr === selectedEconDate ? 'selected' : ''
+    ].filter(Boolean).join(' ');
+    const click = events.length ? `onclick="selectEconDay('${dateStr}')"` : '';
+    html += `
+      <div class="cal-cell econ-cal-cell ${cls}" ${click}>
+        <div class="d">${d}</div>
+        ${events.length ? `<div class="econ-cell-dots">${dots}</div><div class="econ-cell-count">${events.length}</div>` : ''}
+      </div>
+    `;
+  }
+
+  grid.innerHTML = html;
+  renderEconCalDetail();
+}
+
+function selectEconDay(key){
+  selectedEconDate = key;
+  renderEconCalGrid();
+}
+
+function renderEconCalDetail(){
+  const titleEl = document.getElementById('econCalDetailTitle');
+  const bodyEl = document.getElementById('econCalDetailBody');
+  if(!titleEl || !bodyEl) return;
+
+  if(!selectedEconDate){
+    titleEl.textContent = 'Select a day';
+    bodyEl.innerHTML = `<div class="empty-state">Click a day with events to see its details here.</div>`;
+    return;
+  }
+
+  const dayEvents = sortEconEventsByImpact(
+    filteredEconEvents().filter(e => new Date(e.event_date).toDateString() === selectedEconDate)
+  );
+
+  titleEl.textContent = new Date(selectedEconDate).toLocaleDateString('en-US',{weekday:'long', month:'long', day:'numeric'});
+
+  bodyEl.innerHTML = dayEvents.map(e => {
+    const time = new Date(e.event_date).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'});
+    const impact = (e.impact||'').toLowerCase();
+    const impactClass = impact==='high' ? 'pill-red' : impact==='medium' ? 'pill-orange' : impact==='holiday' ? 'pill-blue' : 'pill-muted';
+    const values = [
+      e.forecast ? `Forecast: ${escapeHtml(e.forecast)}` : '',
+      e.previous ? `Previous: ${escapeHtml(e.previous)}` : '',
+      e.actual ? `Actual: ${escapeHtml(e.actual)}` : ''
+    ].filter(Boolean).map(v => `<span>${v}</span>`).join('');
+    return `
+      <div class="econ-event-row" onclick="openEconEventModal(${e.id})" style="cursor:pointer;">
+        <div class="econ-event-time">${time}</div>
+        <div class="econ-event-main">
+          <div class="econ-event-title">${escapeHtml(e.country || '')} — ${escapeHtml(e.title)}</div>
+          ${values ? `<div class="econ-event-values">${values}</div>` : ''}
+        </div>
+        <span class="pill ${impactClass}">${escapeHtml(e.impact || '—')}</span>
+      </div>
+    `;
+  }).join('') || `<div class="empty-state">No events this day.</div>`;
+}
+
+// Plain-language explanations for the most common recurring indicators —
+// used as a fallback whenever TradingView's own "comment" field is empty
+// for that specific event (which is common), matched by keyword against
+// the event title. Includes a Tagalog version since not every trader knows
+// these terms by their English name.
+const ECON_GLOSSARY = [
+  { keywords: ['unemployment rate'],
+    en: "The percentage of the labor force that is jobless and actively looking for work. A rising rate usually signals a weakening economy; a falling rate signals a strengthening one.",
+    tl: "Ang porsyento ng mga tao sa labor force na walang trabaho pero aktibong naghahanap. Kapag tumataas ito, senyales ng humihinang ekonomiya; kapag bumababa, senyales ng lumalakas na ekonomiya." },
+  { keywords: ['non farm payrolls', 'nonfarm payrolls', 'nfp'],
+    en: "The number of new jobs added in the US economy (excluding farm workers). One of the most-watched US reports — a strong number often strengthens the US dollar, a weak number often weakens it.",
+    tl: "Bilang ng bagong trabahong naidagdag sa ekonomiya ng US (hindi kasama ang agrikultura). Isa sa pinaka-binabantayang report — kapag malakas ang resulta, karaniwang lumalakas ang US dollar; kapag mahina, humihina." },
+  { keywords: ['core cpi', 'cpi'],
+    en: "Measures the average change in prices consumers pay for goods and services — the main gauge of inflation. Higher-than-expected CPI often pushes central banks toward raising interest rates.",
+    tl: "Sinusukat ang pagbabago sa presyo ng mga bilihin at serbisyo — pangunahing panukat ng inflation. Kapag mas mataas sa inaasahan, karaniwang tumataas ang posibilidad na itaas ng central bank ang interest rate." },
+  { keywords: ['gdp'],
+    en: "The total value of goods and services produced by a country — the broadest measure of economic growth. Higher growth is generally positive for that country's currency.",
+    tl: "Kabuuang halaga ng mga produkto at serbisyong ginawa ng isang bansa — pangkalahatang sukatan ng paglago ng ekonomiya. Mas mataas na paglago ay karaniwang positibo para sa currency ng bansang iyon." },
+  { keywords: ['interest rate decision', 'rate decision', 'cash rate', 'ocr'],
+    en: "The central bank's announcement of whether it's raising, cutting, or holding its benchmark interest rate. Usually the single biggest market-moving event for a currency.",
+    tl: "Anunsyo ng central bank kung itataas, ibababa, o pananatilihin ang benchmark interest rate. Karaniwang ito ang pinakamalaking pwedeng magpagalaw ng presyo ng currency." },
+  { keywords: ['manufacturing pmi', 'services pmi', 'composite pmi', ' pmi'],
+    en: "A survey-based reading of business conditions. Above 50 means the sector is expanding, below 50 means it's contracting.",
+    tl: "Sukatan mula sa survey ng mga business conditions. Kapag lampas 50, lumalago ang sektor; kapag mas mababa sa 50, humihina/nagko-contract ito." },
+  { keywords: ['retail sales'],
+    en: "Measures the total value of sales at the retail level — a key sign of consumer spending strength, which drives most economies.",
+    tl: "Sinusukat ang kabuuang benta sa antas ng retail — mahalagang senyales ng lakas ng paggastos ng consumer, na siyang pangunahing nagpapatakbo ng karamihan ng ekonomiya." },
+  { keywords: ['trade balance'],
+    en: "The difference between a country's exports and imports. A surplus (more exports) is usually positive for the currency; a deficit (more imports) can be negative.",
+    tl: "Ang pagkakaiba ng exports at imports ng isang bansa. Ang surplus (mas maraming exports) ay karaniwang positibo para sa currency; ang deficit (mas maraming imports) ay maaaring negatibo." },
+  { keywords: ['ppi', 'producer price'],
+    en: "Measures the average change in prices that producers/businesses receive for their goods — an early signal of inflation before it reaches consumers.",
+    tl: "Sinusukat ang pagbabago sa presyong natatanggap ng mga producer/negosyo — maagang senyales ng inflation bago ito umabot sa consumer." },
+  { keywords: ['consumer confidence', 'consumer sentiment'],
+    en: "Measures how optimistic consumers feel about the economy and their own finances. Higher confidence usually means more spending ahead.",
+    tl: "Sinusukat kung gaano ka-optimistiko ang mga consumer sa ekonomiya at sa sarili nilang pananalapi. Mas mataas na confidence ay senyales ng mas maraming paggastos sa hinaharap." },
+  { keywords: ['building permits', 'housing starts'],
+    en: "Tracks new construction activity — a leading indicator of economic strength since building requires confidence in future demand.",
+    tl: "Sinusubaybayan ang bagong construction activity — maagang senyales ng lakas ng ekonomiya dahil nangangailangan ng tiwala sa hinaharap na pangangailangan ang pagtatayo." },
+  { keywords: ['jobless claims', 'unemployment claims'],
+    en: "The number of people filing for unemployment benefits for the first time in a given week — a fast-moving, weekly gauge of labor market health.",
+    tl: "Bilang ng mga taong unang beses na nag-apply ng unemployment benefits sa isang linggo — mabilis at lingguhang sukatan ng kalusugan ng labor market." },
+  { keywords: ['fomc'],
+    en: "The US Federal Reserve's policy statement or detailed meeting notes — markets scan these closely for hints about future rate moves.",
+    tl: "Pahayag o detalyadong tala ng miting ng US Federal Reserve — maingat itong sinusuri ng merkado para sa mga senyales ng susunod na galaw sa interest rate." },
+  { keywords: [' speaks', 'speech'],
+    en: "A central bank official speaking publicly — markets watch for any hint about future monetary policy direction.",
+    tl: "Pampublikong pananalita ng isang opisyal ng central bank — binabantayan ng merkado ang anumang senyales tungkol sa hinaharap na direksyon ng patakaran sa pananalapi." },
+  { keywords: ['employment change'],
+    en: "The net number of jobs added or lost in the economy over the period — similar to Non-Farm Payrolls but used by other countries.",
+    tl: "Netong bilang ng trabahong naidagdag o nawala sa ekonomiya sa loob ng panahong ito — halos katulad ng Non-Farm Payrolls pero ginagamit ng ibang bansa." }
+];
+
+function findEconGlossaryEntry(title){
+  const t = (title || '').toLowerCase();
+  return ECON_GLOSSARY.find(g => g.keywords.some(k => t.includes(k))) || null;
+}
+
+let econEventLangIsTagalog = false;
+
+function openEconEventModal(id){
+  const e = ECON_EVENTS.find(x => x.id === id);
+  if(!e) return;
+
+  // Track this event's position within its day's list (same order shown in
+  // the side panel) so Previous/Next can step through without closing the popup.
+  const dayList = sortEconEventsByImpact(
+    filteredEconEvents().filter(x => new Date(x.event_date).toDateString() === selectedEconDate)
+  );
+  const dayIndex = dayList.findIndex(x => x.id === id);
+  window._econEventDayList = dayList;
+  window._econEventDayIndex = dayIndex;
+
+  const prevBtn = document.getElementById('econEventPrevBtn');
+  const nextBtn = document.getElementById('econEventNextBtn');
+  prevBtn.disabled = dayIndex <= 0;
+  nextBtn.disabled = dayIndex < 0 || dayIndex >= dayList.length - 1;
+
+  const impact = (e.impact||'').toLowerCase();
+  const impactClass = impact==='high' ? 'pill-red' : impact==='medium' ? 'pill-orange' : impact==='holiday' ? 'pill-blue' : 'pill-muted';
+
+  document.getElementById('econEventTitle').textContent = `${e.country ? e.country + ' — ' : ''}${e.title}`;
+  const impactEl = document.getElementById('econEventImpact');
+  impactEl.textContent = e.impact || '—';
+  impactEl.className = 'pill ' + impactClass;
+  document.getElementById('econEventDate').textContent = new Date(e.event_date).toLocaleString(undefined,{dateStyle:'medium',timeStyle:'short'});
+
+  const values = [
+    { label: 'Forecast', value: e.forecast },
+    { label: 'Previous', value: e.previous },
+    { label: 'Actual', value: e.actual }
+  ].filter(v => v.value);
+  document.getElementById('econEventValues').innerHTML = values.map(v => `
+    <div class="acc-stat-box">
+      <div class="acc-stat-label">${v.label}</div>
+      <div class="acc-stat-value">${escapeHtml(String(v.value))}</div>
+    </div>
+  `).join('') || '';
+
+  econEventLangIsTagalog = false;
+  window._econEventGlossary = findEconGlossaryEntry(e.title);
+  window._econEventComment = e.comment || null;
+  window._econEventCommentTl = e.comment_tl || null;
+
+  document.getElementById('econEventCommentWrap').style.display = window._econEventComment ? 'block' : 'none';
+
+  // One toggle for the whole modal — shown whenever there's at least one
+  // Tagalog version available (glossary match and/or a translated comment).
+  const anyTagalogAvailable = !!window._econEventGlossary || !!window._econEventCommentTl;
+  document.getElementById('econEventLangBtn').style.display = anyTagalogAvailable ? 'inline-block' : 'none';
+
+  renderEconEventDescription();
+  document.getElementById('econEventModal').classList.add('open');
+}
+
+function renderEconEventDescription(){
+  const glossary = window._econEventGlossary;
+  const glossaryWrap = document.getElementById('econEventGlossaryWrap');
+  glossaryWrap.style.display = glossary ? 'block' : 'none';
+
+  const langBtn = document.getElementById('econEventLangBtn');
+  langBtn.textContent = 'Translate';
+  langBtn.classList.toggle('active-translate', econEventLangIsTagalog);
+  langBtn.title = econEventLangIsTagalog ? 'Showing Tagalog — click to switch back to English' : 'Click to translate to Tagalog';
+  if(glossary){
+    document.getElementById('econEventGlossaryText').textContent = econEventLangIsTagalog ? glossary.tl : glossary.en;
+  }
+
+  if(window._econEventComment){
+    document.getElementById('econEventComment').textContent = (econEventLangIsTagalog && window._econEventCommentTl)
+      ? window._econEventCommentTl
+      : window._econEventComment;
+  }
+}
+
+function toggleEconEventLang(){
+  econEventLangIsTagalog = !econEventLangIsTagalog;
+  renderEconEventDescription();
+}
+
+function closeEconEventModal(){
+  document.getElementById('econEventModal').classList.remove('open');
+}
+
+function navigateEconEvent(dir){
+  const list = window._econEventDayList || [];
+  const newIndex = (window._econEventDayIndex ?? 0) + dir;
+  if(newIndex < 0 || newIndex >= list.length) return;
+  openEconEventModal(list[newIndex].id);
 }
 
 /* ---------------- Challenges ---------------- */
 
+// Forging/blacksmith-themed marks — the team likens trading discipline to
+// forging metal (paghahasa): each rep on the anvil sharpens the craft.
 const CHALLENGE_ICONS = {
-  shield: '<path d="M12 2 20 6v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6z"/>',
-  scale: '<path d="M12 3v18M9 3h6M5 8l-3 6a4 4 0 0 0 8 0l-3-6M19 8l-3 6a4 4 0 0 0 8 0l-3-6M5 8h14"/>',
-  'shield-check': '<path d="M12 2 20 6v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6z"/><path d="M9 12l2 2 4-4"/>',
-  flame: '<path d="M12 2c-2 4-6 6-6 11a6 6 0 0 0 12 0c0-2-1-3-2-4 0 2-1 3-2 3-1.5 0-2-1.5-1-3 1-2 0-5-1-7z"/>',
-  'trending-up': '<polyline points="3 17 9 11 13 15 21 6"/><polyline points="14 6 21 6 21 13"/>',
-  'trending-down': '<polyline points="3 7 9 13 13 9 21 18"/><polyline points="14 18 21 18 21 11"/>',
-  octagon: '<polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>',
-  'bar-chart': '<line x1="6" y1="20" x2="6" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="18" y1="20" x2="18" y2="14"/>',
-  compass: '<circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/>',
+  shield: '<path d="M4 15h11l3-4h2v4a2 2 0 0 1-2 2H8L4 15z"/><path d="M7 17v4M17 17v4"/>', // anvil
+  'shield-check': '<path d="M4 15h11l3-4h2v4a2 2 0 0 1-2 2H8L4 15z"/><path d="M7 17v4M17 17v4"/><path d="M8.5 10l1.5 1.5L13 8"/>', // anvil, verified
+  scale: '<path d="M8 3 4 10l3 2 4-7"/><path d="M16 3l4 7-3 2-4-7"/><path d="M7 12l5 9 5-9"/>', // tongs
+  flame: '<path d="M12 2c-2 4-6 6-6 11a6 6 0 0 0 12 0c0-2-1-3-2-4 0 2-1 3-2 3-1.5 0-2-1.5-1-3 1-2 0-5-1-7z"/>', // forge fire
+  'trending-up': '<path d="M15 4l5 5-3 3-5-5 3-3z"/><path d="M13 8 4 17l3 3 9-9"/>', // hammer striking up
+  'trending-down': '<path d="M9 20l-5-5 3-3 5 5-3 3z"/><path d="M11 16 20 7l-3-3-9 9"/>', // hammer striking down
+  octagon: '<polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86"/><path d="M9 12l2 2 4-4"/>', // maker's stamp
+  'bar-chart': '<path d="M4 18l1-3h6l1 3-2 2H6l-2-2z"/><path d="M4 12l1-3h6l1 3-2 2H6l-2-2z"/>', // stacked ingots
+  compass: '<path d="M12 2 9 14h6L12 2z"/><path d="M9 14l-2 8h10l-2-8"/>', // chisel
   star: '<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>',
-  refresh: '<polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>',
-  dollar: '<line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>',
-  trophy: '<circle cx="12" cy="8" r="6"/><path d="M8.21 13.89 7 22l5-3 5 3-1.21-8.11"/>',
-  percent: '<line x1="19" y1="5" x2="5" y2="19"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/>',
-  target: '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>',
-  ban: '<circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>',
+  refresh: '<path d="M3 8l9-3 9 3v8l-9 3-9-3V8z"/><path d="M3 8l9 3 9-3M12 11v10"/>', // bellows
+  dollar: '<path d="M5 16 7 8h10l2 8-4 3H9l-4-3z"/>', // ingot
+  trophy: '<path d="M8 21V11a4 4 0 0 1 8 0v10"/><circle cx="8" cy="21" r="1.3" fill="currentColor" stroke="none"/><circle cx="16" cy="21" r="1.3" fill="currentColor" stroke="none"/>', // horseshoe
+  percent: '<path d="M12 2v5M12 17v5M2 12h5M17 12h5"/><path d="M5 5l3.5 3.5M15.5 15.5 19 19M19 5l-3.5 3.5M8.5 15.5 5 19"/>', // hammer sparks
+  target: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/>', // anvil face rings
+  ban: '<path d="M8 3 5 9l2 1 3-6"/><path d="M16 3l3 6-2 1-3-6"/><path d="M7 10l5 4 5-4"/>', // tongs shut
   search: '<circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>',
   clock: '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
   calendar: '<rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>',
-  medal: '<circle cx="12" cy="9" r="5"/><path d="M9 13.5 7 21l5-2.5 5 2.5-2-7.5"/>',
+  medal: '<path d="M8 21V13a4 4 0 0 1 8 0v8"/><circle cx="8" cy="21" r="1.3" fill="currentColor" stroke="none"/><circle cx="16" cy="21" r="1.3" fill="currentColor" stroke="none"/><path d="M9 13a3 3 0 0 1 6 0"/>', // horseshoe, hung
   lock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
   globe: '<circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>',
-  shuffle: '<polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/>',
-  hash: '<line x1="4" y1="9" x2="20" y2="9"/><line x1="4" y1="15" x2="20" y2="15"/><line x1="10" y1="3" x2="8" y2="21"/><line x1="16" y1="3" x2="14" y2="21"/>',
+  shuffle: '<rect x="3" y="8" width="8" height="10" rx="4"/><rect x="13" y="8" width="8" height="10" rx="4"/>', // forged chain link
+  hash: '<circle cx="7" cy="7" r="1.6" fill="currentColor" stroke="none"/><circle cx="17" cy="7" r="1.6" fill="currentColor" stroke="none"/><circle cx="7" cy="17" r="1.6" fill="currentColor" stroke="none"/><circle cx="17" cy="17" r="1.6" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/>', // rivets
   book: '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V4a1 1 0 0 0-1-1H6.5A2.5 2.5 0 0 0 4 5.5v14z"/><path d="M4 19.5A2.5 2.5 0 0 0 6.5 22H20"/>',
   list: '<line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>',
   image: '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>',
   'check-circle': '<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>',
-  zap: '<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>'
+  zap: '<path d="M15 4l5 5-3 3-5-5 3-3z"/><path d="M13 8 7 14"/><path d="M3 17l2-1M3 20h3M2 14l2 1"/>' // hammer strike
 };
 function challengeIconSVG(name){
-  return `<svg viewBox="0 0 24 24" fill="currentColor" fill-opacity="0.22" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${CHALLENGE_ICONS[name] || CHALLENGE_ICONS.star}</svg>`;
+  return `<svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">${CHALLENGE_ICONS[name] || CHALLENGE_ICONS.star}</svg>`;
 }
 
 // Thresholds are spaced across the full point pool from all 26 challenges
 // (~1980 points max) so "Legendary" still means having done nearly
 // everything, instead of capping out with lots of unused headroom.
 const CHALLENGE_RANKS = [
-  {min:0, label:'Novice Trader'},
-  {min:250, label:'Apprentice Trader'},
-  {min:500, label:'Skilled Trader'},
-  {min:800, label:'Expert Trader'},
-  {min:1150, label:'Master Trader'},
-  {min:1500, label:'Elite Trader'},
-  {min:1850, label:'Legendary Trader'}
+  {min:0, label:'Raw Ore'},
+  {min:250, label:'Kindled'},
+  {min:500, label:'Hammered'},
+  {min:800, label:'Tempered'},
+  {min:1150, label:'Sharpened'},
+  {min:1500, label:'Master Forger'},
+  {min:1850, label:'Legendary Blade'}
 ];
 function rankForPoints(points){
   let current = CHALLENGE_RANKS[0], next = null;
@@ -2926,7 +3808,7 @@ function computeChallenges(trades, achRows){
   if(accountsWithDrawdownFloor.length){
     const breached = accountsWithDrawdownFloor.some(x => x.stats.currentBalance < x.stats.drawdownFloor);
     c29 = {
-      icon:'shield-check', title:'Drawdown Guard', points:40,
+      icon:'shield-check', title:'Account Drawdown Guard', points:40,
       desc:'Keep every account above its Max Total Drawdown floor.',
       howTo:"Compares each Prop Firm account's current balance to its Max Total Drawdown % rule. Pass/fail, not a target to push toward — the further above the floor, the safer, but there's no reason to trade more just to widen the gap.",
       current: breached ? 0 : 1, target: 1, done: !breached
@@ -2991,7 +3873,7 @@ function activeCardHTML(c, status){
     <div class="challenge-card ${status}" onclick='openChallengeDetail(${JSON.stringify(c.title)})'>
       <div class="challenge-hover-tip">${c.howTo || c.desc}</div>
       <div class="challenge-badge ${badgeCls}">
-        ${challengeIconSVG(c.icon)}
+        <div class="challenge-badge-shape">${challengeIconSVG(c.icon)}</div>
         ${status === 'done' ? `<span class="challenge-badge-mark check">✓</span>` : ''}
       </div>
       <div class="challenge-info">
@@ -3010,7 +3892,7 @@ function lockedCardHTML(c){
   return `
     <div class="challenge-card locked">
       <div class="challenge-badge">
-        ${challengeIconSVG(c.icon)}
+        <div class="challenge-badge-shape">${challengeIconSVG(c.icon)}</div>
         <span class="challenge-badge-mark lock">${challengeIconSVG('lock')}</span>
       </div>
       <div class="challenge-info">
@@ -3043,8 +3925,8 @@ function renderRankLadder(totalPoints){
     return `
       <div class="rank-medal ${reached ? 'reached' : ''} ${isCurrent ? 'current' : ''}" onclick='openRankDetail(${JSON.stringify(r.label)}, ${totalPoints})'>
         ${isCurrent ? `<div class="rank-medal-you">You are here</div>` : ''}
-        ${challengeIconSVG(rankIcons[i] || 'star')}
-        <div class="rank-medal-label">${r.label.replace(' Trader','')}</div>
+        <div class="rank-medal-shape">${challengeIconSVG(rankIcons[i] || 'star')}</div>
+        <div class="rank-medal-label">${r.label}</div>
       </div>
     `;
   }).join('');
@@ -3058,13 +3940,13 @@ function renderRankLadder(totalPoints){
 }
 
 const RANK_DESCRIPTIONS = {
-  'Novice Trader': "Everyone starts here. Log your trades and work through the challenges to start building points.",
-  'Apprentice Trader': "You're forming real habits — the small, consistent decisions are starting to add up.",
-  'Skilled Trader': "Your discipline is becoming routine rather than effort. Keep stacking consistent decisions.",
-  'Expert Trader': "You've shown consistency across several different areas of your trading, not just one.",
-  'Master Trader': "A high, well-rounded level of discipline — this takes sustained, deliberate practice to reach.",
-  'Elite Trader': "You're clearing the hardest levels on most challenges, not just the easy first steps.",
-  'Legendary Trader': "You've worked through nearly every challenge here. This reflects a long track record, not luck."
+  'Raw Ore': "Everyone starts here, unshaped. Log your trades and work through the challenges to start building points.",
+  'Kindled': "The fire's lit — you're forming real habits, and the small, consistent decisions are starting to add up.",
+  'Hammered': "Shaped by repetition. Your discipline is becoming routine rather than effort. Keep stacking consistent decisions.",
+  'Tempered': "Hardened by trial. You've shown consistency across several different areas of your trading, not just one.",
+  'Sharpened': "A refined edge — a high, well-rounded level of discipline that takes sustained, deliberate practice to reach.",
+  'Master Forger': "You're clearing the hardest levels on most challenges, not just the easy first steps.",
+  'Legendary Blade': "You've worked through nearly every challenge here. This reflects a long track record, not luck."
 };
 
 function openRankDetail(label, totalPoints){
@@ -3175,7 +4057,7 @@ function openChallengeDetail(title){
   const statText = c.statOverride || `${c.current} / ${c.target}`;
   const badge = document.getElementById('challengeDetailBadge');
   badge.className = 'challenge-badge' + (c.done ? ' badge-done' : '');
-  badge.innerHTML = challengeIconSVG(c.icon) + (c.done ? '<span class="challenge-badge-mark check">✓</span>' : '');
+  badge.innerHTML = `<div class="challenge-badge-shape">${challengeIconSVG(c.icon)}</div>` + (c.done ? '<span class="challenge-badge-mark check">✓</span>' : '');
   document.getElementById('challengeDetailTitle').textContent = c.title;
   document.getElementById('challengeDetailPoints').textContent = `+${c.points} points${c.done ? ' · Achieved' : ''}`;
   document.getElementById('challengeDetailHowTo').textContent = c.howTo || c.desc;
@@ -3236,7 +4118,9 @@ async function renderProfile(){
   // Header card — always shows the saved values, whether editing or not.
   const initial = (p.display_name || '').trim().charAt(0).toUpperCase() || '?';
   document.getElementById('profileAvatar').textContent = initial;
-  document.getElementById('profileHeaderName').textContent = p.display_name || 'Set your name';
+  document.getElementById('profileHeaderName').innerHTML = p.display_name
+    ? `${escapeHtml(p.display_name)}${p.nickname ? ` <span class="profile-nickname">(${escapeHtml(p.nickname)})</span>` : ''}`
+    : 'Set your name';
   document.getElementById('profileHeaderBadges').innerHTML = `
     <span class="pill pill-blue">${escapeHtml(p.trading_style || 'Trading style')}</span>
     <span class="pill pill-orange">${escapeHtml(p.primary_market || 'Market')}</span>
@@ -3262,6 +4146,7 @@ async function renderProfile(){
   if(profileEditing){
     fields.innerHTML = `
       <div class="field-row"><label>Display Name</label><input id="profileName" placeholder="Your name" value="${escapeHtml(p.display_name || '')}"></div>
+      <div class="field-row"><label>Nickname</label><input id="profileNickname" placeholder="e.g. JessiePinkman" value="${escapeHtml(p.nickname || '')}"></div>
       <div class="field-row"><label>Trading Style</label>
         <select id="profileStyle">${PROFILE_STYLE_OPTIONS.map(s => `<option value="${s}" ${p.trading_style===s?'selected':''}>${s}</option>`).join('')}</select>
       </div>
@@ -3353,7 +4238,7 @@ async function uploadInspirationImage(file){
     if(oldPath) await sb.storage.from('profile-images').remove([oldPath]);
 
     await loadProfile();
-    showToast('✅ Inspiration image updated');
+    showToast('Inspiration image updated');
   }catch(e){
     console.error("Couldn't upload inspiration image:", e);
     const msg = e?.message || String(e);
@@ -3368,6 +4253,9 @@ async function persistProfile(partial){
   const body = {
     user_id: user.id,
     display_name: nameEl ? nameEl.value.trim() : (PROFILE_DATA?.display_name || ''),
+    nickname: document.getElementById('profileNickname')
+      ? document.getElementById('profileNickname').value.trim()
+      : (PROFILE_DATA?.nickname || ''),
     trading_style: document.getElementById('profileStyle')?.value || PROFILE_DATA?.trading_style || 'Scalper',
     primary_market: document.getElementById('profileMarket')?.value || PROFILE_DATA?.primary_market || 'Crypto',
     risk_per_trade: document.getElementById('profileRisk')
@@ -3400,7 +4288,7 @@ async function saveProfile(){
     await persistProfile({ inspiration_image_path: PROFILE_DATA?.inspiration_image_path || null });
     profileEditing = false;
     await renderProfile();
-    showToast('✅ Profile saved');
+    showToast('Profile saved');
   }catch(e){
     console.error("Couldn't save profile:", e);
     alert("Couldn't save — please try again.");
@@ -3481,7 +4369,36 @@ function syncAccountTypeFromAccount(accountName){
   else if(acc.account_type === 'Exchange') mapped = 'Demo';
   if(!mapped) return;
   const sel = document.querySelector('#drawerBody [data-field="account_type"]');
-  if(sel) sel.value = mapped;
+  if(sel){
+    sel.value = mapped;
+    // setting .value programmatically doesn't fire "change", so the
+    // needs-input red flag wouldn't otherwise know this field got filled
+    sel.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+}
+
+// Which Pattern Type options make sense for each Trade Setup — HL patterns
+// belong to Bounce Play, LH patterns to Rejection Play, and the 30 min
+// invalidation pattern is shared since it's used by both plus its own setup.
+const TRADE_SETUP_PATTERN_MAP = {
+  'Bounce Play': ['5 mins HL','15 mins HL','1 hour HL','30 mins Invalidation Play','4 Hour HL'],
+  'Rejection Play': ['5 mins LH','15 mins LH','1 hour LH','30 mins Invalidation Play','4 Hour LH'],
+  'Invalidation Play': ['30 mins Invalidation Play']
+};
+
+// Re-filters the Pattern Type dropdown to only the options relevant to the
+// selected Trade Setup — clears the current pick if it's no longer valid.
+function syncPatternTypeFromSetup(setupValue){
+  const sel = document.querySelector('#drawerBody [data-field="pattern_type"]');
+  if(!sel) return;
+  const allowed = TRADE_SETUP_PATTERN_MAP[setupValue] || FIELD_OPTIONS.pattern_type;
+  const current = sel.value;
+  const opts = allowed.map(o => `<option value="${o}" ${current===o?'selected':''}>${o}</option>`).join('');
+  sel.innerHTML = `<option value="">—</option>${opts}`;
+  if(current && !allowed.includes(current)) sel.value = '';
+  // rebuilding innerHTML/setting .value doesn't fire "change" on its own —
+  // dispatch it so the needs-input red flag stays in sync either way
+  sel.dispatchEvent(new Event('change', { bubbles: true }));
 }
 
 // Derives all the compliance/progress numbers for one account from the real
@@ -3520,7 +4437,10 @@ function computeAccountStats(acc){
     const key = new Date(t.close_date).toDateString();
     dayPL[key] = (dayPL[key] || 0) + (t.profit_loss || 0);
   });
-  const profitableDaysCount = Object.values(dayPL).filter(v => v > 0).length;
+  // Upscale only counts a day toward the minimum trading days rule if it
+  // cleared at least $50 profit — a day that's merely break-even/slightly
+  // positive doesn't count.
+  const profitableDaysCount = Object.values(dayPL).filter(v => v >= 50).length;
   const profitableDaysTarget = Number(acc.min_trading_days) || null;
 
   const sortedTrades = [...phaseTrades].sort((a,b) => a.close_date - b.close_date);
@@ -3552,7 +4472,8 @@ function openAccountDetail(id){
   const stageIdx = stages.indexOf(a.phase);
   document.getElementById('accDetailStepper').innerHTML = stages.map((label,i) => {
     const cls = stageIdx < 0 ? '' : (i < stageIdx ? 'done' : (i === stageIdx ? 'current' : ''));
-    return `<div class="acc-step ${cls}"><div class="acc-step-line"></div><div class="acc-step-circle">${i < stageIdx ? '✓' : i+1}</div><div class="acc-step-label">${label.replace('Evaluation ','')}</div></div>`;
+    const tooltip = escapeHtml(phaseStepTooltip(a, s, stageIdx, i, label));
+    return `<div class="acc-step ${cls}" data-tooltip="${tooltip}"><div class="acc-step-line"></div><div class="acc-step-circle">${i < stageIdx ? '✓' : i+1}</div><div class="acc-step-label">${label.replace('Evaluation ','')}</div></div>`;
   }).join('');
 
   if(s.dailyLossLimit > 0){
@@ -3573,14 +4494,57 @@ function openAccountDetail(id){
     ? `<span>stop ${s.drawdownFloor.toLocaleString(undefined,{maximumFractionDigits:0})}</span><span>goal ${s.profitGoal.toLocaleString(undefined,{maximumFractionDigits:0})}</span>`
     : '';
 
-  document.getElementById('accDetailEarn').textContent = `$${s.totalEarn.toLocaleString(undefined,{maximumFractionDigits:2})}`;
+  const phaseTarget = phaseTargetFor(a.phase, s.accountSize);
+  const earnStr = `$${s.totalEarn.toLocaleString(undefined,{maximumFractionDigits:2})}`;
+  document.getElementById('accDetailEarn').textContent = (phaseTarget !== null)
+    ? `${earnStr} / $${phaseTarget.toLocaleString(undefined,{maximumFractionDigits:2})}`
+    : earnStr;
 
-  renderAccountEarnChart(s);
+  // Open the modal before creating the chart, and defer the chart itself to
+  // the next animation frame — Chart.js measures the canvas at construction
+  // time, and a canvas that hasn't finished its layout pass after display:
+  // none -> flex still reports stale/zero dimensions, which collapses the
+  // zero-line gradient to a flat single color instead of the real
+  // above/below-zero split.
   document.getElementById('accountDetailModal').classList.add('open');
+  requestAnimationFrame(() => renderAccountEarnChart(s));
 }
 
 function closeAccountDetail(){
   document.getElementById('accountDetailModal').classList.remove('open');
+}
+
+// Upscale's fixed 5%/8% profit targets per evaluation phase — null for
+// Funded (no fixed dollar target, it's ongoing payouts from there).
+function phaseTargetFor(label, size){
+  const l = (label || '').trim();
+  if(l === 'Evaluation Phase 1') return size * 0.05;
+  if(l === 'Evaluation Phase 2') return size * 0.08;
+  return null;
+}
+
+// Hover text for a Phase stepper step — shown as "$achieved / $target" so
+// a passed phase reads as fully reached (matches its own target) and the
+// current phase reads as live progress. Changing the phase itself happens
+// from Edit Account.
+function phaseStepTooltip(acc, s, stageIdx, i, label){
+  const size = Number(acc.account_size) || 0;
+
+  if(label === 'Funded'){
+    if(i < stageIdx) return 'Funded';
+    if(i === stageIdx) return `Funded — $${(s.totalEarn||0).toLocaleString(undefined,{maximumFractionDigits:2})} earned`;
+    return 'Not yet funded';
+  }
+
+  const target = phaseTargetFor(label, size);
+  const targetStr = `$${target.toLocaleString(undefined,{maximumFractionDigits:2})}`;
+
+  if(i < stageIdx) return `${targetStr} / ${targetStr} — target reached`;
+  if(i === stageIdx){
+    const achieved = Math.max(0, s.totalEarn || 0);
+    return `$${achieved.toLocaleString(undefined,{maximumFractionDigits:2})} / ${targetStr}`;
+  }
+  return `Target: ${targetStr}`;
 }
 
 function renderAccountEarnChart(s){
@@ -3593,19 +4557,49 @@ function renderAccountEarnChart(s){
   const values = s.series.map(p => p.cum);
   const finalVal = values[values.length - 1];
   const lineColor = finalVal >= 0 ? cssVar('--win') : cssVar('--loss');
+  const segColor = (c) => (c.p0.parsed.y < 0 || c.p1.parsed.y < 0) ? cssVar('--loss') : cssVar('--win');
+
+  // Same "green above zero, red below" fade used by the main Equity Curve.
+  const zeroFadeGradient = (context) => {
+    const {chart} = context;
+    const {ctx: c, chartArea, scales} = chart;
+    if(!chartArea || !(chartArea.bottom > chartArea.top)) return lineColor + '22';
+    const winColor = cssVar('--win'), lossColor = cssVar('--loss');
+    const yZero = scales?.y?.getPixelForValue ? scales.y.getPixelForValue(0) : NaN;
+    if(!Number.isFinite(yZero)) return lineColor + '22';
+    const zeroRatio = Math.min(1, Math.max(0, (yZero - chartArea.top) / (chartArea.bottom - chartArea.top)));
+    const gradient = c.createLinearGradient(0, chartArea.top, 0, chartArea.bottom);
+    gradient.addColorStop(0, winColor + '55');
+    gradient.addColorStop(Math.max(0, zeroRatio - 0.001), winColor + '05');
+    gradient.addColorStop(Math.min(1, zeroRatio + 0.001), lossColor + '05');
+    gradient.addColorStop(1, lossColor + '55');
+    return gradient;
+  };
 
   accountDetailChartRef = new Chart(ctx, {
     type: 'line',
-    data: { labels, datasets: [{
-      data: values, borderColor: lineColor, backgroundColor: lineColor + '22',
-      fill: 'origin', tension: 0.25, pointRadius: 0, borderWidth: 2
-    }]},
+    data: { labels, datasets: [
+      {
+        data: values, borderColor: lineColor, backgroundColor: zeroFadeGradient,
+        segment: { borderColor: segColor },
+        fill: 'origin', tension: 0.25, pointRadius: 0, borderWidth: 2, order: 1
+      },
+      {
+        // dotted zero-reference line
+        data: labels.map(() => 0),
+        borderColor: cssVar('--muted'),
+        borderWidth: 1, borderDash: [4, 4], pointRadius: 0, fill: false, order: 0
+      }
+    ]},
     options: {
       responsive: true, maintainAspectRatio: false,
       interaction: { mode: 'index', intersect: false },
       plugins: {
         legend: { display: false },
-        tooltip: { callbacks: { label: (c) => 'Cumulative: ' + fmtMoney(c.parsed.y) } }
+        tooltip: {
+          filter: (item) => item.datasetIndex === 0,
+          callbacks: { label: (c) => 'Cumulative: ' + fmtMoney(c.parsed.y) }
+        }
       },
       scales: { x: { display: true, grid: { display: false } }, y: { display: true } }
     }
@@ -3613,13 +4607,30 @@ function renderAccountEarnChart(s){
 }
 
 function renderAccountsList(){
-  const wrap = document.getElementById('accountsList');
-  if(!wrap) return;
+  const propPanel = document.getElementById('accountsPropFirmPanel');
+  const exchPanel = document.getElementById('accountsExchangePanel');
+  const emptyState = document.getElementById('accountsEmptyState');
+  if(!propPanel || !exchPanel) return;
+
   if(!TRADING_ACCOUNTS.length){
-    wrap.innerHTML = `<div class="empty-state">No accounts yet — add your prop firm account and its rules.</div>`;
+    propPanel.style.display = 'none';
+    exchPanel.style.display = 'none';
+    if(emptyState) emptyState.style.display = 'block';
     return;
   }
-  wrap.innerHTML = TRADING_ACCOUNTS.map(a => {
+  if(emptyState) emptyState.style.display = 'none';
+
+  const propFirmAccounts = TRADING_ACCOUNTS.filter(a => a.account_type !== 'Exchange');
+  const exchangeAccounts = TRADING_ACCOUNTS.filter(a => a.account_type === 'Exchange');
+
+  propPanel.style.display = propFirmAccounts.length ? 'block' : 'none';
+  exchPanel.style.display = exchangeAccounts.length ? 'block' : 'none';
+
+  document.getElementById('accountsListPropFirm').innerHTML = propFirmAccounts.map(accountCardHTML).join('');
+  document.getElementById('accountsListExchange').innerHTML = exchangeAccounts.map(accountCardHTML).join('');
+}
+
+function accountCardHTML(a){
     const isExchange = a.account_type === 'Exchange';
 
     const rules = [];
@@ -3645,7 +4656,7 @@ function renderAccountsList(){
         const progressFraction = Math.max(0, Math.min(1, plPct / a.profit_target_pct));
         balanceHTML += `
           <div class="account-progress-bar"><div class="account-progress-fill" style="width:${(progressFraction*100).toFixed(1)}%;"></div></div>
-          <div class="account-progress-label">${Math.max(0, plPct).toFixed(1)}% of ${a.profit_target_pct}% target</div>
+          <div class="account-progress-label">${plPct >= 0 ? '' : '-'}${Math.abs(plPct).toFixed(1)}% of ${a.profit_target_pct}% target</div>
         `;
       }
     } else if(a.current_balance != null){
@@ -3683,11 +4694,22 @@ function renderAccountsList(){
         <button class="account-edit-btn-corner" onclick='event.stopPropagation(); openAccountModal(${a.id})' title="Edit account">${accountEditIconSVG()}</button>
       </div>
     `;
-  }).join('');
 }
 
 function accountEditIconSVG(){
   return `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>`;
+}
+
+function editIconSVG(){
+  return `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px;"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>`;
+}
+
+function deleteIconSVG(){
+  return `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px;"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>`;
+}
+
+function linkIconSVG(){
+  return `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6"/><path d="M10 14 21 3"/></svg>`;
 }
 
 function openAccountModal(id){
@@ -3791,10 +4813,15 @@ async function saveAccount(){
 
     closeAccountModal();
     await loadAccounts();
-    showToast(editingAccountId ? '✅ Account updated' : '✅ Account added');
+    showToast(editingAccountId ? 'Account updated' : 'Account added');
   }catch(e){
     console.error("Couldn't save account:", e);
-    errEl.textContent = "Couldn't save — please try again.";
+    let hint = '';
+    try{
+      const parsed = JSON.parse(e.message);
+      if(parsed.message) hint = parsed.message;
+    }catch(_){ hint = e.message || ''; }
+    errEl.textContent = hint ? `Couldn't save — ${hint}` : "Couldn't save — please try again.";
   }finally{
     btn.disabled = false;
     btn.textContent = editingAccountId ? 'Save changes' : 'Save Account';
@@ -3816,9 +4843,193 @@ async function deleteAccount(){
     if(!res.ok) throw new Error(await res.text());
     closeAccountModal();
     await loadAccounts();
-    showToast('🗑 Account deleted');
+    showToast('Account deleted');
   }catch(e){
     console.error("Couldn't delete account:", e);
+    alert("Couldn't delete — please try again.");
+  }
+}
+
+/* ---------------- Notebook ---------------- */
+let NOTES = [];
+let editingNoteId = null;
+let viewingNoteId = null;
+const NOTE_TAGS = ['General','Strategy','Psychology','Market Notes','Trade Review','Accounts'];
+const NOTE_TAG_PILL_CLASS = {
+  Strategy: 'pill-orange',
+  Psychology: 'pill-red',
+  'Market Notes': 'pill-green',
+  'Trade Review': 'pill-muted',
+  Accounts: 'pill-blue',
+  General: 'pill-muted'
+};
+let activeNoteTagFilter = 'All';
+
+async function loadNotes(){
+  try{
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/notebook_entries?select=*&order=updated_at.desc`, {
+      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}` }
+    });
+    if(!res.ok) throw new Error(await res.text());
+    NOTES = await res.json();
+  }catch(e){
+    console.error("Couldn't load notes:", e);
+    NOTES = [];
+  }
+  renderNoteTagFilters();
+  renderNoteList();
+}
+
+function renderNoteTagFilters(){
+  const row = document.getElementById('noteTagFilterRow');
+  if(!row) return;
+  const tags = ['All', ...NOTE_TAGS];
+  row.innerHTML = tags.map(t =>
+    `<span class="tag-filter ${activeNoteTagFilter===t?'active':''}" onclick="switchNoteTagFilter('${t}')">${t}</span>`
+  ).join('');
+}
+
+function switchNoteTagFilter(tag){
+  activeNoteTagFilter = tag;
+  renderNoteTagFilters();
+  renderNoteList();
+}
+
+function renderNoteList(){
+  const wrap = document.getElementById('noteListItems');
+  if(!wrap) return;
+  const search = (document.getElementById('noteSearchInput')?.value || '').trim().toLowerCase();
+
+  let list = NOTES;
+  if(activeNoteTagFilter !== 'All') list = list.filter(n => (n.tag || 'General') === activeNoteTagFilter);
+  if(search) list = list.filter(n => (n.title||'').toLowerCase().includes(search) || (n.body||'').toLowerCase().includes(search));
+
+  if(!list.length){
+    wrap.innerHTML = `<div class="empty-state">No notes yet — click "+ New Note" to start writing.</div>`;
+    return;
+  }
+
+  wrap.innerHTML = list.map(n => {
+    const dateLabel = n.updated_at ? new Date(n.updated_at).toLocaleDateString('en-US',{month:'short',day:'numeric'}) : '';
+    const snippet = (n.body || '').replace(/\s+/g,' ').trim();
+    const tagClass = NOTE_TAG_PILL_CLASS[n.tag] || 'pill-muted';
+    return `
+      <div class="note-item ${viewingNoteId===n.id?'selected':''}" onclick="selectNote(${n.id})">
+        <div class="note-item-top">
+          <span class="note-item-title">${escapeHtml(n.title || 'Untitled')}</span>
+          <span class="note-item-date">${dateLabel}</span>
+        </div>
+        <div class="note-item-snippet">${escapeHtml(snippet) || '—'}</div>
+        <span class="pill ${tagClass}">${escapeHtml(n.tag || 'General')}</span>
+      </div>
+    `;
+  }).join('');
+}
+
+function openNoteModal(id){
+  editingNoteId = id || null;
+  const n = id ? NOTES.find(x => x.id === id) : null;
+  document.getElementById('noteModalTitle').textContent = n ? 'Edit Note' : '+ New Note';
+  document.getElementById('noteTitleInput').value = n ? (n.title || '') : '';
+  document.getElementById('noteTagSelect').value = n ? (n.tag || 'General') : 'General';
+  document.getElementById('noteBodyInput').value = n ? (n.body || '') : '';
+  document.getElementById('noteModalError').textContent = '';
+  document.getElementById('noteModal').classList.add('open');
+}
+
+function closeNoteModal(){
+  document.getElementById('noteModal').classList.remove('open');
+}
+
+async function saveNote(){
+  const errEl = document.getElementById('noteModalError');
+  errEl.textContent = '';
+  const title = document.getElementById('noteTitleInput').value.trim();
+  if(!title){ errEl.textContent = 'Please add a title.'; return; }
+
+  const btn = document.getElementById('noteSaveBtn');
+  btn.disabled = true;
+  btn.textContent = 'Saving…';
+
+  const payload = {
+    title,
+    tag: document.getElementById('noteTagSelect').value,
+    body: document.getElementById('noteBodyInput').value,
+    updated_at: new Date().toISOString()
+  };
+
+  try{
+    const res = editingNoteId
+      ? await fetch(`${SUPABASE_URL}/rest/v1/notebook_entries?id=eq.${editingNoteId}`, {
+          method: 'PATCH',
+          headers: {
+            "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}`,
+            "Content-Type": "application/json", "Prefer": "return=minimal"
+          },
+          body: JSON.stringify(payload)
+        })
+      : await fetch(`${SUPABASE_URL}/rest/v1/notebook_entries`, {
+          method: 'POST',
+          headers: {
+            "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}`,
+            "Content-Type": "application/json", "Prefer": "return=minimal"
+          },
+          body: JSON.stringify([payload])
+        });
+    if(!res.ok) throw new Error(await res.text());
+    const wasEditing = editingNoteId;
+    closeNoteModal();
+    await loadNotes();
+    if(wasEditing) selectNote(wasEditing);
+    showToast(wasEditing ? 'Note updated' : 'Note created');
+  }catch(e){
+    console.error("Couldn't save note:", e);
+    errEl.textContent = "Couldn't save — please try again.";
+  }finally{
+    btn.disabled = false;
+    btn.textContent = 'Save';
+  }
+}
+
+function selectNote(id){
+  const n = NOTES.find(x => x.id === id);
+  if(!n) return;
+  viewingNoteId = id;
+
+  document.getElementById('noteDetailEmpty').style.display = 'none';
+  document.getElementById('noteDetailWrap').style.display = 'block';
+  document.getElementById('noteDetailTitle').textContent = n.title || 'Untitled';
+  const tagEl = document.getElementById('noteDetailTag');
+  tagEl.textContent = n.tag || 'General';
+  tagEl.className = 'pill ' + (NOTE_TAG_PILL_CLASS[n.tag] || 'pill-muted');
+  document.getElementById('noteDetailDate').textContent = n.updated_at
+    ? `Last edited ${new Date(n.updated_at).toLocaleString(undefined,{dateStyle:'medium',timeStyle:'short'})}`
+    : '';
+  document.getElementById('noteDetailText').textContent = n.body || '';
+
+  renderNoteList();
+}
+
+function editSelectedNote(){
+  if(viewingNoteId) openNoteModal(viewingNoteId);
+}
+
+async function deleteSelectedNote(){
+  if(!viewingNoteId) return;
+  if(!confirm('Delete this note permanently? This cannot be undone.')) return;
+  try{
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/notebook_entries?id=eq.${viewingNoteId}`, {
+      method: 'DELETE',
+      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}`, "Prefer": "return=minimal" }
+    });
+    if(!res.ok) throw new Error(await res.text());
+    viewingNoteId = null;
+    document.getElementById('noteDetailWrap').style.display = 'none';
+    document.getElementById('noteDetailEmpty').style.display = 'block';
+    await loadNotes();
+    showToast('Note deleted');
+  }catch(e){
+    console.error("Couldn't delete note:", e);
     alert("Couldn't delete — please try again.");
   }
 }

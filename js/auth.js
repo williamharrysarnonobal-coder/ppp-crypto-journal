@@ -16,7 +16,17 @@ async function authSignOut(){
 }
 
 function confirmLogout(){
-  if(confirm("Log out of your trading journal?")) authSignOut();
+  const modal = document.getElementById('logoutConfirmModal');
+  if(modal){
+    modal.classList.add('open');
+  }else if(confirm("Log out of your trading journal?")){
+    authSignOut();
+  }
+}
+
+function closeLogoutConfirm(){
+  const modal = document.getElementById('logoutConfirmModal');
+  if(modal) modal.classList.remove('open');
 }
 
 async function requireSession(){

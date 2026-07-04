@@ -18,9 +18,16 @@ Netlify, connected to a GitHub repo.
   secret key only appears in the Python bot scripts.
 - `btc_live_bot.py` and `crypto_live_bot.py` contain hardcoded Telegram token +
   Supabase secret key — they are in `.gitignore` and must never be committed.
-- The **Played Out / Invalidated** signal-accuracy feature and any
-  admin-only UI must stay restricted to `williamharry.s.arnonobal@gmail.com`
-  (see `ADMIN_EMAIL` / `isAdminUser()` in `js/dashboard.js`).
+- Admin status is **role-based, not a hardcoded email**: the `user_access`
+  table (see `supabase_user_access.sql`) holds each user's `role`
+  ('admin'/'user') and `status` ('pending'/'approved'/'rejected').
+  `isAdminUser()` in `js/dashboard.js` checks `CURRENT_USER_ROLE`, fetched
+  from that table on login — never hardcode an email again. New signups
+  start as `role='user', status='pending'` and are blocked (both by RLS via
+  `is_approved_user()` and by the client-side pending screen) until an admin
+  approves them from the Admin Console page. The **Played Out / Invalidated**
+  signal-accuracy feature (`signal_outcomes` table) is gated the same way,
+  via `is_admin()` in its RLS policies.
 - After editing `js/dashboard.js`, run `node -c js/dashboard.js` to catch
   syntax errors. After editing `css/style.css`, check `{`/`}` counts match.
   After editing any `.html` file, check `<div>`/`</div>` (and `<svg>`/`</svg>`)

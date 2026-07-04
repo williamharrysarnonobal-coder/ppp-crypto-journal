@@ -3,18 +3,26 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Sign up — Trading Ledger</title>
+<title>Sign up — Forgefolio</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/style.css?v=8">
 </head>
 <body class="auth-page">
 
+<header class="site-header">
+  <span class="brand-mark">
+    <img src="img/Forgefolio-removebg-preview.png" alt="Forgefolio" class="brand-logo-img brand-logo-img-lg">
+    <span class="site-header-name">Forgefolio</span>
+  </span>
+</header>
+
+<div class="auth-page-center">
 <div class="auth-card">
   <h1>Create your account</h1>
-  <p>Set up your trading journal login.</p>
+  <p>Set up your Forgefolio login.</p>
 
   <label>Email</label>
   <input id="signupEmail" type="email" placeholder="you@example.com">
@@ -28,9 +36,12 @@
 
   <div class="auth-switch">Already have an account? <a href="login.html">Log in</a></div>
 </div>
+</div>
+
+<footer class="site-footer">© 2026 Forgefolio. All rights reserved.</footer>
 
 <script src="js/supabase.js"></script>
-<script src="js/auth.js"></script>
+<script src="js/auth.js?v=1"></script>
 <script>
 redirectIfLoggedIn("dashboard.html");
 
