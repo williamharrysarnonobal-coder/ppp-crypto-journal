@@ -57,8 +57,9 @@
   }
   .auth-page-center{flex:1;display:flex;align-items:center;justify-content:center;}
   .auth-card{
-    max-width:400px;width:100%;margin:8vh auto;padding:32px;background:var(--surface);
-    border:1px solid var(--rule);border-radius:8px;
+    max-width:400px;width:100%;margin:8vh auto;padding:36px;background:var(--surface);
+    border:1px solid var(--rule);border-radius:12px;
+    box-shadow:0 24px 60px -28px rgba(0,0,0,.5);
   }
   .auth-card h1{font-family:var(--font-ui);font-size:22px;margin:0 0 6px;}
   .auth-card p{color:var(--muted);font-size:14px;line-height:1.6;margin:0;}
@@ -66,13 +67,21 @@
   .auth-card input{
     width:100%;padding:10px 12px;background:var(--surface-2);border:1px solid var(--rule);
     border-radius:6px;color:var(--ink);font-family:'IBM Plex Mono',monospace;font-size:13px;
+    transition:border-color .15s ease, box-shadow .15s ease;
+  }
+  .auth-card input:focus{
+    outline:none;border-color:var(--accent);
+    box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
   }
   .auth-card button{
-    margin-top:20px;width:100%;padding:12px;background:var(--accent);color:#12151B;
-    border:none;border-radius:6px;font-weight:600;font-size:14px;cursor:pointer;
+    margin-top:22px;width:100%;padding:12px;background:var(--accent);color:#12151B;
+    border:none;border-radius:6px;font-weight:700;font-size:14px;cursor:pointer;
+    box-shadow:0 10px 24px -10px color-mix(in srgb, var(--accent) 55%, transparent);
+    transition:filter .15s ease, transform .1s ease, box-shadow .15s ease;
   }
-  .auth-card button:hover{filter:brightness(1.08);}
-  .auth-card button:disabled{opacity:.6;cursor:default;}
+  .auth-card button:hover{filter:brightness(1.08);box-shadow:0 12px 28px -8px color-mix(in srgb, var(--accent) 65%, transparent);}
+  .auth-card button:active{transform:scale(.98);}
+  .auth-card button:disabled{opacity:.6;cursor:default;box-shadow:none;}
   .auth-error{color:var(--loss);font-size:13px;margin-top:10px;min-height:16px;}
   .auth-notice{color:var(--win);font-size:13px;margin-top:10px;}
   .auth-switch{margin-top:18px;font-size:12.5px;color:var(--muted);text-align:center;}
@@ -86,12 +95,12 @@
 
   /* ---------- Login page (marketing split) ---------- */
   .login-page{
-    --pop:#22D3EE; --pop-ink:#062024;
+    --pop:var(--accent); --pop-ink:#12151B;
     min-height:100vh;display:grid;grid-template-columns:1.15fr 1fr;
   }
   .login-marketing{
     background:
-      radial-gradient(ellipse 900px 500px at 8% -10%, rgba(34,211,238,.16) 0%, transparent 60%),
+      radial-gradient(ellipse 900px 500px at 8% -10%, color-mix(in srgb, var(--accent) 16%, transparent) 0%, transparent 60%),
       linear-gradient(160deg, var(--bg2) 0%, var(--bg) 70%);
     padding:64px;display:flex;flex-direction:column;justify-content:center;
     border-right:1px solid var(--rule);
@@ -110,7 +119,7 @@
   .login-preview-card{
     background:var(--surface);border:1px solid var(--rule);border-radius:14px;
     padding:24px 26px;max-width:460px;position:relative;margin-bottom:40px;
-    box-shadow:0 25px 60px -20px rgba(0,0,0,.5), 0 0 0 1px rgba(34,211,238,.08), 0 0 40px -10px rgba(34,211,238,.15);
+    box-shadow:0 25px 60px -20px rgba(0,0,0,.5), 0 0 0 1px color-mix(in srgb, var(--accent) 8%, transparent), 0 0 40px -10px color-mix(in srgb, var(--accent) 15%, transparent);
   }
   .login-preview-dot{position:absolute;top:18px;right:20px;width:8px;height:8px;border-radius:50%;background:var(--win);box-shadow:0 0 0 3px rgba(46,204,113,.2);}
   .login-preview-kpis{display:flex;gap:26px;margin-bottom:18px;}
@@ -124,13 +133,16 @@
   .login-feature{display:flex;gap:14px;align-items:flex-start;}
   .login-feature-icon{
     flex-shrink:0;width:34px;height:34px;border-radius:9px;display:flex;align-items:center;justify-content:center;
-    background:rgba(34,211,238,.12);color:var(--pop);
+    background:color-mix(in srgb, var(--accent) 12%, transparent);color:var(--pop);
   }
   .login-feature-icon svg{width:17px;height:17px;}
   .login-feature strong{display:block;font-size:14px;color:var(--ink);margin-bottom:2px;}
   .login-feature span{font-size:13px;color:var(--muted);line-height:1.5;}
 
-  .login-form-side{display:flex;align-items:center;justify-content:center;padding:40px 24px;}
+  .login-form-side{
+    display:flex;align-items:center;justify-content:center;padding:40px 24px;
+    background:radial-gradient(ellipse 600px 400px at 90% 100%, color-mix(in srgb, var(--accent) 7%, transparent) 0%, transparent 60%);
+  }
   .login-form-side .auth-card{margin:0;}
 
   @media (max-width:900px){
