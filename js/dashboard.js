@@ -121,6 +121,7 @@ function applyTheme(mode){
   const root = document.documentElement;
   root.setAttribute('data-theme', mode);
   try{ localStorage.setItem('ledger-theme', mode); }catch(e){}
+  syncUIPrefsToProfile();
 
   const btn = document.getElementById('themeToggleBtn');
   if(btn){
@@ -158,6 +159,7 @@ function applyFont(name){
   const opt = FONT_OPTIONS.find(f => f.name === name) || FONT_OPTIONS[0];
   document.documentElement.style.setProperty('--font-ui', opt.family);
   try{ localStorage.setItem('ledger-font', opt.name); }catch(e){}
+  syncUIPrefsToProfile();
 }
 
 function setFontPreference(name){
@@ -194,6 +196,7 @@ function applyAccent(name){
     document.documentElement.style.removeProperty('--accent');
   }
   try{ localStorage.setItem('ledger-accent', name); }catch(e){}
+  syncUIPrefsToProfile();
 }
 
 function setAccentPreference(name){
@@ -208,6 +211,90 @@ function setAccentPreference(name){
     renderBreakdown();
   }
   if(currentView === 'settings') renderSettingsPage();
+}
+
+/* ---------------- UI preferences sync (account-level, cross-device) ----------------
+   Every per-device preference below is mirrored into user_profile.ui_prefs
+   so it follows the ACCOUNT, not the browser — localStorage is per-site-
+   address, so switching URLs/devices used to reset all of these to default.
+   localStorage stays as the instant local cache (applied before login even
+   resolves); the DB copy is layered on top once the profile loads. */
+const UI_PREF_LS_KEYS = {
+  theme: 'ledger-theme',
+  font: 'ledger-font',
+  accent: 'ledger-accent',
+  field_options: 'ledger-field-options',
+  unfollowed_rules_options: 'ledger-unfollowed-rules-options',
+  form_field_config: 'ledger-form-field-config',
+  column_config: 'ledger-column-config'
+};
+
+let _uiPrefsSyncTimer = null;
+let _applyingUIPrefs = false; // guards against re-uploading prefs we just downloaded
+
+// Debounced: rapid changes (dragging columns around, trying accents) collapse
+// into one write instead of hammering Supabase per click.
+function syncUIPrefsToProfile(){
+  if(!CURRENT_USER_ID || _applyingUIPrefs) return;
+  clearTimeout(_uiPrefsSyncTimer);
+  _uiPrefsSyncTimer = setTimeout(async () => {
+    const prefs = {};
+    Object.entries(UI_PREF_LS_KEYS).forEach(([k, lsKey]) => {
+      try{
+        const v = localStorage.getItem(lsKey);
+        if(v !== null) prefs[k] = v;
+      }catch(e){}
+    });
+    try{
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/user_profile?on_conflict=user_id`, {
+        method: 'POST',
+        headers: {
+          "apikey": SUPABASE_KEY,
+          "Authorization": `Bearer ${USER_ACCESS_TOKEN}`,
+          "Content-Type": "application/json",
+          "Prefer": "return=minimal,resolution=merge-duplicates"
+        },
+        body: JSON.stringify([{ user_id: CURRENT_USER_ID, ui_prefs: prefs }])
+      });
+      if(!res.ok) throw new Error(await res.text());
+      if(PROFILE_DATA) PROFILE_DATA.ui_prefs = prefs;
+    }catch(e){
+      console.error("Couldn't sync UI preferences to profile:", e);
+    }
+  }, 800);
+}
+
+// Called after the profile loads — pulls the account's saved prefs down into
+// localStorage and re-applies whatever actually differs.
+function applyUIPrefsFromProfile(){
+  const prefs = PROFILE_DATA?.ui_prefs;
+  if(!prefs || typeof prefs !== 'object') return;
+
+  const changedKeys = [];
+  Object.entries(UI_PREF_LS_KEYS).forEach(([k, lsKey]) => {
+    if(prefs[k] === undefined || prefs[k] === null) return;
+    try{
+      if(localStorage.getItem(lsKey) !== prefs[k]){
+        localStorage.setItem(lsKey, prefs[k]);
+        changedKeys.push(k);
+      }
+    }catch(e){}
+  });
+  if(!changedKeys.length) return;
+
+  _applyingUIPrefs = true;
+  try{
+    if(changedKeys.includes('theme')) applyTheme(prefs.theme === 'light' ? 'light' : 'dark');
+    if(changedKeys.includes('font')) applyFont(prefs.font);
+    if(changedKeys.includes('accent')) applyAccent(prefs.accent);
+    if(changedKeys.includes('field_options') || changedKeys.includes('unfollowed_rules_options')) loadOptionsConfig();
+    if(changedKeys.includes('form_field_config')) loadFormFieldConfig();
+    if(changedKeys.includes('column_config')){ loadColumnConfig(); renderJournalTable(); }
+    if(currentView === 'settings') renderSettingsPage();
+    if(currentView === 'config'){ renderColumnConfigUI(); renderOptionsEditor(); renderFormFieldConfigUI(); }
+  }finally{
+    _applyingUIPrefs = false;
+  }
 }
 
 function renderSettingsPage(){
@@ -1608,6 +1695,7 @@ function saveOptionsConfig(){
     localStorage.setItem('ledger-field-options', JSON.stringify(FIELD_OPTIONS));
     localStorage.setItem('ledger-unfollowed-rules-options', JSON.stringify(UNFOLLOWED_RULES_OPTIONS));
   }catch(e){}
+  syncUIPrefsToProfile();
 }
 
 function loadOptionsConfig(){
@@ -1734,6 +1822,7 @@ function rebuildDrawerFields(){
 
 function saveFormFieldConfig(){
   try{ localStorage.setItem('ledger-form-field-config', JSON.stringify(FORM_FIELD_CONFIG)); }catch(e){}
+  syncUIPrefsToProfile();
   rebuildDrawerFields();
 }
 
@@ -1747,6 +1836,7 @@ async function resetFormFieldConfig(){
   if(!(await customConfirm('Reset form fields to default?', 'Reset'))) return;
   try{ localStorage.removeItem('ledger-form-field-config'); }catch(e){}
   loadFormFieldConfig();
+  syncUIPrefsToProfile();
   renderFormFieldConfigUI();
 }
 
@@ -1844,6 +1934,7 @@ function rebuildJournalColumns(){
 
 function saveColumnConfig(){
   try{ localStorage.setItem('ledger-column-config', JSON.stringify(COLUMN_CONFIG)); }catch(e){}
+  syncUIPrefsToProfile();
   rebuildJournalColumns();
   renderJournalTable();
 }
@@ -1858,6 +1949,7 @@ async function resetColumnConfig(){
   if(!(await customConfirm('Reset columns to default?', 'Reset'))) return;
   try{ localStorage.removeItem('ledger-column-config'); }catch(e){}
   loadColumnConfig();
+  syncUIPrefsToProfile();
   renderColumnConfigUI();
   renderJournalTable();
 }
@@ -2826,11 +2918,21 @@ function getUpcomingHighImpactCount(){ return getUpcomingHighImpactEvents().leng
 // fresh from trades/achievements every render — so "newly" completed is
 // tracked by diffing against the last set of done titles we've shown a
 // notification for, saved in localStorage (persists across sessions).
-function getNewlyCompletedChallenges(){
-  const doneNow = COMPUTED_CHALLENGES.filter(c => c.done);
+// The "seen" list lives in BOTH localStorage (instant, works before the
+// profile loads) and the user_profile row in Supabase (survives switching
+// devices, browsers, or site URLs — localStorage is per-site-address, so
+// moving from the old Netlify URL to tanaydana.com wiped it and re-notified
+// every already-completed challenge).
+function _getSeenChallengeTitles(){
   let seenTitles = [];
   try{ seenTitles = JSON.parse(localStorage.getItem('ledger-seen-completed-challenges') || '[]'); }catch(e){}
-  const seenSet = new Set(seenTitles);
+  const fromProfile = Array.isArray(PROFILE_DATA?.seen_completed_challenges) ? PROFILE_DATA.seen_completed_challenges : [];
+  return Array.from(new Set([...seenTitles, ...fromProfile]));
+}
+
+function getNewlyCompletedChallenges(){
+  const doneNow = COMPUTED_CHALLENGES.filter(c => c.done);
+  const seenSet = new Set(_getSeenChallengeTitles());
   return doneNow.filter(c => !seenSet.has(c.title));
 }
 
@@ -2841,10 +2943,29 @@ function markChallengesNotificationSeen(){
   // back to "not done" between renders; overwriting the seen list would
   // drop it and let it re-trigger a "newly completed" notification later
   // even though it was already seen once.
-  let seenTitles = [];
-  try{ seenTitles = JSON.parse(localStorage.getItem('ledger-seen-completed-challenges') || '[]'); }catch(e){}
-  const merged = Array.from(new Set([...seenTitles, ...doneNow]));
+  const merged = Array.from(new Set([..._getSeenChallengeTitles(), ...doneNow]));
   try{ localStorage.setItem('ledger-seen-completed-challenges', JSON.stringify(merged)); }catch(e){}
+  _persistSeenChallenges(merged);
+}
+
+async function _persistSeenChallenges(list){
+  if(!CURRENT_USER_ID) return;
+  try{
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/user_profile?on_conflict=user_id`, {
+      method: 'POST',
+      headers: {
+        "apikey": SUPABASE_KEY,
+        "Authorization": `Bearer ${USER_ACCESS_TOKEN}`,
+        "Content-Type": "application/json",
+        "Prefer": "return=minimal,resolution=merge-duplicates"
+      },
+      body: JSON.stringify([{ user_id: CURRENT_USER_ID, seen_completed_challenges: list }])
+    });
+    if(!res.ok) throw new Error(await res.text());
+    if(PROFILE_DATA) PROFILE_DATA.seen_completed_challenges = list;
+  }catch(e){
+    console.error("Couldn't sync seen challenges to profile:", e);
+  }
 }
 
 function updateNavBadge(view, count){
@@ -4807,6 +4928,11 @@ async function loadProfile(){
     console.error("Couldn't load profile:", e);
     PROFILE_DATA = null;
   }
+  // The profile carries the cross-device "seen challenges" list and UI
+  // preferences — now that it's loaded, apply both so this device matches
+  // what the account last saved anywhere else.
+  applyUIPrefsFromProfile();
+  refreshAllNavBadges();
   await renderProfile();
 }
 

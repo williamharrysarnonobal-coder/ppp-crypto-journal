@@ -42,3 +42,9 @@ alter table user_access add column if not exists disabled_features text[] not nu
 -- position_setups (before/after screenshots)
 alter table position_setups add column if not exists before_screenshot text;
 alter table position_setups add column if not exists after_screenshot text;
+
+-- user_profile (challenge notification "seen" list — synced across devices)
+alter table user_profile add column if not exists seen_completed_challenges jsonb not null default '[]'::jsonb;
+
+-- user_profile (UI preferences — theme/font/accent/columns/form fields/options, synced across devices)
+alter table user_profile add column if not exists ui_prefs jsonb not null default '{}'::jsonb;
