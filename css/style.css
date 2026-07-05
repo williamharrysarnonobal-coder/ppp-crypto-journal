@@ -442,7 +442,7 @@
   /* Trade Journals: cap the table's height to what fits on screen so the
      table scrolls internally (sticky headers stay visible) instead of the
      whole page scrolling. */
-  #view-journal .journal-wrap{max-height:calc(100vh - 250px);}
+  #view-journal .journal-wrap{max-height:calc(100vh - 215px);}
   table.journal{border-collapse:collapse;width:100%;font-size:12px;white-space:nowrap;}
   table.journal th{
     position:sticky;top:0;background:var(--surface-2);color:var(--muted);text-transform:uppercase;
