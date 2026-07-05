@@ -2836,7 +2836,15 @@ function getNewlyCompletedChallenges(){
 
 function markChallengesNotificationSeen(){
   const doneNow = COMPUTED_CHALLENGES.filter(c => c.done).map(c => c.title);
-  try{ localStorage.setItem('ledger-seen-completed-challenges', JSON.stringify(doneNow)); }catch(e){}
+  // Merge into the existing seen list rather than replacing it — a
+  // streak-based challenge (Hot Streak, Clean Week, etc.) can briefly go
+  // back to "not done" between renders; overwriting the seen list would
+  // drop it and let it re-trigger a "newly completed" notification later
+  // even though it was already seen once.
+  let seenTitles = [];
+  try{ seenTitles = JSON.parse(localStorage.getItem('ledger-seen-completed-challenges') || '[]'); }catch(e){}
+  const merged = Array.from(new Set([...seenTitles, ...doneNow]));
+  try{ localStorage.setItem('ledger-seen-completed-challenges', JSON.stringify(merged)); }catch(e){}
 }
 
 function updateNavBadge(view, count){
