@@ -2912,7 +2912,6 @@ function getUpcomingHighImpactEvents(){
     return !isNaN(d) && d >= now && d <= in24h;
   });
 }
-function getUpcomingHighImpactCount(){ return getUpcomingHighImpactEvents().length; }
 
 // A challenge has no "completed_at" of its own — .done is just recomputed
 // fresh from trades/achievements every render — so "newly" completed is
@@ -3041,6 +3040,9 @@ function toggleNotifCenter(){
   if(!panel) return;
   if(panel.classList.contains('open')){
     panel.classList.remove('open');
+    // Items got marked "seen" when the panel rendered — recount now so the
+    // badges clear the moment it closes instead of on the next poll cycle.
+    refreshAllNavBadges();
   }else{
     renderNotifCenter();
     panel.classList.add('open');
@@ -3049,7 +3051,10 @@ function toggleNotifCenter(){
 
 function closeNotifCenter(){
   const panel = document.getElementById('notifCenterPanel');
-  if(panel) panel.classList.remove('open');
+  if(panel && panel.classList.contains('open')){
+    panel.classList.remove('open');
+    refreshAllNavBadges();
+  }
 }
 
 // Closes the panel on an outside click, like any normal dropdown.
@@ -3059,6 +3064,7 @@ document.addEventListener('click', (e) => {
   if(!panel || !panel.classList.contains('open')) return;
   if(panel.contains(e.target) || (bell && bell.contains(e.target))) return;
   panel.classList.remove('open');
+  refreshAllNavBadges();
 });
 
 // Clicking a notification item shows what it's actually about first — no
@@ -4858,8 +4864,14 @@ function renderChallengeGrid(){
   grid.innerHTML = rows.length ? rows.map(x => activeCardHTML(x.c, x.status)).join('') : `<div class="empty-state">No challenges in this filter.</div>`;
   if(lockedGrid) lockedGrid.innerHTML = LOCKED_CHALLENGES.map(lockedCardHTML).join('');
 
+  LAST_LEADERBOARD_SCORE = { points: totalPoints, label: current.label };
   syncLeaderboardScore(totalPoints, current.label);
 }
+
+// Remembered so loadProfile() can re-sync with the real display name — the
+// first sync at login can fire before the profile has loaded, which would
+// otherwise leave the email prefix as this trader's leaderboard name.
+let LAST_LEADERBOARD_SCORE = null;
 
 // Publishes this trader's own total points + rank to the shared
 // challenge_leaderboard table so the Leaderboard page can rank everyone
@@ -4965,6 +4977,10 @@ async function loadProfile(){
   // what the account last saved anywhere else.
   applyUIPrefsFromProfile();
   refreshAllNavBadges();
+  // Re-send the leaderboard entry now that the real display name is known —
+  // the first sync at login can beat this profile fetch and would otherwise
+  // leave the email prefix as the visible leaderboard name.
+  if(LAST_LEADERBOARD_SCORE) syncLeaderboardScore(LAST_LEADERBOARD_SCORE.points, LAST_LEADERBOARD_SCORE.label);
   await renderProfile();
 }
 

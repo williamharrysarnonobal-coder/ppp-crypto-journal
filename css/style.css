@@ -439,6 +439,10 @@
     overflow:auto;border:1px solid var(--rule);border-radius:6px;background:var(--surface);
     flex:1;min-height:0;
   }
+  /* Trade Journals: cap the table's height to what fits on screen so the
+     table scrolls internally (sticky headers stay visible) instead of the
+     whole page scrolling. */
+  #view-journal .journal-wrap{max-height:calc(100vh - 250px);}
   table.journal{border-collapse:collapse;width:100%;font-size:12px;white-space:nowrap;}
   table.journal th{
     position:sticky;top:0;background:var(--surface-2);color:var(--muted);text-transform:uppercase;
@@ -684,7 +688,7 @@
   .profile-header-card{display:flex;align-items:center;gap:20px;}
   .profile-avatar{
     flex-shrink:0;width:64px;height:64px;border-radius:50%;
-    background:linear-gradient(135deg, var(--accent), #c9891f);color:#fff;
+    background:linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 55%, black));color:#fff;
     display:flex;align-items:center;justify-content:center;
     font-size:26px;font-weight:700;font-family:var(--font-ui);
   }
