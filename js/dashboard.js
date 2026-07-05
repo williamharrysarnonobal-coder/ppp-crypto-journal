@@ -2949,6 +2949,12 @@ function markChallengesNotificationSeen(){
 }
 
 async function _persistSeenChallenges(list){
+  await _persistProfileList('seen_completed_challenges', list);
+}
+
+// Shared upsert for the per-account "already notified" lists on user_profile
+// (seen challenges, seen calendar events) — one column per call.
+async function _persistProfileList(column, list){
   if(!CURRENT_USER_ID) return;
   try{
     const res = await fetch(`${SUPABASE_URL}/rest/v1/user_profile?on_conflict=user_id`, {
@@ -2959,13 +2965,38 @@ async function _persistSeenChallenges(list){
         "Content-Type": "application/json",
         "Prefer": "return=minimal,resolution=merge-duplicates"
       },
-      body: JSON.stringify([{ user_id: CURRENT_USER_ID, seen_completed_challenges: list }])
+      body: JSON.stringify([{ user_id: CURRENT_USER_ID, [column]: list }])
     });
     if(!res.ok) throw new Error(await res.text());
-    if(PROFILE_DATA) PROFILE_DATA.seen_completed_challenges = list;
+    if(PROFILE_DATA) PROFILE_DATA[column] = list;
   }catch(e){
-    console.error("Couldn't sync seen challenges to profile:", e);
+    console.error(`Couldn't sync ${column} to profile:`, e);
   }
+}
+
+// High-impact calendar events had no "seen" state at all — the badge used to
+// sit there for up to 24h until the event itself passed. Same treatment as
+// challenges now: seeing them in the notification center clears the count,
+// tracked per-account (DB) with localStorage as the instant local cache.
+function _getSeenEventIds(){
+  let seenIds = [];
+  try{ seenIds = JSON.parse(localStorage.getItem('ledger-seen-event-notifs') || '[]'); }catch(e){}
+  const fromProfile = Array.isArray(PROFILE_DATA?.seen_event_notifications) ? PROFILE_DATA.seen_event_notifications : [];
+  return Array.from(new Set([...seenIds, ...fromProfile]));
+}
+
+function getUnseenHighImpactEvents(){
+  const seenSet = new Set(_getSeenEventIds());
+  return getUpcomingHighImpactEvents().filter(e => !seenSet.has(e.id));
+}
+
+function markEventsNotificationSeen(){
+  const currentIds = getUpcomingHighImpactEvents().map(e => e.id);
+  // Keep only the most recent 200 ids so the list doesn't grow forever —
+  // old events fall out of the 24h window anyway, their ids are dead weight.
+  const merged = Array.from(new Set([..._getSeenEventIds(), ...currentIds])).slice(-200);
+  try{ localStorage.setItem('ledger-seen-event-notifs', JSON.stringify(merged)); }catch(e){}
+  _persistProfileList('seen_event_notifications', merged);
 }
 
 function updateNavBadge(view, count){
@@ -2981,7 +3012,7 @@ function updateNavBadge(view, count){
 
 function refreshAllNavBadges(){
   const incompleteCount = getIncompleteTradesCount();
-  const eventsCount = getUpcomingHighImpactCount();
+  const eventsCount = getUnseenHighImpactEvents().length;
   const alertsCount = SIGNAL_ALERTS.filter(isNewSignal).length;
   const challengesCount = getNewlyCompletedChallenges().length;
   const signupsCount = isAdminUser() ? PENDING_SIGNUPS.length : 0;
@@ -3106,7 +3137,7 @@ function renderNotifCenter(){
   if(!body) return;
 
   const incomplete = getIncompleteTrades();
-  const events = getUpcomingHighImpactEvents();
+  const events = getUnseenHighImpactEvents();
   const alerts = SIGNAL_ALERTS.filter(isNewSignal);
   const sections = [];
 
@@ -3189,6 +3220,7 @@ function renderNotifCenter(){
   // Seeing them in the notification center counts as "read" — clears the
   // badge next refresh instead of re-notifying about the same completions.
   if(newlyCompletedChallenges.length) markChallengesNotificationSeen();
+  if(events.length) markEventsNotificationSeen();
 }
 
 function goToChallengeFromNotif(title){
