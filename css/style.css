@@ -205,6 +205,10 @@
   .brand-logo-img{width:32px;height:32px;object-fit:contain;flex-shrink:0;}
   .brand-logo-img-lg{width:38px;height:38px;}
   .sidebar.collapsed .brand-text{display:none;}
+  /* Collapsed rail is too narrow for the logo — hide it and keep just the
+     toggle button, centered; the logo comes back when the menu expands. */
+  .sidebar.collapsed .brand .brand-logo-img{display:none;}
+  .sidebar.collapsed .brand{justify-content:center;}
   .nav-item{position:relative;display:flex;align-items:center;gap:9px;padding:10px 12px;border-radius:6px;color:var(--muted);font-size:13.5px;cursor:pointer;margin-bottom:3px;white-space:nowrap;overflow:visible;}
   .nav-icon{width:17px;height:17px;flex-shrink:0;}
   .nav-item:hover{background:var(--surface-2);color:var(--ink);}
