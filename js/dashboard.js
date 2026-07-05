@@ -1,5 +1,6 @@
 let USER_ACCESS_TOKEN = null;
 let CURRENT_USER_EMAIL = null;
+let CURRENT_USER_ID = null;
 let CURRENT_USER_ROLE = null;   // 'admin' | 'user' — from user_access, not hardcoded
 let CURRENT_USER_STATUS = null; // 'pending' | 'approved' | 'rejected'
 function isAdminUser(){ return CURRENT_USER_ROLE === 'admin'; }
@@ -306,6 +307,7 @@ function switchView(view){
   if(view === 'achievements') loadAchievements();
   if(view === 'news'){ loadMarketNewsWidget(); } else { clearInterval(econSyncLabelTimer); }
   if(view === 'challenges') renderChallenges();
+  if(view === 'leaderboard') renderLeaderboard();
   if(view === 'profile') loadProfile();
   if(view === 'accounts') loadAccounts();
   if(view === 'calculator'){ renderPositionCalculator(); loadSavedSetups(); }
@@ -385,6 +387,7 @@ async function initApp(){
   if(!session) return;
   USER_ACCESS_TOKEN = session.access_token;
   CURRENT_USER_EMAIL = session.user?.email || null;
+  CURRENT_USER_ID = session.user?.id || null;
 
   try{
     const res = await fetch(`${SUPABASE_URL}/rest/v1/user_access?select=role,status,disabled_features`, {
@@ -565,12 +568,12 @@ function filterAdminUserList(){
           <td>${r.decided_at ? _adminDateFmt(r.decided_at) : '—'}</td>
           <td>
             ${r.status === 'approved'
-              ? `<button class="drawer-secondary-btn" onclick="revokeUser('${r.user_id}')">Revoke</button>`
+              ? `<button class="poscalc-accent-btn" onclick="revokeUser('${r.user_id}')">Revoke</button>`
               : `<button class="drawer-secondary-btn" onclick="approveUser('${r.user_id}')">Approve</button>`}
             ${r.status === 'approved'
-              ? `<button class="drawer-secondary-btn" onclick="openFeatureAccessModal('${r.user_id}')">Features</button>`
+              ? `<button class="poscalc-accent-btn" onclick="openFeatureAccessModal('${r.user_id}')">Features</button>`
               : ''}
-            <button class="drawer-secondary-btn" onclick="toggleAdminRole('${r.user_id}','${r.role}')">${r.role === 'admin' ? 'Make user' : 'Make admin'}</button>
+            <button class="poscalc-accent-btn" onclick="toggleAdminRole('${r.user_id}','${r.role}')">${r.role === 'admin' ? 'Make user' : 'Make admin'}</button>
           </td>
         </tr>
       `;
@@ -2156,7 +2159,7 @@ let pendingJournalSetupId = null;
 let drawerJournalSetupId = null;
 
 function openEasyAddModal(){
-  document.getElementById('easyAddBroker').value = 'manual';
+  document.getElementById('easyAddBroker').value = 'upscale';
   document.getElementById('easyAddError').textContent = '';
   document.getElementById('easyAddModal').classList.add('open');
   switchEasyAddBroker();
@@ -2219,6 +2222,11 @@ function parseUpscaleEasyAddText(raw){
     if(m) parsed.profit_loss = parseFloat(m[1].replace(/,/g,''));
   }
 
+  // The position card's top summary row already shows the TOTAL fee for
+  // the round-trip (its per-fill rows below — Open/Close — just break that
+  // same total down into the two legs, they don't add anything extra) —
+  // so only the first "Fee:" line matters; summing every "Fee:" line would
+  // count the per-fill breakdown on top of the total that already includes it.
   const feeLine = lines.find(l => /^Fee:/i.test(l));
   if(feeLine){
     const m = feeLine.match(/Fee:\s*(-?[\d,]+\.?\d*)/i);
@@ -2614,14 +2622,14 @@ async function saveDrawer(){
     if(justJournaledSetup) loadLinkedSetupScreenshots().then(renderJournalTable);
 
     const oldAccount = drawerMode === 'create' ? null : (drawerRowData.account || null);
-    const oldPL = drawerMode === 'create' ? 0 : (parseFloat(drawerRowData.profit_loss) || 0);
+    const oldNet = drawerMode === 'create' ? 0 : ((parseFloat(drawerRowData.profit_loss) || 0) - (parseFloat(drawerRowData.fee) || 0));
     const newAccount = patch.account || null;
-    const newPL = parseFloat(patch.profit_loss) || 0;
+    const newNet = (parseFloat(patch.profit_loss) || 0) - (parseFloat(patch.fee) || 0);
     if(oldAccount === newAccount){
-      if(newAccount) await adjustAccountBalance(newAccount, newPL - oldPL);
+      if(newAccount) await adjustAccountBalance(newAccount, newNet - oldNet);
     }else{
-      if(oldAccount) await adjustAccountBalance(oldAccount, -oldPL);
-      if(newAccount) await adjustAccountBalance(newAccount, newPL);
+      if(oldAccount) await adjustAccountBalance(oldAccount, -oldNet);
+      if(newAccount) await adjustAccountBalance(newAccount, newNet);
     }
 
     closeDrawer();
@@ -2650,7 +2658,7 @@ async function deleteDrawer(){
     if(!res.ok) throw new Error(await res.text());
 
     const deletedAccount = drawerRowData.account || null;
-    const deletedPL = parseFloat(drawerRowData.profit_loss) || 0;
+    const deletedNet = (parseFloat(drawerRowData.profit_loss) || 0) - (parseFloat(drawerRowData.fee) || 0);
     const linkedSetupId = drawerRowData.linked_setup_id || null;
 
     RAW_TRADES = RAW_TRADES.filter(r => r.position_id !== drawerPositionId);
@@ -2661,7 +2669,7 @@ async function deleteDrawer(){
     renderJournalTable();
     refreshAllNavBadges();
 
-    if(deletedAccount) await adjustAccountBalance(deletedAccount, -deletedPL);
+    if(deletedAccount) await adjustAccountBalance(deletedAccount, -deletedNet);
     if(linkedSetupId) setSetupStatus(linkedSetupId, 'Pending');
 
     closeDrawer();
@@ -3340,7 +3348,7 @@ function renderAlertsTableFor(category){
     return;
   }
 
-  const thead = `<thead><tr><th>Symbol</th><th>Setup</th><th>Volume</th><th>Received</th><th style="text-align:right;"></th></tr></thead>`;
+  const thead = `<thead><tr><th>Symbol</th><th>Setup</th><th>Volume</th><th>Received</th><th>Status</th><th style="text-align:right;"></th></tr></thead>`;
   const tbody = `<tbody>${rows.map(r => {
     let outcomeIcon = '';
     if(r.category === 'bitcoin' && isAdminUser()){
@@ -3354,10 +3362,10 @@ function renderAlertsTableFor(category){
       <td>${escapeHtml(r.setup) || '—'}${outcomeIcon}</td>
       <td>${fmtSignalVolume(r.volume)}</td>
       <td>${fmtSignalTime(r.alert_at)}</td>
+      <td>${isNew ? '<span class="pill pill-blue">NEW</span>' : '<span class="pill pill-muted">Seen</span>'}</td>
       <td onclick="event.stopPropagation();" style="text-align:right;">
         <div style="display:inline-flex;align-items:center;gap:8px;">
           ${r.tradingview_url ? `<a class="link-btn" href="${r.tradingview_url}" target="_blank">${linkIconSVG()}</a>` : `<span class="link-btn disabled">—</span>`}
-          ${isNew ? '<span class="pill pill-blue">NEW</span>' : '<span class="pill pill-muted">Seen</span>'}
           ${!isNew ? `<button class="drawer-danger-btn" style="padding:4px 10px;font-size:11px;" onclick='deleteAlert(${r.id})'>${deleteIconSVG()}</button>` : ''}
         </div>
       </td>
@@ -4688,6 +4696,54 @@ function renderChallengeGrid(){
 
   grid.innerHTML = rows.length ? rows.map(x => activeCardHTML(x.c, x.status)).join('') : `<div class="empty-state">No challenges in this filter.</div>`;
   if(lockedGrid) lockedGrid.innerHTML = LOCKED_CHALLENGES.map(lockedCardHTML).join('');
+
+  syncLeaderboardScore(totalPoints, current.label);
+}
+
+// Publishes this trader's own total points + rank to the shared
+// challenge_leaderboard table so the Leaderboard page can rank everyone
+// against each other — points themselves are still computed entirely
+// client-side from this user's own trades, this just shares the result.
+async function syncLeaderboardScore(points, rankLabel){
+  try{
+    const displayName = PROFILE_DATA?.display_name || PROFILE_DATA?.username || (CURRENT_USER_EMAIL || '').split('@')[0] || 'Trader';
+    await fetch(`${SUPABASE_URL}/rest/v1/challenge_leaderboard?on_conflict=user_id`, {
+      method: 'POST',
+      headers: {
+        "apikey": SUPABASE_KEY,
+        "Authorization": `Bearer ${USER_ACCESS_TOKEN}`,
+        "Content-Type": "application/json",
+        "Prefer": "resolution=merge-duplicates,return=minimal"
+      },
+      body: JSON.stringify({ display_name: displayName, points, rank_label: rankLabel, updated_at: new Date().toISOString() })
+    });
+  }catch(e){
+    console.error("Couldn't sync leaderboard score:", e);
+  }
+}
+
+async function renderLeaderboard(){
+  const body = document.getElementById('leaderboardBody');
+  if(!body) return;
+  body.innerHTML = `<div class="empty-state">Loading…</div>`;
+  try{
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/challenge_leaderboard?select=*&order=points.desc`, {
+      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}` }
+    });
+    if(!res.ok) throw new Error(await res.text());
+    const rows = await res.json();
+    body.innerHTML = rows.length ? rows.map((r, i) => `
+      <div class="leaderboard-row ${r.user_id === CURRENT_USER_ID ? 'leaderboard-row-me' : ''}">
+        <div class="leaderboard-rank">#${i + 1}</div>
+        <div class="leaderboard-name">${escapeHtml(r.display_name || 'Trader')}${r.user_id === CURRENT_USER_ID ? '<span class="pill pill-blue">You</span>' : ''}</div>
+        <div class="leaderboard-tier">${escapeHtml(r.rank_label || '—')}</div>
+        <div class="leaderboard-points">${r.points} pts</div>
+      </div>
+    `).join('') : `<div class="empty-state">No scores yet.</div>`;
+  }catch(e){
+    console.error("Couldn't load leaderboard:", e);
+    body.innerHTML = `<div class="empty-state">Couldn't load the leaderboard.</div>`;
+  }
 }
 
 async function renderChallenges(){
@@ -5639,7 +5695,7 @@ function setupRowHTML(s){
     <td>
       ${status !== 'Journaled'
         ? `<button class="poscalc-accent-btn" onclick="event.stopPropagation(); journalFromSetup(${s.id})">Journal</button>`
-        : `<button class="drawer-secondary-btn" onclick="event.stopPropagation(); setSetupStatus(${s.id}, 'Pending')">Revert to Pending</button>`}
+        : `<button class="poscalc-accent-btn" onclick="event.stopPropagation(); setSetupStatus(${s.id}, 'Pending')">Revert to Pending</button>`}
       <button class="drawer-danger-btn" onclick="event.stopPropagation(); deleteSavedSetup(${s.id})">Delete</button>
     </td>
   </tr>

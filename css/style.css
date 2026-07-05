@@ -164,7 +164,7 @@
   .sidebar .toggle-btn:hover{color:var(--ink);border-color:var(--accent);}
   .notif-bell-wrap{position:absolute;top:18px;right:24px;z-index:150;}
   .notif-bell-btn{
-    position:relative;background:var(--surface);border:1px solid var(--rule);color:var(--muted);width:34px;height:34px;
+    position:relative;background:var(--surface);border:1px solid var(--accent);color:var(--accent);width:34px;height:34px;
     flex-shrink:0;border-radius:8px;cursor:pointer;display:flex;align-items:center;justify-content:center;
     box-shadow:0 4px 12px rgba(0,0,0,.2);
   }
@@ -312,7 +312,7 @@
   .note-search{width:100%;padding:9px 12px;background:var(--surface-2);border:1px solid var(--rule);border-radius:6px;color:var(--ink);font-size:13px;font-family:var(--font-ui);margin-bottom:12px;}
   .tag-filter-row{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px;}
   .tag-filter{font-size:10.5px;font-weight:600;padding:4px 10px;border-radius:20px;cursor:pointer;background:var(--surface-2);color:var(--muted);border:1px solid transparent;}
-  .tag-filter.active{background:rgba(240,180,41,.16);color:var(--accent);border-color:rgba(240,180,41,.35);}
+  .tag-filter.active{background:color-mix(in srgb, var(--accent) 16%, transparent);color:var(--accent);border-color:color-mix(in srgb, var(--accent) 35%, transparent);}
   .note-item{padding:12px 10px;border-radius:6px;cursor:pointer;margin-bottom:2px;border:1px solid transparent;}
   .note-item:hover{background:var(--surface-2);}
   .note-item.selected{background:var(--surface-2);border-color:var(--rule);}
@@ -450,6 +450,15 @@
   .pill-orange{background:rgba(208,143,78,.16);color:var(--warn);}
   .pill-muted{background:var(--surface-2);color:var(--muted);}
 
+  .leaderboard-list{display:flex;flex-direction:column;}
+  .leaderboard-row{display:flex;align-items:center;gap:14px;padding:12px 6px;border-bottom:1px solid var(--rule);}
+  .leaderboard-row:last-child{border-bottom:none;}
+  .leaderboard-row-me{background:var(--surface-2);border-radius:8px;border-left:3px solid var(--accent);padding-left:8px;padding-right:10px;}
+  .leaderboard-rank{width:30px;flex-shrink:0;font-weight:700;color:var(--accent);font-size:13px;}
+  .leaderboard-name{flex:1;min-width:0;font-size:13.5px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:8px;}
+  .leaderboard-tier{flex-shrink:0;font-size:11.5px;color:var(--muted);}
+  .leaderboard-points{flex-shrink:0;font-size:13.5px;font-weight:700;color:var(--accent);min-width:64px;text-align:right;}
+
   /* Box-style badge (square corners, muted tint — not a full-saturation pill) */
   .box-badge{
     display:inline-flex;align-items:center;justify-content:center;min-width:46px;
@@ -541,7 +550,7 @@
   /* Rank track — a game-style "level meter" with medal badges, shown under the points total */
   .rank-track{position:relative;max-width:960px;margin:36px auto 0;padding:0 30px;}
   .rank-track-bar{position:relative;height:10px;border-radius:6px;background:var(--surface);overflow:hidden;border:1px solid var(--rule);}
-  .rank-track-fill{height:100%;background:linear-gradient(90deg, #f0b429, #e0703f);border-radius:6px;transition:width .5s ease;}
+  .rank-track-fill{height:100%;background:linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 55%, black));border-radius:6px;transition:width .5s ease;}
   .rank-medals{position:relative;display:flex;justify-content:space-between;margin-top:-25px;}
   /* .rank-medal is the unclipped positioning wrapper (so the glow ring and the
      label below can render outside the hexagon) — .rank-medal-shape is the
@@ -558,15 +567,15 @@
   }
   .rank-medal svg{width:19px;height:19px;}
   .rank-medal.reached .rank-medal-shape{
-    background:linear-gradient(145deg, #f6c453, #e0703f);color:#3a2007;
+    background:linear-gradient(145deg, var(--accent), color-mix(in srgb, var(--accent) 55%, black));color:#fff;
     box-shadow:inset 0 0 0 2.5px rgba(255,255,255,.35), inset 0 -3px 6px rgba(0,0,0,.25);
   }
   .rank-medal.current{width:58px;height:58px;animation:rankGlow 2s infinite;border-radius:50%;}
   .rank-medal.current svg{width:24px;height:24px;}
   @keyframes rankGlow{
-    0%{box-shadow:0 0 0 5px rgba(240,180,41,.35), 0 0 16px 2px rgba(240,180,41,.5);}
-    50%{box-shadow:0 0 0 12px rgba(240,180,41,.08), 0 0 26px 6px rgba(240,180,41,.7);}
-    100%{box-shadow:0 0 0 5px rgba(240,180,41,.35), 0 0 16px 2px rgba(240,180,41,.5);}
+    0%{box-shadow:0 0 0 5px color-mix(in srgb, var(--accent) 35%, transparent), 0 0 16px 2px color-mix(in srgb, var(--accent) 50%, transparent);}
+    50%{box-shadow:0 0 0 12px color-mix(in srgb, var(--accent) 8%, transparent), 0 0 26px 6px color-mix(in srgb, var(--accent) 70%, transparent);}
+    100%{box-shadow:0 0 0 5px color-mix(in srgb, var(--accent) 35%, transparent), 0 0 16px 2px color-mix(in srgb, var(--accent) 50%, transparent);}
   }
   .rank-medal-label{position:absolute;top:54px;left:50%;transform:translateX(-50%);font-size:11px;font-weight:600;color:var(--muted);white-space:nowrap;}
   .rank-medal.reached .rank-medal-label, .rank-medal.current .rank-medal-label{color:var(--ink);font-weight:700;}
@@ -606,7 +615,7 @@
   }
   .challenge-badge svg{width:22px;height:22px;}
   .challenge-badge.badge-done .challenge-badge-shape{background:linear-gradient(145deg, var(--win), #2f9e6e);box-shadow:inset 0 0 0 2.5px rgba(255,255,255,.3), inset 0 -3px 6px rgba(0,0,0,.2);color:#fff;}
-  .challenge-badge.badge-next .challenge-badge-shape{background:linear-gradient(145deg, #f6c453, #c9891f);box-shadow:inset 0 0 0 2.5px rgba(255,255,255,.3), inset 0 -3px 6px rgba(0,0,0,.2);color:#3a2410;}
+  .challenge-badge.badge-next .challenge-badge-shape{background:linear-gradient(145deg, var(--accent), color-mix(in srgb, var(--accent) 55%, black));box-shadow:inset 0 0 0 2.5px rgba(255,255,255,.3), inset 0 -3px 6px rgba(0,0,0,.2);color:#fff;}
   .challenge-badge-mark{
     position:absolute;bottom:-3px;right:-3px;width:18px;height:18px;border-radius:50%;
     display:flex;align-items:center;justify-content:center;font-size:10px;border:2px solid var(--surface-2);
@@ -618,7 +627,7 @@
   .challenge-info{flex:1;min-width:0;}
   .card-tag{display:inline-block;font-size:9px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;margin-bottom:4px;padding:2px 7px;border-radius:10px;background:var(--surface);color:var(--muted);}
   .challenge-card.done .card-tag{background:rgba(111,162,135,.16);color:var(--win);}
-  .challenge-card.next .card-tag{background:rgba(240,180,41,.16);color:var(--accent);}
+  .challenge-card.next .card-tag{background:color-mix(in srgb, var(--accent) 16%, transparent);color:var(--accent);}
   .challenge-title{font-size:13px;font-weight:600;color:var(--ink);margin-bottom:2px;}
   .challenge-desc{font-size:11px;color:var(--muted);margin-bottom:7px;}
   .challenge-progress-bar{height:6px;border-radius:4px;background:var(--surface);overflow:hidden;}
@@ -672,8 +681,8 @@
   .profile-rank-badge{
     flex-shrink:0;display:flex;flex-direction:column;align-items:center;gap:6px;
     padding:10px 18px;border-radius:10px;cursor:pointer;text-align:center;
-    background:linear-gradient(135deg, #f6c453, #e0703f);color:#fff;
-    box-shadow:0 4px 14px rgba(224,112,63,.35);transition:transform .15s ease;
+    background:linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 55%, black));color:#fff;
+    box-shadow:0 4px 14px color-mix(in srgb, var(--accent) 35%, transparent);transition:transform .15s ease;
   }
   .profile-rank-badge:hover{transform:scale(1.05);}
   .profile-rank-icon svg{width:22px;height:22px;}
@@ -794,7 +803,7 @@
     background:none;border:1px solid var(--accent);color:var(--accent);padding:9px 14px;
     border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;
   }
-  .poscalc-accent-btn:hover{background:rgba(240,180,41,.1);}
+  .poscalc-accent-btn:hover{background:color-mix(in srgb, var(--accent) 12%, transparent);}
   .poscalc-image-dropzone{
     min-height:64px;display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:8px;
     background:var(--surface-2);border:1px dashed var(--rule);border-radius:6px;
