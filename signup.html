@@ -24,6 +24,15 @@
   <h1>Create your account</h1>
   <p>Set up your Forgefolio login.</p>
 
+  <label>Full Name</label>
+  <input id="signupFullName" placeholder="Juan Dela Cruz">
+
+  <label>Username</label>
+  <input id="signupUsername" placeholder="e.g. juandelacruz" autocapitalize="off" autocorrect="off">
+
+  <label>Discord Username</label>
+  <input id="signupDiscord" placeholder="e.g. juandelacruz#0001 (optional)">
+
   <label>Email</label>
   <input id="signupEmail" type="email" placeholder="you@example.com">
 
@@ -46,6 +55,9 @@
 redirectIfLoggedIn("dashboard.html");
 
 async function doSignup(){
+  const fullName = document.getElementById('signupFullName').value.trim();
+  const username = document.getElementById('signupUsername').value.trim().toLowerCase();
+  const discord = document.getElementById('signupDiscord').value.trim();
   const email = document.getElementById('signupEmail').value.trim();
   const password = document.getElementById('signupPassword').value;
   const errEl = document.getElementById('signupError');
@@ -54,8 +66,12 @@ async function doSignup(){
   errEl.textContent = '';
   noticeEl.textContent = '';
 
-  if(!email || !password){
-    errEl.textContent = "Please fill in both fields.";
+  if(!fullName || !username || !email || !password){
+    errEl.textContent = "Please fill in Full Name, Username, Email, and Password.";
+    return;
+  }
+  if(!/^[a-z0-9_.]{3,20}$/.test(username)){
+    errEl.textContent = "Username must be 3-20 characters: lowercase letters, numbers, underscore, or period only.";
     return;
   }
   if(password.length < 6){
@@ -66,14 +82,20 @@ async function doSignup(){
   btn.disabled = true;
   btn.textContent = "Creating account…";
   try{
-    const data = await authSignUp(email, password);
+    const data = await authSignUp(email, password, {
+      display_name: fullName,
+      username: username,
+      discord_username: discord || null
+    });
     if(data.session){
       window.location.href = "dashboard.html";
     }else{
       noticeEl.textContent = "Account created! Check your email to confirm before logging in.";
     }
   }catch(e){
-    errEl.textContent = e.message || "Couldn't create account.";
+    errEl.textContent = e.message?.includes('duplicate') || e.message?.includes('username')
+      ? "That username is already taken — please pick another."
+      : (e.message || "Couldn't create account.");
   }finally{
     btn.disabled = false;
     btn.textContent = "Sign up";

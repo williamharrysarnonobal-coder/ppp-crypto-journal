@@ -20,6 +20,8 @@ alter table trading_accounts add column if not exists phase_start_balance numeri
 alter table trading_journal add column if not exists entry_price numeric;
 alter table trading_journal add column if not exists close_price numeric;
 alter table trading_journal add column if not exists position_size numeric;
+alter table trading_journal add column if not exists link text;
+alter table trading_journal add column if not exists linked_setup_id bigint references position_setups(id) on delete set null;
 
 -- economic_events
 alter table economic_events add column if not exists comment text;
@@ -27,3 +29,16 @@ alter table economic_events add column if not exists comment_tl text;
 
 -- achievements
 alter table achievements add column if not exists amount numeric;
+
+-- position_setups
+alter table position_setups add column if not exists status text not null default 'Pending';
+alter table position_setups add column if not exists symbol text;
+alter table position_setups add column if not exists notes text;
+alter table position_setups add column if not exists notes_log jsonb not null default '[]'::jsonb;
+
+-- user_access
+alter table user_access add column if not exists disabled_features text[] not null default '{}';
+
+-- position_setups (before/after screenshots)
+alter table position_setups add column if not exists before_screenshot text;
+alter table position_setups add column if not exists after_screenshot text;

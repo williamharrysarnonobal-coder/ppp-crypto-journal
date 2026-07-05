@@ -72,8 +72,8 @@
       <h1>Welcome back</h1>
       <p>Log in to Forgefolio.</p>
 
-      <label>Email</label>
-      <input id="loginEmail" type="email" placeholder="you@example.com">
+      <label>Username</label>
+      <input id="loginUsername" placeholder="e.g. juandelacruz" autocapitalize="off" autocorrect="off">
 
       <label>Password</label>
       <input id="loginPassword" type="password" placeholder="••••••••">
@@ -81,6 +81,7 @@
       <button id="loginBtn">Log in</button>
       <div id="loginError" class="auth-error"></div>
 
+      <div class="auth-switch"><a href="forgot-password.html">Forgot password?</a></div>
       <div class="auth-switch">Don't have an account? <a href="signup.html">Sign up</a></div>
     </div>
   </div>
@@ -95,13 +96,13 @@
 redirectIfLoggedIn("dashboard.html");
 
 async function doLogin(){
-  const email = document.getElementById('loginEmail').value.trim();
+  const username = document.getElementById('loginUsername').value.trim().toLowerCase();
   const password = document.getElementById('loginPassword').value;
   const errEl = document.getElementById('loginError');
   const btn = document.getElementById('loginBtn');
   errEl.textContent = '';
 
-  if(!email || !password){
+  if(!username || !password){
     errEl.textContent = "Please fill in both fields.";
     return;
   }
@@ -109,7 +110,14 @@ async function doLogin(){
   btn.disabled = true;
   btn.textContent = "Logging in…";
   try{
-    await authSignIn(email, password);
+    // Accepts an email too (not just username) — a safety net during the
+    // switch to username login, so nobody who hasn't set a username yet
+    // gets locked out of their own account.
+    if(username.includes('@')){
+      await authSignIn(username, password);
+    }else{
+      await authSignInWithUsername(username, password);
+    }
     window.location.href = "dashboard.html";
   }catch(e){
     errEl.textContent = e.message || "Couldn't log in.";

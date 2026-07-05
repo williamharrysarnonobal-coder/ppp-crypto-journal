@@ -4,9 +4,71 @@ let CURRENT_USER_ROLE = null;   // 'admin' | 'user' — from user_access, not ha
 let CURRENT_USER_STATUS = null; // 'pending' | 'approved' | 'rejected'
 function isAdminUser(){ return CURRENT_USER_ROLE === 'admin'; }
 
+// Per-user feature gating, on top of the account-level approve/reject gate —
+// an admin can block a specific approved user from specific features without
+// hiding them: the nav item stays visible but locked, and clicking it just
+// shows a permission-denied message instead of switching views.
+const GATEABLE_FEATURES = [
+  { key: 'journal', label: 'Trade Journals' },
+  { key: 'accounts', label: 'My Accounts' },
+  { key: 'calculator', label: 'Calculator' },
+  { key: 'alerts', label: 'Trade Alerts' },
+  { key: 'notebook', label: 'Notebook' },
+  { key: 'achievements', label: 'Achievements' },
+  { key: 'challenges', label: 'Challenges' },
+  { key: 'news', label: 'Economic Calendar' }
+];
+let DISABLED_FEATURES = new Set();
+
+function applyFeatureLocks(){
+  document.querySelectorAll('.nav-item[data-view]').forEach(el => {
+    const view = el.dataset.view;
+    const locked = DISABLED_FEATURES.has(view);
+    el.classList.toggle('nav-locked', locked);
+    let lockIcon = el.querySelector('.nav-lock-icon');
+    if(locked && !lockIcon){
+      lockIcon = document.createElement('span');
+      lockIcon.className = 'nav-lock-icon';
+      lockIcon.innerHTML = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>';
+      el.appendChild(lockIcon);
+    }else if(!locked && lockIcon){
+      lockIcon.remove();
+    }
+  });
+}
+
 let ALL_TRADES = [];
 let RAW_TRADES = [];
 let FILTERED = [];
+let SETUP_SCREENSHOTS = {}; // { [position_setups.id]: {before_screenshot, after_screenshot} }, for trades with linked_setup_id
+
+async function loadLinkedSetupScreenshots(){
+  const ids = [...new Set(RAW_TRADES.map(r => r.linked_setup_id).filter(Boolean))];
+  if(!ids.length){ SETUP_SCREENSHOTS = {}; return; }
+  try{
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/position_setups?id=in.(${ids.join(',')})&select=id,before_screenshot,after_screenshot`, {
+      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}` }
+    });
+    if(!res.ok) throw new Error(await res.text());
+    const rows = await res.json();
+    SETUP_SCREENSHOTS = {};
+    rows.forEach(r => { SETUP_SCREENSHOTS[r.id] = r; });
+  }catch(e){
+    console.error("Couldn't load linked setup screenshots:", e);
+  }
+}
+
+async function viewSetupScreenshot(setupId, slot){
+  const info = SETUP_SCREENSHOTS[setupId];
+  const path = info ? info[`${slot}_screenshot`] : null;
+  if(!path) return;
+  try{
+    const { data } = await sb.storage.from('setup-screenshots').createSignedUrl(path, 3600);
+    if(data && data.signedUrl) openLightbox(data.signedUrl);
+  }catch(e){
+    console.error(`Couldn't load ${slot} screenshot:`, e);
+  }
+}
 let calMonth = new Date();
 let activeTab = "trade_setup";
 let equityChartRef = null;
@@ -229,6 +291,10 @@ function renderSettingsPage(){
 })();
 
 function switchView(view){
+  if(DISABLED_FEATURES.has(view)){
+    showToast("You don't have permission to access this feature.");
+    return;
+  }
   currentView = view;
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
   document.getElementById('view-' + view).classList.add('active');
@@ -242,6 +308,7 @@ function switchView(view){
   if(view === 'challenges') renderChallenges();
   if(view === 'profile') loadProfile();
   if(view === 'accounts') loadAccounts();
+  if(view === 'calculator'){ renderPositionCalculator(); loadSavedSetups(); }
   if(view === 'settings') renderSettingsPage();
   if(view === 'notebook') loadNotes();
   if(view === 'admin') renderAdminConsole();
@@ -249,6 +316,56 @@ function switchView(view){
 
 function escapeHtml(str){
   return String(str ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+// Promise-based replacement for the native confirm() — matches the app's
+// own styling instead of the browser's default dialog.
+let _customConfirmResolver = null;
+function customConfirm(message, okLabel){
+  return new Promise(resolve => {
+    document.getElementById('customConfirmMessage').textContent = message;
+    document.getElementById('customConfirmOkBtn').textContent = okLabel || 'Delete';
+    _customConfirmResolver = resolve;
+    document.getElementById('customConfirmModal').classList.add('open');
+  });
+}
+function resolveCustomConfirm(result){
+  document.getElementById('customConfirmModal').classList.remove('open');
+  if(_customConfirmResolver){ _customConfirmResolver(result); _customConfirmResolver = null; }
+}
+
+// Promise-based replacement for the native alert() — same reasoning as
+// customConfirm(): the browser's own alert() doesn't match the app's look.
+let _customAlertResolver = null;
+function customAlert(message, title){
+  return new Promise(resolve => {
+    document.getElementById('customAlertTitle').textContent = title || 'Heads up';
+    document.getElementById('customAlertMessage').textContent = message;
+    _customAlertResolver = resolve;
+    document.getElementById('customAlertModal').classList.add('open');
+  });
+}
+function resolveCustomAlert(){
+  document.getElementById('customAlertModal').classList.remove('open');
+  if(_customAlertResolver){ _customAlertResolver(); _customAlertResolver = null; }
+}
+
+// Hover popup for "Rules Followed? = No" cells in the Trade Journal table —
+// shows which specific rules were broken, since a "Yes" cell has nothing to
+// check and doesn't need one.
+function showRulesTooltip(event){
+  const tip = document.getElementById('rulesTooltip');
+  const cell = event.currentTarget;
+  if(!tip || !cell) return;
+  tip.textContent = cell.dataset.rules || '';
+  const rect = cell.getBoundingClientRect();
+  tip.style.left = `${rect.left}px`;
+  tip.style.top = `${rect.bottom + 8}px`;
+  tip.classList.add('show');
+}
+function hideRulesTooltip(){
+  const tip = document.getElementById('rulesTooltip');
+  if(tip) tip.classList.remove('show');
 }
 
 /* Auto-refresh Trade Alerts while that tab is open — the bots only push
@@ -270,13 +387,14 @@ async function initApp(){
   CURRENT_USER_EMAIL = session.user?.email || null;
 
   try{
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/user_access?select=role,status`, {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/user_access?select=role,status,disabled_features`, {
       headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}` }
     });
     if(!res.ok) throw new Error(await res.text());
     const rows = await res.json();
     CURRENT_USER_ROLE = rows[0]?.role || null;
     CURRENT_USER_STATUS = rows[0]?.status || null;
+    DISABLED_FEATURES = new Set(rows[0]?.disabled_features || []);
   }catch(e){
     console.error("Couldn't load account access status:", e);
     CURRENT_USER_STATUS = null;
@@ -288,6 +406,7 @@ async function initApp(){
   }
 
   document.querySelectorAll('[data-view="admin"]').forEach(el => el.style.display = isAdminUser() ? '' : 'none');
+  applyFeatureLocks();
 
   loadColumnConfig();
   loadOptionsConfig();
@@ -320,12 +439,22 @@ async function initApp(){
     populateAccountFilter();
     applyFilters();
     populateJournalFilters();
+    loadLinkedSetupScreenshots().then(renderJournalTable);
     renderJournalTable();
     loadProfile();
+    refreshAllNavBadges();
+
+    // Loaded eagerly (not just when their own view is first opened) so the
+    // sidebar badges are accurate right from login, not just after visiting
+    // Trade Alerts / Economic Calendar / Challenges at least once.
+    loadSignalAlerts();
+    loadMarketNewsWidget();
+    renderChallenges();
+    loadPendingSignupsForBadge();
 
   }catch(e){
     setLoading(100);
-    alert("Couldn't load your trades: " + e.message);
+    await customAlert("Couldn't load your trades: " + e.message);
   }
 }
 
@@ -336,10 +465,10 @@ function showPendingApprovalScreen(status){
   const text = document.getElementById('pendingScreenText');
   if(status === 'rejected'){
     title.textContent = 'Access denied';
-    text.textContent = "Hindi pinayagan ng admin ang account na ito. Kung sa tingin mo ay pagkakamali ito, makipag-ugnayan sa nag-imbita sa'yo.";
+    text.textContent = "This account hasn't been approved. If you think this is a mistake, reach out to whoever invited you.";
   }else{
     title.textContent = 'Waiting for approval';
-    text.textContent = "Nakapag-sign up ka na — naghihintay na lang ito ng approval mula sa admin bago mo magamit ang app. Subukan mo ulit mamaya.";
+    text.textContent = "You're signed up — this account is just waiting for an admin to approve it before you can use the app. Check back soon.";
   }
   screen.style.display = 'flex';
 }
@@ -352,57 +481,101 @@ async function renderAdminConsole(){
   pendingList.innerHTML = `<div class="empty-state">Loading…</div>`;
   allList.innerHTML = '';
   try{
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/user_access?select=*&order=requested_at.desc`, {
-      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}` }
-    });
-    if(!res.ok) throw new Error(await res.text());
-    renderAdminUserList(await res.json());
+    const [accessRes, profileRes] = await Promise.all([
+      fetch(`${SUPABASE_URL}/rest/v1/user_access?select=*&order=requested_at.desc`, {
+        headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}` }
+      }),
+      fetch(`${SUPABASE_URL}/rest/v1/user_profile?select=user_id,display_name,username,discord_username`, {
+        headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}` }
+      })
+    ]);
+    if(!accessRes.ok) throw new Error(await accessRes.text());
+    const accessRows = await accessRes.json();
+    const profileRows = profileRes.ok ? await profileRes.json() : [];
+    const profileByUser = {};
+    profileRows.forEach(p => { profileByUser[p.user_id] = p; });
+    const merged = accessRows.map(r => ({ ...r, ...(profileByUser[r.user_id] || {}) }));
+    renderAdminUserList(merged);
   }catch(e){
     console.error("Couldn't load user list:", e);
     pendingList.innerHTML = `<div class="empty-state">Couldn't load users.</div>`;
   }
 }
 
+let ADMIN_USER_ROWS = [];
+
+function _adminDateFmt(d){
+  return new Date(d).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+}
+
 function renderAdminUserList(rows){
+  ADMIN_USER_ROWS = rows;
   const pending = rows.filter(r => r.status === 'pending');
-  const others = rows.filter(r => r.status !== 'pending');
+  PENDING_SIGNUPS = pending;
+  refreshAllNavBadges();
 
   document.getElementById('adminPendingCount').textContent = pending.length;
 
   document.getElementById('adminPendingList').innerHTML = pending.length
     ? pending.map(r => `
-        <div class="admin-user-row">
-          <div>
-            <div class="admin-user-email">${escapeHtml(r.email)}</div>
-            <div class="admin-user-meta">Requested ${new Date(r.requested_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</div>
-          </div>
-          <div class="admin-user-actions">
+        <tr>
+          <td>${escapeHtml(r.email)}</td>
+          <td>${escapeHtml(r.display_name || '—')}</td>
+          <td>${r.username ? '@'+escapeHtml(r.username) : '—'}</td>
+          <td>${escapeHtml(r.discord_username || '—')}</td>
+          <td>${_adminDateFmt(r.requested_at)}</td>
+          <td>
             <button class="drawer-secondary-btn" onclick="approveUser('${r.user_id}')">Approve</button>
             <button class="drawer-danger-btn" onclick="rejectUser('${r.user_id}')">Reject</button>
-          </div>
-        </div>
+          </td>
+        </tr>
       `).join('')
-    : `<div class="empty-state">No pending requests.</div>`;
+    : `<tr><td colspan="6" style="color:var(--muted);">No pending requests.</td></tr>`;
+
+  filterAdminUserList();
+}
+
+function filterAdminUserList(){
+  const searchEl = document.getElementById('adminUserSearch');
+  const q = (searchEl ? searchEl.value : '').trim().toLowerCase();
+
+  let others = ADMIN_USER_ROWS.filter(r => r.status !== 'pending');
+  if(q){
+    others = others.filter(r =>
+      (r.email || '').toLowerCase().includes(q) ||
+      (r.username || '').toLowerCase().includes(q) ||
+      (r.display_name || '').toLowerCase().includes(q) ||
+      (r.discord_username || '').toLowerCase().includes(q)
+    );
+  }
 
   document.getElementById('adminAllUsersList').innerHTML = others.length
-    ? others.map(r => `
-        <div class="admin-user-row">
-          <div>
-            <div class="admin-user-email">${escapeHtml(r.email)}</div>
-            <div class="admin-user-meta">
-              <span class="pill ${r.status==='approved'?'pill-green':'pill-red'}">${escapeHtml(r.status)}</span>
-              <span class="pill ${r.role==='admin'?'pill-orange':'pill-muted'}">${escapeHtml(r.role)}</span>
-            </div>
-          </div>
-          <div class="admin-user-actions">
+    ? others.map(r => {
+        const disabledCount = (r.disabled_features || []).length;
+        return `
+        <tr>
+          <td>${escapeHtml(r.email)}</td>
+          <td>${escapeHtml(r.display_name || '—')}</td>
+          <td>${r.username ? '@'+escapeHtml(r.username) : '—'}</td>
+          <td>${escapeHtml(r.discord_username || '—')}</td>
+          <td><span class="pill ${r.status==='approved'?'pill-green':'pill-red'}">${escapeHtml(r.status)}</span></td>
+          <td><span class="pill ${r.role==='admin'?'pill-orange':'pill-muted'}">${escapeHtml(r.role)}</span></td>
+          <td>${disabledCount > 0 ? `<span class="pill pill-red">${disabledCount}/${GATEABLE_FEATURES.length}</span>` : '—'}</td>
+          <td>${_adminDateFmt(r.requested_at)}</td>
+          <td>${r.decided_at ? _adminDateFmt(r.decided_at) : '—'}</td>
+          <td>
             ${r.status === 'approved'
               ? `<button class="drawer-secondary-btn" onclick="revokeUser('${r.user_id}')">Revoke</button>`
               : `<button class="drawer-secondary-btn" onclick="approveUser('${r.user_id}')">Approve</button>`}
+            ${r.status === 'approved'
+              ? `<button class="drawer-secondary-btn" onclick="openFeatureAccessModal('${r.user_id}')">Features</button>`
+              : ''}
             <button class="drawer-secondary-btn" onclick="toggleAdminRole('${r.user_id}','${r.role}')">${r.role === 'admin' ? 'Make user' : 'Make admin'}</button>
-          </div>
-        </div>
-      `).join('')
-    : `<div class="empty-state">No other users yet.</div>`;
+          </td>
+        </tr>
+      `;
+      }).join('')
+    : `<tr><td colspan="10" style="color:var(--muted);">${q ? 'No users match your search.' : 'No other users yet.'}</td></tr>`;
 }
 
 async function _patchUserAccess(userId, patch){
@@ -419,25 +592,52 @@ async function _patchUserAccess(userId, patch){
     renderAdminConsole();
   }catch(e){
     console.error("Couldn't update user access:", e);
-    alert("Couldn't update — please try again.");
+    await customAlert("Couldn't update — please try again.");
   }
 }
 
 function approveUser(userId){
   _patchUserAccess(userId, { status: 'approved', decided_at: new Date().toISOString() });
 }
-function rejectUser(userId){
-  if(!confirm('Reject this signup? They will not be able to use the app.')) return;
+async function rejectUser(userId){
+  if(!(await customConfirm('Reject this signup? They will not be able to use the app.', 'Reject'))) return;
   _patchUserAccess(userId, { status: 'rejected', decided_at: new Date().toISOString() });
 }
-function revokeUser(userId){
-  if(!confirm("Revoke this user's access? They will be moved back to pending.")) return;
+async function revokeUser(userId){
+  if(!(await customConfirm("Revoke this user's access? They will be moved back to pending.", 'Revoke'))) return;
   _patchUserAccess(userId, { status: 'pending', decided_at: new Date().toISOString() });
 }
-function toggleAdminRole(userId, currentRole){
+async function toggleAdminRole(userId, currentRole){
   const nextRole = currentRole === 'admin' ? 'user' : 'admin';
-  if(!confirm(`Set this user's role to "${nextRole}"?`)) return;
+  if(!(await customConfirm(`Set this user's role to "${nextRole}"?`, 'Confirm'))) return;
   _patchUserAccess(userId, { role: nextRole });
+}
+
+let editingFeatureAccessUserId = null;
+
+function openFeatureAccessModal(userId){
+  const row = ADMIN_USER_ROWS.find(r => r.user_id === userId);
+  if(!row) return;
+  editingFeatureAccessUserId = userId;
+  const disabled = new Set(row.disabled_features || []);
+  document.getElementById('featureAccessList').innerHTML = GATEABLE_FEATURES.map(f => `
+    <label><input type="checkbox" data-feature-key="${f.key}" ${disabled.has(f.key) ? '' : 'checked'}> ${f.label}</label>
+  `).join('');
+  document.getElementById('featureAccessModal').classList.add('open');
+}
+
+function closeFeatureAccessModal(){
+  document.getElementById('featureAccessModal').classList.remove('open');
+  editingFeatureAccessUserId = null;
+}
+
+function saveFeatureAccess(){
+  if(!editingFeatureAccessUserId) return;
+  const disabledFeatures = Array.from(document.querySelectorAll('#featureAccessList [data-feature-key]'))
+    .filter(el => !el.checked)
+    .map(el => el.dataset.featureKey);
+  _patchUserAccess(editingFeatureAccessUserId, { disabled_features: disabledFeatures });
+  closeFeatureAccessModal();
 }
 
 window.addEventListener('DOMContentLoaded', initApp);
@@ -468,7 +668,8 @@ function normalizeTrade(r){
     unfollowed_rules: r.unfollowed_rules || "",
     account: r.account || "Unspecified",
     account_type: r.account_type || "",
-    notes: r.notes || ""
+    notes: r.notes || "",
+    link: r.link || ""
   };
 }
 
@@ -552,6 +753,15 @@ function computeTradeSummary(row){
     `<hr>`,
     val(row.notes)
   ].join('<br>');
+}
+
+// Plain-text version of computeTradeSummary() for the copy button — strips
+// the <b>/<hr>/<br> markup so it pastes cleanly into TradingView's chat/notes.
+function computeTradeSummaryPlain(row){
+  return computeTradeSummary(row)
+    .replace(/<br>/g, '\n')
+    .replace(/<hr>/g, '')
+    .replace(/<\/?b>/g, '');
 }
 
 function populateAccountFilter(){
@@ -1491,6 +1701,7 @@ const ALL_DRAWER_FIELDS = [
   {key:'session', label:'Session', widget:'select', editable:true, options:FIELD_OPTIONS.session},
   {key:'day_of_week', label:'Day of Week', widget:'select', editable:true, options:FIELD_OPTIONS.day_of_week},
   {key:'notes', label:'Notes', widget:'textarea', editable:true},
+  {key:'link', label:'Chart Link', widget:'text', editable:true},
   {key:'trade_summary', label:'Trade Summary', widget:'textarea', editable:false}
 ];
 
@@ -1529,8 +1740,8 @@ function toggleFormFieldVisible(key, visible){
   saveFormFieldConfig();
 }
 
-function resetFormFieldConfig(){
-  if(!confirm('Reset form fields to default?')) return;
+async function resetFormFieldConfig(){
+  if(!(await customConfirm('Reset form fields to default?', 'Reset'))) return;
   try{ localStorage.removeItem('ledger-form-field-config'); }catch(e){}
   loadFormFieldConfig();
   renderFormFieldConfigUI();
@@ -1583,7 +1794,9 @@ const ALL_JOURNAL_COLUMNS = [
   {key:'objective', label:'Objective'},
   {key:'fee', label:'Fee'},
   {key:'notes', label:'Notes'},
-  {key:'trade_summary', label:'Trade Summary'}
+  {key:'trade_summary', label:'Trade Summary'},
+  {key:'screenshot_before', label:'Screenshot (Before)'},
+  {key:'screenshot_after', label:'Screenshot (After)'}
 ];
 
 const DEFAULT_JOURNAL_COLUMN_ORDER = [
@@ -1638,8 +1851,8 @@ function toggleColumnVisible(key, visible){
   saveColumnConfig();
 }
 
-function resetColumnConfig(){
-  if(!confirm('Reset columns to default?')) return;
+async function resetColumnConfig(){
+  if(!(await customConfirm('Reset columns to default?', 'Reset'))) return;
   try{ localStorage.removeItem('ledger-column-config'); }catch(e){}
   loadColumnConfig();
   renderColumnConfigUI();
@@ -1863,9 +2076,21 @@ function renderJournalTable(){
             ? `<td onclick="event.stopPropagation();"><a class="link-btn" href="${r.link}" target="_blank">${linkIconSVG()}</a></td>`
             : `<td><span class="link-btn disabled">—</span></td>`;
         }
+        if(c.key === 'screenshot_before' || c.key === 'screenshot_after'){
+          const slot = c.key === 'screenshot_before' ? 'before' : 'after';
+          const info = SETUP_SCREENSHOTS[r.linked_setup_id];
+          const hasImg = info && info[`${slot}_screenshot`];
+          return hasImg
+            ? `<td onclick="event.stopPropagation();"><button class="link-btn" onclick="viewSetupScreenshot(${r.linked_setup_id}, '${slot}')">${imageIconSVG()}</button></td>`
+            : `<td><span class="link-btn disabled">—</span></td>`;
+        }
         const val = _journalCellValue(r, c.key);
         const colored = _journalColoredCell(c.key, r, val);
         if(colored){
+          if(c.key === 'rules_followed' && String(r.rules_followed||'').trim().toLowerCase() === 'no'){
+            const rulesText = escapeHtml(r.unfollowed_rules || 'No rules specified');
+            return `<td data-rules="${rulesText}" onmouseenter="showRulesTooltip(event)" onmouseleave="hideRulesTooltip()">${colored}</td>`;
+          }
           return `<td title="${String(r[c.key]||'').replace(/"/g,'&quot;')}">${colored}</td>`;
         }
         if(c.key === 'profit_loss'){
@@ -1917,6 +2142,19 @@ Realized P&L
 Fee
 `;
 
+// Set by journalFromSetup() right before opening Easy Add, so the parsed
+// paste-text can be merged with the calculator/notes data we already have
+// (account, position size, symbol, notes). Cleared once consumed or if the
+// modal is closed without proceeding, so it never leaks into an unrelated
+// Easy Add session started from the Trade Journal's own "+ Add Trade".
+let pendingJournalPrefill = null;
+// The saved setup's id being journaled, if any — set alongside
+// pendingJournalPrefill. Transferred to drawerJournalSetupId once Easy Add
+// actually proceeds to the drawer, so saveDrawer() can flip that setup's
+// Status to "Journaled" once the trade is truly saved (not just prefilled).
+let pendingJournalSetupId = null;
+let drawerJournalSetupId = null;
+
 function openEasyAddModal(){
   document.getElementById('easyAddBroker').value = 'manual';
   document.getElementById('easyAddError').textContent = '';
@@ -1926,6 +2164,8 @@ function openEasyAddModal(){
 
 function closeEasyAddModal(){
   document.getElementById('easyAddModal').classList.remove('open');
+  pendingJournalPrefill = null;
+  pendingJournalSetupId = null;
 }
 
 function switchEasyAddBroker(){
@@ -2080,11 +2320,19 @@ function parseEasyAddText(){
     });
   }
 
+  // Merge in the calculator/notes data from "Journal", if that's how this
+  // modal was opened — pasted-text values win on overlap since they're the
+  // real, closed-trade numbers, not the calculator's earlier estimate.
+  if(pendingJournalPrefill){
+    parsed = { ...pendingJournalPrefill, ...parsed };
+  }
+
   if(!Object.keys(parsed).length){
     errEl.textContent = "Couldn't recognize any fields in that text. Make sure you copied the full position card.";
     return;
   }
 
+  drawerJournalSetupId = pendingJournalSetupId;
   closeEasyAddModal();
   openDrawer('create', null, parsed);
 }
@@ -2105,6 +2353,7 @@ function renderTradeViewModal(){
   if(!row) return;
 
   document.getElementById('tradeViewTitle').textContent = (row.symbol || 'Trade') + (row.no ? ` · #${row.no}` : '');
+  document.getElementById('tradeViewSetupNotesBtn').style.display = row.linked_setup_id ? 'flex' : 'none';
 
   const wideFields = new Set(['notes','trade_summary','unfollowed_rules']);
   document.getElementById('tradeViewBody').innerHTML = DRAWER_FIELDS.map(f => {
@@ -2114,7 +2363,13 @@ function renderTradeViewModal(){
       return `<div class="field-row${spanCls}"><label>${f.label}</label><div class="field-static">${computed || '—'}</div></div>`;
     }
     if(f.key === 'trade_summary'){
-      return `<div class="field-row${spanCls}"><label>${f.label}</label><div class="field-static">${computeTradeSummary(row)}</div></div>`;
+      return `<div class="field-row${spanCls}">
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <label style="margin-bottom:0;">${f.label}</label>
+          <button class="poscalc-copy-btn" title="Copy Trade Summary" onclick="copyTradeSummaryToClipboard(this)" data-summary="${escapeHtml(computeTradeSummaryPlain(row))}">${copyIconSVG()}</button>
+        </div>
+        <div class="field-static">${computeTradeSummary(row)}</div>
+      </div>`;
     }
     if(f.key === 'open_date' || f.key === 'close_date'){
       const raw = row[f.key];
@@ -2150,6 +2405,20 @@ function editFromTradeView(){
   enterEditMode();
 }
 
+// Reuses deleteDrawer()'s confirm+delete+balance-adjust logic without
+// requiring the full drawer to be open first — only closes this popup if
+// the trade actually got removed (not on a cancelled confirm or an error).
+async function deleteFromTradeView(){
+  const row = tradeViewList[tradeViewIndex];
+  if(!row) return;
+  drawerPositionId = row.position_id;
+  drawerRowData = row;
+  await deleteDrawer();
+  if(!RAW_TRADES.some(r => r.position_id === row.position_id)){
+    closeTradeViewModal();
+  }
+}
+
 function openDrawer(mode, positionId, prefill){
   drawerMode = mode;
   drawerPositionId = positionId || null;
@@ -2176,6 +2445,7 @@ function renderDrawerFields(){
     : (row.symbol || 'Trade') + (row.no ? ` · #${row.no}` : '');
   document.getElementById('drawerDeleteBtn').style.display = mode === 'view' ? 'inline-block' : 'none';
   document.getElementById('drawerEditBtn').style.display = (mode === 'view' && !drawerEditing) ? 'inline-block' : 'none';
+  document.getElementById('drawerSetupNotesBtn').style.display = (mode === 'view' && row.linked_setup_id) ? 'inline-block' : 'none';
   document.getElementById('drawerSaveBtn').style.display = (mode === 'create' || drawerEditing) ? 'inline-block' : 'none';
   document.getElementById('drawerSaveBtn').textContent = mode === 'create' ? 'Add trade' : 'Save changes';
   document.getElementById('drawerError').textContent = '';
@@ -2187,7 +2457,13 @@ function renderDrawerFields(){
       return `<div class="field-row"><label>${f.label}</label><div class="field-static">${computed || '—'}</div></div>`;
     }
     if(f.key === 'trade_summary'){
-      return `<div class="field-row"><label>${f.label}</label><div class="field-static">${computeTradeSummary(row)}</div></div>`;
+      return `<div class="field-row">
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <label style="margin-bottom:0;">${f.label}</label>
+          <button class="poscalc-copy-btn" title="Copy Trade Summary" onclick="copyTradeSummaryToClipboard(this)" data-summary="${escapeHtml(computeTradeSummaryPlain(row))}">${copyIconSVG()}</button>
+        </div>
+        <div class="field-static">${computeTradeSummary(row)}</div>
+      </div>`;
     }
 
     const showWidget = mode === 'create' || f.editable || drawerEditing;
@@ -2213,6 +2489,8 @@ function renderDrawerFields(){
       const opts = selectOptions.map(o => `<option value="${o}" ${raw===o?'selected':''}>${o}</option>`).join('');
       const onchange = f.key === 'account' ? ` onchange="syncAccountTypeFromAccount(this.value)"`
         : f.key === 'trade_setup' ? ` onchange="syncPatternTypeFromSetup(this.value)"`
+        : f.key === 'pattern_type' ? ` onchange="syncExecutionFromPattern(this.value)"`
+        : f.key === 'win_loss' ? ` onchange="syncPostBEFromWinLoss(this.value)"`
         : '';
       return `<div class="${rowCls}"><label>${f.label}</label><select data-field="${f.key}"${onchange}><option value="">—</option>${opts}</select></div>`;
     }
@@ -2234,6 +2512,16 @@ function renderDrawerFields(){
     }
     return `<div class="${rowCls}"><label>${f.label}</label><input type="text" data-field="${f.key}" value="${raw!==undefined&&raw!==null?raw:''}"></div>`;
   }).join('');
+
+  // Prefilled values (Easy Add / Journal from a saved setup) set the
+  // select's initial value directly, which doesn't fire "change" — so the
+  // dependent auto-fills below need a proactive nudge on create, same as
+  // if the user had just picked them by hand.
+  if(mode === 'create'){
+    if(row.account) syncAccountTypeFromAccount(row.account);
+    if(row.pattern_type) syncExecutionFromPattern(row.pattern_type);
+    if(row.win_loss) syncPostBEFromWinLoss(row.win_loss);
+  }
 }
 
 function closeDrawer(){
@@ -2269,6 +2557,7 @@ async function saveDrawer(){
   const saveBtn = document.getElementById('drawerSaveBtn');
   saveBtn.disabled = true;
   saveBtn.textContent = 'Saving…';
+  let justJournaledSetup = false;
 
   try{
     const patch = _collectDrawerPatch();
@@ -2277,6 +2566,7 @@ async function saveDrawer(){
       const maxNo = RAW_TRADES.reduce((m,r) => { const n = parseFloat(r.no); return !isNaN(n) && n>m ? n : m; }, 0);
       patch.no = patch.no || (maxNo + 1);
       patch.position_id = 'WEB-' + Date.now().toString(36).toUpperCase();
+      if(drawerJournalSetupId) patch.linked_setup_id = drawerJournalSetupId;
 
       const res = await fetch(`${SUPABASE_URL}/rest/v1/${TABLE_NAME}`, {
         method: 'POST',
@@ -2291,6 +2581,12 @@ async function saveDrawer(){
       if(!res.ok) throw new Error(await res.text());
       const inserted = await res.json();
       RAW_TRADES.push(inserted[0] || patch);
+
+      if(drawerJournalSetupId){
+        setSetupStatus(drawerJournalSetupId, 'Journaled');
+        justJournaledSetup = true;
+        drawerJournalSetupId = null;
+      }
 
     }else{
       const res = await fetch(`${SUPABASE_URL}/rest/v1/${TABLE_NAME}?position_id=eq.${encodeURIComponent(drawerPositionId)}`, {
@@ -2314,6 +2610,8 @@ async function saveDrawer(){
     populateJournalFilters();
     applyFilters();
     renderJournalTable();
+    refreshAllNavBadges();
+    if(justJournaledSetup) loadLinkedSetupScreenshots().then(renderJournalTable);
 
     const oldAccount = drawerMode === 'create' ? null : (drawerRowData.account || null);
     const oldPL = drawerMode === 'create' ? 0 : (parseFloat(drawerRowData.profit_loss) || 0);
@@ -2338,7 +2636,7 @@ async function saveDrawer(){
 
 async function deleteDrawer(){
   if(!drawerPositionId) return;
-  if(!confirm('Delete this trade permanently? This cannot be undone.')) return;
+  if(!(await customConfirm('Delete this trade permanently? This cannot be undone.'))) return;
 
   const errEl = document.getElementById('drawerError');
   try{
@@ -2353,6 +2651,7 @@ async function deleteDrawer(){
 
     const deletedAccount = drawerRowData.account || null;
     const deletedPL = parseFloat(drawerRowData.profit_loss) || 0;
+    const linkedSetupId = drawerRowData.linked_setup_id || null;
 
     RAW_TRADES = RAW_TRADES.filter(r => r.position_id !== drawerPositionId);
     ALL_TRADES = RAW_TRADES.map(normalizeTrade);
@@ -2360,8 +2659,10 @@ async function deleteDrawer(){
     populateJournalFilters();
     applyFilters();
     renderJournalTable();
+    refreshAllNavBadges();
 
     if(deletedAccount) await adjustAccountBalance(deletedAccount, -deletedPL);
+    if(linkedSetupId) setSetupStatus(linkedSetupId, 'Pending');
 
     closeDrawer();
 
@@ -2450,6 +2751,328 @@ function showToast(msg){
   toastTimer = setTimeout(() => el.classList.remove('show'), 2600);
 }
 
+/* ---------------- Sidebar notification badges + notification center ---------------- */
+
+// Admin-only: pending signups waiting for approval. Populated eagerly at
+// login (for admins) so the badge is right immediately, and re-populated
+// for free whenever the Admin Console's own list loads (renderAdminUserList).
+let PENDING_SIGNUPS = [];
+
+async function loadPendingSignupsForBadge(){
+  if(!isAdminUser()) return;
+  try{
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/user_access?select=email,requested_at&status=eq.pending&order=requested_at.desc`, {
+      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}` }
+    });
+    if(!res.ok) throw new Error(await res.text());
+    PENDING_SIGNUPS = await res.json();
+  }catch(e){
+    console.error("Couldn't load pending signups:", e);
+    PENDING_SIGNUPS = [];
+  }
+  refreshAllNavBadges();
+}
+
+// Only trades CREATED through this app (position_id starts with "WEB-",
+// assigned in saveDrawer()'s create path) are checked for missing fields —
+// a legacy/imported trade keeps its real historical open_date even if you
+// add it today, so open_date can't tell "new entry" from "old trade";
+// position_id can, since every app-created row gets stamped once, at
+// creation, regardless of what date the trade itself happened on.
+const REQUIRED_JOURNAL_FIELDS = [
+  'symbol','win_loss','profit_loss','account','entry_price','close_price',
+  'position_size','rules_followed','trade_type','exit_type','trade_setup'
+];
+const REQUIRED_JOURNAL_FIELD_LABELS = {
+  symbol: 'Symbol', win_loss: 'Win/Loss', profit_loss: 'Profit/Loss', account: 'Account',
+  entry_price: 'Entry Price', close_price: 'Close Price', position_size: 'Position Size',
+  rules_followed: 'Rules Followed?', trade_type: 'Trade Type', exit_type: 'Exit Type', trade_setup: 'Trade Setup'
+};
+
+function getMissingFieldLabels(t){
+  return REQUIRED_JOURNAL_FIELDS
+    .filter(key => t[key] === null || t[key] === undefined || t[key] === '')
+    .map(key => REQUIRED_JOURNAL_FIELD_LABELS[key]);
+}
+
+function getIncompleteTrades(){
+  return RAW_TRADES.filter(t => {
+    if(!(t.position_id || '').startsWith('WEB-')) return false;
+    return REQUIRED_JOURNAL_FIELDS.some(key => t[key] === null || t[key] === undefined || t[key] === '');
+  });
+}
+function getIncompleteTradesCount(){ return getIncompleteTrades().length; }
+
+function getUpcomingHighImpactEvents(){
+  const now = new Date();
+  const in24h = new Date(now.getTime() + 24 * 3600000);
+  return ECON_EVENTS.filter(e => {
+    if(e.impact !== 'High') return false;
+    const d = new Date(e.event_date);
+    return !isNaN(d) && d >= now && d <= in24h;
+  });
+}
+function getUpcomingHighImpactCount(){ return getUpcomingHighImpactEvents().length; }
+
+// A challenge has no "completed_at" of its own — .done is just recomputed
+// fresh from trades/achievements every render — so "newly" completed is
+// tracked by diffing against the last set of done titles we've shown a
+// notification for, saved in localStorage (persists across sessions).
+function getNewlyCompletedChallenges(){
+  const doneNow = COMPUTED_CHALLENGES.filter(c => c.done);
+  let seenTitles = [];
+  try{ seenTitles = JSON.parse(localStorage.getItem('ledger-seen-completed-challenges') || '[]'); }catch(e){}
+  const seenSet = new Set(seenTitles);
+  return doneNow.filter(c => !seenSet.has(c.title));
+}
+
+function markChallengesNotificationSeen(){
+  const doneNow = COMPUTED_CHALLENGES.filter(c => c.done).map(c => c.title);
+  try{ localStorage.setItem('ledger-seen-completed-challenges', JSON.stringify(doneNow)); }catch(e){}
+}
+
+function updateNavBadge(view, count){
+  const el = document.getElementById('navBadge-' + view);
+  if(!el) return;
+  if(count > 0){
+    el.textContent = count > 99 ? '99+' : String(count);
+    el.style.display = 'inline-flex';
+  }else{
+    el.style.display = 'none';
+  }
+}
+
+function refreshAllNavBadges(){
+  const incompleteCount = getIncompleteTradesCount();
+  const eventsCount = getUpcomingHighImpactCount();
+  const alertsCount = SIGNAL_ALERTS.filter(isNewSignal).length;
+  const challengesCount = getNewlyCompletedChallenges().length;
+  const signupsCount = isAdminUser() ? PENDING_SIGNUPS.length : 0;
+  updateNavBadge('journal', incompleteCount);
+  updateNavBadge('news', eventsCount);
+  updateNavBadge('alerts', alertsCount);
+  updateNavBadge('challenges', challengesCount);
+  updateNavBadge('admin', signupsCount);
+  updateNotifBellBadge(incompleteCount + eventsCount + alertsCount + challengesCount + signupsCount);
+  if(document.getElementById('notifCenterPanel')?.classList.contains('open')) renderNotifCenter();
+}
+
+function updateNotifBellBadge(count){
+  const el = document.getElementById('notifBellBadge');
+  if(!el) return;
+  if(count > 0){
+    el.textContent = count > 99 ? '99+' : String(count);
+    el.style.display = 'inline-flex';
+  }else{
+    el.style.display = 'none';
+  }
+}
+
+function toggleNotifCenter(){
+  const panel = document.getElementById('notifCenterPanel');
+  if(!panel) return;
+  if(panel.classList.contains('open')){
+    panel.classList.remove('open');
+  }else{
+    renderNotifCenter();
+    panel.classList.add('open');
+  }
+}
+
+function closeNotifCenter(){
+  const panel = document.getElementById('notifCenterPanel');
+  if(panel) panel.classList.remove('open');
+}
+
+// Closes the panel on an outside click, like any normal dropdown.
+document.addEventListener('click', (e) => {
+  const panel = document.getElementById('notifCenterPanel');
+  const bell = document.getElementById('notifBellBtn');
+  if(!panel || !panel.classList.contains('open')) return;
+  if(panel.contains(e.target) || (bell && bell.contains(e.target))) return;
+  panel.classList.remove('open');
+});
+
+// Clicking a notification item shows what it's actually about first — no
+// more guessing which fields are missing, or jumping blind into a page —
+// then "OK" carries you to wherever that notification points.
+let _notifDetailOkAction = null;
+
+function showNotifDetail(title, bodyHtml, okAction, okLabel){
+  document.getElementById('notifDetailTitle').textContent = title;
+  document.getElementById('notifDetailBody').innerHTML = bodyHtml;
+  document.getElementById('notifDetailOkBtn').textContent = okLabel || 'OK';
+  _notifDetailOkAction = okAction;
+  document.getElementById('notifDetailModal').classList.add('open');
+}
+
+function closeNotifDetailModal(){
+  document.getElementById('notifDetailModal').classList.remove('open');
+  _notifDetailOkAction = null;
+}
+
+function runNotifDetailOk(){
+  const action = _notifDetailOkAction;
+  closeNotifDetailModal();
+  if(action) action();
+}
+
+function showTradeIncompleteDetail(positionId){
+  const t = RAW_TRADES.find(x => x.position_id === positionId);
+  if(!t) return;
+  const missing = getMissingFieldLabels(t);
+  const bodyHtml = missing.length
+    ? `<p style="margin:0 0 8px;">This trade is missing:</p><ul style="margin:0;padding-left:18px;">${missing.map(m => `<li>${escapeHtml(m)}</li>`).join('')}</ul>`
+    : `<p style="margin:0;">No longer missing anything — refresh the notification list.</p>`;
+  showNotifDetail(t.symbol || 'Incomplete Trade', bodyHtml, () => goToTradeFromNotif(positionId), 'Go to Trade');
+}
+
+function showEventDetailFromNotif(eventId){
+  const e = ECON_EVENTS.find(x => x.id === eventId);
+  if(!e) return;
+  const when = new Date(e.event_date).toLocaleString(undefined,{dateStyle:'medium',timeStyle:'short'});
+  const bodyHtml = `
+    <div style="margin-bottom:6px;"><strong>${escapeHtml(e.country || '')}</strong> · ${when}</div>
+    ${e.forecast != null ? `<div>Forecast: ${escapeHtml(String(e.forecast))}</div>` : ''}
+    ${e.previous != null ? `<div>Previous: ${escapeHtml(String(e.previous))}</div>` : ''}
+    ${e.comment ? `<div style="margin-top:8px;">${escapeHtml(e.comment)}</div>` : ''}
+  `;
+  showNotifDetail(e.title, bodyHtml, () => { closeNotifCenter(); switchView('news'); }, 'Go to Calendar');
+}
+
+function showAlertDetailFromNotif(alertId){
+  const a = SIGNAL_ALERTS.find(x => x.id === alertId);
+  if(!a) return;
+  const when = new Date(a.alert_at).toLocaleString(undefined,{dateStyle:'medium',timeStyle:'short'});
+  const bodyHtml = `
+    <div style="margin-bottom:6px;color:var(--muted);">${when}</div>
+    <div style="white-space:pre-line;">${escapeHtml(a.message || '')}</div>
+  `;
+  showNotifDetail(a.setup || a.symbol || 'Trade Alert', bodyHtml, () => { closeNotifCenter(); switchView('alerts'); }, 'Go to Alerts');
+}
+
+function showChallengeDetailFromNotif(title){
+  const c = COMPUTED_CHALLENGES.find(x => x.title === title);
+  if(!c) return;
+  const bodyHtml = `<p style="margin:0;">You just earned <strong>+${c.points} points</strong> for this challenge.</p>`;
+  showNotifDetail('🏆 ' + title, bodyHtml, () => goToChallengeFromNotif(title), 'View Challenge');
+}
+
+function goToTradeFromNotif(positionId){
+  closeNotifCenter();
+  switchView('journal');
+  openTradeViewModal(positionId);
+}
+
+function renderNotifCenter(){
+  const body = document.getElementById('notifCenterBody');
+  if(!body) return;
+
+  const incomplete = getIncompleteTrades();
+  const events = getUpcomingHighImpactEvents();
+  const alerts = SIGNAL_ALERTS.filter(isNewSignal);
+  const sections = [];
+
+  if(incomplete.length){
+    sections.push(`
+      <div class="notif-section">
+        <div class="notif-section-title">Incomplete Trades (${incomplete.length})</div>
+        ${incomplete.slice(0, 5).map(t => `
+          <div class="notif-item" onclick='showTradeIncompleteDetail(${JSON.stringify(t.position_id)})'>
+            <span>${escapeHtml(t.symbol || 'Unnamed trade')}</span>
+            <span class="notif-item-meta">${t.open_date ? new Date(t.open_date).toLocaleDateString(undefined,{month:'short',day:'numeric'}) : '—'}</span>
+          </div>
+        `).join('')}
+        ${incomplete.length > 5 ? `<div class="notif-more" onclick="closeNotifCenter(); switchView('journal');">+${incomplete.length - 5} more →</div>` : ''}
+      </div>
+    `);
+  }
+
+  if(events.length){
+    sections.push(`
+      <div class="notif-section">
+        <div class="notif-section-title">High Impact Events (${events.length})</div>
+        ${events.map(e => `
+          <div class="notif-item" onclick="showEventDetailFromNotif(${e.id})">
+            <span>${escapeHtml(e.title)}</span>
+            <span class="notif-item-meta">${new Date(e.event_date).toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}</span>
+          </div>
+        `).join('')}
+      </div>
+    `);
+  }
+
+  if(alerts.length){
+    sections.push(`
+      <div class="notif-section">
+        <div class="notif-section-title">New Trade Alerts (${alerts.length})</div>
+        ${alerts.slice(0, 5).map(a => `
+          <div class="notif-item" onclick="showAlertDetailFromNotif(${a.id})">
+            <span>${escapeHtml(a.setup || a.symbol || 'Alert')}</span>
+            <span class="notif-item-meta">${new Date(a.alert_at).toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}</span>
+          </div>
+        `).join('')}
+        ${alerts.length > 5 ? `<div class="notif-more" onclick="closeNotifCenter(); switchView('alerts');">+${alerts.length - 5} more →</div>` : ''}
+      </div>
+    `);
+  }
+
+  const newlyCompletedChallenges = getNewlyCompletedChallenges();
+  if(newlyCompletedChallenges.length){
+    sections.push(`
+      <div class="notif-section">
+        <div class="notif-section-title">Challenges Completed (${newlyCompletedChallenges.length})</div>
+        ${newlyCompletedChallenges.map(c => `
+          <div class="notif-item" onclick='showChallengeDetailFromNotif(${JSON.stringify(c.title)})'>
+            <span>🏆 ${escapeHtml(c.title)}</span>
+            <span class="notif-item-meta">+${c.points} pts</span>
+          </div>
+        `).join('')}
+      </div>
+    `);
+  }
+
+  if(isAdminUser() && PENDING_SIGNUPS.length){
+    sections.push(`
+      <div class="notif-section">
+        <div class="notif-section-title">Pending Signups (${PENDING_SIGNUPS.length})</div>
+        ${PENDING_SIGNUPS.slice(0, 5).map(s => `
+          <div class="notif-item" onclick='showSignupDetailFromNotif(${JSON.stringify(s.email)})'>
+            <span>${escapeHtml(s.email)}</span>
+            <span class="notif-item-meta">${s.requested_at ? new Date(s.requested_at).toLocaleDateString(undefined,{month:'short',day:'numeric'}) : '—'}</span>
+          </div>
+        `).join('')}
+        ${PENDING_SIGNUPS.length > 5 ? `<div class="notif-more" onclick="closeNotifCenter(); switchView('admin');">+${PENDING_SIGNUPS.length - 5} more →</div>` : ''}
+      </div>
+    `);
+  }
+
+  body.innerHTML = sections.length ? sections.join('') : '<div class="notif-empty">You\'re all caught up 🎉</div>';
+
+  // Seeing them in the notification center counts as "read" — clears the
+  // badge next refresh instead of re-notifying about the same completions.
+  if(newlyCompletedChallenges.length) markChallengesNotificationSeen();
+}
+
+function goToChallengeFromNotif(title){
+  closeNotifCenter();
+  switchView('challenges');
+  openChallengeDetail(title);
+}
+
+function showSignupDetailFromNotif(email){
+  const s = PENDING_SIGNUPS.find(x => x.email === email);
+  if(!s) return;
+  const requested = s.requested_at ? new Date(s.requested_at).toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}) : '—';
+  const bodyHtml = `<p style="margin:0;"><strong>${escapeHtml(email)}</strong> signed up and is waiting for approval.</p><p style="margin:6px 0 0;">Requested: ${requested}</p>`;
+  showNotifDetail('New Signup', bodyHtml, () => goToAdminFromNotif(), 'Review');
+}
+
+function goToAdminFromNotif(){
+  closeNotifCenter();
+  switchView('admin');
+}
+
 /* ---------------- Trade Alerts (individual bot alerts, from signal_alerts) ---------------- */
 let SIGNAL_ALERTS = [];
 
@@ -2467,6 +3090,8 @@ function switchAlertsSeenFilter(f){
 }
 
 let lastAlertsSyncAt = null;
+let hasLoadedSignalAlertsOnce = false;
+let lastKnownUnseenAlertCount = 0;
 
 async function loadSignalAlerts(){
   try{
@@ -2485,6 +3110,18 @@ async function loadSignalAlerts(){
   }
   if(isAdminUser()) await loadSignalOutcomes();
   renderAlertsTables();
+  refreshAllNavBadges();
+
+  // Only toast when the unseen count grows on a LATER load (i.e. the 30s
+  // poll actually found something new) — not on the very first load, which
+  // would otherwise toast about alerts that have been sitting there a while.
+  const unseenCount = SIGNAL_ALERTS.filter(isNewSignal).length;
+  if(hasLoadedSignalAlertsOnce && unseenCount > lastKnownUnseenAlertCount){
+    const justIn = unseenCount - lastKnownUnseenAlertCount;
+    showToast(`🔔 ${justIn} new trade alert${justIn > 1 ? 's' : ''}`);
+  }
+  hasLoadedSignalAlertsOnce = true;
+  lastKnownUnseenAlertCount = unseenCount;
 }
 
 /* ---------------- Signal outcome tracking (Bitcoin accuracy, admin-only) ---------------- */
@@ -2538,7 +3175,7 @@ async function recordSignalOutcome(symbol, setup, outcome){
     const hint = /relation .* does not exist/i.test(e.message) ? "\n\nLooks like the signal_outcomes table doesn't exist yet — run supabase_signal_outcomes.sql in your Supabase SQL editor."
       : /no unique or exclusion constraint/i.test(e.message) ? "\n\nYour signal_outcomes table is missing the UNIQUE(symbol, setup) constraint — re-run the latest supabase_signal_outcomes.sql in your Supabase SQL editor."
       : "";
-    alert("Couldn't save that — please try again." + hint);
+    await customAlert("Couldn't save that — please try again." + hint);
     return;
   }
   await loadSignalOutcomes();
@@ -2581,11 +3218,16 @@ async function markAlertSeen(id){
     if(!res.ok) throw new Error(await res.text());
   }catch(e){
     console.error("Couldn't mark alert as seen:", e);
+    return;
   }
+  const s = SIGNAL_ALERTS.find(a => a.id === id);
+  if(s) s.seen = true;
+  refreshAllNavBadges();
+  lastKnownUnseenAlertCount = SIGNAL_ALERTS.filter(isNewSignal).length;
 }
 
 async function deleteAlert(id){
-  if(!confirm('Delete this alert? This cannot be undone.')) return;
+  if(!(await customConfirm('Delete this alert? This cannot be undone.'))) return;
   try{
     const res = await fetch(`${SUPABASE_URL}/rest/v1/signal_alerts?id=eq.${id}`, {
       method: 'DELETE',
@@ -2603,6 +3245,8 @@ async function deleteAlert(id){
   }
   SIGNAL_ALERTS = SIGNAL_ALERTS.filter(s => s.id !== id);
   renderAlertsTables();
+  refreshAllNavBadges();
+  lastKnownUnseenAlertCount = SIGNAL_ALERTS.filter(isNewSignal).length;
 }
 
 function activeAlertsTab(){
@@ -2633,6 +3277,8 @@ async function markAllAlertsSeen(){
   }
   SIGNAL_ALERTS.forEach(s => { if(unseenIds.includes(s.id)) s.seen = true; });
   renderAlertsTables();
+  refreshAllNavBadges();
+  lastKnownUnseenAlertCount = SIGNAL_ALERTS.filter(isNewSignal).length;
   showToast(`Marked ${unseenIds.length} alert${unseenIds.length>1?'s':''} as read`);
 }
 
@@ -2640,7 +3286,7 @@ async function deleteOldAlerts(){
   const category = activeAlertsTab();
   const seenIds = SIGNAL_ALERTS.filter(s => s.category === category && s.seen).map(s => s.id);
   if(!seenIds.length){ showToast('No seen alerts to delete.'); return; }
-  if(!confirm(`Delete ${seenIds.length} seen alert${seenIds.length>1?'s':''}? This cannot be undone.`)) return;
+  if(!(await customConfirm(`Delete ${seenIds.length} seen alert${seenIds.length>1?'s':''}? This cannot be undone.`))) return;
   try{
     const res = await fetch(`${SUPABASE_URL}/rest/v1/signal_alerts?id=in.(${seenIds.join(',')})`, {
       method: 'DELETE',
@@ -2658,6 +3304,8 @@ async function deleteOldAlerts(){
   }
   SIGNAL_ALERTS = SIGNAL_ALERTS.filter(s => !seenIds.includes(s.id));
   renderAlertsTables();
+  refreshAllNavBadges();
+  lastKnownUnseenAlertCount = SIGNAL_ALERTS.filter(isNewSignal).length;
   showToast(`Deleted ${seenIds.length} seen alert${seenIds.length>1?'s':''}`);
 }
 
@@ -2950,7 +3598,7 @@ async function saveAchievement(){
 }
 
 async function deleteAchievement(id, imagePath){
-  if(!confirm('Delete this achievement?')) return;
+  if(!(await customConfirm('Delete this achievement?'))) return;
   try{
     await sb.storage.from('achievements').remove([imagePath]);
     const res = await fetch(`${SUPABASE_URL}/rest/v1/achievements?id=eq.${id}`, {
@@ -2965,7 +3613,7 @@ async function deleteAchievement(id, imagePath){
     await loadAchievements();
   }catch(e){
     console.error("Couldn't delete achievement:", e);
-    alert("Couldn't delete — please try again.");
+    await customAlert("Couldn't delete — please try again.");
   }
 }
 
@@ -3061,6 +3709,7 @@ async function loadMarketNewsWidget(){
 
   renderEconImpactFilterRow();
   renderEconCalGrid();
+  refreshAllNavBadges();
 }
 
 function renderEconSyncLabel(){
@@ -4043,12 +4692,12 @@ function renderChallengeGrid(){
 
 async function renderChallenges(){
   const grid = document.getElementById('challengesGrid');
-  if(!grid) return;
-  grid.innerHTML = `<div class="empty-state">Loading…</div>`;
+  if(grid) grid.innerHTML = `<div class="empty-state">Loading…</div>`;
 
   const achRows = await loadAchievementSummaryForChallenges();
   COMPUTED_CHALLENGES = computeChallenges(ALL_TRADES, achRows);
-  renderChallengeGrid();
+  if(grid) renderChallengeGrid();
+  refreshAllNavBadges();
 }
 
 function openChallengeDetail(title){
@@ -4147,6 +4796,8 @@ async function renderProfile(){
     fields.innerHTML = `
       <div class="field-row"><label>Display Name</label><input id="profileName" placeholder="Your name" value="${escapeHtml(p.display_name || '')}"></div>
       <div class="field-row"><label>Nickname</label><input id="profileNickname" placeholder="e.g. JessiePinkman" value="${escapeHtml(p.nickname || '')}"></div>
+      <div class="field-row"><label>Username (used to log in)</label><input id="profileUsername" placeholder="e.g. juandelacruz" autocapitalize="off" autocorrect="off" value="${escapeHtml(p.username || '')}"></div>
+      <div class="field-row"><label>Discord Username</label><input id="profileDiscord" placeholder="e.g. juandelacruz#0001" value="${escapeHtml(p.discord_username || '')}"></div>
       <div class="field-row"><label>Trading Style</label>
         <select id="profileStyle">${PROFILE_STYLE_OPTIONS.map(s => `<option value="${s}" ${p.trading_style===s?'selected':''}>${s}</option>`).join('')}</select>
       </div>
@@ -4243,7 +4894,7 @@ async function uploadInspirationImage(file){
     console.error("Couldn't upload inspiration image:", e);
     const msg = e?.message || String(e);
     const hint = /bucket not found/i.test(msg) ? ' The "profile-images" storage bucket doesn\'t exist yet — create it in Supabase Storage.' : '';
-    alert("Couldn't upload image: " + msg + hint);
+    await customAlert("Couldn't upload image: " + msg + hint);
   }
 }
 
@@ -4256,6 +4907,12 @@ async function persistProfile(partial){
     nickname: document.getElementById('profileNickname')
       ? document.getElementById('profileNickname').value.trim()
       : (PROFILE_DATA?.nickname || ''),
+    username: document.getElementById('profileUsername')
+      ? document.getElementById('profileUsername').value.trim().toLowerCase() || null
+      : (PROFILE_DATA?.username || null),
+    discord_username: document.getElementById('profileDiscord')
+      ? document.getElementById('profileDiscord').value.trim() || null
+      : (PROFILE_DATA?.discord_username || null),
     trading_style: document.getElementById('profileStyle')?.value || PROFILE_DATA?.trading_style || 'Scalper',
     primary_market: document.getElementById('profileMarket')?.value || PROFILE_DATA?.primary_market || 'Crypto',
     risk_per_trade: document.getElementById('profileRisk')
@@ -4281,6 +4938,12 @@ async function persistProfile(partial){
 }
 
 async function saveProfile(){
+  const usernameEl = document.getElementById('profileUsername');
+  if(usernameEl && usernameEl.value.trim() && !/^[a-z0-9_.]{3,20}$/.test(usernameEl.value.trim().toLowerCase())){
+    await customAlert("Username must be 3-20 characters: lowercase letters, numbers, underscore, or period only.");
+    return;
+  }
+
   const btn = document.getElementById('profileSaveBtn');
   btn.disabled = true;
   btn.textContent = 'Saving…';
@@ -4291,7 +4954,10 @@ async function saveProfile(){
     showToast('Profile saved');
   }catch(e){
     console.error("Couldn't save profile:", e);
-    alert("Couldn't save — please try again.");
+    const msg = String(e.message || '');
+    await customAlert(msg.includes('duplicate') || msg.includes('username')
+      ? "That username is already taken — please pick another."
+      : "Couldn't save — please try again.");
   }finally{
     btn.disabled = false;
     btn.textContent = 'Save changes';
@@ -4399,6 +5065,24 @@ function syncPatternTypeFromSetup(setupValue){
   // rebuilding innerHTML/setting .value doesn't fire "change" on its own —
   // dispatch it so the needs-input red flag stays in sync either way
   sel.dispatchEvent(new Event('change', { bubbles: true }));
+}
+
+// "5 mins HL"/"5 mins LH" are always executed on the 1 min chart as a
+// scalp — locks in the Execution TF and AOF Phase that go with them.
+function syncExecutionFromPattern(patternValue){
+  if(patternValue !== '5 mins HL' && patternValue !== '5 mins LH') return;
+  const tfSel = document.querySelector('#drawerBody [data-field="execution_tf"]');
+  if(tfSel){ tfSel.value = '1 min'; tfSel.dispatchEvent(new Event('change', { bubbles: true })); }
+  const aofSel = document.querySelector('#drawerBody [data-field="aof_phase"]');
+  if(aofSel){ aofSel.value = '5 mins Scalping'; aofSel.dispatchEvent(new Event('change', { bubbles: true })); }
+}
+
+// Post-BE Result only means something when the trade actually reached
+// breakeven — anything else (Win/Loss/Liquidated) defaults to N/A.
+function syncPostBEFromWinLoss(winLossValue){
+  if(winLossValue === 'Breakeven') return;
+  const sel = document.querySelector('#drawerBody [data-field="post_be_result"]');
+  if(sel){ sel.value = 'N/A'; sel.dispatchEvent(new Event('change', { bubbles: true })); }
 }
 
 // Derives all the compliance/progress numbers for one account from the real
@@ -4612,6 +5296,8 @@ function renderAccountsList(){
   const emptyState = document.getElementById('accountsEmptyState');
   if(!propPanel || !exchPanel) return;
 
+  populateCalcAccountDropdown();
+
   if(!TRADING_ACCOUNTS.length){
     propPanel.style.display = 'none';
     exchPanel.style.display = 'none';
@@ -4672,7 +5358,7 @@ function accountCardHTML(a){
     const statusBoxClass = status === 'Passed' ? 'box-solid-win' : (status === 'Failed' ? 'box-solid-loss' : 'box-solid-info');
     const statusBadge = !isExchange ? `<div class="account-card-status box-badge ${statusBoxClass}">${status}</div>` : '';
 
-    const riskBase = a.current_balance != null ? Number(a.current_balance) : (a.account_size ? Number(a.account_size) : null);
+    const riskBase = a.account_size ? Number(a.account_size) : (a.current_balance != null ? Number(a.current_balance) : null);
     const tradeCount = ALL_TRADES.filter(t => t.account === a.account_name).length;
     const riskHTML = (riskBase != null || tradeCount > 0)
       ? `<div class="account-card-risk">
@@ -4696,6 +5382,573 @@ function accountCardHTML(a){
     `;
 }
 
+// Manual "Save" draft — kept in localStorage (not the database) since it's
+// just scratch state while waiting for a price to confirm before actually
+// trading, so a page refresh doesn't wipe the Stop Loss %/Take Profit %/
+// leverage list/price levels you'd already typed in.
+let calcDraftLoaded = false;
+
+function loadCalculatorDraft(){
+  try{
+    const raw = localStorage.getItem('poscalc-draft');
+    return raw ? JSON.parse(raw) : null;
+  }catch(e){
+    console.error("Couldn't load calculator draft:", e);
+    return null;
+  }
+}
+
+function saveCalculatorDraft(){
+  const draft = {
+    accountId: document.getElementById('calcAccount').value || null,
+    stopLossPct: document.getElementById('calcStopLossPct').value || null,
+    takeProfitPct: document.getElementById('calcTakeProfitPct').value || null,
+    leverageList: document.getElementById('calcLeverageList').value || null,
+    stopLevel: document.getElementById('calcStopLevel').value || null,
+    profitLevel: document.getElementById('calcProfitLevel').value || null
+  };
+  try{
+    localStorage.setItem('poscalc-draft', JSON.stringify(draft));
+    showToast('Calculator draft saved');
+  }catch(e){
+    console.error("Couldn't save calculator draft:", e);
+  }
+}
+
+function clearCalculatorDraft(){
+  try{ localStorage.removeItem('poscalc-draft'); }catch(e){}
+  document.getElementById('calcAccount').value = '';
+  document.getElementById('calcStopLossPct').value = '';
+  document.getElementById('calcTakeProfitPct').value = '';
+  document.getElementById('calcLeverageList').value = '1,2,3,4,5';
+  document.getElementById('calcStopLevel').value = '';
+  document.getElementById('calcProfitLevel').value = '';
+  renderPositionCalculator();
+  showToast('Calculator cleared');
+}
+
+function populateCalcAccountDropdown(){
+  const sel = document.getElementById('calcAccount');
+  if(!sel) return;
+  let prevValue = sel.value;
+
+  if(!calcDraftLoaded){
+    calcDraftLoaded = true;
+    const draft = loadCalculatorDraft();
+    if(draft){
+      if(draft.accountId) prevValue = draft.accountId;
+      if(draft.stopLossPct != null) document.getElementById('calcStopLossPct').value = draft.stopLossPct;
+      if(draft.takeProfitPct != null) document.getElementById('calcTakeProfitPct').value = draft.takeProfitPct;
+      if(draft.leverageList) document.getElementById('calcLeverageList').value = draft.leverageList;
+      if(draft.stopLevel != null) document.getElementById('calcStopLevel').value = draft.stopLevel;
+      if(draft.profitLevel != null) document.getElementById('calcProfitLevel').value = draft.profitLevel;
+    }
+  }
+
+  sel.innerHTML = '<option value="">Select account…</option>' +
+    TRADING_ACCOUNTS.map(a => `<option value="${a.id}">${escapeHtml(a.account_name)}</option>`).join('');
+  if(TRADING_ACCOUNTS.some(a => String(a.id) === prevValue)) sel.value = prevValue;
+  renderPositionCalculator();
+}
+
+// Reads the calculator's current inputs and derives risk amount / position
+// size — shared by the table render and by "Trade This Setup" so both use
+// the exact same numbers.
+function getCalculatorState(){
+  const accSel = document.getElementById('calcAccount');
+  const account = accSel ? TRADING_ACCOUNTS.find(a => String(a.id) === accSel.value) : null;
+  const accountBase = account ? Number(account.account_size ?? account.current_balance ?? 0) : 0;
+  const riskPct = PROFILE_DATA?.risk_per_trade != null ? Number(PROFILE_DATA.risk_per_trade) : 0.3;
+  const riskAmount = accountBase * (riskPct / 100);
+  const slPct = parseFloat(document.getElementById('calcStopLossPct').value);
+  const tpPct = parseFloat(document.getElementById('calcTakeProfitPct').value);
+  const positionSize = (account && slPct > 0) ? riskAmount / (slPct / 100) : null;
+  return { account, riskPct, riskAmount, slPct, tpPct, positionSize };
+}
+
+function renderPositionCalculator(){
+  const riskAmountEl = document.getElementById('calcRiskAmount');
+  const positionSizeEl = document.getElementById('calcPositionSize');
+  const tableBody = document.getElementById('calcTableBody');
+  if(!riskAmountEl || !tableBody) return;
+
+  const { account, riskPct, riskAmount, slPct, tpPct, positionSize } = getCalculatorState();
+
+  riskAmountEl.textContent = account ? `$${riskAmount.toLocaleString(undefined,{maximumFractionDigits:2})} (${riskPct}%)` : '—';
+  positionSizeEl.textContent = positionSize != null ? `$${positionSize.toLocaleString(undefined,{maximumFractionDigits:2})}` : '—';
+
+  const leverages = (document.getElementById('calcLeverageList').value || '')
+    .split(',').map(v => parseFloat(v.trim())).filter(v => v > 0);
+
+  if(positionSize == null || !leverages.length){
+    tableBody.innerHTML = `<tr><td colspan="7" style="color:var(--muted);">Select an account and enter a Stop Loss % to see leverage breakdown.</td></tr>`;
+    return;
+  }
+
+  // "Best" = the lowest leverage whose required margin still fits inside the
+  // account's actual available balance — use the least leverage necessary
+  // instead of always maxing it out. Falls back to the cheapest-margin
+  // option if even the highest leverage doesn't fit.
+  const availableBalance = account ? Number(account.current_balance ?? account.account_size ?? 0) : 0;
+  const rows = leverages.map(lev => ({ lev, margin: positionSize / lev }));
+  const affordable = rows.filter(r => r.margin <= availableBalance);
+  const bestByMinLeverage = affordable.length
+    ? affordable.reduce((best, r) => r.lev < best.lev ? r : best, affordable[0]).lev
+    : rows.reduce((best, r) => r.margin < best.margin ? r : best, rows[0]).lev;
+
+  // Stop Loss % / Take Profit % are PRICE distances — they don't change with
+  // leverage (the stop price is the stop price no matter your margin), so
+  // every row repeats the same top-level %. Margin is what shrinks per
+  // leverage (Position Size / Leverage), and since Margin x Leverage always
+  // equals the fixed Position Size, the dollar Loss/Profit come out
+  // identical on every row too — that's the whole point of position sizing.
+  tableBody.innerHTML = leverages.map(lev => {
+    const margin = positionSize / lev;
+    const profit = (tpPct > 0 && slPct > 0) ? riskAmount * (tpPct / slPct) : null;
+    const loss = riskAmount;
+    const isBest = lev === bestByMinLeverage;
+    return `<tr class="${isBest ? 'poscalc-row-best' : ''}">
+      <td>${lev}x</td>
+      <td class="poscalc-margin-cell">${margin.toFixed(2)} <button class="poscalc-copy-btn" title="Copy margin" onclick="copyMarginToClipboard('${margin.toFixed(2)}', this)">${copyIconSVG()}</button></td>
+      <td>${slPct > 0 ? slPct.toFixed(4)+'%' : '—'}</td>
+      <td>${tpPct > 0 ? tpPct.toFixed(4)+'%' : '—'}</td>
+      <td>${profit != null ? '$'+profit.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</td>
+      <td>$${loss.toLocaleString(undefined,{maximumFractionDigits:2})}</td>
+      <td><button class="poscalc-accent-btn" onclick="tradeThisSetup(${lev})">Trade This Setup</button></td>
+    </tr>`;
+  }).join('');
+}
+
+function copyIconSVG(){
+  return `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`;
+}
+
+async function copyMarginToClipboard(value, btn){
+  try{
+    await navigator.clipboard.writeText(value);
+  }catch(e){
+    console.error("Couldn't copy to clipboard:", e);
+    return;
+  }
+  const original = btn.innerHTML;
+  btn.classList.add('copied');
+  btn.innerHTML = '✓';
+  setTimeout(() => { btn.classList.remove('copied'); btn.innerHTML = original; }, 1200);
+}
+
+async function copyTradeSummaryToClipboard(btn){
+  try{
+    await navigator.clipboard.writeText(btn.dataset.summary || '');
+  }catch(e){
+    console.error("Couldn't copy trade summary:", e);
+    return;
+  }
+  const original = btn.innerHTML;
+  btn.classList.add('copied');
+  btn.innerHTML = '✓';
+  setTimeout(() => { btn.classList.remove('copied'); btn.innerHTML = original; }, 1200);
+}
+
+async function tradeThisSetup(lev){
+  const { account, riskAmount, slPct, tpPct, positionSize } = getCalculatorState();
+  if(!account || positionSize == null){
+    await customAlert('Select an account and a Stop Loss % first.');
+    return;
+  }
+  const margin = positionSize / lev;
+
+  const payload = {
+    account_id: account.id,
+    account_name: account.account_name,
+    leverage: lev,
+    margin: margin,
+    stop_loss_pct: slPct,
+    take_profit_pct: (tpPct > 0 ? tpPct : null),
+    risk_amount: riskAmount,
+    position_size: positionSize,
+    status: 'Pending'
+  };
+
+  try{
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/position_setups`, {
+      method: 'POST',
+      headers: {
+        "apikey": SUPABASE_KEY,
+        "Authorization": `Bearer ${USER_ACCESS_TOKEN}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(payload)
+    });
+    if(!res.ok) throw new Error(await res.text());
+    loadSavedSetups();
+  }catch(e){
+    console.error("Couldn't save setup:", e);
+    await customAlert("Couldn't save this setup — please try again.");
+  }
+}
+
+let SAVED_SETUPS = [];
+let editingSetupNotesId = null;
+
+async function loadSavedSetups(){
+  try{
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/position_setups?select=*&order=created_at.desc`, {
+      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}` }
+    });
+    if(!res.ok) throw new Error(await res.text());
+    SAVED_SETUPS = await res.json();
+  }catch(e){
+    console.error("Couldn't load saved setups:", e);
+    SAVED_SETUPS = [];
+  }
+  renderSavedSetups();
+}
+
+function setupStatusPillClass(status){
+  if(status === 'Pending') return 'pill-orange';
+  if(status === 'Won' || status === 'Closed' || status === 'Journaled') return 'pill-green';
+  if(status === 'Lost') return 'pill-red';
+  return 'pill-muted';
+}
+
+function setupRowHTML(s){
+  const margin = Number(s.margin);
+  const slPct = s.stop_loss_pct != null ? Number(s.stop_loss_pct) : null;
+  const tpPct = s.take_profit_pct != null ? Number(s.take_profit_pct) : null;
+  const riskAmount = Number(s.risk_amount);
+  const profit = (tpPct != null && slPct) ? riskAmount * (tpPct / slPct) : null;
+  const loss = riskAmount;
+  const updateCount = Array.isArray(s.notes_log) ? s.notes_log.length : 0;
+  const status = s.status || 'Pending';
+  const statusPillClass = setupStatusPillClass(status);
+  return `
+  <tr onclick="openSetupNotesModal(${s.id})" style="cursor:pointer;">
+    <td>${escapeHtml(s.symbol || '—')}</td>
+    <td>${new Date(s.created_at).toLocaleDateString(undefined,{day:'numeric',month:'short',year:'numeric'})}</td>
+    <td>${escapeHtml(s.account_name || '—')}</td>
+    <td>${s.leverage}x</td>
+    <td>${margin.toFixed(2)}</td>
+    <td>${slPct != null ? slPct.toFixed(4)+'%' : '—'}</td>
+    <td>${tpPct != null ? tpPct.toFixed(4)+'%' : '—'}</td>
+    <td>${profit != null ? '$'+profit.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</td>
+    <td>${loss != null ? '$'+loss.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</td>
+    <td>$${riskAmount.toLocaleString(undefined,{maximumFractionDigits:2})}</td>
+    <td>$${Number(s.position_size).toLocaleString(undefined,{maximumFractionDigits:2})}</td>
+    <td>${updateCount}</td>
+    <td><span class="pill ${statusPillClass}">${escapeHtml(status)}</span></td>
+    <td>
+      ${status !== 'Journaled'
+        ? `<button class="poscalc-accent-btn" onclick="event.stopPropagation(); journalFromSetup(${s.id})">Journal</button>`
+        : `<button class="drawer-secondary-btn" onclick="event.stopPropagation(); setSetupStatus(${s.id}, 'Pending')">Revert to Pending</button>`}
+      <button class="drawer-danger-btn" onclick="event.stopPropagation(); deleteSavedSetup(${s.id})">Delete</button>
+    </td>
+  </tr>
+`;
+}
+
+function renderSavedSetups(){
+  const pendingTable = document.getElementById('pendingSetupsTable');
+  const pendingBody = document.getElementById('pendingSetupsBody');
+  const pendingEmptyState = document.getElementById('pendingSetupsEmptyState');
+  const journaledTable = document.getElementById('journaledSetupsTable');
+  const journaledBody = document.getElementById('journaledSetupsBody');
+  const journaledEmptyState = document.getElementById('journaledSetupsEmptyState');
+  if(!pendingTable || !pendingBody || !journaledTable || !journaledBody) return;
+
+  const pending = SAVED_SETUPS.filter(s => (s.status || 'Pending') !== 'Journaled');
+  const journaled = SAVED_SETUPS.filter(s => s.status === 'Journaled');
+
+  if(pending.length){
+    pendingEmptyState.style.display = 'none';
+    pendingTable.style.display = '';
+    pendingBody.innerHTML = pending.map(setupRowHTML).join('');
+  }else{
+    pendingEmptyState.style.display = 'block';
+    pendingTable.style.display = 'none';
+  }
+
+  if(journaled.length){
+    journaledEmptyState.style.display = 'none';
+    journaledTable.style.display = '';
+    journaledBody.innerHTML = journaled.map(setupRowHTML).join('');
+  }else{
+    journaledEmptyState.style.display = 'block';
+    journaledTable.style.display = 'none';
+  }
+}
+
+// Before/After are two fixed, independent slots (not a growing log) — each
+// pasted image replaces whatever was in that slot. Uploaded to storage only
+// on Save, so cancelling out of the modal costs nothing.
+let activeScreenshotSlot = 'before';
+let pendingScreenshotBlobs = { before: null, after: null };
+let removedScreenshotSlots = { before: false, after: false };
+
+function setActiveScreenshotSlot(slot){
+  activeScreenshotSlot = slot;
+}
+
+function _screenshotZoneId(slot){
+  return slot === 'before' ? 'setupNotesBeforeDropzone' : 'setupNotesAfterDropzone';
+}
+
+document.addEventListener('paste', (e) => {
+  const modal = document.getElementById('setupNotesModal');
+  if(!modal || !modal.classList.contains('open')) return;
+  const items = e.clipboardData && e.clipboardData.items;
+  if(!items) return;
+  for(const item of items){
+    if(item.type && item.type.startsWith('image/')){
+      const blob = item.getAsFile();
+      if(!blob) continue;
+      pendingScreenshotBlobs[activeScreenshotSlot] = blob;
+      removedScreenshotSlots[activeScreenshotSlot] = false;
+      renderScreenshotSlotPreview(activeScreenshotSlot, URL.createObjectURL(blob));
+      e.preventDefault();
+      break;
+    }
+  }
+});
+
+function renderScreenshotSlotPreview(slot, url){
+  const zone = document.getElementById(_screenshotZoneId(slot));
+  if(!zone) return;
+  zone.innerHTML = `
+    <img src="${url}" onclick="event.stopPropagation(); openLightbox('${url}')">
+    <button class="poscalc-copy-btn" title="Remove" onclick="event.stopPropagation(); removeScreenshotSlot('${slot}')">✕</button>
+  `;
+}
+
+function removeScreenshotSlot(slot){
+  pendingScreenshotBlobs[slot] = null;
+  removedScreenshotSlots[slot] = true;
+  const zone = document.getElementById(_screenshotZoneId(slot));
+  if(zone) zone.innerHTML = 'Click, then paste (Ctrl+V)';
+}
+
+function resetScreenshotSlots(){
+  activeScreenshotSlot = 'before';
+  pendingScreenshotBlobs = { before: null, after: null };
+  removedScreenshotSlots = { before: false, after: false };
+}
+
+async function loadScreenshotSlotsIntoModal(s){
+  for(const slot of ['before','after']){
+    const path = s[`${slot}_screenshot`];
+    const zone = document.getElementById(_screenshotZoneId(slot));
+    if(!zone) continue;
+    if(path){
+      try{
+        const { data } = await sb.storage.from('setup-screenshots').createSignedUrl(path, 3600);
+        if(data && data.signedUrl) renderScreenshotSlotPreview(slot, data.signedUrl);
+        else zone.innerHTML = 'Click, then paste (Ctrl+V)';
+      }catch(e){
+        console.error(`Couldn't load ${slot} screenshot:`, e);
+        zone.innerHTML = 'Click, then paste (Ctrl+V)';
+      }
+    }else{
+      zone.innerHTML = 'Click, then paste (Ctrl+V)';
+    }
+  }
+}
+
+async function uploadSetupScreenshot(blob, setupId, slot){
+  const { data: { user } } = await sb.auth.getUser();
+  const ext = (blob.type && blob.type.split('/')[1]) || 'png';
+  const path = `${user.id}/setup_${setupId}_${slot}_${Date.now()}.${ext}`;
+  const { error } = await sb.storage.from('setup-screenshots').upload(path, blob, { contentType: blob.type || 'image/png' });
+  if(error) throw error;
+  return path;
+}
+
+async function openSetupNotesModal(id){
+  let s = SAVED_SETUPS.find(x => x.id === id);
+  if(!s){
+    // Opened from the Trade Journal side, where SAVED_SETUPS may never have
+    // been loaded — fetch this one row directly instead of requiring a
+    // detour through the Calculator view first.
+    try{
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/position_setups?id=eq.${id}&select=*`, {
+        headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}` }
+      });
+      if(!res.ok) throw new Error(await res.text());
+      const rows = await res.json();
+      s = rows[0];
+      if(s) SAVED_SETUPS.push(s);
+    }catch(e){
+      console.error("Couldn't load setup:", e);
+    }
+  }
+  if(!s) return;
+  editingSetupNotesId = id;
+  resetScreenshotSlots();
+  document.getElementById('setupNotesSymbol').value = s.symbol || '';
+  document.getElementById('setupNotesNewEntry').value = '';
+  renderSetupNotesLog(s.notes_log || []);
+  loadScreenshotSlotsIntoModal(s);
+  document.getElementById('setupNotesModal').classList.add('open');
+}
+
+function closeSetupNotesModal(){
+  document.getElementById('setupNotesModal').classList.remove('open');
+  editingSetupNotesId = null;
+  resetScreenshotSlots();
+}
+
+function renderSetupNotesLog(log){
+  const el = document.getElementById('setupNotesLog');
+  if(!log.length){
+    el.innerHTML = '<div style="color:var(--muted);font-size:13px;">No notes yet.</div>';
+    return;
+  }
+  el.innerHTML = log.map(entry => `
+    <div style="margin-bottom:10px;">
+      <div style="font-size:11px;color:var(--muted);font-family:'IBM Plex Mono',monospace;">${new Date(entry.ts).toLocaleString(undefined,{dateStyle:'medium',timeStyle:'short'})}</div>
+      <div style="font-size:13px;color:var(--ink);white-space:pre-wrap;">${escapeHtml(entry.text)}</div>
+    </div>
+  `).join('');
+}
+
+// Appends a timestamped entry instead of overwriting one blob of text, so
+// each update while the trade is open keeps its own datetime.
+async function saveSetupNotes(){
+  try{
+    if(!editingSetupNotesId){ await customAlert("No setup is open — close this and click a saved setup row first."); return; }
+    const s = SAVED_SETUPS.find(x => x.id === editingSetupNotesId);
+    if(!s){ await customAlert("Couldn't find that saved setup — try reopening it."); return; }
+
+    const symbol = document.getElementById('setupNotesSymbol').value.trim() || null;
+    const newText = document.getElementById('setupNotesNewEntry').value.trim();
+    const hasScreenshotChange = pendingScreenshotBlobs.before || pendingScreenshotBlobs.after
+      || removedScreenshotSlots.before || removedScreenshotSlots.after;
+    if(!newText && !hasScreenshotChange && symbol === (s.symbol || null)){
+      await customAlert('Nothing to save — enter a Symbol, write a New Note, or paste a screenshot first.');
+      return;
+    }
+    const log = Array.isArray(s.notes_log) ? [...s.notes_log] : [];
+    if(newText) log.push({ ts: new Date().toISOString(), text: newText });
+
+    const patch = { symbol, notes_log: log };
+    for(const slot of ['before','after']){
+      if(pendingScreenshotBlobs[slot]){
+        patch[`${slot}_screenshot`] = await uploadSetupScreenshot(pendingScreenshotBlobs[slot], editingSetupNotesId, slot);
+      }else if(removedScreenshotSlots[slot]){
+        patch[`${slot}_screenshot`] = null;
+      }
+    }
+
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/position_setups?id=eq.${editingSetupNotesId}`, {
+      method: 'PATCH',
+      headers: {
+        "apikey": SUPABASE_KEY,
+        "Authorization": `Bearer ${USER_ACCESS_TOKEN}`,
+        "Content-Type": "application/json",
+        "Prefer": "return=representation"
+      },
+      body: JSON.stringify(patch)
+    });
+    if(!res.ok) throw new Error(await res.text());
+    const rows = await res.json();
+    if(!rows.length){
+      throw new Error("Nothing actually updated in the database (0 rows) — the UPDATE policy on position_setups is probably missing. Run supabase_position_setups_add_update_policy.sql in Supabase.");
+    }
+
+    // Update local state directly instead of round-tripping through a
+    // reload — shows the new entry immediately, no dependence on refetch timing.
+    Object.assign(s, patch);
+    document.getElementById('setupNotesNewEntry').value = '';
+    resetScreenshotSlots();
+    renderSetupNotesLog(log);
+    renderSavedSetups();
+  }catch(e){
+    console.error("Couldn't save setup notes:", e);
+    await customAlert("Couldn't save: " + e.message);
+  }
+}
+
+// Opens the same Setup Notes modal from a Trade Journal entry that was
+// created via "Journal" — same underlying position_setups row either way,
+// so edits made here show up back in the Calculator too.
+function openLinkedSetupNotes(){
+  if(!drawerRowData || !drawerRowData.linked_setup_id) return;
+  openSetupNotesModal(drawerRowData.linked_setup_id);
+}
+function openLinkedSetupNotesFromTradeView(){
+  const row = tradeViewList[tradeViewIndex];
+  if(!row || !row.linked_setup_id) return;
+  openSetupNotesModal(row.linked_setup_id);
+}
+
+// Carries a saved setup's Account/Position Size/Symbol/notes log into the
+// same create-drawer Easy Add prefills — the timestamped log gets flattened
+// into Timestamp/Comment blocks since the Trade Journal's Notes field is
+// plain text.
+function journalFromSetup(id){
+  const s = SAVED_SETUPS.find(x => x.id === id);
+  if(!s) return;
+  const log = Array.isArray(s.notes_log) ? s.notes_log : [];
+  const notesText = log.map(entry =>
+    `${new Date(entry.ts).toLocaleString(undefined,{dateStyle:'medium',timeStyle:'short'})}\n${entry.text}`
+  ).join('\n\n');
+
+  const slPct = s.stop_loss_pct != null ? Number(s.stop_loss_pct) : null;
+  const tpPct = s.take_profit_pct != null ? Number(s.take_profit_pct) : null;
+  const rr = (slPct && tpPct != null) ? +(tpPct / slPct).toFixed(2) : undefined;
+
+  pendingJournalPrefill = {
+    account: s.account_name || undefined,
+    position_size: s.position_size != null ? Number(s.position_size) : undefined,
+    symbol: s.symbol || undefined,
+    notes: notesText || undefined,
+    rr: rr
+  };
+  pendingJournalSetupId = id;
+  openEasyAddModal();
+}
+
+// Flips a saved setup's Status to "Journaled" once its trade actually gets
+// saved to the Trade Journal (not just prefilled/parsed) — updates local
+// state directly and only re-renders the Saved Setups table if it's the
+// active view, matching the pattern used by saveSetupNotes().
+async function setSetupStatus(id, status){
+  try{
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/position_setups?id=eq.${id}`, {
+      method: 'PATCH',
+      headers: {
+        "apikey": SUPABASE_KEY,
+        "Authorization": `Bearer ${USER_ACCESS_TOKEN}`,
+        "Content-Type": "application/json",
+        "Prefer": "return=representation"
+      },
+      body: JSON.stringify({ status })
+    });
+    if(!res.ok) throw new Error(await res.text());
+    const rows = await res.json();
+    if(!rows.length) return;
+    const s = SAVED_SETUPS.find(x => x.id === id);
+    if(s) s.status = status;
+    if(currentView === 'calculator') renderSavedSetups();
+  }catch(e){
+    console.error(`Couldn't set setup status to ${status}:`, e);
+  }
+}
+
+async function deleteSavedSetup(id){
+  if(!(await customConfirm('Delete this saved setup?'))) return;
+  try{
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/position_setups?id=eq.${id}`, {
+      method: 'DELETE',
+      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}` }
+    });
+    if(!res.ok) throw new Error(await res.text());
+    SAVED_SETUPS = SAVED_SETUPS.filter(s => s.id !== id);
+    renderSavedSetups();
+  }catch(e){
+    console.error("Couldn't delete setup:", e);
+    await customAlert("Couldn't delete this setup — please try again.");
+  }
+}
+
 function accountEditIconSVG(){
   return `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>`;
 }
@@ -4710,6 +5963,10 @@ function deleteIconSVG(){
 
 function linkIconSVG(){
   return `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6"/><path d="M10 14 21 3"/></svg>`;
+}
+
+function imageIconSVG(){
+  return `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>`;
 }
 
 function openAccountModal(id){
@@ -4830,7 +6087,7 @@ async function saveAccount(){
 
 async function deleteAccount(){
   if(!editingAccountId) return;
-  if(!confirm('Delete this account? This cannot be undone.')) return;
+  if(!(await customConfirm('Delete this account? This cannot be undone.'))) return;
   try{
     const res = await fetch(`${SUPABASE_URL}/rest/v1/trading_accounts?id=eq.${editingAccountId}`, {
       method: 'DELETE',
@@ -4846,7 +6103,7 @@ async function deleteAccount(){
     showToast('Account deleted');
   }catch(e){
     console.error("Couldn't delete account:", e);
-    alert("Couldn't delete — please try again.");
+    await customAlert("Couldn't delete — please try again.");
   }
 }
 
@@ -5016,7 +6273,7 @@ function editSelectedNote(){
 
 async function deleteSelectedNote(){
   if(!viewingNoteId) return;
-  if(!confirm('Delete this note permanently? This cannot be undone.')) return;
+  if(!(await customConfirm('Delete this note permanently? This cannot be undone.'))) return;
   try{
     const res = await fetch(`${SUPABASE_URL}/rest/v1/notebook_entries?id=eq.${viewingNoteId}`, {
       method: 'DELETE',
@@ -5030,6 +6287,6 @@ async function deleteSelectedNote(){
     showToast('Note deleted');
   }catch(e){
     console.error("Couldn't delete note:", e);
-    alert("Couldn't delete — please try again.");
+    await customAlert("Couldn't delete — please try again.");
   }
 }
