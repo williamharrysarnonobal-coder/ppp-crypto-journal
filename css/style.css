@@ -812,7 +812,7 @@
   .poscalc-copy-btn:hover{color:var(--ink);border-color:var(--muted);}
   .poscalc-copy-btn.copied{color:var(--win);border-color:var(--win);font-size:12px;font-weight:700;}
   .poscalc-accent-btn{
-    background:none;border:1px solid var(--accent);color:var(--accent);padding:9px 14px;
+    background:none;border:1px solid var(--accent);color:var(--ink);padding:9px 14px;
     border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;
   }
   .poscalc-accent-btn:hover{background:color-mix(in srgb, var(--accent) 12%, transparent);}
@@ -842,10 +842,10 @@
   .drawer-secondary-btn:disabled{opacity:.4;cursor:default;pointer-events:none;}
   .drawer-secondary-btn.active-translate{background:var(--accent);border-color:var(--accent);color:#fff;}
   .drawer-danger-btn{
-    background:none;border:1px solid var(--loss);color:var(--loss);padding:9px 14px;
+    background:none;border:1px solid var(--accent);color:var(--ink);padding:9px 14px;
     border-radius:6px;font-size:13px;cursor:pointer;margin-left:auto;
   }
-  .drawer-danger-btn:hover{background:rgba(193,101,79,.12);}
+  .drawer-danger-btn:hover{background:color-mix(in srgb, var(--accent) 12%, transparent);}
 
   /* ---------- Reusable sub-nav + tabbed panel layout ---------- */
   .subnav-shell{display:flex;gap:24px;align-items:flex-start;}
