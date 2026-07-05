@@ -673,7 +673,7 @@
   /* Both columns share one fixed height so they always line up — the rules
      list scrolls internally instead of stretching the picture panel to
      match (which used to leave a big empty gap above the image). */
-  .profile-layout .panel{height:480px;display:flex;flex-direction:column;overflow:hidden;}
+  .profile-layout .panel{height:580px;display:flex;flex-direction:column;overflow:hidden;}
   .profile-layout .panel h2{flex-shrink:0;padding-bottom:14px;margin-bottom:14px;border-bottom:1px solid var(--rule);}
   .profile-layout .panel > .sub{flex-shrink:0;margin-top:-8px !important;}
   #profileRulesList{flex:1;min-height:0;overflow-y:auto;}
