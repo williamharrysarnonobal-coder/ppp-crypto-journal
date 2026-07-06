@@ -2213,10 +2213,10 @@ function finAccountCardHTML(a){
             return `<div class="fin-payment-row"><span>${escapeHtml(r.name)}</span><span class="pill pill-green">Fully paid</span></div>`;
           }
           const period = _finInstNextPeriod(r);
-          return `<div class="fin-payment-row"><span>${escapeHtml(r.name)} — Payment: ${period ? period.toLocaleDateString('en-US',{month:'long',year:'numeric'}) : '—'}</span><button class="poscalc-accent-btn" style="padding:3px 9px;font-size:10.5px;flex-shrink:0;" onclick="markFinRecPaid(${r.id})">Mark as Paid</button></div>`;
+          return `<div class="fin-payment-row"><span>${escapeHtml(r.name)} — Pending Payment: ${period ? period.toLocaleDateString('en-US',{month:'long',year:'numeric'}) : '—'}</span><button class="poscalc-accent-btn" style="padding:3px 9px;font-size:10.5px;flex-shrink:0;" onclick="markFinRecPaid(${r.id})">Paid</button></div>`;
         }
         const period = _finSubNextPeriod(r);
-        return `<div class="fin-payment-row"><span>${escapeHtml(r.name)} — Payment: ${period ? period.toLocaleDateString('en-US',{month:'long',year:'numeric'}) : '—'}</span><button class="poscalc-accent-btn" style="padding:3px 9px;font-size:10.5px;flex-shrink:0;" onclick="markFinRecPaid(${r.id})">Mark as Paid</button></div>`;
+        return `<div class="fin-payment-row"><span>${escapeHtml(r.name)} — Pending Payment: ${period ? period.toLocaleDateString('en-US',{month:'long',year:'numeric'}) : '—'}</span><button class="poscalc-accent-btn" style="padding:3px 9px;font-size:10.5px;flex-shrink:0;" onclick="markFinRecPaid(${r.id})">Paid</button></div>`;
       }).join('')}
     </div>
   ` : '';
@@ -2496,6 +2496,40 @@ async function deleteFinAccount(id){
     console.error("Couldn't delete finance account:", e);
     await customAlert("Couldn't delete this account — please try again.");
   }
+}
+
+// Owed and Available Credit are two separately-stored fields that should
+// always satisfy available = limit - owed — they're kept in sync by
+// _adjustFinAccountBalance on every write, but this is a manual safety net
+// in case anything (a partial save, a direct DB edit) ever lets them drift.
+async function recalculateFinAccounts(){
+  const creditAccs = FIN_ACCOUNTS.filter(a => a.account_class === 'Credit');
+  if(!creditAccs.length){ showToast('No credit accounts to recalculate.'); return; }
+
+  let fixedCount = 0;
+  for(const a of creditAccs){
+    const correct = (Number(a.credit_limit) || 0) - (Number(a.owed) || 0);
+    if(Math.abs(correct - (Number(a.current_balance) || 0)) < 0.01) continue;
+    try{
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/finance_accounts?id=eq.${a.id}`, {
+        method: 'PATCH',
+        headers: {
+          "apikey": SUPABASE_KEY,
+          "Authorization": `Bearer ${USER_ACCESS_TOKEN}`,
+          "Content-Type": "application/json",
+          "Prefer": "return=minimal"
+        },
+        body: JSON.stringify({ current_balance: correct })
+      });
+      if(!res.ok) throw new Error(await res.text());
+      a.current_balance = correct;
+      fixedCount++;
+    }catch(e){
+      console.error(`Couldn't recalculate account ${a.id}:`, e);
+    }
+  }
+  renderFinanceAccounts();
+  showToast(fixedCount ? `Fixed ${fixedCount} account${fixedCount > 1 ? 's' : ''}` : 'Everything already checks out — no drift found');
 }
 
 /* ---- Finance > Transactions ---- */
@@ -2923,14 +2957,15 @@ function renderFinanceRecurring(){
     const done = paid >= total;
     const dueCell = done
       ? '<span class="pill pill-green">Fully paid</span>'
-      : `${fmtPeriod(_finInstNextPeriod(r))} <button class="poscalc-accent-btn" style="padding:3px 9px;font-size:10.5px;margin-left:6px;" onclick="markFinRecPaid(${r.id})">Mark as Paid</button>`;
+      : `${fmtPeriod(_finInstNextPeriod(r))} <button class="poscalc-accent-btn" style="padding:3px 9px;font-size:10.5px;margin-left:6px;" onclick="markFinRecPaid(${r.id})">Paid</button>`;
+    const remaining = (Number(r.total_amount) || 0) - (monthly * paid);
     return `
       <tr>
         <td>${escapeHtml(r.name)}<div style="font-size:10.5px;color:var(--muted);">${escapeHtml(_finAccountName(r.account_id))}</div></td>
         <td>${escapeHtml(r.category || '—')}</td>
         <td>${finMoney(r.total_amount, 'PHP')}</td>
         <td>${finMoney(monthly, 'PHP')}</td>
-        <td><span class="pill ${done ? 'pill-green' : 'pill-orange'}">${paid} / ${total} paid</span></td>
+        <td><span class="pill ${done ? 'pill-green' : 'pill-orange'}">${paid} / ${total} paid</span><div style="font-size:10.5px;color:var(--muted);margin-top:3px;">${done ? '' : `${finMoney(remaining, 'PHP')} remaining`}</div></td>
         <td style="white-space:nowrap;">${dueCell}</td>
         <td>${escapeHtml(r.notes || '—')}</td>
         <td style="text-align:right;white-space:nowrap;">
@@ -2950,7 +2985,7 @@ function renderFinanceRecurring(){
         <td>${escapeHtml(r.name)}<div style="font-size:10.5px;color:var(--muted);">${escapeHtml(_finAccountName(r.account_id))}</div></td>
         <td>${finMoney(r.price, 'PHP')}</td>
         <td>${escapeHtml(r.cycle || 'Monthly')}</td>
-        <td style="white-space:nowrap;">${fmtPeriod(next)} <button class="poscalc-accent-btn" style="padding:3px 9px;font-size:10.5px;margin-left:6px;" onclick="markFinRecPaid(${r.id})">Mark as Paid</button></td>
+        <td style="white-space:nowrap;">${fmtPeriod(next)} <button class="poscalc-accent-btn" style="padding:3px 9px;font-size:10.5px;margin-left:6px;" onclick="markFinRecPaid(${r.id})">Paid</button></td>
         <td>${escapeHtml(r.notes || '—')}</td>
         <td style="text-align:right;white-space:nowrap;">
           <button class="drawer-secondary-btn" style="padding:4px 10px;font-size:11px;" onclick="openFinRecModal('Subscription', ${r.id})">Edit</button>
