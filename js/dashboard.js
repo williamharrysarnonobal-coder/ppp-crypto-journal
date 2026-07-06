@@ -2106,8 +2106,12 @@ function switchFinanceTab(tab){
   if(tab === 'config') renderFinanceConfig();
 }
 
-function renderFinance(){
+async function renderFinance(){
   applyFinBalanceVisibility();
+  // Account cards show a "Mark as Paid" line for anything linked to them,
+  // so recurring items need to be loaded no matter which Finance tab is
+  // opened first — not just when the Recurring tab itself is visited.
+  await loadFinanceRecurring();
   switchFinanceTab(activeFinanceTab);
 }
 
@@ -2195,6 +2199,27 @@ function finAccountCardHTML(a){
       `).join('')}
     </div>
   ` : '';
+
+  // Installments/subscriptions paid FROM this account — the actual "Mark as
+  // Paid" action lives here, on the account paying the bill, not buried in
+  // a separate Recurring list.
+  const linkedRecurring = FIN_RECURRING.filter(r => r.account_id === a.id);
+  const paymentLinesHtml = linkedRecurring.length ? `
+    <div class="fin-payment-list">
+      ${linkedRecurring.map(r => {
+        if(r.kind === 'Installment'){
+          const paid = Number(r.payments_applied) || 0, total = Number(r.total_payments) || 0;
+          if(paid >= total){
+            return `<div class="fin-payment-row"><span>${escapeHtml(r.name)}</span><span class="pill pill-green">Fully paid</span></div>`;
+          }
+          const period = _finInstNextPeriod(r);
+          return `<div class="fin-payment-row"><span>${escapeHtml(r.name)} — Payment: ${period ? period.toLocaleDateString('en-US',{month:'long',year:'numeric'}) : '—'}</span><button class="poscalc-accent-btn" style="padding:3px 9px;font-size:10.5px;flex-shrink:0;" onclick="markFinRecPaid(${r.id})">Mark as Paid</button></div>`;
+        }
+        const period = _finSubNextPeriod(r);
+        return `<div class="fin-payment-row"><span>${escapeHtml(r.name)} — Payment: ${period ? period.toLocaleDateString('en-US',{month:'long',year:'numeric'}) : '—'}</span><button class="poscalc-accent-btn" style="padding:3px 9px;font-size:10.5px;flex-shrink:0;" onclick="markFinRecPaid(${r.id})">Mark as Paid</button></div>`;
+      }).join('')}
+    </div>
+  ` : '';
   return `
     <div class="account-card" style="cursor:default;">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
@@ -2210,6 +2235,7 @@ function finAccountCardHTML(a){
       ${creditLines}
       ${a.notes ? `<div style="font-size:12px;color:var(--muted);margin-top:8px;font-style:italic;">${escapeHtml(a.notes)}</div>` : ''}
       ${subAccountsHtml}
+      ${paymentLinesHtml}
       <div style="display:flex;justify-content:${!isCredit ? 'space-between' : 'flex-end'};align-items:center;gap:6px;margin-top:12px;">
         ${!isCredit ? `<button class="fin-subacct-add" onclick="openFinSubAccountModal(${a.id})">+ Sub-account</button>` : ''}
         <div style="display:flex;gap:6px;">
