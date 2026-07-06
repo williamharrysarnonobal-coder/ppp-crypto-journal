@@ -701,7 +701,7 @@
             <div class="empty-state" id="finInstEmpty" style="display:none;">No installments yet.</div>
             <div class="journal-wrap" id="finInstWrap" style="display:none;">
               <table class="journal">
-                <thead><tr><th>Name</th><th>Category</th><th>Total Amount</th><th>Monthly</th><th>Progress</th><th>First Bill</th><th>Note</th><th></th></tr></thead>
+                <thead><tr><th>Name</th><th>Category</th><th>Total Amount</th><th>Monthly</th><th>Progress</th><th>Payment Due</th><th>Note</th><th></th></tr></thead>
                 <tbody id="finInstBody"></tbody>
               </table>
             </div>
@@ -713,7 +713,7 @@
             <div class="empty-state" id="finSubEmpty" style="display:none;">No subscriptions yet.</div>
             <div class="journal-wrap" id="finSubWrap" style="display:none;">
               <table class="journal">
-                <thead><tr><th>Subscription</th><th>Price</th><th>Cycle</th><th>First Bill</th><th>Next Bill</th><th>Note</th><th></th></tr></thead>
+                <thead><tr><th>Subscription</th><th>Price</th><th>Cycle</th><th>Next Bill</th><th>Note</th><th></th></tr></thead>
                 <tbody id="finSubBody"></tbody>
               </table>
             </div>
@@ -919,6 +919,11 @@
     <div class="field-row fin-rec-inst" style="display:none;">
       <label>Monthly (computed)</label>
       <div class="field-static" id="finRecMonthly">—</div>
+    </div>
+    <div class="field-row fin-rec-inst" style="display:none;">
+      <label>Payments Made So Far</label>
+      <input id="finRecAlreadyPaid" type="number" min="0" step="1" placeholder="e.g. 8" oninput="updateFinRecMonthly()">
+      <div class="sub" style="font-size:11px;margin-top:4px;">Payments already made in real life (before or outside this tracker) — nothing gets charged for these. Use the "Mark as Paid" button for each one from here on.</div>
     </div>
     <div class="field-row fin-rec-sub" style="display:none;">
       <label>Price</label>
@@ -1319,6 +1324,6 @@
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=1"></script>
-<script src="js/dashboard.js?v=111"></script>
+<script src="js/dashboard.js?v=112"></script>
 </body>
 </html>

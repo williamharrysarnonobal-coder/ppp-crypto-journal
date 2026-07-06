@@ -2764,7 +2764,7 @@ let editingFinRecId = null;
 let finRecModalKind = 'Installment';
 
 async function loadFinanceRecurring(){
-  // Auto-charges below need real accounts to deduct from.
+  // "Mark as Paid" needs real accounts to deduct from.
   if(!FIN_ACCOUNTS.length) await loadFinanceAccounts();
   try{
     const res = await fetch(`${SUPABASE_URL}/rest/v1/finance_recurring?select=*&order=created_at.asc`, {
@@ -2776,50 +2776,63 @@ async function loadFinanceRecurring(){
     console.error("Couldn't load recurring items:", e);
     FIN_RECURRING = [];
   }
-  await _finProcessDueRecurring();
   renderFinanceRecurring();
-  renderFinanceAccounts(); // reflect any balance changes from bills just applied
 }
 
-// Catches up any bill that came due since we last checked — one lump
-// transaction per item per visit (not one per missed month), deducted from
-// its linked account, and recorded so it never gets charged twice.
-async function _finProcessDueRecurring(){
-  for(const r of FIN_RECURRING){
-    if(!r.account_id) continue;
-    if(r.kind === 'Installment'){
-      const totalDue = Math.min(_finMonthsSince(r.first_bill), Number(r.total_payments) || 0);
-      const already = Number(r.payments_applied) || 0;
-      const newCount = totalDue - already;
-      if(newCount <= 0) continue;
-      const monthly = (Number(r.total_amount) || 0) / Math.max(1, Number(r.total_payments) || 1);
-      await _finApplyRecurringCharge(r, monthly * newCount,
-        `Installment: ${r.name} (payment${newCount > 1 ? 's' : ''} ${already + 1}${newCount > 1 ? `-${totalDue}` : ''})`);
-      await _finPatchRecurring(r.id, { payments_applied: totalDue });
-      r.payments_applied = totalDue;
-    }else{
-      const { count, lastDate } = _finDueSubscriptionOccurrences(r);
-      if(count <= 0) continue;
-      await _finApplyRecurringCharge(r, (Number(r.price) || 0) * count,
-        `Subscription: ${r.name}${count > 1 ? ` (${count} cycles)` : ''}`);
-      await _finPatchRecurring(r.id, { last_billed: lastDate });
-      r.last_billed = lastDate;
-    }
-  }
+// The period a payment would be FOR, next — installments count months
+// forward from first_bill by how many are already marked paid; subscriptions
+// count cycles forward from whichever period was billed last (or first_bill
+// if none yet). Purely a label — nothing here touches money or gets saved
+// until "Mark as Paid" is actually clicked.
+function _finInstNextPeriod(r){
+  if(!r.first_bill) return null;
+  const d = new Date(r.first_bill + 'T00:00:00');
+  d.setMonth(d.getMonth() + (Number(r.payments_applied) || 0));
+  return d;
 }
 
-function _finDueSubscriptionOccurrences(r){
-  if(!r.first_bill) return { count: 0, lastDate: r.last_billed || null };
+function _finSubNextPeriod(r){
   const stepMonths = r.cycle === 'Yearly' ? 12 : (r.cycle === 'Quarterly' ? 3 : 1);
-  const now = new Date();
-  const after = r.last_billed ? new Date(r.last_billed + 'T00:00:00') : null;
-  let d = new Date(r.first_bill + 'T00:00:00');
-  let count = 0, lastDate = r.last_billed || null;
-  while(d <= now){
-    if(!after || d > after){ count++; lastDate = d.toISOString().slice(0,10); }
+  if(r.last_billed){
+    const d = new Date(r.last_billed + 'T00:00:00');
     d.setMonth(d.getMonth() + stepMonths);
+    return d;
   }
-  return { count, lastDate };
+  return r.first_bill ? new Date(r.first_bill + 'T00:00:00') : null;
+}
+
+// Manual confirmation — clicking "Mark as Paid" is the ONLY thing that
+// deducts money. Nothing is auto-charged just because a due date passed;
+// a bill coming due and a bill actually being paid are different events.
+async function markFinRecPaid(id){
+  const r = FIN_RECURRING.find(x => x.id === id);
+  if(!r) return;
+  if(!r.account_id){
+    await customAlert('Set a "Paid From" account first (Edit) so this can adjust its balance.');
+    return;
+  }
+
+  if(r.kind === 'Installment'){
+    const already = Number(r.payments_applied) || 0;
+    const total = Number(r.total_payments) || 0;
+    if(already >= total) return;
+    const monthly = (Number(r.total_amount) || 0) / Math.max(1, total);
+    const period = _finInstNextPeriod(r);
+    const label = period ? period.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : `payment ${already + 1}`;
+    await _finApplyRecurringCharge(r, monthly, `Installment: ${r.name} (${label})`);
+    await _finPatchRecurring(r.id, { payments_applied: already + 1 });
+    r.payments_applied = already + 1;
+  }else{
+    const period = _finSubNextPeriod(r);
+    if(!period) return;
+    await _finApplyRecurringCharge(r, Number(r.price) || 0, `Subscription: ${r.name} (${period.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })})`);
+    const billedDate = period.toISOString().slice(0,10);
+    await _finPatchRecurring(r.id, { last_billed: billedDate });
+    r.last_billed = billedDate;
+  }
+  renderFinanceRecurring();
+  renderFinanceAccounts();
+  showToast('Marked as paid');
 }
 
 async function _finApplyRecurringCharge(r, amount, description){
@@ -2867,35 +2880,11 @@ async function _finPatchRecurring(id, patch){
   }
 }
 
-// Months fully elapsed since the first bill (that month counts as payment #1).
-function _finMonthsSince(dateStr){
-  if(!dateStr) return 0;
-  const first = new Date(dateStr + 'T00:00:00');
-  const now = new Date();
-  if(isNaN(first) || now < first) return 0;
-  let months = (now.getFullYear() - first.getFullYear()) * 12 + (now.getMonth() - first.getMonth()) + 1;
-  // This month's payment hasn't happened yet if we haven't reached the
-  // billing day (e.g. first bill on the 18th, today is the 6th — the 9th
-  // payment already fell due in a prior month, the 10th isn't due yet).
-  if(now.getDate() < first.getDate()) months -= 1;
-  return Math.max(0, months);
-}
-
-function _finNextBill(firstBillStr, cycle){
-  if(!firstBillStr) return null;
-  const d = new Date(firstBillStr + 'T00:00:00');
-  if(isNaN(d)) return null;
-  const stepMonths = cycle === 'Yearly' ? 12 : (cycle === 'Quarterly' ? 3 : 1);
-  const now = new Date();
-  while(d < now) d.setMonth(d.getMonth() + stepMonths);
-  return d;
-}
-
 function renderFinanceRecurring(){
   const instBody = document.getElementById('finInstBody');
   if(!instBody) return;
 
-  const fmtDate = s => s ? new Date(s + 'T00:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : '—';
+  const fmtPeriod = d => d ? d.toLocaleDateString('en-US',{month:'short',year:'numeric'}) : '—';
   const insts = FIN_RECURRING.filter(r => r.kind === 'Installment');
   const subs = FIN_RECURRING.filter(r => r.kind === 'Subscription');
 
@@ -2903,16 +2892,20 @@ function renderFinanceRecurring(){
   document.getElementById('finInstWrap').style.display = insts.length ? 'block' : 'none';
   instBody.innerHTML = insts.map(r => {
     const monthly = (Number(r.total_amount) || 0) / Math.max(1, Number(r.total_payments) || 1);
-    const paid = Math.min(_finMonthsSince(r.first_bill), Number(r.total_payments) || 0);
-    const done = paid >= (Number(r.total_payments) || 0);
+    const paid = Number(r.payments_applied) || 0;
+    const total = Number(r.total_payments) || 0;
+    const done = paid >= total;
+    const dueCell = done
+      ? '<span class="pill pill-green">Fully paid</span>'
+      : `${fmtPeriod(_finInstNextPeriod(r))} <button class="poscalc-accent-btn" style="padding:3px 9px;font-size:10.5px;margin-left:6px;" onclick="markFinRecPaid(${r.id})">Mark as Paid</button>`;
     return `
       <tr>
         <td>${escapeHtml(r.name)}<div style="font-size:10.5px;color:var(--muted);">${escapeHtml(_finAccountName(r.account_id))}</div></td>
         <td>${escapeHtml(r.category || '—')}</td>
         <td>${finMoney(r.total_amount, 'PHP')}</td>
         <td>${finMoney(monthly, 'PHP')}</td>
-        <td>${done ? '<span class="pill pill-green">Fully paid</span>' : `<span class="pill pill-orange">${paid} / ${r.total_payments || 0} paid</span>`}</td>
-        <td>${fmtDate(r.first_bill)}</td>
+        <td><span class="pill ${done ? 'pill-green' : 'pill-orange'}">${paid} / ${total} paid</span></td>
+        <td style="white-space:nowrap;">${dueCell}</td>
         <td>${escapeHtml(r.notes || '—')}</td>
         <td style="text-align:right;white-space:nowrap;">
           <button class="drawer-secondary-btn" style="padding:4px 10px;font-size:11px;" onclick="openFinRecModal('Installment', ${r.id})">Edit</button>
@@ -2925,14 +2918,13 @@ function renderFinanceRecurring(){
   document.getElementById('finSubEmpty').style.display = subs.length ? 'none' : 'block';
   document.getElementById('finSubWrap').style.display = subs.length ? 'block' : 'none';
   document.getElementById('finSubBody').innerHTML = subs.map(r => {
-    const next = _finNextBill(r.first_bill, r.cycle);
+    const next = _finSubNextPeriod(r);
     return `
       <tr>
         <td>${escapeHtml(r.name)}<div style="font-size:10.5px;color:var(--muted);">${escapeHtml(_finAccountName(r.account_id))}</div></td>
         <td>${finMoney(r.price, 'PHP')}</td>
         <td>${escapeHtml(r.cycle || 'Monthly')}</td>
-        <td>${fmtDate(r.first_bill)}</td>
-        <td>${next ? next.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : '—'}</td>
+        <td style="white-space:nowrap;">${fmtPeriod(next)} <button class="poscalc-accent-btn" style="padding:3px 9px;font-size:10.5px;margin-left:6px;" onclick="markFinRecPaid(${r.id})">Mark as Paid</button></td>
         <td>${escapeHtml(r.notes || '—')}</td>
         <td style="text-align:right;white-space:nowrap;">
           <button class="drawer-secondary-btn" style="padding:4px 10px;font-size:11px;" onclick="openFinRecModal('Subscription', ${r.id})">Edit</button>
@@ -2961,6 +2953,7 @@ function openFinRecModal(kind, id){
   document.getElementById('finRecName').value = r?.name || '';
   document.getElementById('finRecTotal').value = r?.total_amount ?? '';
   document.getElementById('finRecCount').value = r?.total_payments ?? '';
+  document.getElementById('finRecAlreadyPaid').value = r?.payments_applied ?? 0;
   document.getElementById('finRecPrice').value = r?.price ?? '';
   document.getElementById('finRecCycle').value = r?.cycle || 'Monthly';
   document.getElementById('finRecFirstBill').value = r?.first_bill || new Date().toISOString().slice(0,10);
@@ -3009,19 +3002,14 @@ async function saveFinRec(){
     notes: document.getElementById('finRecNotes').value.trim() || null
   };
 
-  // Linking an account for the FIRST time (new item, or an existing one
-  // that had no account before): baseline the "applied" tracking up to
-  // today instead of catching up every historical bill in one lump charge.
-  // Whatever happened before today is already reflected in the balance the
-  // user typed in manually — only bills from here on should auto-deduct.
-  const existing = editingFinRecId ? FIN_RECURRING.find(x => x.id === editingFinRecId) : null;
-  const wasLinked = !!existing?.account_id;
-  if(payload.account_id && !wasLinked){
-    if(isInst){
-      payload.payments_applied = Math.min(_finMonthsSince(payload.first_bill), payload.total_payments || 0);
-    }else{
-      payload.last_billed = _finDueSubscriptionOccurrences({ first_bill: payload.first_bill, cycle: payload.cycle, last_billed: null }).lastDate;
-    }
+  // "Payments Made So Far" is a direct, user-controlled counter — payments
+  // that already happened in real life (before or outside this tracker)
+  // never get charged; only future clicks of "Mark as Paid" do.
+  if(isInst){
+    payload.payments_applied = Math.min(
+      parseInt(document.getElementById('finRecAlreadyPaid').value, 10) || 0,
+      payload.total_payments || 0
+    );
   }
 
   const btn = document.getElementById('finRecSaveBtn');
