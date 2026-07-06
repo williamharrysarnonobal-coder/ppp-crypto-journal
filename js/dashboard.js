@@ -2182,9 +2182,18 @@ function finAccountCardHTML(a){
   const mainBalance = isCredit
     ? finMoney((Number(a.credit_limit)||0) - (Number(a.owed)||0), a.currency)
     : finMoney(a.current_balance, a.currency);
+  // One combined "Payment for <month>" line per card — covers every
+  // not-fully-paid installment/subscription billed to it in a single click,
+  // like one real credit card statement instead of itemized mini-bills.
+  const dueForThisAccount = FIN_RECURRING.filter(r => r.account_id === a.id && !_finRecIsFullyPaid(r));
+  const combinedPeriod = _finEarliestPeriod(dueForThisAccount);
+  const paymentLineHtml = combinedPeriod
+    ? `<div class="fin-payment-row" style="margin-top:8px;"><span>Payment for ${combinedPeriod.toLocaleDateString('en-US',{month:'long'})}</span><button class="poscalc-accent-btn" style="padding:3px 9px;font-size:10.5px;flex-shrink:0;" onclick="payAllDueForAccount(${a.id})">Paid</button></div>`
+    : '';
   const creditLines = isCredit ? `
     <div style="font-size:12px;margin-top:6px;">Owed <span style="color:var(--loss);font-weight:600;">${finMoney(a.owed, a.currency)}</span> <span style="color:var(--muted);">/ Limit ${finMoney(a.credit_limit, a.currency)}</span></div>
     ${a.billing_day || a.due_day ? `<div style="font-size:11px;color:var(--muted);margin-top:3px;">${a.billing_day ? `Bill day ${a.billing_day}` : ''}${a.billing_day && a.due_day ? ' · ' : ''}${a.due_day ? `Due day ${a.due_day}` : ''}</div>` : ''}
+    ${paymentLineHtml}
   ` : '';
   const subAccounts = !isCredit ? FIN_ACCOUNTS.filter(s => s.parent_account_id === a.id) : [];
   const subAccountsHtml = subAccounts.length ? `
@@ -2197,27 +2206,6 @@ function finAccountCardHTML(a){
           <button class="fin-subacct-edit" title="Delete" onclick="deleteFinAccount(${s.id})">✕</button>
         </div>
       `).join('')}
-    </div>
-  ` : '';
-
-  // Installments/subscriptions paid FROM this account — the actual "Mark as
-  // Paid" action lives here, on the account paying the bill, not buried in
-  // a separate Recurring list.
-  const linkedRecurring = FIN_RECURRING.filter(r => r.account_id === a.id);
-  const paymentLinesHtml = linkedRecurring.length ? `
-    <div class="fin-payment-list">
-      ${linkedRecurring.map(r => {
-        if(r.kind === 'Installment'){
-          const paid = Number(r.payments_applied) || 0, total = Number(r.total_payments) || 0;
-          if(paid >= total){
-            return `<div class="fin-payment-row"><span>${escapeHtml(r.name)}</span><span class="pill pill-green">Fully paid</span></div>`;
-          }
-          const period = _finInstNextPeriod(r);
-          return `<div class="fin-payment-row"><span>${escapeHtml(r.name)} — Pending Payment: ${period ? period.toLocaleDateString('en-US',{month:'long',year:'numeric'}) : '—'}</span><button class="poscalc-accent-btn" style="padding:3px 9px;font-size:10.5px;flex-shrink:0;" onclick="markFinRecPaid(${r.id})">Paid</button></div>`;
-        }
-        const period = _finSubNextPeriod(r);
-        return `<div class="fin-payment-row"><span>${escapeHtml(r.name)} — Pending Payment: ${period ? period.toLocaleDateString('en-US',{month:'long',year:'numeric'}) : '—'}</span><button class="poscalc-accent-btn" style="padding:3px 9px;font-size:10.5px;flex-shrink:0;" onclick="markFinRecPaid(${r.id})">Paid</button></div>`;
-      }).join('')}
     </div>
   ` : '';
   return `
@@ -2235,7 +2223,7 @@ function finAccountCardHTML(a){
       ${creditLines}
       ${a.notes ? `<div style="font-size:12px;color:var(--muted);margin-top:8px;font-style:italic;">${escapeHtml(a.notes)}</div>` : ''}
       ${subAccountsHtml}
-      ${paymentLinesHtml}
+      ${!isCredit && paymentLineHtml ? `<div class="fin-payment-list">${paymentLineHtml}</div>` : ''}
       <div style="display:flex;justify-content:${!isCredit ? 'space-between' : 'flex-end'};align-items:center;gap:6px;margin-top:12px;">
         ${!isCredit ? `<button class="fin-subacct-add" onclick="openFinSubAccountModal(${a.id})">+ Sub-account</button>` : ''}
         <div style="display:flex;gap:6px;">
@@ -2861,42 +2849,78 @@ function _finSubNextPeriod(r){
   return r.first_bill ? new Date(r.first_bill + 'T00:00:00') : null;
 }
 
-// Manual confirmation — clicking "Mark as Paid" is the ONLY thing that
-// deducts money. Nothing is auto-charged just because a due date passed;
-// a bill coming due and a bill actually being paid are different events.
-async function markFinRecPaid(id){
-  const r = FIN_RECURRING.find(x => x.id === id);
-  if(!r) return;
-  if(!r.account_id){
-    await customAlert('Set a "Paid From" account first (Edit) so this can adjust its balance.');
-    return;
-  }
+// The single "Payment for <month>" line on an account card represents
+// everything still owed on it — shown as whichever due item's period is
+// EARLIEST (the oldest unpaid bill), since that's the one actually driving
+// when a real card statement would be due.
+function _finEarliestPeriod(items){
+  const dates = items
+    .map(r => r.kind === 'Installment' ? _finInstNextPeriod(r) : _finSubNextPeriod(r))
+    .filter(Boolean);
+  if(!dates.length) return null;
+  return new Date(Math.min(...dates.map(d => d.getTime())));
+}
+
+function _finRecIsFullyPaid(r){
+  return r.kind === 'Installment' && (Number(r.payments_applied) || 0) >= (Number(r.total_payments) || 0);
+}
+
+// Core "advance one payment" step — charges it and updates that item's own
+// progress. No rendering/toasting here so it can run in a loop (one card's
+// single "Paid" button covers every item billed to it) without spamming
+// three renders and three toasts for what the user experiences as one action.
+async function _markOneRecPaid(r){
+  if(!r.account_id) return { ok: false, error: 'No "Paid From" account set.' };
 
   if(r.kind === 'Installment'){
     const already = Number(r.payments_applied) || 0;
     const total = Number(r.total_payments) || 0;
-    if(already >= total) return;
+    if(already >= total) return { ok: true };
     const monthly = (Number(r.total_amount) || 0) / Math.max(1, total);
     const period = _finInstNextPeriod(r);
     const label = period ? period.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : `payment ${already + 1}`;
-    await _finApplyRecurringCharge(r, monthly, `Installment: ${r.name} (${label})`);
-    await _finPatchRecurring(r.id, { payments_applied: already + 1 });
+    const charge = await _finApplyRecurringCharge(r, monthly, `Installment: ${r.name} (${label})`);
+    if(!charge.ok) return charge;
+    const patch = await _finPatchRecurring(r.id, { payments_applied: already + 1 });
+    if(!patch.ok) return patch;
     r.payments_applied = already + 1;
   }else{
     const period = _finSubNextPeriod(r);
-    if(!period) return;
-    await _finApplyRecurringCharge(r, Number(r.price) || 0, `Subscription: ${r.name} (${period.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })})`);
+    if(!period) return { ok: true };
+    const charge = await _finApplyRecurringCharge(r, Number(r.price) || 0, `Subscription: ${r.name} (${period.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })})`);
+    if(!charge.ok) return charge;
     const billedDate = period.toISOString().slice(0,10);
-    await _finPatchRecurring(r.id, { last_billed: billedDate });
+    const patch = await _finPatchRecurring(r.id, { last_billed: billedDate });
+    if(!patch.ok) return patch;
     r.last_billed = billedDate;
+  }
+  return { ok: true };
+}
+
+// The account card's single "Paid" button — pays every not-yet-fully-paid
+// installment/subscription billed to this account in one click (one
+// statement, one payment), each still advancing its own Progress/Remaining.
+async function payAllDueForAccount(accountId){
+  const due = FIN_RECURRING.filter(r => r.account_id === accountId && !_finRecIsFullyPaid(r));
+  if(!due.length) return;
+
+  for(const r of due){
+    const result = await _markOneRecPaid(r);
+    if(!result.ok){
+      await customAlert(`Couldn't process "${r.name}": ${result.error} — make sure supabase_finance_recurring_account_link.sql has been run in Supabase.`);
+      break; // stop so later items don't silently get skipped without the user knowing
+    }
   }
   renderFinanceRecurring();
   renderFinanceAccounts();
-  showToast('Marked as paid');
+  showToast('Payment recorded');
 }
 
+// Both helpers below return {ok, error} instead of just logging to the
+// console — a click that silently does nothing is indistinguishable from a
+// bug, so every failure now surfaces to the user with the real reason.
 async function _finApplyRecurringCharge(r, amount, description){
-  if(!(amount > 0)) return;
+  if(!(amount > 0)) return { ok: true };
   try{
     const res = await fetch(`${SUPABASE_URL}/rest/v1/finance_transactions`, {
       method: 'POST',
@@ -2917,8 +2941,10 @@ async function _finApplyRecurringCharge(r, amount, description){
     });
     if(!res.ok) throw new Error(await res.text());
     await _adjustFinAccountBalance(r.account_id, -amount);
+    return { ok: true };
   }catch(e){
     console.error("Couldn't auto-charge recurring item:", e);
+    return { ok: false, error: e.message || String(e) };
   }
 }
 
@@ -2935,8 +2961,10 @@ async function _finPatchRecurring(id, patch){
       body: JSON.stringify(patch)
     });
     if(!res.ok) throw new Error(await res.text());
+    return { ok: true };
   }catch(e){
     console.error("Couldn't update recurring tracking:", e);
+    return { ok: false, error: e.message || String(e) };
   }
 }
 
@@ -2955,9 +2983,9 @@ function renderFinanceRecurring(){
     const paid = Number(r.payments_applied) || 0;
     const total = Number(r.total_payments) || 0;
     const done = paid >= total;
-    const dueCell = done
-      ? '<span class="pill pill-green">Fully paid</span>'
-      : `${fmtPeriod(_finInstNextPeriod(r))} <button class="poscalc-accent-btn" style="padding:3px 9px;font-size:10.5px;margin-left:6px;" onclick="markFinRecPaid(${r.id})">Paid</button>`;
+    // Read-only here on purpose — the actual "Paid" action lives on the
+    // account card that pays this bill, not duplicated in this list.
+    const dueCell = done ? '<span class="pill pill-green">Fully paid</span>' : fmtPeriod(_finInstNextPeriod(r));
     const remaining = (Number(r.total_amount) || 0) - (monthly * paid);
     return `
       <tr>
@@ -2985,7 +3013,7 @@ function renderFinanceRecurring(){
         <td>${escapeHtml(r.name)}<div style="font-size:10.5px;color:var(--muted);">${escapeHtml(_finAccountName(r.account_id))}</div></td>
         <td>${finMoney(r.price, 'PHP')}</td>
         <td>${escapeHtml(r.cycle || 'Monthly')}</td>
-        <td style="white-space:nowrap;">${fmtPeriod(next)} <button class="poscalc-accent-btn" style="padding:3px 9px;font-size:10.5px;margin-left:6px;" onclick="markFinRecPaid(${r.id})">Paid</button></td>
+        <td style="white-space:nowrap;">${fmtPeriod(next)}</td>
         <td>${escapeHtml(r.notes || '—')}</td>
         <td style="text-align:right;white-space:nowrap;">
           <button class="drawer-secondary-btn" style="padding:4px 10px;font-size:11px;" onclick="openFinRecModal('Subscription', ${r.id})">Edit</button>
