@@ -17,7 +17,8 @@ const GATEABLE_FEATURES = [
   { key: 'notebook', label: 'Notebook' },
   { key: 'achievements', label: 'Achievements' },
   { key: 'challenges', label: 'Challenges' },
-  { key: 'news', label: 'Economic Calendar' }
+  { key: 'news', label: 'Calendar' },
+  { key: 'finance', label: 'Finance' }
 ];
 let DISABLED_FEATURES = new Set();
 
@@ -464,6 +465,7 @@ function switchView(view){
   if(view === 'news'){ loadMarketNewsWidget(); } else { clearInterval(econSyncLabelTimer); }
   if(view === 'challenges') renderChallenges();
   if(view === 'leaderboard') renderLeaderboard();
+  if(view === 'finance') renderFinance();
   if(view === 'profile') loadProfile();
   if(view === 'accounts') loadAccounts();
   if(view === 'calculator'){ renderPositionCalculator(); loadSavedSetups(); }
@@ -2083,6 +2085,21 @@ function switchConfigTab(tab){
   activeConfigTab = tab;
   document.querySelectorAll('#view-config .subnav-item').forEach(el => el.classList.toggle('active', el.dataset.tab === tab));
   document.querySelectorAll('#view-config .subnav-panel').forEach(el => el.classList.toggle('active', el.id === 'configPanel-' + tab));
+}
+
+/* ---------------- Finance (personal money tracker) ---------------- */
+let activeFinanceTab = 'dashboard';
+
+function switchFinanceTab(tab){
+  activeFinanceTab = tab;
+  document.querySelectorAll('#view-finance .subnav-item').forEach(el => el.classList.toggle('active', el.dataset.tab === tab));
+  document.querySelectorAll('#view-finance .subnav-panel').forEach(el => el.classList.toggle('active', el.id === 'financePanel-' + tab));
+}
+
+function renderFinance(){
+  // Skeleton for now — each tab (Dashboard, Accounts, Transactions,
+  // Configuration) gets built out one at a time.
+  switchFinanceTab(activeFinanceTab);
 }
 
 const JOURNAL_FILTER_FIELDS = [
