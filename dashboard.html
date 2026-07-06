@@ -676,7 +676,7 @@
             <div class="empty-state" id="finAccountsEmpty" style="display:none;">No accounts yet — click "+ Add Account" to add your first one.</div>
             <div class="journal-wrap" id="finAccountsWrap" style="display:none;">
               <table class="journal" id="finAccountsTable">
-                <thead><tr><th>Name</th><th>Type</th><th>Currency</th><th>Balance</th><th>Notes</th><th></th></tr></thead>
+                <thead><tr><th>Name</th><th>Class</th><th>Currency</th><th>Balance</th><th>Notes</th><th></th></tr></thead>
                 <tbody id="finAccountsBody"></tbody>
               </table>
             </div>
@@ -765,24 +765,54 @@
 </div>
 
 <div class="modal-overlay" id="finAccountModal" onclick="if(event.target===this) closeFinAccountModal()">
-  <div class="modal-box" style="position:relative;">
+  <div class="modal-box" style="position:relative;max-height:88vh;overflow-y:auto;">
     <button class="modal-close" onclick="closeFinAccountModal()">✕</button>
     <h3 id="finAccountModalTitle">Add Account</h3>
     <div class="field-row" style="margin-top:14px;">
-      <label>Account Name</label>
-      <input id="finAccName" placeholder="e.g. BPI Savings, GCash, Cash on hand">
+      <label>Account Class</label>
+      <select id="finAccClass" onchange="onFinAccClassChange()">
+        <option value="Debit">Debit — my own money (bank, e-wallet, cash)</option>
+        <option value="Credit">Credit — credit card / credit line</option>
+        <option value="BorrowLend" disabled>Borrow / Lend (coming soon)</option>
+        <option value="Invest" disabled>Invest (coming soon)</option>
+      </select>
     </div>
     <div class="field-row">
-      <label>Type</label>
-      <select id="finAccType"></select>
+      <label>Icon / Bank Logo (optional)</label>
+      <input id="finAccIcon" type="file" accept="image/*" onchange="previewFinAccIcon()">
+      <img id="finAccIconPreview" alt="" style="display:none;max-height:40px;border-radius:6px;margin-top:6px;">
+    </div>
+    <div class="field-row">
+      <label>Bank / Account Name</label>
+      <input id="finAccName" placeholder="e.g. BPI, GCash, Cash on hand">
     </div>
     <div class="field-row">
       <label>Currency</label>
       <select id="finAccCurrency"></select>
     </div>
-    <div class="field-row">
-      <label>Current Balance</label>
+    <div class="field-row" id="finAccBalanceRow">
+      <label>Balance</label>
       <input id="finAccBalance" type="number" step="any" placeholder="e.g. 25000">
+    </div>
+    <div class="field-row fin-credit-row" style="display:none;">
+      <label>Credit Limit</label>
+      <input id="finAccLimit" type="number" step="any" placeholder="e.g. 50000" oninput="updateFinCreditAvail()">
+    </div>
+    <div class="field-row fin-credit-row" style="display:none;">
+      <label>Owed (used credit)</label>
+      <input id="finAccOwed" type="number" step="any" placeholder="e.g. 12500" oninput="updateFinCreditAvail()">
+    </div>
+    <div class="field-row fin-credit-row" style="display:none;">
+      <label>Balance (available = limit − owed)</label>
+      <div class="field-static" id="finAccAvail">—</div>
+    </div>
+    <div class="field-row fin-credit-row" style="display:none;">
+      <label>Billing Date (day of month)</label>
+      <input id="finAccBillDay" type="number" min="1" max="31" placeholder="e.g. 15">
+    </div>
+    <div class="field-row fin-credit-row" style="display:none;">
+      <label>Due Date (day of month)</label>
+      <input id="finAccDueDay" type="number" min="1" max="31" placeholder="e.g. 3">
     </div>
     <div class="field-row">
       <label>Notes (optional)</label>
@@ -1208,6 +1238,6 @@
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=1"></script>
-<script src="js/dashboard.js?v=106"></script>
+<script src="js/dashboard.js?v=107"></script>
 </body>
 </html>

@@ -51,3 +51,12 @@ alter table user_profile add column if not exists ui_prefs jsonb not null defaul
 
 -- user_profile (calendar event notification "seen" list — synced across devices)
 alter table user_profile add column if not exists seen_event_notifications jsonb not null default '[]'::jsonb;
+
+-- finance_accounts (account classes: Debit/Credit fields + icon)
+-- NOTE: only works if finance_accounts exists (supabase_finance.sql)
+alter table finance_accounts add column if not exists account_class text not null default 'Debit';
+alter table finance_accounts add column if not exists icon_path text;
+alter table finance_accounts add column if not exists credit_limit numeric;
+alter table finance_accounts add column if not exists owed numeric;
+alter table finance_accounts add column if not exists billing_day int;
+alter table finance_accounts add column if not exists due_day int;

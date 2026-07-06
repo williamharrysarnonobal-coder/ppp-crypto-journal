@@ -2116,8 +2116,10 @@ const FINANCE_OPTION_DEFAULTS = {
   income_categories: ['Salary', 'Trading Payout', 'Business', 'Allowance', 'Gift', 'Other'],
   expense_categories: ['Food', 'Bills', 'Transport', 'Subscriptions', 'Shopping', 'Health', 'Family', 'Entertainment', 'Other']
 };
+// account_types dropped from the editable lists — the account CLASS
+// (Debit/Credit/...) is structural now (it changes which fields exist),
+// not a free-text list the user should edit.
 const FINANCE_OPTION_META = [
-  { key: 'account_types', label: 'Account Types' },
   { key: 'currencies', label: 'Currencies' },
   { key: 'income_categories', label: 'Income Categories' },
   { key: 'expense_categories', label: 'Expense Categories' }
@@ -2182,25 +2184,57 @@ function renderFinanceAccounts(){
   wrap.style.display = 'block';
   empty.style.display = 'none';
 
-  body.innerHTML = FIN_ACCOUNTS.map(a => `
+  body.innerHTML = FIN_ACCOUNTS.map(a => {
+    const isCredit = a.account_class === 'Credit';
+    const iconImg = a.icon_path
+      ? `<img class="fin-acc-icon" data-icon-path="${escapeHtml(a.icon_path)}" alt="" style="width:24px;height:24px;object-fit:contain;border-radius:4px;display:none;flex-shrink:0;">`
+      : '';
+    const balanceHtml = isCredit
+      ? `${finMoney((Number(a.credit_limit)||0) - (Number(a.owed)||0), a.currency)}
+         <div style="font-size:10.5px;color:var(--muted);">Owed ${finMoney(a.owed, a.currency)} / Limit ${finMoney(a.credit_limit, a.currency)}${a.billing_day ? ` · Bill day ${a.billing_day}` : ''}${a.due_day ? ` · Due day ${a.due_day}` : ''}</div>`
+      : finMoney(a.current_balance, a.currency);
+    return `
     <tr>
-      <td>${escapeHtml(a.account_name)}</td>
-      <td><span class="pill pill-blue">${escapeHtml(a.account_type)}</span></td>
+      <td><div style="display:flex;align-items:center;gap:8px;">${iconImg}${escapeHtml(a.account_name)}</div></td>
+      <td><span class="pill ${isCredit ? 'pill-orange' : 'pill-blue'}">${escapeHtml(a.account_class || 'Debit')}</span></td>
       <td>${escapeHtml(a.currency)}</td>
-      <td>${finMoney(a.current_balance, a.currency)}</td>
+      <td>${balanceHtml}</td>
       <td>${escapeHtml(a.notes || '—')}</td>
       <td style="text-align:right;white-space:nowrap;">
         <button class="drawer-secondary-btn" style="padding:4px 10px;font-size:11px;" onclick="openFinAccountModal(${a.id})">Edit</button>
         <button class="drawer-danger-btn" style="padding:4px 10px;font-size:11px;margin-left:4px;" onclick="deleteFinAccount(${a.id})">${deleteIconSVG()}</button>
       </td>
     </tr>
-  `).join('');
+  `;
+  }).join('');
+  _loadFinAccIcons();
 
   // One total per currency — mixing PHP + USD into one number would lie.
+  // Debit balances are cash you HAVE; credit "owed" is debt — shown apart.
   if(totals){
-    const byCur = {};
-    FIN_ACCOUNTS.forEach(a => { byCur[a.currency] = (byCur[a.currency] || 0) + (Number(a.current_balance) || 0); });
-    totals.innerHTML = '<strong>Total:</strong> ' + Object.entries(byCur).map(([cur, sum]) => finMoney(sum, cur)).join(' · ');
+    const cashByCur = {}, owedByCur = {};
+    FIN_ACCOUNTS.forEach(a => {
+      if(a.account_class === 'Credit'){
+        owedByCur[a.currency] = (owedByCur[a.currency] || 0) + (Number(a.owed) || 0);
+      }else{
+        cashByCur[a.currency] = (cashByCur[a.currency] || 0) + (Number(a.current_balance) || 0);
+      }
+    });
+    const cashStr = Object.entries(cashByCur).map(([cur, sum]) => finMoney(sum, cur)).join(' · ');
+    const owedStr = Object.entries(owedByCur).map(([cur, sum]) => finMoney(sum, cur)).join(' · ');
+    totals.innerHTML = `${cashStr ? `<strong>Cash:</strong> ${cashStr}` : ''}${owedStr ? `${cashStr ? ' &nbsp;·&nbsp; ' : ''}<strong>Card debt:</strong> <span style="color:var(--loss);">${owedStr}</span>` : ''}`;
+  }
+}
+
+// Icons live in the private profile-images bucket — swap each <img>'s
+// data-icon-path for a short-lived signed URL after the table renders.
+async function _loadFinAccIcons(){
+  const imgs = document.querySelectorAll('#finAccountsBody .fin-acc-icon');
+  for(const img of imgs){
+    try{
+      const { data } = await sb.storage.from('profile-images').createSignedUrl(img.dataset.iconPath, 3600);
+      if(data?.signedUrl){ img.src = data.signedUrl; img.style.display = 'block'; }
+    }catch(e){}
   }
 }
 
@@ -2209,14 +2243,53 @@ function openFinAccountModal(id){
   const a = id ? FIN_ACCOUNTS.find(x => x.id === id) : null;
 
   document.getElementById('finAccountModalTitle').textContent = a ? 'Edit Account' : 'Add Account';
-  document.getElementById('finAccType').innerHTML = FINANCE_OPTIONS.account_types.map(t => `<option value="${t}" ${a?.account_type === t ? 'selected' : ''}>${t}</option>`).join('');
+  document.getElementById('finAccClass').value = a?.account_class || 'Debit';
   document.getElementById('finAccCurrency').innerHTML = FINANCE_OPTIONS.currencies.map(c => `<option value="${c}" ${a?.currency === c ? 'selected' : ''}>${c}</option>`).join('');
   document.getElementById('finAccName').value = a?.account_name || '';
   document.getElementById('finAccBalance').value = a?.current_balance ?? '';
+  document.getElementById('finAccLimit').value = a?.credit_limit ?? '';
+  document.getElementById('finAccOwed').value = a?.owed ?? '';
+  document.getElementById('finAccBillDay').value = a?.billing_day ?? '';
+  document.getElementById('finAccDueDay').value = a?.due_day ?? '';
   document.getElementById('finAccNotes').value = a?.notes || '';
+  document.getElementById('finAccIcon').value = '';
+
+  const preview = document.getElementById('finAccIconPreview');
+  preview.style.display = 'none';
+  preview.src = '';
+  if(a?.icon_path){
+    sb.storage.from('profile-images').createSignedUrl(a.icon_path, 3600).then(({ data }) => {
+      if(data?.signedUrl){ preview.src = data.signedUrl; preview.style.display = 'block'; }
+    });
+  }
+
+  onFinAccClassChange();
   document.getElementById('finAccountError').textContent = '';
   document.getElementById('finAccountModal').classList.add('open');
   document.getElementById('finAccName').focus();
+}
+
+function onFinAccClassChange(){
+  const cls = document.getElementById('finAccClass').value;
+  const isCredit = cls === 'Credit';
+  document.getElementById('finAccBalanceRow').style.display = isCredit ? 'none' : '';
+  document.querySelectorAll('#finAccountModal .fin-credit-row').forEach(el => el.style.display = isCredit ? '' : 'none');
+  if(isCredit) updateFinCreditAvail();
+}
+
+function updateFinCreditAvail(){
+  const limit = parseFloat(document.getElementById('finAccLimit').value) || 0;
+  const owed = parseFloat(document.getElementById('finAccOwed').value) || 0;
+  const cur = document.getElementById('finAccCurrency').value;
+  document.getElementById('finAccAvail').textContent = finMoney(limit - owed, cur);
+}
+
+function previewFinAccIcon(){
+  const file = document.getElementById('finAccIcon').files[0];
+  const preview = document.getElementById('finAccIconPreview');
+  if(!file){ preview.style.display = 'none'; return; }
+  preview.src = URL.createObjectURL(file);
+  preview.style.display = 'block';
 }
 
 function closeFinAccountModal(){
@@ -2230,13 +2303,47 @@ async function saveFinAccount(){
   const name = document.getElementById('finAccName').value.trim();
   if(!name){ errEl.textContent = 'Please give this account a name.'; return; }
 
+  const cls = document.getElementById('finAccClass').value;
   const payload = {
     account_name: name,
-    account_type: document.getElementById('finAccType').value,
+    account_class: cls,
     currency: document.getElementById('finAccCurrency').value,
-    current_balance: parseFloat(document.getElementById('finAccBalance').value) || 0,
     notes: document.getElementById('finAccNotes').value.trim() || null
   };
+
+  if(cls === 'Credit'){
+    const limit = parseFloat(document.getElementById('finAccLimit').value) || 0;
+    const owed = parseFloat(document.getElementById('finAccOwed').value) || 0;
+    payload.credit_limit = limit;
+    payload.owed = owed;
+    payload.billing_day = parseInt(document.getElementById('finAccBillDay').value, 10) || null;
+    payload.due_day = parseInt(document.getElementById('finAccDueDay').value, 10) || null;
+    // For a credit line, "balance" means what you can still spend.
+    payload.current_balance = limit - owed;
+  }else{
+    payload.current_balance = parseFloat(document.getElementById('finAccBalance').value) || 0;
+    payload.credit_limit = null;
+    payload.owed = null;
+    payload.billing_day = null;
+    payload.due_day = null;
+  }
+
+  // Bank logo upload — same private bucket + signed-URL pattern as the
+  // profile inspiration image.
+  const iconFile = document.getElementById('finAccIcon').files[0];
+  if(iconFile){
+    try{
+      const { data: { user } } = await sb.auth.getUser();
+      const path = `${user.id}/finacct_${Date.now()}_${iconFile.name.replace(/[^a-zA-Z0-9._-]/g,'_')}`;
+      const { error: uploadErr } = await sb.storage.from('profile-images').upload(path, iconFile);
+      if(uploadErr) throw uploadErr;
+      payload.icon_path = path;
+    }catch(e){
+      console.error("Couldn't upload account icon:", e);
+      errEl.textContent = "Couldn't upload the icon image — try a smaller image, or save without one.";
+      return;
+    }
+  }
 
   const btn = document.getElementById('finAccountSaveBtn');
   btn.disabled = true;
@@ -2358,7 +2465,16 @@ async function _adjustFinAccountBalance(accountId, delta){
   if(!accountId || !delta) return;
   const acc = FIN_ACCOUNTS.find(a => a.id === accountId);
   if(!acc) return;
-  const newBalance = (parseFloat(acc.current_balance) || 0) + delta;
+
+  const patch = { current_balance: (parseFloat(acc.current_balance) || 0) + delta };
+  // On a CREDIT account, spending doesn't shrink your money — it grows your
+  // debt: an expense (negative delta) raises "owed", a payment/income
+  // (positive delta) lowers it. Available credit (current_balance) moves
+  // together with it either way.
+  if(acc.account_class === 'Credit'){
+    patch.owed = (parseFloat(acc.owed) || 0) - delta;
+  }
+
   try{
     const res = await fetch(`${SUPABASE_URL}/rest/v1/finance_accounts?id=eq.${accountId}`, {
       method: 'PATCH',
@@ -2368,10 +2484,11 @@ async function _adjustFinAccountBalance(accountId, delta){
         "Content-Type": "application/json",
         "Prefer": "return=minimal"
       },
-      body: JSON.stringify({ current_balance: newBalance })
+      body: JSON.stringify(patch)
     });
     if(!res.ok) throw new Error(await res.text());
-    acc.current_balance = newBalance;
+    acc.current_balance = patch.current_balance;
+    if(patch.owed !== undefined) acc.owed = patch.owed;
   }catch(e){
     console.error("Couldn't update finance account balance:", e);
   }
