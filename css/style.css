@@ -980,3 +980,12 @@
   }
   body.mobile-mode #calGrid .cal-cell.win::after{background:var(--win);}
   body.mobile-mode #calGrid .cal-cell.loss::after{background:var(--loss);}
+
+  /* Finance > Accounts card view — cards grouped per class (Debit/Credit) */
+  .fin-acc-section-title{
+    font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
+    color:var(--muted);margin:18px 0 10px;
+  }
+  .fin-acc-section-title:first-child{margin-top:4px;}
+  .fin-account-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:16px;}
+  body.mobile-mode .fin-account-grid{grid-template-columns:1fr !important;}

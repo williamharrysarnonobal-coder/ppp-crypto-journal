@@ -16,7 +16,7 @@
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Public+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<link rel="stylesheet" href="css/style.css?v=104">
+<link rel="stylesheet" href="css/style.css?v=105">
 </head>
 <body>
 
@@ -674,13 +674,8 @@
             <h2 style="display:flex;align-items:center;justify-content:space-between;gap:10px;">Accounts <button class="poscalc-accent-btn" onclick="openFinAccountModal()">+ Add Account</button></h2>
             <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">Where your money lives — banks, e-wallets, cash, crypto.</div>
             <div class="empty-state" id="finAccountsEmpty" style="display:none;">No accounts yet — click "+ Add Account" to add your first one.</div>
-            <div class="journal-wrap" id="finAccountsWrap" style="display:none;">
-              <table class="journal" id="finAccountsTable">
-                <thead><tr><th>Name</th><th>Class</th><th>Currency</th><th>Balance</th><th>Notes</th><th></th></tr></thead>
-                <tbody id="finAccountsBody"></tbody>
-              </table>
-            </div>
-            <div class="sub" id="finAccountsTotals" style="font-size:12px;margin-top:12px;"></div>
+            <div id="finAccountsSections"></div>
+            <div class="sub" id="finAccountsTotals" style="font-size:12px;margin-top:14px;"></div>
           </div>
         </div>
 
@@ -1238,6 +1233,6 @@
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=1"></script>
-<script src="js/dashboard.js?v=107"></script>
+<script src="js/dashboard.js?v=108"></script>
 </body>
 </html>

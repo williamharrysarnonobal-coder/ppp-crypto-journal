@@ -2168,44 +2168,63 @@ async function loadFinanceAccounts(){
   renderFinanceAccounts();
 }
 
+function finAccountCardHTML(a){
+  const isCredit = a.account_class === 'Credit';
+  const iconImg = a.icon_path
+    ? `<img class="fin-acc-icon" data-icon-path="${escapeHtml(a.icon_path)}" alt="" style="width:30px;height:30px;object-fit:contain;border-radius:6px;display:none;flex-shrink:0;">`
+    : '';
+  const mainBalance = isCredit
+    ? finMoney((Number(a.credit_limit)||0) - (Number(a.owed)||0), a.currency)
+    : finMoney(a.current_balance, a.currency);
+  const creditLines = isCredit ? `
+    <div style="font-size:12px;margin-top:6px;">Owed <span style="color:var(--loss);font-weight:600;">${finMoney(a.owed, a.currency)}</span> <span style="color:var(--muted);">/ Limit ${finMoney(a.credit_limit, a.currency)}</span></div>
+    ${a.billing_day || a.due_day ? `<div style="font-size:11px;color:var(--muted);margin-top:3px;">${a.billing_day ? `Bill day ${a.billing_day}` : ''}${a.billing_day && a.due_day ? ' · ' : ''}${a.due_day ? `Due day ${a.due_day}` : ''}</div>` : ''}
+  ` : '';
+  return `
+    <div class="account-card" style="cursor:default;">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+        ${iconImg}
+        <div style="font-weight:700;font-size:15px;min-width:0;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(a.account_name)}</div>
+        <span class="pill pill-muted" style="margin-left:auto;flex-shrink:0;">${escapeHtml(a.currency)}</span>
+      </div>
+      <div class="account-card-balance">${mainBalance}</div>
+      ${isCredit ? `<div style="font-size:10.5px;color:var(--muted);margin-top:2px;text-transform:uppercase;letter-spacing:.05em;">Available credit</div>` : ''}
+      ${creditLines}
+      ${a.notes ? `<div style="font-size:12px;color:var(--muted);margin-top:8px;font-style:italic;">${escapeHtml(a.notes)}</div>` : ''}
+      <div style="display:flex;justify-content:flex-end;gap:6px;margin-top:12px;">
+        <button class="drawer-secondary-btn" style="padding:4px 10px;font-size:11px;" onclick="openFinAccountModal(${a.id})">Edit</button>
+        <button class="drawer-danger-btn" style="padding:4px 10px;font-size:11px;margin-left:0;" onclick="deleteFinAccount(${a.id})">${deleteIconSVG()}</button>
+      </div>
+    </div>
+  `;
+}
+
 function renderFinanceAccounts(){
-  const wrap = document.getElementById('finAccountsWrap');
+  const sections = document.getElementById('finAccountsSections');
   const empty = document.getElementById('finAccountsEmpty');
-  const body = document.getElementById('finAccountsBody');
   const totals = document.getElementById('finAccountsTotals');
-  if(!wrap || !empty || !body) return;
+  if(!sections || !empty) return;
 
   if(!FIN_ACCOUNTS.length){
-    wrap.style.display = 'none';
+    sections.innerHTML = '';
     empty.style.display = 'block';
     if(totals) totals.textContent = '';
     return;
   }
-  wrap.style.display = 'block';
   empty.style.display = 'none';
 
-  body.innerHTML = FIN_ACCOUNTS.map(a => {
-    const isCredit = a.account_class === 'Credit';
-    const iconImg = a.icon_path
-      ? `<img class="fin-acc-icon" data-icon-path="${escapeHtml(a.icon_path)}" alt="" style="width:24px;height:24px;object-fit:contain;border-radius:4px;display:none;flex-shrink:0;">`
-      : '';
-    const balanceHtml = isCredit
-      ? `${finMoney((Number(a.credit_limit)||0) - (Number(a.owed)||0), a.currency)}
-         <div style="font-size:10.5px;color:var(--muted);">Owed ${finMoney(a.owed, a.currency)} / Limit ${finMoney(a.credit_limit, a.currency)}${a.billing_day ? ` · Bill day ${a.billing_day}` : ''}${a.due_day ? ` · Due day ${a.due_day}` : ''}</div>`
-      : finMoney(a.current_balance, a.currency);
+  // One section per class, only when it has accounts — clean, not mixed.
+  const classSections = [
+    { key: 'Debit', label: 'Debit — My Money' },
+    { key: 'Credit', label: 'Credit — Cards & Credit Lines' }
+  ];
+  sections.innerHTML = classSections.map(cs => {
+    const accs = FIN_ACCOUNTS.filter(a => (a.account_class || 'Debit') === cs.key);
+    if(!accs.length) return '';
     return `
-    <tr>
-      <td><div style="display:flex;align-items:center;gap:8px;">${iconImg}${escapeHtml(a.account_name)}</div></td>
-      <td><span class="pill ${isCredit ? 'pill-orange' : 'pill-blue'}">${escapeHtml(a.account_class || 'Debit')}</span></td>
-      <td>${escapeHtml(a.currency)}</td>
-      <td>${balanceHtml}</td>
-      <td>${escapeHtml(a.notes || '—')}</td>
-      <td style="text-align:right;white-space:nowrap;">
-        <button class="drawer-secondary-btn" style="padding:4px 10px;font-size:11px;" onclick="openFinAccountModal(${a.id})">Edit</button>
-        <button class="drawer-danger-btn" style="padding:4px 10px;font-size:11px;margin-left:4px;" onclick="deleteFinAccount(${a.id})">${deleteIconSVG()}</button>
-      </td>
-    </tr>
-  `;
+      <div class="fin-acc-section-title">${cs.label}</div>
+      <div class="fin-account-grid">${accs.map(finAccountCardHTML).join('')}</div>
+    `;
   }).join('');
   _loadFinAccIcons();
 
@@ -2229,7 +2248,7 @@ function renderFinanceAccounts(){
 // Icons live in the private profile-images bucket — swap each <img>'s
 // data-icon-path for a short-lived signed URL after the table renders.
 async function _loadFinAccIcons(){
-  const imgs = document.querySelectorAll('#finAccountsBody .fin-acc-icon');
+  const imgs = document.querySelectorAll('#finAccountsSections .fin-acc-icon');
   for(const img of imgs){
     try{
       const { data } = await sb.storage.from('profile-images').createSignedUrl(img.dataset.iconPath, 3600);
