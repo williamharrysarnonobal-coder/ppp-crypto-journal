@@ -61,3 +61,4 @@ alter table finance_accounts add column if not exists owed numeric;
 alter table finance_accounts add column if not exists billing_day int;
 alter table finance_accounts add column if not exists due_day int;
 alter table finance_accounts add column if not exists card_number text;
+alter table finance_accounts add column if not exists parent_account_id bigint references finance_accounts(id) on delete cascade;

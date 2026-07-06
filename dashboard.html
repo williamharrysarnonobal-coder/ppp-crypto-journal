@@ -16,7 +16,7 @@
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Public+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<link rel="stylesheet" href="css/style.css?v=105">
+<link rel="stylesheet" href="css/style.css?v=106">
 </head>
 <body>
 
@@ -658,6 +658,7 @@
         <div class="subnav-item active" data-tab="dashboard" onclick="switchFinanceTab('dashboard')">Dashboard</div>
         <div class="subnav-item" data-tab="accounts" onclick="switchFinanceTab('accounts')">Accounts</div>
         <div class="subnav-item" data-tab="transactions" onclick="switchFinanceTab('transactions')">Transactions</div>
+        <div class="subnav-item" data-tab="recurring" onclick="switchFinanceTab('recurring')">Recurring</div>
         <div class="subnav-item" data-tab="config" onclick="switchFinanceTab('config')">Configuration</div>
       </nav>
 
@@ -671,7 +672,7 @@
 
         <div class="subnav-panel" id="financePanel-accounts">
           <div class="panel">
-            <h2 style="display:flex;align-items:center;justify-content:space-between;gap:10px;">Accounts <button class="poscalc-accent-btn" onclick="openFinAccountModal()">+ Add Account</button></h2>
+            <h2 style="display:flex;align-items:center;justify-content:space-between;gap:10px;">Accounts <span style="display:flex;gap:8px;"><button class="poscalc-accent-btn" id="finHideBalBtn" onclick="toggleFinBalances()">Hide Balances</button><button class="poscalc-accent-btn" onclick="openFinAccountModal()">+ Add Account</button></span></h2>
             <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">Where your money lives — banks, e-wallets, cash, crypto.</div>
             <div class="empty-state" id="finAccountsEmpty" style="display:none;">No accounts yet — click "+ Add Account" to add your first one.</div>
             <div id="finAccountsSections"></div>
@@ -688,6 +689,32 @@
               <table class="journal">
                 <thead><tr><th>Date</th><th>Type</th><th>Amount</th><th>Account</th><th>Category</th><th>Description</th><th></th></tr></thead>
                 <tbody id="finTxBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <div class="subnav-panel" id="financePanel-recurring">
+          <div class="panel" style="margin-bottom:20px;">
+            <h2 style="display:flex;align-items:center;justify-content:space-between;gap:10px;">Installments <button class="poscalc-accent-btn" onclick="openFinRecModal('Installment')">+ Add Installment</button></h2>
+            <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">Credit card installments — gadgets, appliances, anything paid in fixed monthly parts.</div>
+            <div class="empty-state" id="finInstEmpty" style="display:none;">No installments yet.</div>
+            <div class="journal-wrap" id="finInstWrap" style="display:none;">
+              <table class="journal">
+                <thead><tr><th>Name</th><th>Category</th><th>Total Amount</th><th>Monthly</th><th>Progress</th><th>First Bill</th><th>Note</th><th></th></tr></thead>
+                <tbody id="finInstBody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="panel">
+            <h2 style="display:flex;align-items:center;justify-content:space-between;gap:10px;">Subscriptions <button class="poscalc-accent-btn" onclick="openFinRecModal('Subscription')">+ Add Subscription</button></h2>
+            <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">Recurring services — streaming, tools, memberships.</div>
+            <div class="empty-state" id="finSubEmpty" style="display:none;">No subscriptions yet.</div>
+            <div class="journal-wrap" id="finSubWrap" style="display:none;">
+              <table class="journal">
+                <thead><tr><th>Subscription</th><th>Price</th><th>Cycle</th><th>First Bill</th><th>Next Bill</th><th>Note</th><th></th></tr></thead>
+                <tbody id="finSubBody"></tbody>
               </table>
             </div>
           </div>
@@ -763,7 +790,8 @@
   <div class="modal-box" style="position:relative;max-height:88vh;overflow-y:auto;">
     <button class="modal-close" onclick="closeFinAccountModal()">✕</button>
     <h3 id="finAccountModalTitle">Add Account</h3>
-    <div class="field-row" style="margin-top:14px;">
+    <div class="sub" id="finSubAccountNotice" style="display:none;margin-top:8px;">Sub-account of <strong id="finSubAccountParentName"></strong> — same currency, no separate class or icon.</div>
+    <div class="field-row fin-parent-only" style="margin-top:14px;">
       <label>Account Class</label>
       <select id="finAccClass" onchange="onFinAccClassChange()">
         <option value="Debit">Debit — my own money (bank, e-wallet, cash)</option>
@@ -772,20 +800,20 @@
         <option value="Invest" disabled>Invest (coming soon)</option>
       </select>
     </div>
-    <div class="field-row">
+    <div class="field-row fin-parent-only">
       <label>Icon / Bank Logo (optional)</label>
       <input id="finAccIcon" type="file" accept="image/*" onchange="previewFinAccIcon()">
       <img id="finAccIconPreview" alt="" style="display:none;max-height:40px;border-radius:6px;margin-top:6px;">
     </div>
     <div class="field-row">
-      <label>Bank / Account Name</label>
+      <label id="finAccNameLabel">Bank / Account Name</label>
       <input id="finAccName" placeholder="e.g. BPI, GCash, Cash on hand">
     </div>
-    <div class="field-row">
+    <div class="field-row fin-parent-only">
       <label>Card / Account Number — last 4 digits only</label>
       <input id="finAccCardNumber" maxlength="4" inputmode="numeric" placeholder="e.g. 5678">
     </div>
-    <div class="field-row">
+    <div class="field-row" id="finAccCurrencyRow">
       <label>Currency</label>
       <select id="finAccCurrency"></select>
     </div>
@@ -860,6 +888,55 @@
     </div>
     <div id="finTxError" class="auth-error"></div>
     <button class="ai-btn" style="margin-top:14px;width:100%;" id="finTxSaveBtn" onclick="saveFinTx()">Save Transaction</button>
+  </div>
+</div>
+
+<div class="modal-overlay" id="finRecModal" onclick="if(event.target===this) closeFinRecModal()">
+  <div class="modal-box" style="position:relative;">
+    <button class="modal-close" onclick="closeFinRecModal()">✕</button>
+    <h3 id="finRecModalTitle">Add Installment</h3>
+    <div class="field-row" style="margin-top:14px;">
+      <label id="finRecNameLabel">Name</label>
+      <input id="finRecName" placeholder="e.g. iPhone 16, Netflix">
+    </div>
+    <div class="field-row fin-rec-inst" style="display:none;">
+      <label>Category</label>
+      <select id="finRecCategory"></select>
+    </div>
+    <div class="field-row fin-rec-inst" style="display:none;">
+      <label>Total Amount</label>
+      <input id="finRecTotal" type="number" step="any" placeholder="e.g. 60000" oninput="updateFinRecMonthly()">
+    </div>
+    <div class="field-row fin-rec-inst" style="display:none;">
+      <label>Total # of Payments</label>
+      <input id="finRecCount" type="number" min="1" placeholder="e.g. 12" oninput="updateFinRecMonthly()">
+    </div>
+    <div class="field-row fin-rec-inst" style="display:none;">
+      <label>Monthly (computed)</label>
+      <div class="field-static" id="finRecMonthly">—</div>
+    </div>
+    <div class="field-row fin-rec-sub" style="display:none;">
+      <label>Price</label>
+      <input id="finRecPrice" type="number" step="any" placeholder="e.g. 549">
+    </div>
+    <div class="field-row fin-rec-sub" style="display:none;">
+      <label>Cycle</label>
+      <select id="finRecCycle">
+        <option value="Monthly">Monthly</option>
+        <option value="Quarterly">Quarterly</option>
+        <option value="Yearly">Yearly</option>
+      </select>
+    </div>
+    <div class="field-row">
+      <label>First Bill</label>
+      <input id="finRecFirstBill" type="date">
+    </div>
+    <div class="field-row">
+      <label>Note (optional)</label>
+      <input id="finRecNotes" placeholder="e.g. BPI card, 0% interest">
+    </div>
+    <div id="finRecError" class="auth-error"></div>
+    <button class="ai-btn" style="margin-top:14px;width:100%;" id="finRecSaveBtn" onclick="saveFinRec()">Save</button>
   </div>
 </div>
 
@@ -1237,6 +1314,6 @@
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=1"></script>
-<script src="js/dashboard.js?v=109"></script>
+<script src="js/dashboard.js?v=110"></script>
 </body>
 </html>

@@ -2102,10 +2102,12 @@ function switchFinanceTab(tab){
     if(!FIN_ACCOUNTS.length) loadFinanceAccounts();
     loadFinanceTransactions();
   }
+  if(tab === 'recurring') loadFinanceRecurring();
   if(tab === 'config') renderFinanceConfig();
 }
 
 function renderFinance(){
+  applyFinBalanceVisibility();
   switchFinanceTab(activeFinanceTab);
 }
 
@@ -2177,8 +2179,21 @@ function finAccountCardHTML(a){
     ? finMoney((Number(a.credit_limit)||0) - (Number(a.owed)||0), a.currency)
     : finMoney(a.current_balance, a.currency);
   const creditLines = isCredit ? `
-    <div style="font-size:12px;margin-top:6px;">Owed <span style="color:var(--loss);font-weight:600;">${finMoney(a.owed, a.currency)}</span> <span style="color:var(--muted);">/ Limit ${finMoney(a.credit_limit, a.currency)}</span></div>
+    <div style="font-size:12px;margin-top:6px;">Owed <span class="fin-balance" style="color:var(--loss);font-weight:600;">${finMoney(a.owed, a.currency)}</span> <span class="fin-balance" style="color:var(--muted);">/ Limit ${finMoney(a.credit_limit, a.currency)}</span></div>
     ${a.billing_day || a.due_day ? `<div style="font-size:11px;color:var(--muted);margin-top:3px;">${a.billing_day ? `Bill day ${a.billing_day}` : ''}${a.billing_day && a.due_day ? ' · ' : ''}${a.due_day ? `Due day ${a.due_day}` : ''}</div>` : ''}
+  ` : '';
+  const subAccounts = !isCredit ? FIN_ACCOUNTS.filter(s => s.parent_account_id === a.id) : [];
+  const subAccountsHtml = subAccounts.length ? `
+    <div class="fin-subacct-list">
+      ${subAccounts.map(s => `
+        <div class="fin-subacct-row">
+          <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(s.account_name)}</span>
+          <span class="fin-balance" style="font-family:'IBM Plex Mono',monospace;flex-shrink:0;">${finMoney(s.current_balance, s.currency)}</span>
+          <button class="fin-subacct-edit" title="Edit" onclick="openFinAccountModal(${s.id})">✎</button>
+          <button class="fin-subacct-edit" title="Delete" onclick="deleteFinAccount(${s.id})">✕</button>
+        </div>
+      `).join('')}
+    </div>
   ` : '';
   return `
     <div class="account-card" style="cursor:default;">
@@ -2190,13 +2205,17 @@ function finAccountCardHTML(a){
         </div>
         <span class="pill pill-muted" style="margin-left:auto;flex-shrink:0;">${escapeHtml(a.currency)}</span>
       </div>
-      <div class="account-card-balance">${mainBalance}</div>
+      <div class="account-card-balance fin-balance">${mainBalance}</div>
       ${isCredit ? `<div style="font-size:10.5px;color:var(--muted);margin-top:2px;text-transform:uppercase;letter-spacing:.05em;">Available credit</div>` : ''}
       ${creditLines}
       ${a.notes ? `<div style="font-size:12px;color:var(--muted);margin-top:8px;font-style:italic;">${escapeHtml(a.notes)}</div>` : ''}
-      <div style="display:flex;justify-content:flex-end;gap:6px;margin-top:12px;">
-        <button class="drawer-secondary-btn" style="padding:4px 10px;font-size:11px;" onclick="openFinAccountModal(${a.id})">Edit</button>
-        <button class="drawer-danger-btn" style="padding:4px 10px;font-size:11px;margin-left:0;" onclick="deleteFinAccount(${a.id})">${deleteIconSVG()}</button>
+      ${subAccountsHtml}
+      <div style="display:flex;justify-content:${!isCredit ? 'space-between' : 'flex-end'};align-items:center;gap:6px;margin-top:12px;">
+        ${!isCredit ? `<button class="fin-subacct-add" onclick="openFinSubAccountModal(${a.id})">+ Sub-account</button>` : ''}
+        <div style="display:flex;gap:6px;">
+          <button class="drawer-secondary-btn" style="padding:4px 10px;font-size:11px;" onclick="openFinAccountModal(${a.id})">Edit</button>
+          <button class="drawer-danger-btn" style="padding:4px 10px;font-size:11px;margin-left:0;" onclick="deleteFinAccount(${a.id})">${deleteIconSVG()}</button>
+        </div>
       </div>
     </div>
   `;
@@ -2222,7 +2241,9 @@ function renderFinanceAccounts(){
     { key: 'Credit', label: 'Credit — Cards & Credit Lines' }
   ];
   sections.innerHTML = classSections.map(cs => {
-    const accs = FIN_ACCOUNTS.filter(a => (a.account_class || 'Debit') === cs.key);
+    // Sub-accounts render nested inside their parent's card, not as their
+    // own top-level card.
+    const accs = FIN_ACCOUNTS.filter(a => (a.account_class || 'Debit') === cs.key && !a.parent_account_id);
     if(!accs.length) return '';
     return `
       <div class="fin-acc-section-title">${cs.label}</div>
@@ -2260,13 +2281,29 @@ async function _loadFinAccIcons(){
   }
 }
 
-function openFinAccountModal(id){
+// Sub-account parent, while the modal is open — set for both "add a new
+// sub-account under X" and "edit an existing sub-account" (its own
+// parent_account_id drives it back into sub-account mode).
+let finAccountModalParentId = null;
+
+function openFinAccountModal(id, parentIdForNew){
   editingFinAccountId = id || null;
   const a = id ? FIN_ACCOUNTS.find(x => x.id === id) : null;
+  finAccountModalParentId = a ? (a.parent_account_id || null) : (parentIdForNew || null);
+  const isSub = !!finAccountModalParentId;
+  const parent = isSub ? FIN_ACCOUNTS.find(x => x.id === finAccountModalParentId) : null;
 
-  document.getElementById('finAccountModalTitle').textContent = a ? 'Edit Account' : 'Add Account';
+  document.getElementById('finAccountModalTitle').textContent = isSub ? (a ? 'Edit Sub-account' : 'Add Sub-account') : (a ? 'Edit Account' : 'Add Account');
+  document.getElementById('finAccNameLabel').textContent = isSub ? 'Sub-account Name' : 'Bank / Account Name';
+  document.getElementById('finAccName').placeholder = isSub ? 'e.g. Emergency Fund, Travel' : 'e.g. BPI, GCash, Cash on hand';
+
+  document.querySelectorAll('#finAccountModal .fin-parent-only').forEach(el => el.style.display = isSub ? 'none' : '');
+  document.getElementById('finSubAccountNotice').style.display = isSub ? 'block' : 'none';
+  if(isSub) document.getElementById('finSubAccountParentName').textContent = parent?.account_name || '';
+
   document.getElementById('finAccClass').value = a?.account_class || 'Debit';
-  document.getElementById('finAccCurrency').innerHTML = FINANCE_OPTIONS.currencies.map(c => `<option value="${c}" ${a?.currency === c ? 'selected' : ''}>${c}</option>`).join('');
+  document.getElementById('finAccCurrency').innerHTML = FINANCE_OPTIONS.currencies.map(c => `<option value="${c}" ${(isSub ? parent?.currency : a?.currency) === c ? 'selected' : ''}>${c}</option>`).join('');
+  document.getElementById('finAccCurrency').disabled = isSub;
   document.getElementById('finAccName').value = a?.account_name || '';
   document.getElementById('finAccCardNumber').value = a?.card_number || '';
   document.getElementById('finAccBalance').value = a?.current_balance ?? '';
@@ -2290,6 +2327,14 @@ function openFinAccountModal(id){
   document.getElementById('finAccountError').textContent = '';
   document.getElementById('finAccountModal').classList.add('open');
   document.getElementById('finAccName').focus();
+}
+
+// Sub-accounts only make sense under a Debit account (a bank/wallet split
+// into pockets) — Credit lines don't have this concept.
+function openFinSubAccountModal(parentId){
+  const parent = FIN_ACCOUNTS.find(x => x.id === parentId);
+  if(!parent) return;
+  openFinAccountModal(null, parentId);
 }
 
 function onFinAccClassChange(){
@@ -2332,10 +2377,11 @@ async function saveFinAccount(){
   const cardDigits = document.getElementById('finAccCardNumber').value.replace(/\D/g,'').slice(-4);
   const payload = {
     account_name: name,
-    account_class: cls,
+    account_class: finAccountModalParentId ? 'Debit' : cls,
     currency: document.getElementById('finAccCurrency').value,
     card_number: cardDigits || null,
-    notes: document.getElementById('finAccNotes').value.trim() || null
+    notes: document.getElementById('finAccNotes').value.trim() || null,
+    parent_account_id: finAccountModalParentId || null
   };
 
   if(cls === 'Credit'){
@@ -2405,14 +2451,19 @@ async function saveFinAccount(){
 async function deleteFinAccount(id){
   const a = FIN_ACCOUNTS.find(x => x.id === id);
   if(!a) return;
-  if(!(await customConfirm(`Delete "${a.account_name}"? Its transactions will stay but lose their account link.`, 'Delete'))) return;
+  const subCount = FIN_ACCOUNTS.filter(x => x.parent_account_id === id).length;
+  const warning = subCount
+    ? ` This will also delete its ${subCount} sub-account${subCount > 1 ? 's' : ''}.`
+    : ' Its transactions will stay but lose their account link.';
+  if(!(await customConfirm(`Delete "${a.account_name}"?${warning}`, 'Delete'))) return;
   try{
     const res = await fetch(`${SUPABASE_URL}/rest/v1/finance_accounts?id=eq.${id}`, {
       method: 'DELETE',
       headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}` }
     });
     if(!res.ok) throw new Error(await res.text());
-    FIN_ACCOUNTS = FIN_ACCOUNTS.filter(x => x.id !== id);
+    // The DB cascades sub-account rows on parent delete — mirror that here.
+    FIN_ACCOUNTS = FIN_ACCOUNTS.filter(x => x.id !== id && x.parent_account_id !== id);
     renderFinanceAccounts();
     showToast('Account deleted');
   }catch(e){
@@ -2688,6 +2739,224 @@ async function removeFinanceOption(key, idx){
   FINANCE_OPTIONS[key].splice(idx, 1);
   saveFinanceOptions();
   renderFinanceOptionsListFor(key);
+}
+
+/* ---- Finance: hide balances (privacy toggle, per-device) ---- */
+let FIN_BALANCES_HIDDEN = false;
+try{ FIN_BALANCES_HIDDEN = localStorage.getItem('ledger-fin-hide-balances') === '1'; }catch(e){}
+
+function toggleFinBalances(){
+  FIN_BALANCES_HIDDEN = !FIN_BALANCES_HIDDEN;
+  try{ localStorage.setItem('ledger-fin-hide-balances', FIN_BALANCES_HIDDEN ? '1' : '0'); }catch(e){}
+  applyFinBalanceVisibility();
+}
+
+function applyFinBalanceVisibility(){
+  const view = document.getElementById('view-finance');
+  if(view) view.classList.toggle('fin-balances-hidden', FIN_BALANCES_HIDDEN);
+  const btn = document.getElementById('finHideBalBtn');
+  if(btn) btn.textContent = FIN_BALANCES_HIDDEN ? 'Show Balances' : 'Hide Balances';
+}
+
+/* ---- Finance > Recurring (Installments & Subscriptions) ---- */
+let FIN_RECURRING = [];
+let editingFinRecId = null;
+let finRecModalKind = 'Installment';
+
+async function loadFinanceRecurring(){
+  try{
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/finance_recurring?select=*&order=created_at.asc`, {
+      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}` }
+    });
+    if(!res.ok) throw new Error(await res.text());
+    FIN_RECURRING = await res.json();
+  }catch(e){
+    console.error("Couldn't load recurring items:", e);
+    FIN_RECURRING = [];
+  }
+  renderFinanceRecurring();
+}
+
+// Months fully elapsed since the first bill (that month counts as payment #1).
+function _finMonthsSince(dateStr){
+  if(!dateStr) return 0;
+  const first = new Date(dateStr + 'T00:00:00');
+  const now = new Date();
+  if(isNaN(first) || now < first) return 0;
+  return (now.getFullYear() - first.getFullYear()) * 12 + (now.getMonth() - first.getMonth()) + 1;
+}
+
+function _finNextBill(firstBillStr, cycle){
+  if(!firstBillStr) return null;
+  const d = new Date(firstBillStr + 'T00:00:00');
+  if(isNaN(d)) return null;
+  const stepMonths = cycle === 'Yearly' ? 12 : (cycle === 'Quarterly' ? 3 : 1);
+  const now = new Date();
+  while(d < now) d.setMonth(d.getMonth() + stepMonths);
+  return d;
+}
+
+function renderFinanceRecurring(){
+  const instBody = document.getElementById('finInstBody');
+  if(!instBody) return;
+
+  const fmtDate = s => s ? new Date(s + 'T00:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : '—';
+  const insts = FIN_RECURRING.filter(r => r.kind === 'Installment');
+  const subs = FIN_RECURRING.filter(r => r.kind === 'Subscription');
+
+  document.getElementById('finInstEmpty').style.display = insts.length ? 'none' : 'block';
+  document.getElementById('finInstWrap').style.display = insts.length ? 'block' : 'none';
+  instBody.innerHTML = insts.map(r => {
+    const monthly = (Number(r.total_amount) || 0) / Math.max(1, Number(r.total_payments) || 1);
+    const paid = Math.min(_finMonthsSince(r.first_bill), Number(r.total_payments) || 0);
+    const done = paid >= (Number(r.total_payments) || 0);
+    return `
+      <tr>
+        <td>${escapeHtml(r.name)}</td>
+        <td>${escapeHtml(r.category || '—')}</td>
+        <td><span class="fin-balance">${finMoney(r.total_amount, 'PHP')}</span></td>
+        <td><span class="fin-balance">${finMoney(monthly, 'PHP')}</span></td>
+        <td>${done ? '<span class="pill pill-green">Fully paid</span>' : `<span class="pill pill-orange">${paid} / ${r.total_payments || 0} paid</span>`}</td>
+        <td>${fmtDate(r.first_bill)}</td>
+        <td>${escapeHtml(r.notes || '—')}</td>
+        <td style="text-align:right;white-space:nowrap;">
+          <button class="drawer-secondary-btn" style="padding:4px 10px;font-size:11px;" onclick="openFinRecModal('Installment', ${r.id})">Edit</button>
+          <button class="drawer-danger-btn" style="padding:4px 10px;font-size:11px;margin-left:4px;" onclick="deleteFinRec(${r.id})">${deleteIconSVG()}</button>
+        </td>
+      </tr>
+    `;
+  }).join('');
+
+  document.getElementById('finSubEmpty').style.display = subs.length ? 'none' : 'block';
+  document.getElementById('finSubWrap').style.display = subs.length ? 'block' : 'none';
+  document.getElementById('finSubBody').innerHTML = subs.map(r => {
+    const next = _finNextBill(r.first_bill, r.cycle);
+    return `
+      <tr>
+        <td>${escapeHtml(r.name)}</td>
+        <td><span class="fin-balance">${finMoney(r.price, 'PHP')}</span></td>
+        <td>${escapeHtml(r.cycle || 'Monthly')}</td>
+        <td>${fmtDate(r.first_bill)}</td>
+        <td>${next ? next.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : '—'}</td>
+        <td>${escapeHtml(r.notes || '—')}</td>
+        <td style="text-align:right;white-space:nowrap;">
+          <button class="drawer-secondary-btn" style="padding:4px 10px;font-size:11px;" onclick="openFinRecModal('Subscription', ${r.id})">Edit</button>
+          <button class="drawer-danger-btn" style="padding:4px 10px;font-size:11px;margin-left:4px;" onclick="deleteFinRec(${r.id})">${deleteIconSVG()}</button>
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+function openFinRecModal(kind, id){
+  finRecModalKind = kind;
+  editingFinRecId = id || null;
+  const r = id ? FIN_RECURRING.find(x => x.id === id) : null;
+  const isInst = kind === 'Installment';
+
+  document.getElementById('finRecModalTitle').textContent = (r ? 'Edit ' : 'Add ') + kind;
+  document.getElementById('finRecNameLabel').textContent = isInst ? 'Name' : 'Subscription';
+  document.querySelectorAll('#finRecModal .fin-rec-inst').forEach(el => el.style.display = isInst ? '' : 'none');
+  document.querySelectorAll('#finRecModal .fin-rec-sub').forEach(el => el.style.display = isInst ? 'none' : '');
+
+  document.getElementById('finRecCategory').innerHTML = FINANCE_OPTIONS.expense_categories.map(c => `<option value="${escapeHtml(c)}" ${r?.category === c ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('');
+  document.getElementById('finRecName').value = r?.name || '';
+  document.getElementById('finRecTotal').value = r?.total_amount ?? '';
+  document.getElementById('finRecCount').value = r?.total_payments ?? '';
+  document.getElementById('finRecPrice').value = r?.price ?? '';
+  document.getElementById('finRecCycle').value = r?.cycle || 'Monthly';
+  document.getElementById('finRecFirstBill').value = r?.first_bill || new Date().toISOString().slice(0,10);
+  document.getElementById('finRecNotes').value = r?.notes || '';
+  if(isInst) updateFinRecMonthly();
+  document.getElementById('finRecError').textContent = '';
+  document.getElementById('finRecModal').classList.add('open');
+  document.getElementById('finRecName').focus();
+}
+
+function closeFinRecModal(){
+  document.getElementById('finRecModal').classList.remove('open');
+  editingFinRecId = null;
+}
+
+function updateFinRecMonthly(){
+  const total = parseFloat(document.getElementById('finRecTotal').value) || 0;
+  const count = parseInt(document.getElementById('finRecCount').value, 10) || 0;
+  document.getElementById('finRecMonthly').textContent = count > 0 ? finMoney(total / count, 'PHP') + ' / month' : '—';
+}
+
+async function saveFinRec(){
+  const errEl = document.getElementById('finRecError');
+  errEl.textContent = '';
+  const name = document.getElementById('finRecName').value.trim();
+  if(!name){ errEl.textContent = 'Please enter a name.'; return; }
+
+  const isInst = finRecModalKind === 'Installment';
+  if(isInst){
+    if(!(parseFloat(document.getElementById('finRecTotal').value) > 0)){ errEl.textContent = 'Please enter the total amount.'; return; }
+    if(!(parseInt(document.getElementById('finRecCount').value, 10) > 0)){ errEl.textContent = 'Please enter the total number of payments.'; return; }
+  }else{
+    if(!(parseFloat(document.getElementById('finRecPrice').value) > 0)){ errEl.textContent = 'Please enter the price.'; return; }
+  }
+
+  const payload = {
+    kind: finRecModalKind,
+    name,
+    category: isInst ? document.getElementById('finRecCategory').value || null : null,
+    total_amount: isInst ? parseFloat(document.getElementById('finRecTotal').value) : null,
+    total_payments: isInst ? parseInt(document.getElementById('finRecCount').value, 10) : null,
+    price: isInst ? null : parseFloat(document.getElementById('finRecPrice').value),
+    cycle: isInst ? null : document.getElementById('finRecCycle').value,
+    first_bill: document.getElementById('finRecFirstBill').value || null,
+    notes: document.getElementById('finRecNotes').value.trim() || null
+  };
+
+  const btn = document.getElementById('finRecSaveBtn');
+  btn.disabled = true;
+  btn.textContent = 'Saving…';
+  try{
+    const url = editingFinRecId
+      ? `${SUPABASE_URL}/rest/v1/finance_recurring?id=eq.${editingFinRecId}`
+      : `${SUPABASE_URL}/rest/v1/finance_recurring`;
+    const res = await fetch(url, {
+      method: editingFinRecId ? 'PATCH' : 'POST',
+      headers: {
+        "apikey": SUPABASE_KEY,
+        "Authorization": `Bearer ${USER_ACCESS_TOKEN}`,
+        "Content-Type": "application/json",
+        "Prefer": "return=minimal"
+      },
+      body: JSON.stringify(payload)
+    });
+    if(!res.ok) throw new Error(await res.text());
+    closeFinRecModal();
+    await loadFinanceRecurring();
+    showToast('Saved');
+  }catch(e){
+    console.error("Couldn't save recurring item:", e);
+    errEl.textContent = "Couldn't save — make sure you've run supabase_finance_recurring.sql in Supabase.";
+  }finally{
+    btn.disabled = false;
+    btn.textContent = 'Save';
+  }
+}
+
+async function deleteFinRec(id){
+  const r = FIN_RECURRING.find(x => x.id === id);
+  if(!r) return;
+  if(!(await customConfirm(`Delete "${r.name}"?`, 'Delete'))) return;
+  try{
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/finance_recurring?id=eq.${id}`, {
+      method: 'DELETE',
+      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}` }
+    });
+    if(!res.ok) throw new Error(await res.text());
+    FIN_RECURRING = FIN_RECURRING.filter(x => x.id !== id);
+    renderFinanceRecurring();
+    showToast('Deleted');
+  }catch(e){
+    console.error("Couldn't delete recurring item:", e);
+    await customAlert("Couldn't delete — please try again.");
+  }
 }
 
 const JOURNAL_FILTER_FIELDS = [
