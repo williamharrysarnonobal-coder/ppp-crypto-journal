@@ -60,3 +60,4 @@ alter table finance_accounts add column if not exists credit_limit numeric;
 alter table finance_accounts add column if not exists owed numeric;
 alter table finance_accounts add column if not exists billing_day int;
 alter table finance_accounts add column if not exists due_day int;
+alter table finance_accounts add column if not exists card_number text;

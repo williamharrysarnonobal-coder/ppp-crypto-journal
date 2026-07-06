@@ -2184,7 +2184,10 @@ function finAccountCardHTML(a){
     <div class="account-card" style="cursor:default;">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
         ${iconImg}
-        <div style="font-weight:700;font-size:15px;min-width:0;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(a.account_name)}</div>
+        <div style="min-width:0;overflow:hidden;">
+          <div style="font-weight:700;font-size:15px;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(a.account_name)}</div>
+          ${a.card_number ? `<div style="font-size:11px;color:var(--muted);font-family:'IBM Plex Mono',monospace;">•••• ${escapeHtml(a.card_number)}</div>` : ''}
+        </div>
         <span class="pill pill-muted" style="margin-left:auto;flex-shrink:0;">${escapeHtml(a.currency)}</span>
       </div>
       <div class="account-card-balance">${mainBalance}</div>
@@ -2265,6 +2268,7 @@ function openFinAccountModal(id){
   document.getElementById('finAccClass').value = a?.account_class || 'Debit';
   document.getElementById('finAccCurrency').innerHTML = FINANCE_OPTIONS.currencies.map(c => `<option value="${c}" ${a?.currency === c ? 'selected' : ''}>${c}</option>`).join('');
   document.getElementById('finAccName').value = a?.account_name || '';
+  document.getElementById('finAccCardNumber').value = a?.card_number || '';
   document.getElementById('finAccBalance').value = a?.current_balance ?? '';
   document.getElementById('finAccLimit').value = a?.credit_limit ?? '';
   document.getElementById('finAccOwed').value = a?.owed ?? '';
@@ -2323,10 +2327,14 @@ async function saveFinAccount(){
   if(!name){ errEl.textContent = 'Please give this account a name.'; return; }
 
   const cls = document.getElementById('finAccClass').value;
+  // Last-4-digits only, on purpose — enough for transaction matching, and
+  // nothing usable leaks if the data ever does.
+  const cardDigits = document.getElementById('finAccCardNumber').value.replace(/\D/g,'').slice(-4);
   const payload = {
     account_name: name,
     account_class: cls,
     currency: document.getElementById('finAccCurrency').value,
+    card_number: cardDigits || null,
     notes: document.getElementById('finAccNotes').value.trim() || null
   };
 

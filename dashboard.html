@@ -782,6 +782,10 @@
       <input id="finAccName" placeholder="e.g. BPI, GCash, Cash on hand">
     </div>
     <div class="field-row">
+      <label>Card / Account Number — last 4 digits only</label>
+      <input id="finAccCardNumber" maxlength="4" inputmode="numeric" placeholder="e.g. 5678">
+    </div>
+    <div class="field-row">
       <label>Currency</label>
       <select id="finAccCurrency"></select>
     </div>
@@ -1233,6 +1237,6 @@
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=1"></script>
-<script src="js/dashboard.js?v=108"></script>
+<script src="js/dashboard.js?v=109"></script>
 </body>
 </html>
