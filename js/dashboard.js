@@ -2097,9 +2097,156 @@ function switchFinanceTab(tab){
 }
 
 function renderFinance(){
-  // Skeleton for now — each tab (Dashboard, Accounts, Transactions,
-  // Configuration) gets built out one at a time.
   switchFinanceTab(activeFinanceTab);
+  loadFinanceAccounts();
+}
+
+/* ---- Finance > Accounts ---- */
+let FIN_ACCOUNTS = [];
+let editingFinAccountId = null;
+const FIN_ACCOUNT_TYPES = ['Bank', 'E-Wallet', 'Cash', 'Crypto', 'Exchange', 'Other'];
+const FIN_CURRENCIES = ['PHP', 'USD', 'USDT'];
+
+function finMoney(v, cur){
+  const n = Number(v) || 0;
+  const sym = cur === 'PHP' ? '₱' : (cur === 'USD' ? '$' : '');
+  const formatted = n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return sym ? sym + formatted : `${formatted} ${cur}`;
+}
+
+async function loadFinanceAccounts(){
+  try{
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/finance_accounts?select=*&order=created_at.asc`, {
+      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}` }
+    });
+    if(!res.ok) throw new Error(await res.text());
+    FIN_ACCOUNTS = await res.json();
+  }catch(e){
+    console.error("Couldn't load finance accounts:", e);
+    FIN_ACCOUNTS = [];
+  }
+  renderFinanceAccounts();
+}
+
+function renderFinanceAccounts(){
+  const wrap = document.getElementById('finAccountsWrap');
+  const empty = document.getElementById('finAccountsEmpty');
+  const body = document.getElementById('finAccountsBody');
+  const totals = document.getElementById('finAccountsTotals');
+  if(!wrap || !empty || !body) return;
+
+  if(!FIN_ACCOUNTS.length){
+    wrap.style.display = 'none';
+    empty.style.display = 'block';
+    if(totals) totals.textContent = '';
+    return;
+  }
+  wrap.style.display = 'block';
+  empty.style.display = 'none';
+
+  body.innerHTML = FIN_ACCOUNTS.map(a => `
+    <tr>
+      <td>${escapeHtml(a.account_name)}</td>
+      <td><span class="pill pill-blue">${escapeHtml(a.account_type)}</span></td>
+      <td>${escapeHtml(a.currency)}</td>
+      <td>${finMoney(a.current_balance, a.currency)}</td>
+      <td>${escapeHtml(a.notes || '—')}</td>
+      <td style="text-align:right;white-space:nowrap;">
+        <button class="drawer-secondary-btn" style="padding:4px 10px;font-size:11px;" onclick="openFinAccountModal(${a.id})">Edit</button>
+        <button class="drawer-danger-btn" style="padding:4px 10px;font-size:11px;margin-left:4px;" onclick="deleteFinAccount(${a.id})">${deleteIconSVG()}</button>
+      </td>
+    </tr>
+  `).join('');
+
+  // One total per currency — mixing PHP + USD into one number would lie.
+  if(totals){
+    const byCur = {};
+    FIN_ACCOUNTS.forEach(a => { byCur[a.currency] = (byCur[a.currency] || 0) + (Number(a.current_balance) || 0); });
+    totals.innerHTML = '<strong>Total:</strong> ' + Object.entries(byCur).map(([cur, sum]) => finMoney(sum, cur)).join(' · ');
+  }
+}
+
+function openFinAccountModal(id){
+  editingFinAccountId = id || null;
+  const a = id ? FIN_ACCOUNTS.find(x => x.id === id) : null;
+
+  document.getElementById('finAccountModalTitle').textContent = a ? 'Edit Account' : 'Add Account';
+  document.getElementById('finAccType').innerHTML = FIN_ACCOUNT_TYPES.map(t => `<option value="${t}" ${a?.account_type === t ? 'selected' : ''}>${t}</option>`).join('');
+  document.getElementById('finAccCurrency').innerHTML = FIN_CURRENCIES.map(c => `<option value="${c}" ${a?.currency === c ? 'selected' : ''}>${c}</option>`).join('');
+  document.getElementById('finAccName').value = a?.account_name || '';
+  document.getElementById('finAccBalance').value = a?.current_balance ?? '';
+  document.getElementById('finAccNotes').value = a?.notes || '';
+  document.getElementById('finAccountError').textContent = '';
+  document.getElementById('finAccountModal').classList.add('open');
+  document.getElementById('finAccName').focus();
+}
+
+function closeFinAccountModal(){
+  document.getElementById('finAccountModal').classList.remove('open');
+  editingFinAccountId = null;
+}
+
+async function saveFinAccount(){
+  const errEl = document.getElementById('finAccountError');
+  errEl.textContent = '';
+  const name = document.getElementById('finAccName').value.trim();
+  if(!name){ errEl.textContent = 'Please give this account a name.'; return; }
+
+  const payload = {
+    account_name: name,
+    account_type: document.getElementById('finAccType').value,
+    currency: document.getElementById('finAccCurrency').value,
+    current_balance: parseFloat(document.getElementById('finAccBalance').value) || 0,
+    notes: document.getElementById('finAccNotes').value.trim() || null
+  };
+
+  const btn = document.getElementById('finAccountSaveBtn');
+  btn.disabled = true;
+  btn.textContent = 'Saving…';
+  try{
+    const url = editingFinAccountId
+      ? `${SUPABASE_URL}/rest/v1/finance_accounts?id=eq.${editingFinAccountId}`
+      : `${SUPABASE_URL}/rest/v1/finance_accounts`;
+    const res = await fetch(url, {
+      method: editingFinAccountId ? 'PATCH' : 'POST',
+      headers: {
+        "apikey": SUPABASE_KEY,
+        "Authorization": `Bearer ${USER_ACCESS_TOKEN}`,
+        "Content-Type": "application/json",
+        "Prefer": "return=minimal"
+      },
+      body: JSON.stringify(payload)
+    });
+    if(!res.ok) throw new Error(await res.text());
+    closeFinAccountModal();
+    await loadFinanceAccounts();
+    showToast(editingFinAccountId ? 'Account updated' : 'Account added');
+  }catch(e){
+    console.error("Couldn't save finance account:", e);
+    errEl.textContent = "Couldn't save — make sure you've run supabase_finance.sql in Supabase.";
+  }finally{
+    btn.disabled = false;
+    btn.textContent = 'Save Account';
+  }
+}
+
+async function deleteFinAccount(id){
+  const a = FIN_ACCOUNTS.find(x => x.id === id);
+  if(!a) return;
+  if(!(await customConfirm(`Delete "${a.account_name}"? Its transactions will stay but lose their account link.`, 'Delete'))) return;
+  try{
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/finance_accounts?id=eq.${id}`, {
+      method: 'DELETE',
+      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}` }
+    });
+    if(!res.ok) throw new Error(await res.text());
+    FIN_ACCOUNTS = FIN_ACCOUNTS.filter(x => x.id !== id);
+    renderFinanceAccounts();
+    showToast('Account deleted');
+  }catch(e){
+    console.error("Couldn't delete finance account:", e);
+    await customAlert("Couldn't delete this account — please try again.");
+  }
 }
 
 const JOURNAL_FILTER_FIELDS = [
