@@ -2186,9 +2186,8 @@ function finAccountCardHTML(a){
   // not-fully-paid installment/subscription billed to it in a single click,
   // like one real credit card statement instead of itemized mini-bills.
   const dueForThisAccount = FIN_RECURRING.filter(r => r.account_id === a.id && !_finRecIsFullyPaid(r));
-  const combinedPeriod = _finEarliestPeriod(dueForThisAccount);
-  const paymentLineHtml = combinedPeriod
-    ? `<div class="fin-payment-row" style="margin-top:8px;"><span>Payment for ${combinedPeriod.toLocaleDateString('en-US',{month:'long'})}</span><button class="poscalc-accent-btn" style="padding:3px 9px;font-size:10.5px;flex-shrink:0;" onclick="payAllDueForAccount(${a.id})">Paid</button></div>`
+  const paymentLineHtml = dueForThisAccount.length
+    ? `<div class="fin-payment-row" style="margin-top:8px;"><span>Payment for ${_finPreviousMonthLabel().toLocaleDateString('en-US',{month:'long'})}</span><button class="poscalc-accent-btn" style="padding:3px 9px;font-size:10.5px;flex-shrink:0;" onclick="payAllDueForAccount(${a.id})">Paid</button></div>`
     : '';
   const creditLines = isCredit ? `
     <div style="font-size:12px;margin-top:6px;">Owed <span style="color:var(--loss);font-weight:600;">${finMoney(a.owed, a.currency)}</span> <span style="color:var(--muted);">/ Limit ${finMoney(a.credit_limit, a.currency)}</span></div>
@@ -2827,38 +2826,13 @@ async function loadFinanceRecurring(){
   renderFinanceRecurring();
 }
 
-// The period a payment would be FOR, next — installments count months
-// forward from first_bill by how many are already marked paid; subscriptions
-// count cycles forward from whichever period was billed last (or first_bill
-// if none yet). Purely a label — nothing here touches money or gets saved
-// until "Mark as Paid" is actually clicked.
-function _finInstNextPeriod(r){
-  if(!r.first_bill) return null;
-  const d = new Date(r.first_bill + 'T00:00:00');
-  d.setMonth(d.getMonth() + (Number(r.payments_applied) || 0));
-  return d;
-}
-
-function _finSubNextPeriod(r){
-  const stepMonths = r.cycle === 'Yearly' ? 12 : (r.cycle === 'Quarterly' ? 3 : 1);
-  if(r.last_billed){
-    const d = new Date(r.last_billed + 'T00:00:00');
-    d.setMonth(d.getMonth() + stepMonths);
-    return d;
-  }
-  return r.first_bill ? new Date(r.first_bill + 'T00:00:00') : null;
-}
-
-// The single "Payment for <month>" line on an account card represents
-// everything still owed on it — shown as whichever due item's period is
-// EARLIEST (the oldest unpaid bill), since that's the one actually driving
-// when a real card statement would be due.
-function _finEarliestPeriod(items){
-  const dates = items
-    .map(r => r.kind === 'Installment' ? _finInstNextPeriod(r) : _finSubNextPeriod(r))
-    .filter(Boolean);
-  if(!dates.length) return null;
-  return new Date(Math.min(...dates.map(d => d.getTime())));
+// A due payment is always FOR the previous calendar month, relative to
+// today — no reference to first_bill, cycle, or payments_applied. Matches
+// how a real card statement works: whatever's due right now is last
+// month's bill, full stop, regardless of when any individual item started.
+function _finPreviousMonthLabel(){
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth() - 1, 1);
 }
 
 function _finRecIsFullyPaid(r){
@@ -2900,11 +2874,10 @@ async function _markOneRecPaid(r){
     if(!patch.ok) return patch;
     r.payments_applied = already + 1;
   }else{
-    const period = _finSubNextPeriod(r);
-    if(!period) return { ok: true };
-    const charge = await _finApplyRecurringCharge(r, Number(r.price) || 0, `Subscription: ${r.name} (${period.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })})`);
-    if(!charge.ok) return charge;
-    const billedDate = period.toISOString().slice(0,10);
+    // Recurring items don't get logged in Transactions — the Recurring tab
+    // already tracks them, this just moves the money on the account itself.
+    await _adjustFinAccountBalance(r.account_id, -(Number(r.price) || 0));
+    const billedDate = _finPreviousMonthLabel().toISOString().slice(0,10);
     const patch = await _finPatchRecurring(r.id, { last_billed: billedDate });
     if(!patch.ok) return patch;
     r.last_billed = billedDate;
@@ -2934,35 +2907,6 @@ async function payAllDueForAccount(accountId){
 // Both helpers below return {ok, error} instead of just logging to the
 // console — a click that silently does nothing is indistinguishable from a
 // bug, so every failure now surfaces to the user with the real reason.
-async function _finApplyRecurringCharge(r, amount, description){
-  if(!(amount > 0)) return { ok: true };
-  try{
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/finance_transactions`, {
-      method: 'POST',
-      headers: {
-        "apikey": SUPABASE_KEY,
-        "Authorization": `Bearer ${USER_ACCESS_TOKEN}`,
-        "Content-Type": "application/json",
-        "Prefer": "return=minimal"
-      },
-      body: JSON.stringify({
-        tx_date: new Date().toISOString().slice(0,10),
-        tx_type: 'Expense',
-        amount,
-        account_id: r.account_id,
-        category: r.kind === 'Installment' ? (r.category || 'Installment') : 'Subscriptions',
-        description
-      })
-    });
-    if(!res.ok) throw new Error(await res.text());
-    await _adjustFinAccountBalance(r.account_id, -amount);
-    return { ok: true };
-  }catch(e){
-    console.error("Couldn't auto-charge recurring item:", e);
-    return { ok: false, error: e.message || String(e) };
-  }
-}
-
 async function _finPatchRecurring(id, patch){
   try{
     const res = await fetch(`${SUPABASE_URL}/rest/v1/finance_recurring?id=eq.${id}`, {
@@ -3000,7 +2944,7 @@ function renderFinanceRecurring(){
     const done = paid >= total;
     // Read-only here on purpose — the actual "Paid" action lives on the
     // account card that pays this bill, not duplicated in this list.
-    const dueCell = done ? '<span class="pill pill-green">Fully paid</span>' : fmtPeriod(_finInstNextPeriod(r));
+    const dueCell = done ? '<span class="pill pill-green">Fully paid</span>' : fmtPeriod(_finPreviousMonthLabel());
     const remaining = (Number(r.total_amount) || 0) - (monthly * paid);
     return `
       <tr>
@@ -3022,7 +2966,7 @@ function renderFinanceRecurring(){
   document.getElementById('finSubEmpty').style.display = subs.length ? 'none' : 'block';
   document.getElementById('finSubWrap').style.display = subs.length ? 'block' : 'none';
   document.getElementById('finSubBody').innerHTML = subs.map(r => {
-    const next = _finSubNextPeriod(r);
+    const next = _finPreviousMonthLabel();
     return `
       <tr>
         <td>${escapeHtml(r.name)}<div style="font-size:10.5px;color:var(--muted);">${escapeHtml(_finAccountName(r.account_id))}</div></td>
@@ -3116,16 +3060,21 @@ async function saveFinRec(){
     );
   }
 
-  // Linking an account for the FIRST time (brand-new item, or an existing
-  // one that had no account before): an installment posts its FULL
-  // remaining balance as owed the moment it's linked — a real credit-card
-  // installment plan charges the whole purchase to the card immediately,
-  // not one sliver at a time. "Remaining" already excludes any payments
-  // marked as made-in-real-life above. Subscriptions don't get this — each
-  // cycle is its own fresh charge, only "Mark as Paid" ever touches those.
+  // An installment's linked account always carries its CURRENT remaining
+  // balance as owed — not just charged once at first link. Any edit that
+  // changes what's remaining (Payments Made So Far, Total Amount, Total
+  // Payments, or which account it's on) re-syncs the account immediately:
+  // we diff what SHOULD be owed now against what was owed based on the
+  // pre-edit numbers, and move only the difference. Subscriptions don't
+  // carry a running balance like this — each cycle is its own fresh charge,
+  // only "Mark as Paid" ever touches those.
   const existing = editingFinRecId ? FIN_RECURRING.find(x => x.id === editingFinRecId) : null;
-  const isNewLinkage = isInst && payload.account_id && !existing?.account_id;
-  const remainingToCharge = isNewLinkage
+  const oldAccountId = existing?.account_id || null;
+  const oldRemaining = (isInst && oldAccountId)
+    ? (Number(existing.total_amount) || 0) - ((Number(existing.total_amount) || 0) / Math.max(1, Number(existing.total_payments) || 1) * (Number(existing.payments_applied) || 0))
+    : 0;
+  const newAccountId = payload.account_id;
+  const newRemaining = (isInst && newAccountId)
     ? payload.total_amount - ((payload.total_amount / Math.max(1, payload.total_payments)) * payload.payments_applied)
     : 0;
 
@@ -3148,14 +3097,20 @@ async function saveFinRec(){
     });
     if(!res.ok) throw new Error(await res.text());
 
-    if(remainingToCharge > 0){
-      const charge = await _finApplyRecurringCharge(
-        { account_id: payload.account_id, kind: 'Installment', category: payload.category },
-        remainingToCharge,
-        `Installment purchase: ${name}`
-      );
-      if(!charge.ok){
-        await customAlert("Saved, but couldn't post the charge to the account: " + charge.error);
+    if(isInst){
+      if(oldAccountId && oldAccountId !== newAccountId){
+        // No longer (or no longer only) on this account — forgive what it
+        // was carrying there.
+        await _adjustFinAccountBalance(oldAccountId, oldRemaining);
+      }
+      if(newAccountId && oldAccountId !== newAccountId){
+        // Freshly linked (new item, or moved from another account) — post
+        // the full current remaining balance as owed.
+        await _adjustFinAccountBalance(newAccountId, -newRemaining);
+      }else if(newAccountId && oldAccountId === newAccountId){
+        // Same account as before — only the DIFFERENCE needs to move.
+        const adjustment = oldRemaining - newRemaining;
+        if(adjustment) await _adjustFinAccountBalance(newAccountId, adjustment);
       }
     }
 
