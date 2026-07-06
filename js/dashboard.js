@@ -567,6 +567,13 @@ async function initApp(){
   document.querySelectorAll('[data-view="admin"]').forEach(el => el.style.display = isAdminUser() ? '' : 'none');
   applyFeatureLocks();
 
+  // Notification system paused (see NOTIFICATIONS_ENABLED) — hide the bell
+  // so there's no dead button while we rebuild notifications one at a time.
+  if(!NOTIFICATIONS_ENABLED){
+    const bell = document.getElementById('notifBellBtn');
+    if(bell) bell.style.display = 'none';
+  }
+
   loadColumnConfig();
   loadOptionsConfig();
   loadFormFieldConfig();
@@ -3113,7 +3120,19 @@ function updateNavBadge(view, count){
   }
 }
 
+// MASTER SWITCH for the whole notification system (nav badges, bell badge,
+// bell dropdown, new-alert toasts). Set to false while we rebuild the
+// features one at a time — flip back to true to re-enable everything at
+// once, or re-enable piece by piece from refreshAllNavBadges().
+const NOTIFICATIONS_ENABLED = false;
+
 function refreshAllNavBadges(){
+  if(!NOTIFICATIONS_ENABLED){
+    // Paused: force-hide every badge in case one was already showing.
+    ['journal','news','alerts','challenges','admin'].forEach(v => updateNavBadge(v, 0));
+    updateNotifBellBadge(0);
+    return;
+  }
   const incompleteCount = getIncompleteTradesCount();
   const eventsCount = getUnseenHighImpactEvents().length;
   const alertsCount = SIGNAL_ALERTS.filter(isNewSignal).length;
@@ -3140,6 +3159,7 @@ function updateNotifBellBadge(count){
 }
 
 function toggleNotifCenter(){
+  if(!NOTIFICATIONS_ENABLED) return;
   const panel = document.getElementById('notifCenterPanel');
   if(!panel) return;
   if(panel.classList.contains('open')){
@@ -3395,7 +3415,7 @@ async function loadSignalAlerts(){
   // poll actually found something new) — not on the very first load, which
   // would otherwise toast about alerts that have been sitting there a while.
   const unseenCount = SIGNAL_ALERTS.filter(isNewSignal).length;
-  if(hasLoadedSignalAlertsOnce && unseenCount > lastKnownUnseenAlertCount){
+  if(NOTIFICATIONS_ENABLED && hasLoadedSignalAlertsOnce && unseenCount > lastKnownUnseenAlertCount){
     const justIn = unseenCount - lastKnownUnseenAlertCount;
     showToast(`🔔 ${justIn} new trade alert${justIn > 1 ? 's' : ''}`);
   }
