@@ -923,3 +923,39 @@
   body.mobile-mode .notebook-layout{grid-template-columns:1fr !important;}
   body.mobile-mode .subnav-shell{flex-direction:column;}
   body.mobile-mode header.top{flex-wrap:wrap;gap:10px;}
+
+  /* Mobile Mode refinements (round 2, from live phone testing) */
+  /* 1. Hamburger + bell sit side by side, evenly aligned */
+  .notif-bell-wrap{display:flex;gap:8px;align-items:center;}
+
+  /* 2a. Dashboard calendar: tighter cells + smaller type so 8 columns fit */
+  body.mobile-mode .cal-grid{gap:2px;}
+  body.mobile-mode .cal-cell{min-height:38px;padding:4px 2px;font-size:10px;border-radius:4px;}
+  body.mobile-mode .cal-dow{font-size:8px;letter-spacing:.02em;}
+
+  /* 2b. Charts: fill and center inside their panel after the layout collapses */
+  body.mobile-mode .chart-fill{display:flex;justify-content:center;}
+  body.mobile-mode .chart-fill canvas{width:100% !important;}
+
+  /* 3. My Accounts: one full-width card per row (400px min column overflowed
+     phone screens), slightly tighter padding */
+  body.mobile-mode .account-grid{grid-template-columns:1fr !important;}
+  body.mobile-mode .account-card{padding:18px 16px;}
+
+  /* 4. Calculator: keep the breakdown table scrolling inside its own wrap
+     (instead of blowing the panel width out sideways), with the Leverage
+     Levels field sitting full-width above it */
+  body.mobile-mode .poscalc-table-wrap{overflow-x:auto;}
+  body.mobile-mode .poscalc-table-wrap .field-row{margin-top:16px;}
+
+  /* 5. Challenges rank ladder: smaller medals, and only the current rank
+     keeps its label — 7 full labels overlap into an unreadable strip */
+  body.mobile-mode .rank-track{padding:0 10px;margin-top:28px;}
+  body.mobile-mode .rank-medal{width:32px;height:32px;}
+  body.mobile-mode .rank-medal svg{width:13px;height:13px;}
+  body.mobile-mode .rank-medal.current{width:42px;height:42px;}
+  body.mobile-mode .rank-medal.current svg{width:17px;height:17px;}
+  body.mobile-mode .rank-medals{margin-top:-21px;}
+  body.mobile-mode .rank-medal-label{display:none;}
+  body.mobile-mode .rank-medal.current .rank-medal-label{display:block;font-size:9px;top:44px;}
+  body.mobile-mode .rank-medal-you{font-size:7.5px;top:-16px;}

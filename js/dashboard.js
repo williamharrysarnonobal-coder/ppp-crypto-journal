@@ -390,6 +390,16 @@ function applyMobileMode(on){
     closeMobileMenu();
   }
   try{ localStorage.setItem('ledger-mobile-mode', on ? '1' : '0'); }catch(e){}
+  // Charts keep the canvas size they were first drawn at — redraw them for
+  // the new panel widths so they fill/center instead of hugging one side.
+  if(FILTERED.length || ALL_TRADES.length){
+    renderEquityCurve();
+    renderWinLossChart();
+    renderDisciplineRadar();
+    renderDayOfWeekChart();
+    renderSymbolFrequencyChart();
+    renderBreakdown();
+  }
   syncUIPrefsToProfile();
 }
 
