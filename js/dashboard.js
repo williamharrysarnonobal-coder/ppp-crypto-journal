@@ -2108,10 +2108,11 @@ function switchFinanceTab(tab){
 
 async function renderFinance(){
   applyFinBalanceVisibility();
-  // Account cards show a "Mark as Paid" line for anything linked to them,
-  // so recurring items need to be loaded no matter which Finance tab is
-  // opened first — not just when the Recurring tab itself is visited.
+  // Account cards need recurring items (payment line) AND transactions
+  // (Running Bill) loaded no matter which Finance tab is opened first —
+  // not just when their own tabs are visited.
   await loadFinanceRecurring();
+  await loadFinanceTransactions();
   switchFinanceTab(activeFinanceTab);
 }
 
@@ -2182,16 +2183,40 @@ function finAccountCardHTML(a){
   const mainBalance = isCredit
     ? finMoney((Number(a.credit_limit)||0) - (Number(a.owed)||0), a.currency)
     : finMoney(a.current_balance, a.currency);
-  // One combined "Payment for <month>" line per card — covers every
-  // not-fully-paid installment/subscription billed to it in a single click,
-  // like one real credit card statement instead of itemized mini-bills.
+  // --- Running Bill (this calendar month's spend) + statement payment ---
+  const now = new Date();
+  const prevMonth = _finPreviousMonthLabel();
+  const prevMonthName = prevMonth.toLocaleDateString('en-US', { month: 'long' });
   const dueForThisAccount = FIN_RECURRING.filter(r => r.account_id === a.id && !_finRecIsFullyPaid(r));
-  const paymentLineHtml = dueForThisAccount.length
-    ? `<div class="fin-payment-row" style="margin-top:8px;"><span>Payment for ${_finPreviousMonthLabel().toLocaleDateString('en-US',{month:'long'})}</span><button class="poscalc-accent-btn" style="padding:3px 9px;font-size:10.5px;flex-shrink:0;" onclick="payAllDueForAccount(${a.id})">Paid</button></div>`
-    : '';
+  const prevMonthTx = isCredit ? _finMonthTxTotal(a.id, prevMonth) : 0;
+  const hasBill = dueForThisAccount.length > 0 || prevMonthTx > 0;
+  const paidThisCycle = _finBillPaidCovers(a.last_bill_paid, prevMonth);
+
+  // Recurring and Transactions shown apart on purpose — recurring is the
+  // fixed, committed part; transactions are the part still under the
+  // user's control this month. The split is what makes it actionable.
+  const runningRecurring = _finMonthlyRecurringTotal(a.id);
+  const runningTx = _finMonthTxTotal(a.id, now);
+  const runningLine = isCredit ? `
+    <div style="font-size:11px;color:var(--muted);margin-top:10px;text-transform:uppercase;letter-spacing:.05em;">Running Bill for ${now.toLocaleDateString('en-US',{month:'long'})}</div>
+    <div style="font-size:12px;margin-top:4px;">Recurring <span class="fin-balance" style="font-weight:600;">${finMoney(runningRecurring, a.currency)}</span> <span style="color:var(--muted);">·</span> Transactions <span class="fin-balance" style="font-weight:600;">${finMoney(runningTx, a.currency)}</span></div>
+    <div style="font-size:12px;margin-top:2px;">Total <span class="fin-balance" style="font-weight:700;color:var(--warn);">${finMoney(runningRecurring + runningTx, a.currency)}</span></div>
+  ` : '';
+
+  let paymentLineHtml = '';
+  if(hasBill){
+    if(paidThisCycle){
+      paymentLineHtml = `<div class="fin-payment-row" style="margin-top:8px;"><span>Payment for ${prevMonthName}</span><span class="pill pill-green">Paid</span></div>`;
+    }else if(now.getDate() >= 5){
+      paymentLineHtml = `<div class="fin-payment-row" style="margin-top:8px;"><span>Payment for ${prevMonthName}</span><button class="poscalc-accent-btn" style="padding:3px 9px;font-size:10.5px;flex-shrink:0;" onclick="payAllDueForAccount(${a.id})">Paid</button></div>`;
+    }
+    // Days 1-4 with the bill still unpaid: nothing yet — the button
+    // (re)appears on the 5th, per the monthly rhythm the user wanted.
+  }
   const creditLines = isCredit ? `
     <div style="font-size:12px;margin-top:6px;">Owed <span style="color:var(--loss);font-weight:600;">${finMoney(a.owed, a.currency)}</span> <span style="color:var(--muted);">/ Limit ${finMoney(a.credit_limit, a.currency)}</span></div>
     ${a.billing_day || a.due_day ? `<div style="font-size:11px;color:var(--muted);margin-top:3px;">${a.billing_day ? `Bill day ${a.billing_day}` : ''}${a.billing_day && a.due_day ? ' · ' : ''}${a.due_day ? `Due day ${a.due_day}` : ''}</div>` : ''}
+    ${runningLine}
     ${paymentLineHtml}
   ` : '';
   const subAccounts = !isCredit ? FIN_ACCOUNTS.filter(s => s.parent_account_id === a.id) : [];
@@ -2835,6 +2860,41 @@ function _finPreviousMonthLabel(){
   return new Date(now.getFullYear(), now.getMonth() - 1, 1);
 }
 
+// Local-timezone "YYYY-MM-01" — toISOString() would shift local midnight
+// back a day (previous month, even) for timezones ahead of UTC like +8.
+function _finMonthISO(d){
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
+}
+
+// Total of this account's Expense transactions inside one calendar month.
+function _finMonthTxTotal(accountId, monthDate){
+  const y = monthDate.getFullYear(), m = monthDate.getMonth();
+  return FIN_TXNS
+    .filter(t => t.account_id === accountId && t.tx_type === 'Expense' && t.tx_date)
+    .filter(t => { const d = new Date(t.tx_date + 'T00:00:00'); return d.getFullYear() === y && d.getMonth() === m; })
+    .reduce((s, t) => s + (Number(t.amount) || 0), 0);
+}
+
+// This month's committed recurring dues on an account: each active
+// installment's monthly share, plus Monthly-cycle subscription prices.
+// (Quarterly/Yearly subs excluded — they're not part of EVERY month's bill.)
+function _finMonthlyRecurringTotal(accountId){
+  return FIN_RECURRING
+    .filter(r => r.account_id === accountId && !_finRecIsFullyPaid(r))
+    .reduce((s, r) => {
+      if(r.kind === 'Installment'){
+        return s + (Number(r.total_amount) || 0) / Math.max(1, Number(r.total_payments) || 1);
+      }
+      return (r.cycle || 'Monthly') === 'Monthly' ? s + (Number(r.price) || 0) : s;
+    }, 0);
+}
+
+function _finBillPaidCovers(lastBillPaid, monthDate){
+  if(!lastBillPaid) return false;
+  const d = new Date(lastBillPaid + 'T00:00:00');
+  return d.getFullYear() === monthDate.getFullYear() && d.getMonth() === monthDate.getMonth();
+}
+
 function _finRecIsFullyPaid(r){
   return r.kind === 'Installment' && (Number(r.payments_applied) || 0) >= (Number(r.total_payments) || 0);
 }
@@ -2875,9 +2935,14 @@ async function _markOneRecPaid(r){
     r.payments_applied = already + 1;
   }else{
     // Recurring items don't get logged in Transactions — the Recurring tab
-    // already tracks them, this just moves the money on the account itself.
-    await _adjustFinAccountBalance(r.account_id, -(Number(r.price) || 0));
-    const billedDate = _finPreviousMonthLabel().toISOString().slice(0,10);
+    // already tracks them. On a CREDIT card, the month's subscription charge
+    // and its payment land in the same click, so Owed nets to zero — only
+    // the tracking advances. On a DEBIT account the cash actually leaves.
+    const acc = FIN_ACCOUNTS.find(x => x.id === r.account_id);
+    if(!acc || acc.account_class !== 'Credit'){
+      await _adjustFinAccountBalance(r.account_id, -(Number(r.price) || 0));
+    }
+    const billedDate = _finMonthISO(_finPreviousMonthLabel());
     const patch = await _finPatchRecurring(r.id, { last_billed: billedDate });
     if(!patch.ok) return patch;
     r.last_billed = billedDate;
@@ -2889,19 +2954,52 @@ async function _markOneRecPaid(r){
 // installment/subscription billed to this account in one click (one
 // statement, one payment), each still advancing its own Progress/Remaining.
 async function payAllDueForAccount(accountId){
-  const due = FIN_RECURRING.filter(r => r.account_id === accountId && !_finRecIsFullyPaid(r));
-  if(!due.length) return;
+  const acc = FIN_ACCOUNTS.find(a => a.id === accountId);
+  if(!acc) return;
+  const prevMonth = _finPreviousMonthLabel();
+  if(_finBillPaidCovers(acc.last_bill_paid, prevMonth)) return; // already settled this cycle
 
+  // 1. Advance every linked recurring item by one payment.
+  const due = FIN_RECURRING.filter(r => r.account_id === accountId && !_finRecIsFullyPaid(r));
   for(const r of due){
     const result = await _markOneRecPaid(r);
     if(!result.ok){
       await customAlert(`Couldn't process "${r.name}": ${result.error} — make sure supabase_finance_recurring_account_link.sql has been run in Supabase.`);
-      break; // stop so later items don't silently get skipped without the user knowing
+      return; // stop before marking the statement settled — retry cleanly next click
     }
   }
+
+  // 2. Credit card: last month's regular transactions are part of the same
+  //    statement — paying the bill settles them too, so Owed drops by their
+  //    total (they were each charged to Owed when logged).
+  if(acc.account_class === 'Credit'){
+    const txTotal = _finMonthTxTotal(accountId, prevMonth);
+    if(txTotal > 0) await _adjustFinAccountBalance(accountId, txTotal);
+  }
+
+  // 3. Remember the statement is settled — the button flips to a "Paid"
+  //    pill and the next one appears on the 5th of next month.
+  try{
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/finance_accounts?id=eq.${accountId}`, {
+      method: 'PATCH',
+      headers: {
+        "apikey": SUPABASE_KEY,
+        "Authorization": `Bearer ${USER_ACCESS_TOKEN}`,
+        "Content-Type": "application/json",
+        "Prefer": "return=minimal"
+      },
+      body: JSON.stringify({ last_bill_paid: _finMonthISO(prevMonth) })
+    });
+    if(!res.ok) throw new Error(await res.text());
+    acc.last_bill_paid = _finMonthISO(prevMonth);
+  }catch(e){
+    console.error("Couldn't record the bill as paid:", e);
+    await customAlert("Payment applied, but couldn't save the paid marker: " + (e.message || e) + " — make sure supabase_finance_add_last_bill_paid.sql has been run in Supabase.");
+  }
+
   renderFinanceRecurring();
   renderFinanceAccounts();
-  showToast('Payment recorded');
+  showToast(`${prevMonth.toLocaleDateString('en-US',{month:'long'})} bill paid`);
 }
 
 // Both helpers below return {ok, error} instead of just logging to the

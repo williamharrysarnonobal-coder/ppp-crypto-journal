@@ -62,6 +62,7 @@ alter table finance_accounts add column if not exists billing_day int;
 alter table finance_accounts add column if not exists due_day int;
 alter table finance_accounts add column if not exists card_number text;
 alter table finance_accounts add column if not exists parent_account_id bigint references finance_accounts(id) on delete cascade;
+alter table finance_accounts add column if not exists last_bill_paid date;
 
 -- finance_recurring (link to paying account + auto-apply tracking)
 -- NOTE: only works if finance_recurring exists (supabase_finance_recurring.sql)
