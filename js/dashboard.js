@@ -2865,6 +2865,19 @@ function _finRecIsFullyPaid(r){
   return r.kind === 'Installment' && (Number(r.payments_applied) || 0) >= (Number(r.total_payments) || 0);
 }
 
+// Paying down an installment only means something for a CREDIT account —
+// the full price posted as "owed" the moment it was added, so a monthly
+// payment reduces that debt (positive delta: owed goes down, available
+// credit goes up). A Debit-linked installment already had its full cost
+// deducted from the balance at add-time; there's no further cash movement
+// left to make, so this is a no-op there — it's tracked for progress only.
+async function _finPayDownInstallment(accountId, monthlyAmount){
+  const acc = FIN_ACCOUNTS.find(a => a.id === accountId);
+  if(!acc || acc.account_class !== 'Credit') return { ok: true };
+  await _adjustFinAccountBalance(accountId, monthlyAmount);
+  return { ok: true };
+}
+
 // Core "advance one payment" step — charges it and updates that item's own
 // progress. No rendering/toasting here so it can run in a loop (one card's
 // single "Paid" button covers every item billed to it) without spamming
@@ -2877,10 +2890,12 @@ async function _markOneRecPaid(r){
     const total = Number(r.total_payments) || 0;
     if(already >= total) return { ok: true };
     const monthly = (Number(r.total_amount) || 0) / Math.max(1, total);
-    const period = _finInstNextPeriod(r);
-    const label = period ? period.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : `payment ${already + 1}`;
-    const charge = await _finApplyRecurringCharge(r, monthly, `Installment: ${r.name} (${label})`);
-    if(!charge.ok) return charge;
+    // The full installment already posted as owed when it was ADDED — this
+    // click is a PAYMENT against that debt, so it pays it DOWN (opposite
+    // direction from a new charge). No new transaction here either; the one
+    // real expense already happened at add-time, this is just paying it off.
+    const payDown = await _finPayDownInstallment(r.account_id, monthly);
+    if(!payDown.ok) return payDown;
     const patch = await _finPatchRecurring(r.id, { payments_applied: already + 1 });
     if(!patch.ok) return patch;
     r.payments_applied = already + 1;
@@ -3101,6 +3116,19 @@ async function saveFinRec(){
     );
   }
 
+  // Linking an account for the FIRST time (brand-new item, or an existing
+  // one that had no account before): an installment posts its FULL
+  // remaining balance as owed the moment it's linked — a real credit-card
+  // installment plan charges the whole purchase to the card immediately,
+  // not one sliver at a time. "Remaining" already excludes any payments
+  // marked as made-in-real-life above. Subscriptions don't get this — each
+  // cycle is its own fresh charge, only "Mark as Paid" ever touches those.
+  const existing = editingFinRecId ? FIN_RECURRING.find(x => x.id === editingFinRecId) : null;
+  const isNewLinkage = isInst && payload.account_id && !existing?.account_id;
+  const remainingToCharge = isNewLinkage
+    ? payload.total_amount - ((payload.total_amount / Math.max(1, payload.total_payments)) * payload.payments_applied)
+    : 0;
+
   const btn = document.getElementById('finRecSaveBtn');
   btn.disabled = true;
   btn.textContent = 'Saving…';
@@ -3119,6 +3147,18 @@ async function saveFinRec(){
       body: JSON.stringify(payload)
     });
     if(!res.ok) throw new Error(await res.text());
+
+    if(remainingToCharge > 0){
+      const charge = await _finApplyRecurringCharge(
+        { account_id: payload.account_id, kind: 'Installment', category: payload.category },
+        remainingToCharge,
+        `Installment purchase: ${name}`
+      );
+      if(!charge.ok){
+        await customAlert("Saved, but couldn't post the charge to the account: " + charge.error);
+      }
+    }
+
     closeFinRecModal();
     await loadFinanceRecurring();
     showToast('Saved');
