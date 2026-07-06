@@ -219,6 +219,9 @@ function setAccentPreference(name){
    address, so switching URLs/devices used to reset all of these to default.
    localStorage stays as the instant local cache (applied before login even
    resolves); the DB copy is layered on top once the profile loads. */
+// NOTE: mobile_mode is deliberately NOT in this list — layout is a
+// per-device choice (phone wants Mobile, laptop wants Desktop), so syncing
+// it would flip every device to whatever the last one picked.
 const UI_PREF_LS_KEYS = {
   theme: 'ledger-theme',
   font: 'ledger-font',
@@ -337,6 +340,21 @@ function renderSettingsPage(){
       </div>
     `).join('');
   }
+
+  const mobileGrid = document.getElementById('mobileModeOptionGrid');
+  if(mobileGrid){
+    const mobileOn = document.body.classList.contains('mobile-mode');
+    mobileGrid.innerHTML = `
+      <div class="settings-option ${!mobileOn?'active':''}" onclick="setMobileModePreference(false)">
+        <div class="settings-option-name">Desktop</div>
+        <div class="settings-option-sub">Sidebar layout — best on laptops and wide screens.</div>
+      </div>
+      <div class="settings-option ${mobileOn?'active':''}" onclick="setMobileModePreference(true)">
+        <div class="settings-option-name">Mobile</div>
+        <div class="settings-option-sub">One centered column with a corner menu — made for phones.</div>
+      </div>
+    `;
+  }
 }
 
 (function initTheme(){
@@ -361,6 +379,44 @@ function renderSettingsPage(){
   if(saved) applyAccent(saved);
 })();
 
+/* ---------------- Mobile Mode (Settings > Layout) ---------------- */
+function applyMobileMode(on){
+  document.body.classList.toggle('mobile-mode', !!on);
+  if(on){
+    // The drawer always shows full labels — a collapsed sidebar state
+    // makes no sense inside a slide-in menu.
+    document.getElementById('sidebar')?.classList.remove('collapsed');
+  }else{
+    closeMobileMenu();
+  }
+  try{ localStorage.setItem('ledger-mobile-mode', on ? '1' : '0'); }catch(e){}
+  syncUIPrefsToProfile();
+}
+
+function setMobileModePreference(on){
+  applyMobileMode(on);
+  if(currentView === 'settings') renderSettingsPage();
+}
+
+function toggleMobileMenu(){
+  const sb = document.getElementById('sidebar');
+  const bd = document.getElementById('mobileMenuBackdrop');
+  if(!sb) return;
+  const open = sb.classList.toggle('mobile-open');
+  if(bd) bd.classList.toggle('show', open);
+}
+
+function closeMobileMenu(){
+  document.getElementById('sidebar')?.classList.remove('mobile-open');
+  document.getElementById('mobileMenuBackdrop')?.classList.remove('show');
+}
+
+(function initMobileMode(){
+  let saved = null;
+  try{ saved = localStorage.getItem('ledger-mobile-mode'); }catch(e){}
+  if(saved === '1') document.body.classList.add('mobile-mode');
+})();
+
 // Clears the "needs-input" red flag the moment a flagged field gets a value
 // (and re-flags it if cleared back to empty) — bound once on the stable
 // #drawerBody container since its contents get rebuilt on every render.
@@ -383,6 +439,9 @@ function switchView(view){
     showToast("You don't have permission to access this feature.");
     return;
   }
+  // In Mobile Mode the nav lives in a slide-in drawer — picking a page
+  // should close it, like any mobile app menu.
+  if(document.body.classList.contains('mobile-mode')) closeMobileMenu();
   currentView = view;
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
   document.getElementById('view-' + view).classList.add('active');

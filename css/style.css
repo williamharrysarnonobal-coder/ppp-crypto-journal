@@ -879,3 +879,47 @@
   .config-option-row button:hover{color:var(--loss);}
   .config-add-row{display:flex;gap:8px;margin-top:10px;}
   .config-add-row input{flex:1;}
+
+
+  /* ---------- Mobile Mode (Settings > Layout) ----------
+     Opt-in phone layout: the sidebar becomes a slide-in drawer opened from
+     a corner menu button (next to the bell), and every multi-column grid
+     collapses to one centered column. Kept as a body class (not a media
+     query) so the user decides, and it syncs with their account like any
+     other preference. These rules live at the END of the file on purpose:
+     they must out-rank the small-screen @media rules above. */
+  .mobile-menu-btn{display:none;font-size:15px;}
+  body.mobile-mode .mobile-menu-btn{display:flex;}
+
+  body.mobile-mode .shell{display:block;}
+  body.mobile-mode .sidebar{
+    position:fixed !important;top:0 !important;right:0 !important;left:auto !important;
+    height:100vh !important;width:240px !important;padding:22px 12px !important;
+    display:flex !important;flex-direction:column !important;overflow-y:auto !important;overflow-x:hidden !important;
+    border-right:none;border-left:1px solid var(--rule);
+    z-index:400;transform:translateX(100%);transition:transform .2s ease;
+    box-shadow:-12px 0 32px rgba(0,0,0,.35);
+  }
+  body.mobile-mode .sidebar.mobile-open{transform:translateX(0);}
+  body.mobile-mode .sidebar .brand{display:flex !important;}
+  body.mobile-mode .sidebar .toggle-btn{display:none;}
+  body.mobile-mode .sidebar .nav-label{display:inline !important;}
+  body.mobile-mode .sidebar .nav-tooltip{display:none !important;}
+
+  .mobile-menu-backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:390;}
+  body.mobile-mode .mobile-menu-backdrop.show{display:block;}
+
+  body.mobile-mode .content{
+    max-width:640px;margin:0 auto;padding:76px 14px 24px;
+  }
+  body.mobile-mode .kpi-grid{grid-template-columns:repeat(2,1fr) !important;}
+  body.mobile-mode .row,
+  body.mobile-mode .row-2,
+  body.mobile-mode .row-3,
+  body.mobile-mode .row-4{grid-template-columns:1fr !important;}
+  body.mobile-mode .profile-layout{grid-template-columns:1fr !important;}
+  body.mobile-mode .poscalc-layout{grid-template-columns:1fr !important;}
+  body.mobile-mode .econ-cal-layout{grid-template-columns:1fr !important;}
+  body.mobile-mode .notebook-layout{grid-template-columns:1fr !important;}
+  body.mobile-mode .subnav-shell{flex-direction:column;}
+  body.mobile-mode header.top{flex-wrap:wrap;gap:10px;}
