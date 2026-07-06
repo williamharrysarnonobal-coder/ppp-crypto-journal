@@ -991,12 +991,11 @@
   body.mobile-mode .fin-account-grid{grid-template-columns:1fr !important;}
 
   /* Finance: hide-balances privacy toggle — blurs every value tagged
-     .fin-balance; hover reveals it (quick peek without turning the toggle
-     back off). Per-device, not account-synced (like Mobile Mode). */
+     .fin-balance (Debit only — credit card limits/owed stay visible).
+     Per-device, not account-synced (like Mobile Mode). */
   .fin-balances-hidden .fin-balance{
-    filter:blur(6px);user-select:none;transition:filter .12s ease;
+    filter:blur(6px);user-select:none;
   }
-  .fin-balances-hidden .fin-balance:hover{filter:blur(0);}
 
   /* Finance: sub-accounts nested inside a parent Debit card */
   .fin-subacct-list{margin-top:10px;padding-top:10px;border-top:1px dashed var(--rule);display:flex;flex-direction:column;gap:6px;}

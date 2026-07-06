@@ -2179,7 +2179,7 @@ function finAccountCardHTML(a){
     ? finMoney((Number(a.credit_limit)||0) - (Number(a.owed)||0), a.currency)
     : finMoney(a.current_balance, a.currency);
   const creditLines = isCredit ? `
-    <div style="font-size:12px;margin-top:6px;">Owed <span class="fin-balance" style="color:var(--loss);font-weight:600;">${finMoney(a.owed, a.currency)}</span> <span class="fin-balance" style="color:var(--muted);">/ Limit ${finMoney(a.credit_limit, a.currency)}</span></div>
+    <div style="font-size:12px;margin-top:6px;">Owed <span style="color:var(--loss);font-weight:600;">${finMoney(a.owed, a.currency)}</span> <span style="color:var(--muted);">/ Limit ${finMoney(a.credit_limit, a.currency)}</span></div>
     ${a.billing_day || a.due_day ? `<div style="font-size:11px;color:var(--muted);margin-top:3px;">${a.billing_day ? `Bill day ${a.billing_day}` : ''}${a.billing_day && a.due_day ? ' · ' : ''}${a.due_day ? `Due day ${a.due_day}` : ''}</div>` : ''}
   ` : '';
   const subAccounts = !isCredit ? FIN_ACCOUNTS.filter(s => s.parent_account_id === a.id) : [];
@@ -2205,7 +2205,7 @@ function finAccountCardHTML(a){
         </div>
         <span class="pill pill-muted" style="margin-left:auto;flex-shrink:0;">${escapeHtml(a.currency)}</span>
       </div>
-      <div class="account-card-balance fin-balance">${mainBalance}</div>
+      <div class="account-card-balance${isCredit ? '' : ' fin-balance'}">${mainBalance}</div>
       ${isCredit ? `<div style="font-size:10.5px;color:var(--muted);margin-top:2px;text-transform:uppercase;letter-spacing:.05em;">Available credit</div>` : ''}
       ${creditLines}
       ${a.notes ? `<div style="font-size:12px;color:var(--muted);margin-top:8px;font-style:italic;">${escapeHtml(a.notes)}</div>` : ''}
@@ -2265,7 +2265,7 @@ function renderFinanceAccounts(){
     });
     const cashStr = Object.entries(cashByCur).map(([cur, sum]) => finMoney(sum, cur)).join(' · ');
     const owedStr = Object.entries(owedByCur).map(([cur, sum]) => finMoney(sum, cur)).join(' · ');
-    totals.innerHTML = `${cashStr ? `<strong>Cash:</strong> ${cashStr}` : ''}${owedStr ? `${cashStr ? ' &nbsp;·&nbsp; ' : ''}<strong>Card debt:</strong> <span style="color:var(--loss);">${owedStr}</span>` : ''}`;
+    totals.innerHTML = `${cashStr ? `<strong>Cash:</strong> <span class="fin-balance">${cashStr}</span>` : ''}${owedStr ? `${cashStr ? ' &nbsp;·&nbsp; ' : ''}<strong>Card debt:</strong> <span style="color:var(--loss);">${owedStr}</span>` : ''}`;
   }
 }
 
@@ -2764,6 +2764,8 @@ let editingFinRecId = null;
 let finRecModalKind = 'Installment';
 
 async function loadFinanceRecurring(){
+  // Auto-charges below need real accounts to deduct from.
+  if(!FIN_ACCOUNTS.length) await loadFinanceAccounts();
   try{
     const res = await fetch(`${SUPABASE_URL}/rest/v1/finance_recurring?select=*&order=created_at.asc`, {
       headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}` }
@@ -2774,7 +2776,95 @@ async function loadFinanceRecurring(){
     console.error("Couldn't load recurring items:", e);
     FIN_RECURRING = [];
   }
+  await _finProcessDueRecurring();
   renderFinanceRecurring();
+  renderFinanceAccounts(); // reflect any balance changes from bills just applied
+}
+
+// Catches up any bill that came due since we last checked — one lump
+// transaction per item per visit (not one per missed month), deducted from
+// its linked account, and recorded so it never gets charged twice.
+async function _finProcessDueRecurring(){
+  for(const r of FIN_RECURRING){
+    if(!r.account_id) continue;
+    if(r.kind === 'Installment'){
+      const totalDue = Math.min(_finMonthsSince(r.first_bill), Number(r.total_payments) || 0);
+      const already = Number(r.payments_applied) || 0;
+      const newCount = totalDue - already;
+      if(newCount <= 0) continue;
+      const monthly = (Number(r.total_amount) || 0) / Math.max(1, Number(r.total_payments) || 1);
+      await _finApplyRecurringCharge(r, monthly * newCount,
+        `Installment: ${r.name} (payment${newCount > 1 ? 's' : ''} ${already + 1}${newCount > 1 ? `-${totalDue}` : ''})`);
+      await _finPatchRecurring(r.id, { payments_applied: totalDue });
+      r.payments_applied = totalDue;
+    }else{
+      const { count, lastDate } = _finDueSubscriptionOccurrences(r);
+      if(count <= 0) continue;
+      await _finApplyRecurringCharge(r, (Number(r.price) || 0) * count,
+        `Subscription: ${r.name}${count > 1 ? ` (${count} cycles)` : ''}`);
+      await _finPatchRecurring(r.id, { last_billed: lastDate });
+      r.last_billed = lastDate;
+    }
+  }
+}
+
+function _finDueSubscriptionOccurrences(r){
+  if(!r.first_bill) return { count: 0, lastDate: r.last_billed || null };
+  const stepMonths = r.cycle === 'Yearly' ? 12 : (r.cycle === 'Quarterly' ? 3 : 1);
+  const now = new Date();
+  const after = r.last_billed ? new Date(r.last_billed + 'T00:00:00') : null;
+  let d = new Date(r.first_bill + 'T00:00:00');
+  let count = 0, lastDate = r.last_billed || null;
+  while(d <= now){
+    if(!after || d > after){ count++; lastDate = d.toISOString().slice(0,10); }
+    d.setMonth(d.getMonth() + stepMonths);
+  }
+  return { count, lastDate };
+}
+
+async function _finApplyRecurringCharge(r, amount, description){
+  if(!(amount > 0)) return;
+  try{
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/finance_transactions`, {
+      method: 'POST',
+      headers: {
+        "apikey": SUPABASE_KEY,
+        "Authorization": `Bearer ${USER_ACCESS_TOKEN}`,
+        "Content-Type": "application/json",
+        "Prefer": "return=minimal"
+      },
+      body: JSON.stringify({
+        tx_date: new Date().toISOString().slice(0,10),
+        tx_type: 'Expense',
+        amount,
+        account_id: r.account_id,
+        category: r.kind === 'Installment' ? (r.category || 'Installment') : 'Subscriptions',
+        description
+      })
+    });
+    if(!res.ok) throw new Error(await res.text());
+    await _adjustFinAccountBalance(r.account_id, -amount);
+  }catch(e){
+    console.error("Couldn't auto-charge recurring item:", e);
+  }
+}
+
+async function _finPatchRecurring(id, patch){
+  try{
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/finance_recurring?id=eq.${id}`, {
+      method: 'PATCH',
+      headers: {
+        "apikey": SUPABASE_KEY,
+        "Authorization": `Bearer ${USER_ACCESS_TOKEN}`,
+        "Content-Type": "application/json",
+        "Prefer": "return=minimal"
+      },
+      body: JSON.stringify(patch)
+    });
+    if(!res.ok) throw new Error(await res.text());
+  }catch(e){
+    console.error("Couldn't update recurring tracking:", e);
+  }
 }
 
 // Months fully elapsed since the first bill (that month counts as payment #1).
@@ -2783,7 +2873,12 @@ function _finMonthsSince(dateStr){
   const first = new Date(dateStr + 'T00:00:00');
   const now = new Date();
   if(isNaN(first) || now < first) return 0;
-  return (now.getFullYear() - first.getFullYear()) * 12 + (now.getMonth() - first.getMonth()) + 1;
+  let months = (now.getFullYear() - first.getFullYear()) * 12 + (now.getMonth() - first.getMonth()) + 1;
+  // This month's payment hasn't happened yet if we haven't reached the
+  // billing day (e.g. first bill on the 18th, today is the 6th — the 9th
+  // payment already fell due in a prior month, the 10th isn't due yet).
+  if(now.getDate() < first.getDate()) months -= 1;
+  return Math.max(0, months);
 }
 
 function _finNextBill(firstBillStr, cycle){
@@ -2812,10 +2907,10 @@ function renderFinanceRecurring(){
     const done = paid >= (Number(r.total_payments) || 0);
     return `
       <tr>
-        <td>${escapeHtml(r.name)}</td>
+        <td>${escapeHtml(r.name)}<div style="font-size:10.5px;color:var(--muted);">${escapeHtml(_finAccountName(r.account_id))}</div></td>
         <td>${escapeHtml(r.category || '—')}</td>
-        <td><span class="fin-balance">${finMoney(r.total_amount, 'PHP')}</span></td>
-        <td><span class="fin-balance">${finMoney(monthly, 'PHP')}</span></td>
+        <td>${finMoney(r.total_amount, 'PHP')}</td>
+        <td>${finMoney(monthly, 'PHP')}</td>
         <td>${done ? '<span class="pill pill-green">Fully paid</span>' : `<span class="pill pill-orange">${paid} / ${r.total_payments || 0} paid</span>`}</td>
         <td>${fmtDate(r.first_bill)}</td>
         <td>${escapeHtml(r.notes || '—')}</td>
@@ -2833,8 +2928,8 @@ function renderFinanceRecurring(){
     const next = _finNextBill(r.first_bill, r.cycle);
     return `
       <tr>
-        <td>${escapeHtml(r.name)}</td>
-        <td><span class="fin-balance">${finMoney(r.price, 'PHP')}</span></td>
+        <td>${escapeHtml(r.name)}<div style="font-size:10.5px;color:var(--muted);">${escapeHtml(_finAccountName(r.account_id))}</div></td>
+        <td>${finMoney(r.price, 'PHP')}</td>
         <td>${escapeHtml(r.cycle || 'Monthly')}</td>
         <td>${fmtDate(r.first_bill)}</td>
         <td>${next ? next.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : '—'}</td>
@@ -2859,6 +2954,9 @@ function openFinRecModal(kind, id){
   document.querySelectorAll('#finRecModal .fin-rec-inst').forEach(el => el.style.display = isInst ? '' : 'none');
   document.querySelectorAll('#finRecModal .fin-rec-sub').forEach(el => el.style.display = isInst ? 'none' : '');
 
+  document.getElementById('finRecAccount').innerHTML =
+    '<option value="">— none (won\'t auto-charge) —</option>' +
+    FIN_ACCOUNTS.map(a => `<option value="${a.id}" ${r?.account_id === a.id ? 'selected' : ''}>${escapeHtml(a.account_name)} (${escapeHtml(a.currency)})</option>`).join('');
   document.getElementById('finRecCategory').innerHTML = FINANCE_OPTIONS.expense_categories.map(c => `<option value="${escapeHtml(c)}" ${r?.category === c ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('');
   document.getElementById('finRecName').value = r?.name || '';
   document.getElementById('finRecTotal').value = r?.total_amount ?? '';
@@ -2901,6 +2999,7 @@ async function saveFinRec(){
   const payload = {
     kind: finRecModalKind,
     name,
+    account_id: parseInt(document.getElementById('finRecAccount').value, 10) || null,
     category: isInst ? document.getElementById('finRecCategory').value || null : null,
     total_amount: isInst ? parseFloat(document.getElementById('finRecTotal').value) : null,
     total_payments: isInst ? parseInt(document.getElementById('finRecCount').value, 10) : null,
@@ -2909,6 +3008,21 @@ async function saveFinRec(){
     first_bill: document.getElementById('finRecFirstBill').value || null,
     notes: document.getElementById('finRecNotes').value.trim() || null
   };
+
+  // Linking an account for the FIRST time (new item, or an existing one
+  // that had no account before): baseline the "applied" tracking up to
+  // today instead of catching up every historical bill in one lump charge.
+  // Whatever happened before today is already reflected in the balance the
+  // user typed in manually — only bills from here on should auto-deduct.
+  const existing = editingFinRecId ? FIN_RECURRING.find(x => x.id === editingFinRecId) : null;
+  const wasLinked = !!existing?.account_id;
+  if(payload.account_id && !wasLinked){
+    if(isInst){
+      payload.payments_applied = Math.min(_finMonthsSince(payload.first_bill), payload.total_payments || 0);
+    }else{
+      payload.last_billed = _finDueSubscriptionOccurrences({ first_bill: payload.first_bill, cycle: payload.cycle, last_billed: null }).lastDate;
+    }
+  }
 
   const btn = document.getElementById('finRecSaveBtn');
   btn.disabled = true;
