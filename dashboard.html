@@ -686,15 +686,28 @@
 
         <div class="subnav-panel" id="financePanel-transactions">
           <div class="panel">
-            <h2>Transactions</h2>
-            <div class="empty-state">Coming soon — log income and expenses here, with categories and filters.</div>
+            <h2 style="display:flex;align-items:center;justify-content:space-between;gap:10px;">Transactions <button class="poscalc-accent-btn" onclick="openFinTxModal()">+ Add Transaction</button></h2>
+            <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">Every peso in and out — income, expenses, and transfers between accounts. Balances update automatically.</div>
+            <div class="empty-state" id="finTxEmpty" style="display:none;">No transactions yet — click "+ Add Transaction" to log your first one.</div>
+            <div class="journal-wrap" id="finTxWrap" style="display:none;">
+              <table class="journal">
+                <thead><tr><th>Date</th><th>Type</th><th>Amount</th><th>Account</th><th>Category</th><th>Description</th><th></th></tr></thead>
+                <tbody id="finTxBody"></tbody>
+              </table>
+            </div>
           </div>
         </div>
 
         <div class="subnav-panel" id="financePanel-config">
           <div class="panel">
             <h2>Configuration</h2>
-            <div class="empty-state">Coming soon — categories, currencies, and other Finance settings.</div>
+            <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">Add or remove the choices for each Finance dropdown — account types, currencies, and income/expense categories.</div>
+            <select id="finOptionsPicker" onchange="renderFinanceOptionsListFor(this.value)"></select>
+            <div id="finOptionsList" style="margin-top:14px;"></div>
+            <div class="config-add-row">
+              <input id="finNewOptionInput" placeholder="New option…" onkeydown="if(event.key==='Enter') addFinanceOption()">
+              <button class="ai-btn" style="padding:8px 14px;" onclick="addFinanceOption()">Add</button>
+            </div>
           </div>
         </div>
       </div>
@@ -777,6 +790,47 @@
     </div>
     <div id="finAccountError" class="auth-error"></div>
     <button class="ai-btn" style="margin-top:14px;width:100%;" id="finAccountSaveBtn" onclick="saveFinAccount()">Save Account</button>
+  </div>
+</div>
+
+<div class="modal-overlay" id="finTxModal" onclick="if(event.target===this) closeFinTxModal()">
+  <div class="modal-box" style="position:relative;">
+    <button class="modal-close" onclick="closeFinTxModal()">✕</button>
+    <h3>Add Transaction</h3>
+    <div class="field-row" style="margin-top:14px;">
+      <label>Date</label>
+      <input id="finTxDate" type="date">
+    </div>
+    <div class="field-row">
+      <label>Type</label>
+      <select id="finTxType" onchange="onFinTxTypeChange()">
+        <option value="Income">Income</option>
+        <option value="Expense">Expense</option>
+        <option value="Transfer">Transfer</option>
+      </select>
+    </div>
+    <div class="field-row">
+      <label>Amount</label>
+      <input id="finTxAmount" type="number" step="any" placeholder="e.g. 1500">
+    </div>
+    <div class="field-row">
+      <label>Account</label>
+      <select id="finTxAccount"></select>
+    </div>
+    <div class="field-row" id="finTxToAccountRow" style="display:none;">
+      <label>To Account</label>
+      <select id="finTxToAccount"></select>
+    </div>
+    <div class="field-row" id="finTxCategoryRow">
+      <label>Category</label>
+      <select id="finTxCategory"></select>
+    </div>
+    <div class="field-row">
+      <label>Description (optional)</label>
+      <input id="finTxDesc" placeholder="e.g. groceries, July payout">
+    </div>
+    <div id="finTxError" class="auth-error"></div>
+    <button class="ai-btn" style="margin-top:14px;width:100%;" id="finTxSaveBtn" onclick="saveFinTx()">Save Transaction</button>
   </div>
 </div>
 
@@ -1154,6 +1208,6 @@
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=1"></script>
-<script src="js/dashboard.js?v=105"></script>
+<script src="js/dashboard.js?v=106"></script>
 </body>
 </html>

@@ -230,7 +230,8 @@ const UI_PREF_LS_KEYS = {
   field_options: 'ledger-field-options',
   unfollowed_rules_options: 'ledger-unfollowed-rules-options',
   form_field_config: 'ledger-form-field-config',
-  column_config: 'ledger-column-config'
+  column_config: 'ledger-column-config',
+  finance_options: 'ledger-finance-options'
 };
 
 let _uiPrefsSyncTimer = null;
@@ -292,6 +293,7 @@ function applyUIPrefsFromProfile(){
     if(changedKeys.includes('font')) applyFont(prefs.font);
     if(changedKeys.includes('accent')) applyAccent(prefs.accent);
     if(changedKeys.includes('field_options') || changedKeys.includes('unfollowed_rules_options')) loadOptionsConfig();
+    if(changedKeys.includes('finance_options')) loadFinanceOptions();
     if(changedKeys.includes('form_field_config')) loadFormFieldConfig();
     if(changedKeys.includes('column_config')){ loadColumnConfig(); renderJournalTable(); }
     if(currentView === 'settings') renderSettingsPage();
@@ -2094,18 +2096,54 @@ function switchFinanceTab(tab){
   activeFinanceTab = tab;
   document.querySelectorAll('#view-finance .subnav-item').forEach(el => el.classList.toggle('active', el.dataset.tab === tab));
   document.querySelectorAll('#view-finance .subnav-panel').forEach(el => el.classList.toggle('active', el.id === 'financePanel-' + tab));
+  if(tab === 'accounts') loadFinanceAccounts();
+  if(tab === 'transactions'){
+    // Transactions need the account names/balances too.
+    if(!FIN_ACCOUNTS.length) loadFinanceAccounts();
+    loadFinanceTransactions();
+  }
+  if(tab === 'config') renderFinanceConfig();
 }
 
 function renderFinance(){
   switchFinanceTab(activeFinanceTab);
-  loadFinanceAccounts();
+}
+
+/* ---- Finance dropdown options (editable in Finance > Configuration) ---- */
+const FINANCE_OPTION_DEFAULTS = {
+  account_types: ['Bank', 'E-Wallet', 'Cash', 'Crypto', 'Exchange', 'Other'],
+  currencies: ['PHP', 'USD', 'USDT'],
+  income_categories: ['Salary', 'Trading Payout', 'Business', 'Allowance', 'Gift', 'Other'],
+  expense_categories: ['Food', 'Bills', 'Transport', 'Subscriptions', 'Shopping', 'Health', 'Family', 'Entertainment', 'Other']
+};
+const FINANCE_OPTION_META = [
+  { key: 'account_types', label: 'Account Types' },
+  { key: 'currencies', label: 'Currencies' },
+  { key: 'income_categories', label: 'Income Categories' },
+  { key: 'expense_categories', label: 'Expense Categories' }
+];
+let FINANCE_OPTIONS = JSON.parse(JSON.stringify(FINANCE_OPTION_DEFAULTS));
+
+function loadFinanceOptions(){
+  try{
+    const saved = JSON.parse(localStorage.getItem('ledger-finance-options') || 'null');
+    if(saved && typeof saved === 'object'){
+      Object.keys(FINANCE_OPTION_DEFAULTS).forEach(k => {
+        if(Array.isArray(saved[k]) && saved[k].length) FINANCE_OPTIONS[k] = saved[k];
+      });
+    }
+  }catch(e){}
+}
+loadFinanceOptions();
+
+function saveFinanceOptions(){
+  try{ localStorage.setItem('ledger-finance-options', JSON.stringify(FINANCE_OPTIONS)); }catch(e){}
+  syncUIPrefsToProfile();
 }
 
 /* ---- Finance > Accounts ---- */
 let FIN_ACCOUNTS = [];
 let editingFinAccountId = null;
-const FIN_ACCOUNT_TYPES = ['Bank', 'E-Wallet', 'Cash', 'Crypto', 'Exchange', 'Other'];
-const FIN_CURRENCIES = ['PHP', 'USD', 'USDT'];
 
 function finMoney(v, cur){
   const n = Number(v) || 0;
@@ -2171,8 +2209,8 @@ function openFinAccountModal(id){
   const a = id ? FIN_ACCOUNTS.find(x => x.id === id) : null;
 
   document.getElementById('finAccountModalTitle').textContent = a ? 'Edit Account' : 'Add Account';
-  document.getElementById('finAccType').innerHTML = FIN_ACCOUNT_TYPES.map(t => `<option value="${t}" ${a?.account_type === t ? 'selected' : ''}>${t}</option>`).join('');
-  document.getElementById('finAccCurrency').innerHTML = FIN_CURRENCIES.map(c => `<option value="${c}" ${a?.currency === c ? 'selected' : ''}>${c}</option>`).join('');
+  document.getElementById('finAccType').innerHTML = FINANCE_OPTIONS.account_types.map(t => `<option value="${t}" ${a?.account_type === t ? 'selected' : ''}>${t}</option>`).join('');
+  document.getElementById('finAccCurrency').innerHTML = FINANCE_OPTIONS.currencies.map(c => `<option value="${c}" ${a?.currency === c ? 'selected' : ''}>${c}</option>`).join('');
   document.getElementById('finAccName').value = a?.account_name || '';
   document.getElementById('finAccBalance').value = a?.current_balance ?? '';
   document.getElementById('finAccNotes').value = a?.notes || '';
@@ -2247,6 +2285,265 @@ async function deleteFinAccount(id){
     console.error("Couldn't delete finance account:", e);
     await customAlert("Couldn't delete this account — please try again.");
   }
+}
+
+/* ---- Finance > Transactions ---- */
+let FIN_TXNS = [];
+
+async function loadFinanceTransactions(){
+  try{
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/finance_transactions?select=*&order=tx_date.desc,created_at.desc`, {
+      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}` }
+    });
+    if(!res.ok) throw new Error(await res.text());
+    FIN_TXNS = await res.json();
+  }catch(e){
+    console.error("Couldn't load finance transactions:", e);
+    FIN_TXNS = [];
+  }
+  renderFinanceTransactions();
+}
+
+function _finAccountName(id){
+  const a = FIN_ACCOUNTS.find(x => x.id === id);
+  return a ? a.account_name : '—';
+}
+
+function renderFinanceTransactions(){
+  const wrap = document.getElementById('finTxWrap');
+  const empty = document.getElementById('finTxEmpty');
+  const body = document.getElementById('finTxBody');
+  if(!wrap || !empty || !body) return;
+
+  if(!FIN_TXNS.length){
+    wrap.style.display = 'none';
+    empty.style.display = 'block';
+    return;
+  }
+  wrap.style.display = 'block';
+  empty.style.display = 'none';
+
+  body.innerHTML = FIN_TXNS.map(t => {
+    const acc = FIN_ACCOUNTS.find(x => x.id === t.account_id);
+    const cur = acc?.currency || '';
+    let amountHtml, accountHtml;
+    if(t.tx_type === 'Income'){
+      amountHtml = `<span style="color:var(--win);font-weight:600;">+${finMoney(t.amount, cur)}</span>`;
+      accountHtml = escapeHtml(_finAccountName(t.account_id));
+    }else if(t.tx_type === 'Expense'){
+      amountHtml = `<span style="color:var(--loss);font-weight:600;">−${finMoney(t.amount, cur)}</span>`;
+      accountHtml = escapeHtml(_finAccountName(t.account_id));
+    }else{
+      amountHtml = `<span style="font-weight:600;">${finMoney(t.amount, cur)}</span>`;
+      accountHtml = `${escapeHtml(_finAccountName(t.account_id))} → ${escapeHtml(_finAccountName(t.to_account_id))}`;
+    }
+    const typePill = t.tx_type === 'Income' ? 'pill-green' : (t.tx_type === 'Expense' ? 'pill-red' : 'pill-blue');
+    return `
+      <tr>
+        <td>${t.tx_date ? new Date(t.tx_date + 'T00:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : '—'}</td>
+        <td><span class="pill ${typePill}">${t.tx_type}</span></td>
+        <td>${amountHtml}</td>
+        <td>${accountHtml}</td>
+        <td>${escapeHtml(t.category || '—')}</td>
+        <td>${escapeHtml(t.description || '—')}</td>
+        <td style="text-align:right;">
+          <button class="drawer-danger-btn" style="padding:4px 10px;font-size:11px;" onclick="deleteFinTx(${t.id})">${deleteIconSVG()}</button>
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+async function _adjustFinAccountBalance(accountId, delta){
+  if(!accountId || !delta) return;
+  const acc = FIN_ACCOUNTS.find(a => a.id === accountId);
+  if(!acc) return;
+  const newBalance = (parseFloat(acc.current_balance) || 0) + delta;
+  try{
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/finance_accounts?id=eq.${accountId}`, {
+      method: 'PATCH',
+      headers: {
+        "apikey": SUPABASE_KEY,
+        "Authorization": `Bearer ${USER_ACCESS_TOKEN}`,
+        "Content-Type": "application/json",
+        "Prefer": "return=minimal"
+      },
+      body: JSON.stringify({ current_balance: newBalance })
+    });
+    if(!res.ok) throw new Error(await res.text());
+    acc.current_balance = newBalance;
+  }catch(e){
+    console.error("Couldn't update finance account balance:", e);
+  }
+}
+
+function openFinTxModal(){
+  if(!FIN_ACCOUNTS.length){
+    customAlert('Add at least one account first (Finance > Accounts) — every transaction needs an account.');
+    return;
+  }
+  const accOpts = FIN_ACCOUNTS.map(a => `<option value="${a.id}">${escapeHtml(a.account_name)} (${escapeHtml(a.currency)})</option>`).join('');
+  document.getElementById('finTxAccount').innerHTML = accOpts;
+  document.getElementById('finTxToAccount').innerHTML = accOpts;
+  document.getElementById('finTxDate').value = new Date().toISOString().slice(0,10);
+  document.getElementById('finTxAmount').value = '';
+  document.getElementById('finTxDesc').value = '';
+  document.getElementById('finTxType').value = 'Expense';
+  onFinTxTypeChange();
+  document.getElementById('finTxError').textContent = '';
+  document.getElementById('finTxModal').classList.add('open');
+}
+
+function closeFinTxModal(){
+  document.getElementById('finTxModal').classList.remove('open');
+}
+
+function onFinTxTypeChange(){
+  const type = document.getElementById('finTxType').value;
+  document.getElementById('finTxToAccountRow').style.display = type === 'Transfer' ? '' : 'none';
+  document.getElementById('finTxCategoryRow').style.display = type === 'Transfer' ? 'none' : '';
+  const cats = type === 'Income' ? FINANCE_OPTIONS.income_categories : FINANCE_OPTIONS.expense_categories;
+  document.getElementById('finTxCategory').innerHTML = cats.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+}
+
+async function saveFinTx(){
+  const errEl = document.getElementById('finTxError');
+  errEl.textContent = '';
+
+  const type = document.getElementById('finTxType').value;
+  const amount = parseFloat(document.getElementById('finTxAmount').value);
+  const accountId = parseInt(document.getElementById('finTxAccount').value, 10) || null;
+  const toAccountId = type === 'Transfer' ? (parseInt(document.getElementById('finTxToAccount').value, 10) || null) : null;
+
+  if(!amount || amount <= 0){ errEl.textContent = 'Please enter an amount greater than zero.'; return; }
+  if(!accountId){ errEl.textContent = 'Please pick an account.'; return; }
+  if(type === 'Transfer' && toAccountId === accountId){ errEl.textContent = 'Transfer needs two DIFFERENT accounts.'; return; }
+
+  const payload = {
+    tx_date: document.getElementById('finTxDate').value || new Date().toISOString().slice(0,10),
+    tx_type: type,
+    amount,
+    account_id: accountId,
+    to_account_id: toAccountId,
+    category: type === 'Transfer' ? null : document.getElementById('finTxCategory').value || null,
+    description: document.getElementById('finTxDesc').value.trim() || null
+  };
+
+  const btn = document.getElementById('finTxSaveBtn');
+  btn.disabled = true;
+  btn.textContent = 'Saving…';
+  try{
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/finance_transactions`, {
+      method: 'POST',
+      headers: {
+        "apikey": SUPABASE_KEY,
+        "Authorization": `Bearer ${USER_ACCESS_TOKEN}`,
+        "Content-Type": "application/json",
+        "Prefer": "return=minimal"
+      },
+      body: JSON.stringify(payload)
+    });
+    if(!res.ok) throw new Error(await res.text());
+
+    // Keep account balances live: income adds, expense subtracts, transfer
+    // moves the amount between the two accounts.
+    if(type === 'Income') await _adjustFinAccountBalance(accountId, amount);
+    if(type === 'Expense') await _adjustFinAccountBalance(accountId, -amount);
+    if(type === 'Transfer'){
+      await _adjustFinAccountBalance(accountId, -amount);
+      await _adjustFinAccountBalance(toAccountId, amount);
+    }
+
+    closeFinTxModal();
+    await loadFinanceTransactions();
+    renderFinanceAccounts();
+    showToast('Transaction saved');
+  }catch(e){
+    console.error("Couldn't save transaction:", e);
+    errEl.textContent = "Couldn't save — make sure you've run supabase_finance.sql in Supabase.";
+  }finally{
+    btn.disabled = false;
+    btn.textContent = 'Save Transaction';
+  }
+}
+
+async function deleteFinTx(id){
+  const t = FIN_TXNS.find(x => x.id === id);
+  if(!t) return;
+  if(!(await customConfirm('Delete this transaction? The account balance will be adjusted back.', 'Delete'))) return;
+  try{
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/finance_transactions?id=eq.${id}`, {
+      method: 'DELETE',
+      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}` }
+    });
+    if(!res.ok) throw new Error(await res.text());
+
+    // Reverse the balance effect this transaction had when it was added.
+    const amount = Number(t.amount) || 0;
+    if(t.tx_type === 'Income') await _adjustFinAccountBalance(t.account_id, -amount);
+    if(t.tx_type === 'Expense') await _adjustFinAccountBalance(t.account_id, amount);
+    if(t.tx_type === 'Transfer'){
+      await _adjustFinAccountBalance(t.account_id, amount);
+      await _adjustFinAccountBalance(t.to_account_id, -amount);
+    }
+
+    FIN_TXNS = FIN_TXNS.filter(x => x.id !== id);
+    renderFinanceTransactions();
+    renderFinanceAccounts();
+    showToast('Transaction deleted');
+  }catch(e){
+    console.error("Couldn't delete transaction:", e);
+    await customAlert("Couldn't delete this transaction — please try again.");
+  }
+}
+
+/* ---- Finance > Configuration ---- */
+function renderFinanceConfig(){
+  const picker = document.getElementById('finOptionsPicker');
+  if(!picker) return;
+  if(!picker.dataset.filled){
+    picker.innerHTML = FINANCE_OPTION_META.map(f => `<option value="${f.key}">${f.label}</option>`).join('');
+    picker.dataset.filled = '1';
+  }
+  renderFinanceOptionsListFor(picker.value);
+}
+
+function renderFinanceOptionsListFor(key){
+  const list = document.getElementById('finOptionsList');
+  if(!list) return;
+  const arr = FINANCE_OPTIONS[key] || [];
+  list.innerHTML = arr.map((opt, i) => `
+    <div class="config-option-row">
+      <span>${escapeHtml(opt)}</span>
+      <button onclick="removeFinanceOption('${key}', ${i})" title="Remove">✕</button>
+    </div>
+  `).join('') || '<div class="empty-state" style="padding:10px 0;">No options — add one below.</div>';
+}
+
+function addFinanceOption(){
+  const picker = document.getElementById('finOptionsPicker');
+  const input = document.getElementById('finNewOptionInput');
+  const val = input.value.trim();
+  if(!val) return;
+  const key = picker.value;
+  if(FINANCE_OPTIONS[key].some(o => o.toLowerCase() === val.toLowerCase())){
+    showToast('That option already exists.');
+    return;
+  }
+  FINANCE_OPTIONS[key].push(val);
+  saveFinanceOptions();
+  input.value = '';
+  renderFinanceOptionsListFor(key);
+}
+
+async function removeFinanceOption(key, idx){
+  if(FINANCE_OPTIONS[key].length <= 1){
+    await customAlert('Keep at least one option in this list.');
+    return;
+  }
+  FINANCE_OPTIONS[key].splice(idx, 1);
+  saveFinanceOptions();
+  renderFinanceOptionsListFor(key);
 }
 
 const JOURNAL_FILTER_FIELDS = [
