@@ -1128,7 +1128,7 @@ function renderCalendar(){
       if(info){
         cls = info.pnl >= 0 ? 'win' : 'loss';
         if(String(d) === bestDay) cls += ' best';
-        pnlHtml = `<div class="p">${fmtMoney(info.pnl)}</div><div style="font-size:10.5px;color:var(--muted);">${info.count} trade${info.count>1?'s':''}</div>`;
+        pnlHtml = `<div class="p">${fmtMoney(info.pnl)}</div><div class="cal-count" style="font-size:10.5px;color:var(--muted);">${info.count} trade${info.count>1?'s':''}</div>`;
         click = `onclick="showDayTrades(${y}, ${m}, ${d})"`;
       }
       html += `<div class="cal-cell ${cls}" ${click}><div class="d">${d}</div>${pnlHtml}</div>`;
@@ -1137,8 +1137,8 @@ function renderCalendar(){
     // weekly summary cell
     const wkCls = weekCount > 0 ? (weekPnl >= 0 ? 'win' : 'loss') : '';
     const wkBody = weekCount > 0
-      ? `<div class="p">${fmtMoney(weekPnl)}</div><div style="font-size:10.5px;color:var(--muted);">${weekCount} trade${weekCount>1?'s':''}</div>`
-      : `<div style="font-size:10.5px;color:var(--muted);">—</div>`;
+      ? `<div class="p">${fmtMoney(weekPnl)}</div><div class="cal-count" style="font-size:10.5px;color:var(--muted);">${weekCount} trade${weekCount>1?'s':''}</div>`
+      : `<div class="cal-count" style="font-size:10.5px;color:var(--muted);">—</div>`;
     const weekIdx = window._calByWeek.length;
     window._calByWeek.push({trades: weekTrades, pnl: weekPnl, count: weekCount, days: weekCells.filter(d => d !== null)});
     const wkClick = weekCount > 0 ? `onclick="showWeekTrades(${weekIdx})"` : '';
@@ -3065,6 +3065,41 @@ function markEventsNotificationSeen(){
   const merged = Array.from(new Set([..._getSeenEventIds(), ...currentIds])).slice(-200);
   try{ localStorage.setItem('ledger-seen-event-notifs', JSON.stringify(merged)); }catch(e){}
   _persistProfileList('seen_event_notifications', merged);
+}
+
+// One-click "Clear All" in the bell dropdown: marks alerts (every category,
+// not just the open tab), calendar events, and completed challenges as read.
+// Incomplete trades and pending signups stay — they're actual pending WORK
+// (missing fields / an approval decision), not notices you can dismiss.
+async function clearAllNotifications(){
+  markChallengesNotificationSeen();
+  markEventsNotificationSeen();
+
+  const unseenIds = SIGNAL_ALERTS.filter(s => !s.seen).map(s => s.id);
+  if(unseenIds.length){
+    try{
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/signal_alerts?id=in.(${unseenIds.join(',')})`, {
+        method: 'PATCH',
+        headers: {
+          "apikey": SUPABASE_KEY,
+          "Authorization": `Bearer ${USER_ACCESS_TOKEN}`,
+          "Content-Type": "application/json",
+          "Prefer": "return=minimal"
+        },
+        body: JSON.stringify({ seen: true })
+      });
+      if(!res.ok) throw new Error(await res.text());
+      SIGNAL_ALERTS.forEach(s => { if(unseenIds.includes(s.id)) s.seen = true; });
+      lastKnownUnseenAlertCount = SIGNAL_ALERTS.filter(isNewSignal).length;
+      renderAlertsTables();
+    }catch(e){
+      console.error("Couldn't mark alerts as read:", e);
+    }
+  }
+
+  refreshAllNavBadges();
+  renderNotifCenter();
+  showToast('Notifications cleared');
 }
 
 function updateNavBadge(view, count){

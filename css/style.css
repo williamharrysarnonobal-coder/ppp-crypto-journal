@@ -959,3 +959,24 @@
   body.mobile-mode .rank-medal-label{display:none;}
   body.mobile-mode .rank-medal.current .rank-medal-label{display:block;font-size:9px;top:44px;}
   body.mobile-mode .rank-medal-you{font-size:7.5px;top:-16px;}
+
+  /* Bell dropdown "Clear All" — one click marks alerts, calendar events,
+     and challenge completions as read (both desktop and mobile). */
+  .notif-center-title{display:flex;align-items:center;justify-content:space-between;gap:10px;}
+  .notif-clear-btn{
+    background:none;border:1px solid var(--accent);color:var(--ink);
+    font-size:10.5px;font-weight:600;padding:3px 9px;border-radius:5px;cursor:pointer;
+  }
+  .notif-clear-btn:hover{background:color-mix(in srgb, var(--accent) 12%, transparent);}
+
+  /* Mobile Mode dashboard calendar: amounts don't fit the tiny cells, so
+     each traded day shows just a win/loss dot — tapping the date opens the
+     existing day-trades popup with the full numbers. */
+  body.mobile-mode #calGrid .cal-cell .p,
+  body.mobile-mode #calGrid .cal-cell .cal-count{display:none;}
+  body.mobile-mode #calGrid .cal-cell.win::after,
+  body.mobile-mode #calGrid .cal-cell.loss::after{
+    content:'';width:7px;height:7px;border-radius:50%;margin-top:3px;flex-shrink:0;
+  }
+  body.mobile-mode #calGrid .cal-cell.win::after{background:var(--win);}
+  body.mobile-mode #calGrid .cal-cell.loss::after{background:var(--loss);}
