@@ -57,7 +57,6 @@ alter table user_profile add column if not exists seen_event_notifications jsonb
 alter table finance_accounts add column if not exists account_class text not null default 'Debit';
 alter table finance_accounts add column if not exists icon_path text;
 alter table finance_accounts add column if not exists credit_limit numeric;
-alter table finance_accounts add column if not exists owed numeric;
 alter table finance_accounts add column if not exists billing_day int;
 alter table finance_accounts add column if not exists due_day int;
 alter table finance_accounts add column if not exists card_number text;

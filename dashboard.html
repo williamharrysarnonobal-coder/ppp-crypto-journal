@@ -672,7 +672,7 @@
 
         <div class="subnav-panel" id="financePanel-accounts">
           <div class="panel">
-            <h2 style="display:flex;align-items:center;justify-content:space-between;gap:10px;">Accounts <span style="display:flex;gap:8px;"><button class="poscalc-accent-btn" onclick="recalculateFinAccounts()">Recalculate</button><button class="poscalc-accent-btn" id="finHideBalBtn" onclick="toggleFinBalances()">Hide Balances</button><button class="poscalc-accent-btn" onclick="openFinAccountModal()">+ Add Account</button></span></h2>
+            <h2 style="display:flex;align-items:center;justify-content:space-between;gap:10px;">Accounts <span style="display:flex;gap:8px;"><button class="poscalc-accent-btn" id="finHideBalBtn" onclick="toggleFinBalances()">Hide Balances</button><button class="poscalc-accent-btn" onclick="openFinAccountModal()">+ Add Account</button></span></h2>
             <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">Where your money lives — banks, e-wallets, cash, crypto.</div>
             <div class="empty-state" id="finAccountsEmpty" style="display:none;">No accounts yet — click "+ Add Account" to add your first one.</div>
             <div id="finAccountsSections"></div>
@@ -823,15 +823,8 @@
     </div>
     <div class="field-row fin-credit-row" style="display:none;">
       <label>Credit Limit</label>
-      <input id="finAccLimit" type="number" step="any" placeholder="e.g. 50000" oninput="updateFinCreditAvail()">
-    </div>
-    <div class="field-row fin-credit-row" style="display:none;">
-      <label>Owed (used credit)</label>
-      <input id="finAccOwed" type="number" step="any" placeholder="e.g. 12500" oninput="updateFinCreditAvail()">
-    </div>
-    <div class="field-row fin-credit-row" style="display:none;">
-      <label>Balance (available = limit − owed)</label>
-      <div class="field-static" id="finAccAvail">—</div>
+      <input id="finAccLimit" type="number" step="any" placeholder="e.g. 50000">
+      <div class="sub" style="font-size:11px;margin-top:4px;">Owed and available credit are fully automatic — computed from your installments and card transactions.</div>
     </div>
     <div class="field-row fin-credit-row" style="display:none;">
       <label>Billing Date (day of month)</label>
@@ -1324,6 +1317,6 @@
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=1"></script>
-<script src="js/dashboard.js?v=120"></script>
+<script src="js/dashboard.js?v=123"></script>
 </body>
 </html>

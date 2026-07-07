@@ -2180,8 +2180,9 @@ function finAccountCardHTML(a){
   const iconImg = a.icon_path
     ? `<img class="fin-acc-icon" data-icon-path="${escapeHtml(a.icon_path)}" alt="" style="width:30px;height:30px;object-fit:contain;border-radius:6px;display:none;flex-shrink:0;">`
     : '';
+  const owedNow = isCredit ? finOwedFor(a) : 0; // virtual — never read from storage
   const mainBalance = isCredit
-    ? finMoney((Number(a.credit_limit)||0) - (Number(a.owed)||0), a.currency)
+    ? finMoney((Number(a.credit_limit)||0) - owedNow, a.currency)
     : finMoney(a.current_balance, a.currency);
   // --- Running Bill (this calendar month's spend) + statement payment ---
   const now = new Date();
@@ -2199,8 +2200,8 @@ function finAccountCardHTML(a){
   const runningTx = _finMonthTxTotal(a.id, now);
   const runningLine = isCredit ? `
     <div style="font-size:11px;color:var(--muted);margin-top:10px;text-transform:uppercase;letter-spacing:.05em;">Running Bill for ${now.toLocaleDateString('en-US',{month:'long'})}</div>
-    <div style="font-size:12px;margin-top:4px;">Recurring <span class="fin-balance" style="font-weight:600;">${finMoney(runningRecurring, a.currency)}</span> <span style="color:var(--muted);">·</span> Transactions <span class="fin-balance" style="font-weight:600;">${finMoney(runningTx, a.currency)}</span></div>
-    <div style="font-size:12px;margin-top:2px;">Total <span class="fin-balance" style="font-weight:700;color:var(--warn);">${finMoney(runningRecurring + runningTx, a.currency)}</span></div>
+    <div style="font-size:12px;margin-top:4px;">Recurring <span style="font-weight:600;">${finMoney(runningRecurring, a.currency)}</span> <span style="color:var(--muted);">·</span> Transactions <span style="font-weight:600;">${finMoney(runningTx, a.currency)}</span></div>
+    <div style="font-size:12px;margin-top:2px;">Total <span style="font-weight:700;color:var(--warn);">${finMoney(runningRecurring + runningTx, a.currency)}</span></div>
   ` : '';
 
   let paymentLineHtml = '';
@@ -2214,7 +2215,7 @@ function finAccountCardHTML(a){
     // (re)appears on the 5th, per the monthly rhythm the user wanted.
   }
   const creditLines = isCredit ? `
-    <div style="font-size:12px;margin-top:6px;">Owed <span style="color:var(--loss);font-weight:600;">${finMoney(a.owed, a.currency)}</span> <span style="color:var(--muted);">/ Limit ${finMoney(a.credit_limit, a.currency)}</span></div>
+    <div style="font-size:12px;margin-top:6px;">Owed <span style="color:var(--loss);font-weight:600;">${finMoney(owedNow, a.currency)}</span> <span style="color:var(--muted);">/ Limit ${finMoney(a.credit_limit, a.currency)}</span></div>
     ${a.billing_day || a.due_day ? `<div style="font-size:11px;color:var(--muted);margin-top:3px;">${a.billing_day ? `Bill day ${a.billing_day}` : ''}${a.billing_day && a.due_day ? ' · ' : ''}${a.due_day ? `Due day ${a.due_day}` : ''}</div>` : ''}
     ${runningLine}
     ${paymentLineHtml}
@@ -2296,7 +2297,7 @@ function renderFinanceAccounts(){
     const cashByCur = {}, owedByCur = {};
     FIN_ACCOUNTS.forEach(a => {
       if(a.account_class === 'Credit'){
-        owedByCur[a.currency] = (owedByCur[a.currency] || 0) + (Number(a.owed) || 0);
+        owedByCur[a.currency] = (owedByCur[a.currency] || 0) + finOwedFor(a);
       }else{
         cashByCur[a.currency] = (cashByCur[a.currency] || 0) + (Number(a.current_balance) || 0);
       }
@@ -2346,7 +2347,6 @@ function openFinAccountModal(id, parentIdForNew){
   document.getElementById('finAccCardNumber').value = a?.card_number || '';
   document.getElementById('finAccBalance').value = a?.current_balance ?? '';
   document.getElementById('finAccLimit').value = a?.credit_limit ?? '';
-  document.getElementById('finAccOwed').value = a?.owed ?? '';
   document.getElementById('finAccBillDay').value = a?.billing_day ?? '';
   document.getElementById('finAccDueDay').value = a?.due_day ?? '';
   document.getElementById('finAccNotes').value = a?.notes || '';
@@ -2380,14 +2380,6 @@ function onFinAccClassChange(){
   const isCredit = cls === 'Credit';
   document.getElementById('finAccBalanceRow').style.display = isCredit ? 'none' : '';
   document.querySelectorAll('#finAccountModal .fin-credit-row').forEach(el => el.style.display = isCredit ? '' : 'none');
-  if(isCredit) updateFinCreditAvail();
-}
-
-function updateFinCreditAvail(){
-  const limit = parseFloat(document.getElementById('finAccLimit').value) || 0;
-  const owed = parseFloat(document.getElementById('finAccOwed').value) || 0;
-  const cur = document.getElementById('finAccCurrency').value;
-  document.getElementById('finAccAvail').textContent = finMoney(limit - owed, cur);
 }
 
 function previewFinAccIcon(){
@@ -2423,18 +2415,15 @@ async function saveFinAccount(){
   };
 
   if(cls === 'Credit'){
-    const limit = parseFloat(document.getElementById('finAccLimit').value) || 0;
-    const owed = parseFloat(document.getElementById('finAccOwed').value) || 0;
-    payload.credit_limit = limit;
-    payload.owed = owed;
+    // Only the limit and cycle days are real inputs — owed and available
+    // are computed live (finOwedFor), never stored.
+    payload.credit_limit = parseFloat(document.getElementById('finAccLimit').value) || 0;
     payload.billing_day = parseInt(document.getElementById('finAccBillDay').value, 10) || null;
     payload.due_day = parseInt(document.getElementById('finAccDueDay').value, 10) || null;
-    // For a credit line, "balance" means what you can still spend.
-    payload.current_balance = limit - owed;
+    payload.current_balance = 0;
   }else{
     payload.current_balance = parseFloat(document.getElementById('finAccBalance').value) || 0;
     payload.credit_limit = null;
-    payload.owed = null;
     payload.billing_day = null;
     payload.due_day = null;
   }
@@ -2510,40 +2499,6 @@ async function deleteFinAccount(id){
   }
 }
 
-// Owed and Available Credit are two separately-stored fields that should
-// always satisfy available = limit - owed — they're kept in sync by
-// _adjustFinAccountBalance on every write, but this is a manual safety net
-// in case anything (a partial save, a direct DB edit) ever lets them drift.
-async function recalculateFinAccounts(){
-  const creditAccs = FIN_ACCOUNTS.filter(a => a.account_class === 'Credit');
-  if(!creditAccs.length){ showToast('No credit accounts to recalculate.'); return; }
-
-  let fixedCount = 0;
-  for(const a of creditAccs){
-    const correct = (Number(a.credit_limit) || 0) - (Number(a.owed) || 0);
-    if(Math.abs(correct - (Number(a.current_balance) || 0)) < 0.01) continue;
-    try{
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/finance_accounts?id=eq.${a.id}`, {
-        method: 'PATCH',
-        headers: {
-          "apikey": SUPABASE_KEY,
-          "Authorization": `Bearer ${USER_ACCESS_TOKEN}`,
-          "Content-Type": "application/json",
-          "Prefer": "return=minimal"
-        },
-        body: JSON.stringify({ current_balance: correct })
-      });
-      if(!res.ok) throw new Error(await res.text());
-      a.current_balance = correct;
-      fixedCount++;
-    }catch(e){
-      console.error(`Couldn't recalculate account ${a.id}:`, e);
-    }
-  }
-  renderFinanceAccounts();
-  showToast(fixedCount ? `Fixed ${fixedCount} account${fixedCount > 1 ? 's' : ''}` : 'Everything already checks out — no drift found');
-}
-
 /* ---- Finance > Transactions ---- */
 let FIN_TXNS = [];
 
@@ -2616,15 +2571,13 @@ async function _adjustFinAccountBalance(accountId, delta){
   const acc = FIN_ACCOUNTS.find(a => a.id === accountId);
   if(!acc) return;
 
-  const patch = { current_balance: (parseFloat(acc.current_balance) || 0) + delta };
-  // On a CREDIT account, spending doesn't shrink your money — it grows your
-  // debt: an expense (negative delta) raises "owed", a payment/income
-  // (positive delta) lowers it. Available credit (current_balance) moves
-  // together with it either way.
-  if(acc.account_class === 'Credit'){
-    patch.owed = (parseFloat(acc.owed) || 0) - delta;
-  }
+  // CREDIT accounts never store balance movements — Owed is a virtual
+  // value computed live from installments + unsettled transactions (see
+  // finOwedFor), so there's nothing to write. Only real cash (Debit)
+  // needs its stored balance moved.
+  if(acc.account_class === 'Credit') return;
 
+  const patch = { current_balance: (parseFloat(acc.current_balance) || 0) + delta };
   try{
     const res = await fetch(`${SUPABASE_URL}/rest/v1/finance_accounts?id=eq.${accountId}`, {
       method: 'PATCH',
@@ -2638,7 +2591,6 @@ async function _adjustFinAccountBalance(accountId, delta){
     });
     if(!res.ok) throw new Error(await res.text());
     acc.current_balance = patch.current_balance;
-    if(patch.owed !== undefined) acc.owed = patch.owed;
   }catch(e){
     console.error("Couldn't update finance account balance:", e);
   }
@@ -2895,21 +2847,44 @@ function _finBillPaidCovers(lastBillPaid, monthDate){
   return d.getFullYear() === monthDate.getFullYear() && d.getMonth() === monthDate.getMonth();
 }
 
-function _finRecIsFullyPaid(r){
-  return r.kind === 'Installment' && (Number(r.payments_applied) || 0) >= (Number(r.total_payments) || 0);
+/* Owed is VIRTUAL — always computed fresh, never stored anywhere:
+     owed = every linked installment's remaining balance
+          + card transactions not yet settled by a statement payment
+   No stored base either: pre-existing card debt should be logged as a
+   transaction or installment so it's tracked like everything else.
+   Paying a statement doesn't "subtract from owed" anywhere — it advances
+   payments_applied and last_bill_paid, and owed simply computes lower.
+   This kills the whole class of drift bugs from incremental adjustments. */
+function finOwedFor(a){
+  if(a.account_class !== 'Credit') return 0;
+  const instRemaining = FIN_RECURRING
+    .filter(r => r.kind === 'Installment' && r.account_id === a.id)
+    .reduce((s, r) => {
+      const total = Number(r.total_amount) || 0;
+      const monthly = total / Math.max(1, Number(r.total_payments) || 1);
+      return s + Math.max(0, total - monthly * (Number(r.payments_applied) || 0));
+    }, 0);
+  return instRemaining + _finUnsettledTxTotal(a);
 }
 
-// Paying down an installment only means something for a CREDIT account —
-// the full price posted as "owed" the moment it was added, so a monthly
-// payment reduces that debt (positive delta: owed goes down, available
-// credit goes up). A Debit-linked installment already had its full cost
-// deducted from the balance at add-time; there's no further cash movement
-// left to make, so this is a no-op there — it's tracked for progress only.
-async function _finPayDownInstallment(accountId, monthlyAmount){
-  const acc = FIN_ACCOUNTS.find(a => a.id === accountId);
-  if(!acc || acc.account_class !== 'Credit') return { ok: true };
-  await _adjustFinAccountBalance(accountId, monthlyAmount);
-  return { ok: true };
+// Card transactions still riding on the card: everything dated AFTER the
+// last settled statement month (or all of them if no statement was ever
+// paid). Income on a credit card counts as a payment/refund against it.
+function _finUnsettledTxTotal(a){
+  const settled = a.last_bill_paid ? new Date(a.last_bill_paid + 'T00:00:00') : null;
+  const cutoff = settled ? new Date(settled.getFullYear(), settled.getMonth() + 1, 1) : null;
+  return FIN_TXNS
+    .filter(t => t.account_id === a.id && t.tx_date)
+    .filter(t => !cutoff || new Date(t.tx_date + 'T00:00:00') >= cutoff)
+    .reduce((s, t) => {
+      if(t.tx_type === 'Expense') return s + (Number(t.amount) || 0);
+      if(t.tx_type === 'Income') return s - (Number(t.amount) || 0);
+      return s;
+    }, 0);
+}
+
+function _finRecIsFullyPaid(r){
+  return r.kind === 'Installment' && (Number(r.payments_applied) || 0) >= (Number(r.total_payments) || 0);
 }
 
 // Core "advance one payment" step — charges it and updates that item's own
@@ -2923,13 +2898,8 @@ async function _markOneRecPaid(r){
     const already = Number(r.payments_applied) || 0;
     const total = Number(r.total_payments) || 0;
     if(already >= total) return { ok: true };
-    const monthly = (Number(r.total_amount) || 0) / Math.max(1, total);
-    // The full installment already posted as owed when it was ADDED — this
-    // click is a PAYMENT against that debt, so it pays it DOWN (opposite
-    // direction from a new charge). No new transaction here either; the one
-    // real expense already happened at add-time, this is just paying it off.
-    const payDown = await _finPayDownInstallment(r.account_id, monthly);
-    if(!payDown.ok) return payDown;
+    // Advancing the counter IS the payment — Owed recomputes lower from
+    // the new remaining balance on the next render, nothing else to move.
     const patch = await _finPatchRecurring(r.id, { payments_applied: already + 1 });
     if(!patch.ok) return patch;
     r.payments_applied = already + 1;
@@ -2969,16 +2939,10 @@ async function payAllDueForAccount(accountId){
     }
   }
 
-  // 2. Credit card: last month's regular transactions are part of the same
-  //    statement — paying the bill settles them too, so Owed drops by their
-  //    total (they were each charged to Owed when logged).
-  if(acc.account_class === 'Credit'){
-    const txTotal = _finMonthTxTotal(accountId, prevMonth);
-    if(txTotal > 0) await _adjustFinAccountBalance(accountId, txTotal);
-  }
-
-  // 3. Remember the statement is settled — the button flips to a "Paid"
-  //    pill and the next one appears on the 5th of next month.
+  // 2. Remember the statement is settled — advancing last_bill_paid is
+  //    what settles last month's transactions too: the virtual Owed stops
+  //    counting them the moment this date moves forward. The button flips
+  //    to a "Paid" pill and the next one appears on the 5th of next month.
   try{
     const res = await fetch(`${SUPABASE_URL}/rest/v1/finance_accounts?id=eq.${accountId}`, {
       method: 'PATCH',
@@ -3158,24 +3122,9 @@ async function saveFinRec(){
     );
   }
 
-  // An installment's linked account always carries its CURRENT remaining
-  // balance as owed — not just charged once at first link. Any edit that
-  // changes what's remaining (Payments Made So Far, Total Amount, Total
-  // Payments, or which account it's on) re-syncs the account immediately:
-  // we diff what SHOULD be owed now against what was owed based on the
-  // pre-edit numbers, and move only the difference. Subscriptions don't
-  // carry a running balance like this — each cycle is its own fresh charge,
-  // only "Mark as Paid" ever touches those.
-  const existing = editingFinRecId ? FIN_RECURRING.find(x => x.id === editingFinRecId) : null;
-  const oldAccountId = existing?.account_id || null;
-  const oldRemaining = (isInst && oldAccountId)
-    ? (Number(existing.total_amount) || 0) - ((Number(existing.total_amount) || 0) / Math.max(1, Number(existing.total_payments) || 1) * (Number(existing.payments_applied) || 0))
-    : 0;
-  const newAccountId = payload.account_id;
-  const newRemaining = (isInst && newAccountId)
-    ? payload.total_amount - ((payload.total_amount / Math.max(1, payload.total_payments)) * payload.payments_applied)
-    : 0;
-
+  // No balance bookkeeping here at all — Owed is computed live from the
+  // recurring rows themselves (finOwedFor), so saving/editing/re-linking
+  // an installment is just data entry; the card display follows on render.
   const btn = document.getElementById('finRecSaveBtn');
   btn.disabled = true;
   btn.textContent = 'Saving…';
@@ -3195,25 +3144,9 @@ async function saveFinRec(){
     });
     if(!res.ok) throw new Error(await res.text());
 
-    if(isInst){
-      if(oldAccountId && oldAccountId !== newAccountId){
-        // No longer (or no longer only) on this account — forgive what it
-        // was carrying there.
-        await _adjustFinAccountBalance(oldAccountId, oldRemaining);
-      }
-      if(newAccountId && oldAccountId !== newAccountId){
-        // Freshly linked (new item, or moved from another account) — post
-        // the full current remaining balance as owed.
-        await _adjustFinAccountBalance(newAccountId, -newRemaining);
-      }else if(newAccountId && oldAccountId === newAccountId){
-        // Same account as before — only the DIFFERENCE needs to move.
-        const adjustment = oldRemaining - newRemaining;
-        if(adjustment) await _adjustFinAccountBalance(newAccountId, adjustment);
-      }
-    }
-
     closeFinRecModal();
     await loadFinanceRecurring();
+    renderFinanceAccounts();
     showToast('Saved');
   }catch(e){
     console.error("Couldn't save recurring item:", e);
@@ -3227,15 +3160,19 @@ async function saveFinRec(){
 async function deleteFinRec(id){
   const r = FIN_RECURRING.find(x => x.id === id);
   if(!r) return;
-  if(!(await customConfirm(`Delete "${r.name}"?`, 'Delete'))) return;
+  if(!(await customConfirm(`Delete "${r.name}"? Any unpaid balance it posted will be removed from its account.`, 'Delete'))) return;
   try{
     const res = await fetch(`${SUPABASE_URL}/rest/v1/finance_recurring?id=eq.${id}`, {
       method: 'DELETE',
       headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}` }
     });
     if(!res.ok) throw new Error(await res.text());
+
+    // Owed recomputes from the remaining rows — removing the row IS the
+    // reversal, no balance bookkeeping needed.
     FIN_RECURRING = FIN_RECURRING.filter(x => x.id !== id);
     renderFinanceRecurring();
+    renderFinanceAccounts();
     showToast('Deleted');
   }catch(e){
     console.error("Couldn't delete recurring item:", e);
