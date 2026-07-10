@@ -10643,7 +10643,7 @@ async function deleteSelectedNote(){
   }
 }
 
-/* ---------- How Was Your Day? (mood check-in) ---------- */
+/* ---------- Diary (mood check-in) ---------- */
 const MOOD_OPTIONS = [
   { key: 'great', emoji: '😄', label: 'Great' },
   { key: 'good', emoji: '🙂', label: 'Good' },

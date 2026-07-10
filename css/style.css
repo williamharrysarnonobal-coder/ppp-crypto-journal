@@ -382,7 +382,7 @@
   .cal-cell.week-cell.loss{background:rgba(255,92,92,0.09);border-color:rgba(255,92,92,0.35);cursor:pointer;}
   .cal-cell.week-cell:hover{filter:brightness(1.15);}
 
-  /* ---------- How Was Your Day? (mood check-in) ---------- */
+  /* ---------- Diary (mood check-in) ---------- */
   .mood-cal-grid .cal-cell{cursor:pointer;transition:transform .1s;}
   .mood-cal-grid .cal-cell:hover{transform:scale(1.04);background:var(--surface-2);}
   .mood-cal-grid .cal-cell.today{outline:1.5px solid var(--accent);}
