@@ -3735,15 +3735,15 @@ function renderFinanceTransactions(){
       : '';
     return `
       <tr>
-        <td><input type="checkbox" class="fin-tx-row-check" ${FIN_TX_SELECTED.has(t.id) ? 'checked' : ''} onchange="toggleFinTxRowSelect(${t.id}, this.checked)"></td>
-        <td>${t.tx_date ? new Date(t.tx_date + 'T00:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : '—'}${incompleteFlag}</td>
-        <td><span class="pill ${typePill}">${t.tx_type}</span></td>
-        <td>${amountHtml}</td>
-        <td>${accountHtml}</td>
-        <td>${t.category ? escapeHtml(t.category) + (t.subcategory ? `<div style="font-size:10px;color:var(--muted);margin-top:1px;">${escapeHtml(t.subcategory)}</div>` : '') : '—'}</td>
-        <td>${escapeHtml(t.description || '—')}</td>
-        <td>${statusHtml}</td>
-        <td style="text-align:right;white-space:nowrap;">
+        <td class="fin-tx-td-check"><input type="checkbox" class="fin-tx-row-check" ${FIN_TX_SELECTED.has(t.id) ? 'checked' : ''} onchange="toggleFinTxRowSelect(${t.id}, this.checked)"></td>
+        <td data-label="Date">${t.tx_date ? new Date(t.tx_date + 'T00:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : '—'}${incompleteFlag}</td>
+        <td data-label="Type"><span class="pill ${typePill}">${t.tx_type}</span></td>
+        <td data-label="Amount">${amountHtml}</td>
+        <td data-label="Account">${accountHtml}</td>
+        <td data-label="Category"><div>${t.category ? escapeHtml(t.category) + (t.subcategory ? `<div style="font-size:10px;color:var(--muted);margin-top:1px;">${escapeHtml(t.subcategory)}</div>` : '') : '—'}</div></td>
+        <td data-label="Description">${escapeHtml(t.description || '—')}</td>
+        <td data-label="Status">${statusHtml}</td>
+        <td class="fin-tx-td-actions" style="text-align:right;white-space:nowrap;">
           <button class="drawer-secondary-btn" style="padding:4px 10px;font-size:11px;" onclick="openFinTxModal({editId:${t.id}})">Edit</button>
           <button class="drawer-danger-btn" style="padding:4px 10px;font-size:11px;margin-left:4px;" onclick="deleteFinTx(${t.id})">${deleteIconSVG()}</button>
         </td>

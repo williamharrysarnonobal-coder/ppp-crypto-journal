@@ -1093,6 +1093,30 @@
   body.mobile-mode table.journal{font-size:11px;}
   body.mobile-mode table.journal th{padding:7px 8px;font-size:8.5px;}
   body.mobile-mode table.journal td{padding:6px 8px;max-width:130px;}
+
+  /* Finance Transactions specifically — a 9-column table was still "too
+     big" even compacted, so on mobile it drops the table/scroll approach
+     entirely and becomes one labeled card per transaction instead (same
+     idea as the Trading Journal's own mobile simplifications — show less
+     at once, stacked, instead of shrinking everything to fit sideways). */
+  body.mobile-mode #finTxWrap{overflow-x:visible;}
+  body.mobile-mode #finTxWrap table.journal thead{display:none;}
+  body.mobile-mode #finTxWrap table.journal,
+  body.mobile-mode #finTxWrap table.journal tbody,
+  body.mobile-mode #finTxWrap table.journal tr{display:block;width:100%;}
+  body.mobile-mode #finTxWrap table.journal tr{
+    border:1px solid var(--rule);border-radius:8px;margin-bottom:10px;padding:10px 12px;background:var(--surface);
+  }
+  body.mobile-mode #finTxWrap table.journal tbody tr:hover td{background:none;}
+  body.mobile-mode #finTxWrap table.journal td{
+    display:flex;justify-content:space-between;align-items:center;gap:10px;
+    border:none;padding:5px 0;max-width:none;white-space:normal;font-size:12px;
+  }
+  body.mobile-mode #finTxWrap table.journal td[data-label]::before{
+    content:attr(data-label);font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);flex-shrink:0;
+  }
+  body.mobile-mode #finTxWrap table.journal td.fin-tx-td-check{justify-content:flex-end;padding-bottom:8px;border-bottom:1px dashed var(--rule);margin-bottom:4px;}
+  body.mobile-mode #finTxWrap table.journal td.fin-tx-td-actions{justify-content:flex-end;padding-top:8px;border-top:1px dashed var(--rule);margin-top:4px;}
   /* .cal-cell/.cal-dow are shared with the Trading Journal calendar, whose
      cells carry 2 lines (P&L + trade count) — scoped down here since the
      Finance calendar felt oversized next to its thinner day cells. */
