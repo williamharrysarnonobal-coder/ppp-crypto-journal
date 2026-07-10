@@ -301,6 +301,10 @@ function applyUIPrefsFromProfile(){
   }finally{
     _applyingUIPrefs = false;
   }
+  // Outside the guard so it can actually sync back up if this device pulled
+  // down a finance_options copy that predates the recommended taxonomy —
+  // otherwise the merge would apply locally but never stick account-wide.
+  if(changedKeys.includes('finance_options')) _finApplyRecommendedTaxonomy();
 }
 
 function renderSettingsPage(){
@@ -456,6 +460,9 @@ function switchView(view){
   // should close it, like any mobile app menu.
   if(document.body.classList.contains('mobile-mode')) closeMobileMenu();
   currentView = view;
+  // Per-device, like Mobile Mode — remembered so a refresh reopens on the
+  // same tab instead of always bouncing back to Profile.
+  localStorage.setItem('ledger-last-view', view);
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
   document.getElementById('view-' + view).classList.add('active');
   document.querySelectorAll('.nav-item').forEach(n => n.classList.toggle('active', n.dataset.view === view));
@@ -621,6 +628,15 @@ async function initApp(){
     loadMarketNewsWidget();
     renderChallenges();
     loadPendingSignupsForBadge();
+
+    // Reopen on whatever tab was last active before the refresh, instead of
+    // always landing back on Profile. Falls through to the static default
+    // (Profile, already loaded above) if there's nothing saved, the saved
+    // view no longer exists, or it's a feature this account can't access.
+    const savedView = localStorage.getItem('ledger-last-view');
+    if(savedView && savedView !== 'profile' && document.getElementById('view-' + savedView)){
+      switchView(savedView);
+    }
 
   }catch(e){
     setLoading(100);
@@ -2096,6 +2112,7 @@ function switchFinanceTab(tab){
   activeFinanceTab = tab;
   document.querySelectorAll('#view-finance .subnav-item').forEach(el => el.classList.toggle('active', el.dataset.tab === tab));
   document.querySelectorAll('#view-finance .subnav-panel').forEach(el => el.classList.toggle('active', el.id === 'financePanel-' + tab));
+  if(tab === 'dashboard') renderFinDashboard();
   if(tab === 'accounts') loadFinanceAccounts();
   if(tab === 'transactions'){
     // Transactions need the account names/balances too.
@@ -2104,24 +2121,777 @@ function switchFinanceTab(tab){
   }
   if(tab === 'recurring') loadFinanceRecurring();
   if(tab === 'config') renderFinanceConfig();
+  if(tab === 'challenges') renderFinanceChallenges();
 }
 
 async function renderFinance(){
   applyFinBalanceVisibility();
-  // Account cards need recurring items (payment line) AND transactions
-  // (Running Bill) loaded no matter which Finance tab is opened first —
-  // not just when their own tabs are visited.
+  // Accounts (for currency lookups), recurring items (payment line), and
+  // transactions (Running Bill / Dashboard calendar) are all loaded eagerly
+  // no matter which Finance tab is opened first — not just when their own
+  // tabs are visited.
+  await loadFinanceAccounts();
   await loadFinanceRecurring();
   await loadFinanceTransactions();
   switchFinanceTab(activeFinanceTab);
 }
 
+/* ---- Finance > Dashboard: same calendar pattern as the Trading Journal
+   (month grid + Week summary column, click a day/week for its detail list)
+   — but showing Net (Income − Expense) per day instead of P&L. Transfers
+   are excluded everywhere here since moving money between your own
+   accounts isn't earning or spending. ---- */
+let finDashMonth = new Date();
+
+function shiftFinDashMonth(dir){
+  finDashMonth.setMonth(finDashMonth.getMonth() + dir);
+  renderFinDashboard();
+}
+
+function _finTxCurrency(t){
+  const acc = FIN_ACCOUNTS.find(a => a.id === t.account_id);
+  return acc?.currency || '—';
+}
+
+function _populateFinDashAccountFilter(){
+  const sel = document.getElementById('finDashAccountFilter');
+  if(!sel) return;
+  const prevValue = sel.value;
+  sel.innerHTML = '<option value="all">All accounts</option>' +
+    FIN_ACCOUNTS.map(a => `<option value="${a.id}">${escapeHtml(a.account_name)}</option>`).join('');
+  if([...sel.options].some(o => o.value === prevValue)) sel.value = prevValue;
+}
+
+function renderFinDashboard(){
+  const grid = document.getElementById('finDashGrid');
+  if(!grid) return;
+
+  _populateFinDashAccountFilter();
+  const accFilterVal = document.getElementById('finDashAccountFilter')?.value || 'all';
+  const accFilterId = accFilterVal !== 'all' ? parseInt(accFilterVal, 10) : null;
+
+  const y = finDashMonth.getFullYear(), m = finDashMonth.getMonth();
+  document.getElementById('finDashLabel').textContent = finDashMonth.toLocaleDateString('en-US',{month:'long', year:'numeric'});
+
+  // KPI row respects the Period filter up top (This Month / Previous Month /
+  // All time / Custom Range) — independent of the calendar's own ‹ › nav
+  // below, which always browses one specific month no matter what this is
+  // set to (a calendar is inherently "one month at a time").
+  const kpiTx = FIN_TXNS.filter(t => {
+    if(!t.tx_date || t.tx_type === 'Transfer') return false;
+    if(accFilterId && t.account_id !== accFilterId) return false;
+    return _finDashChartPassesFilter(t);
+  });
+  const kpiByCurrency = {};
+  kpiTx.forEach(t => {
+    const cur = _finTxCurrency(t);
+    if(!kpiByCurrency[cur]) kpiByCurrency[cur] = { income: 0, expense: 0, count: 0 };
+    if(t.tx_type === 'Income') kpiByCurrency[cur].income += Number(t.amount) || 0;
+    if(t.tx_type === 'Expense') kpiByCurrency[cur].expense += Number(t.amount) || 0;
+    kpiByCurrency[cur].count++;
+  });
+  const kpiCurrencies = Object.keys(kpiByCurrency).sort((a,b) => kpiByCurrency[b].count - kpiByCurrency[a].count);
+  const kpiPrimary = kpiCurrencies[0] || (FIN_ACCOUNTS[0]?.currency || 'PHP');
+  const kp = kpiByCurrency[kpiPrimary] || { income: 0, expense: 0, count: 0 };
+  const kpiNet = kp.income - kp.expense;
+  document.getElementById('finDashKpis').innerHTML = `
+    <div class="kpi"><div class="label">Income (${escapeHtml(kpiPrimary)})</div><div class="value" style="color:var(--win);">${finMoney(kp.income, kpiPrimary)}</div></div>
+    <div class="kpi"><div class="label">Expense (${escapeHtml(kpiPrimary)})</div><div class="value" style="color:var(--loss);">${finMoney(kp.expense, kpiPrimary)}</div></div>
+    <div class="kpi"><div class="label">Net (${escapeHtml(kpiPrimary)})</div><div class="value" style="color:${kpiNet >= 0 ? 'var(--win)' : 'var(--loss)'};">${finMoney(kpiNet, kpiPrimary)}</div></div>
+  `;
+  const kpiOthers = kpiCurrencies.filter(c => c !== kpiPrimary);
+  document.getElementById('finDashOtherCurrencies').textContent = kpiOthers.length
+    ? `Also in this period: ${kpiOthers.map(c => { const o = kpiByCurrency[c]; return `${finMoney(o.income - o.expense, c)} net (${o.count} tx)`; }).join(' · ')}`
+    : '';
+
+  // Calendar grid always stays locked to whichever month the ‹ › nav is
+  // browsing — a separate concept from the Period filter above. Transfers
+  // ARE included here (unlike the KPI row, which stays Income/Expense
+  // only) so a day where you only moved money still shows up as activity —
+  // they just don't push the day's Net color either way.
+  const monthTx = FIN_TXNS.filter(t => {
+    if(!t.tx_date) return false;
+    if(accFilterId && t.account_id !== accFilterId && t.to_account_id !== accFilterId) return false;
+    const d = new Date(t.tx_date + 'T00:00:00');
+    return d.getFullYear() === y && d.getMonth() === m;
+  });
+
+  const byCurrency = {};
+  monthTx.forEach(t => {
+    const cur = _finTxCurrency(t);
+    if(!byCurrency[cur]) byCurrency[cur] = { income: 0, expense: 0, count: 0 };
+    if(t.tx_type === 'Income') byCurrency[cur].income += Number(t.amount) || 0;
+    if(t.tx_type === 'Expense') byCurrency[cur].expense += Number(t.amount) || 0;
+    byCurrency[cur].count++;
+  });
+  const currencies = Object.keys(byCurrency).sort((a,b) => byCurrency[b].count - byCurrency[a].count);
+  const primary = currencies[0] || (FIN_ACCOUNTS[0]?.currency || 'PHP');
+
+  const byDay = {};
+  monthTx.forEach(t => {
+    if(_finTxCurrency(t) !== primary) return;
+    const d = new Date(t.tx_date + 'T00:00:00').getDate();
+    if(!byDay[d]) byDay[d] = { income: 0, expense: 0, count: 0, txns: [] };
+    if(t.tx_type === 'Income') byDay[d].income += Number(t.amount) || 0;
+    if(t.tx_type === 'Expense') byDay[d].expense += Number(t.amount) || 0;
+    byDay[d].count++;
+    byDay[d].txns.push(t);
+  });
+
+  const firstDow = new Date(y, m, 1).getDay();
+  const daysInMonth = new Date(y, m+1, 0).getDate();
+  const dows = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  let html = dows.map(d => `<div class="cal-dow">${d}</div>`).join('') + `<div class="cal-dow" style="color:var(--accent);">Week</div>`;
+
+  const cells = [];
+  for(let i=0;i<firstDow;i++) cells.push(null);
+  for(let d=1; d<=daysInMonth; d++) cells.push(d);
+  while(cells.length % 7 !== 0) cells.push(null);
+
+  window._finDashByWeek = [];
+
+  for(let i=0; i<cells.length; i+=7){
+    const weekCells = cells.slice(i, i+7);
+    let weekNet = 0, weekCount = 0, weekTx = [], weekIncome = 0, weekExpense = 0;
+    weekCells.forEach(d => {
+      if(d === null) return;
+      const info = byDay[d];
+      if(info){ weekNet += (info.income - info.expense); weekIncome += info.income; weekExpense += info.expense; weekCount += info.count; weekTx = weekTx.concat(info.txns); }
+    });
+
+    weekCells.forEach(d => {
+      if(d === null){ html += `<div class="cal-cell empty"></div>`; return; }
+      const info = byDay[d];
+      let cls = '', body = '', click = '';
+      if(info){
+        const dayNet = info.income - info.expense;
+        // A day with ONLY transfers nets to exactly 0 with no real
+        // income/expense — that's "nothing gained or lost," not a win.
+        const onlyTransfers = info.income === 0 && info.expense === 0;
+        cls = onlyTransfers ? '' : (dayNet >= 0 ? 'win' : 'loss');
+        body = onlyTransfers
+          ? `<div class="cal-count" style="font-size:10.5px;color:var(--muted);">${info.count} tx</div>`
+          : `<div class="p">${finMoney(dayNet, primary)}</div><div class="cal-count" style="font-size:10.5px;color:var(--muted);">${info.count} tx</div>`;
+        click = `onclick="showFinDashDay(${y}, ${m}, ${d})"`;
+      }
+      html += `<div class="cal-cell ${cls}" ${click}><div class="d">${d}</div>${body}</div>`;
+    });
+
+    const weekOnlyTransfers = weekIncome === 0 && weekExpense === 0;
+    const wkCls = weekCount > 0 ? (weekOnlyTransfers ? '' : (weekNet >= 0 ? 'win' : 'loss')) : '';
+    const wkBody = weekCount > 0
+      ? (weekOnlyTransfers
+          ? `<div class="cal-count" style="font-size:10.5px;color:var(--muted);">${weekCount} tx</div>`
+          : `<div class="p">${finMoney(weekNet, primary)}</div><div class="cal-count" style="font-size:10.5px;color:var(--muted);">${weekCount} tx</div>`)
+      : `<div class="cal-count" style="font-size:10.5px;color:var(--muted);">—</div>`;
+    const weekIdx = window._finDashByWeek.length;
+    window._finDashByWeek.push({ txns: weekTx, count: weekCount });
+    const wkClick = weekCount > 0 ? `onclick="showFinDashWeek(${weekIdx})"` : '';
+    html += `<div class="cal-cell week-cell ${wkCls}" ${wkClick}><div class="d" style="color:var(--accent);">Σ</div>${wkBody}</div>`;
+  }
+
+  grid.innerHTML = html;
+  window._finDashByDay = byDay;
+
+  // Defaults to the WHOLE visible month instead of an empty "click a day"
+  // placeholder — there's already something to look at the moment you land
+  // on the page, not just after clicking something first.
+  document.getElementById('finDashDetailTitle').textContent = finDashMonth.toLocaleDateString('en-US',{month:'long', year:'numeric'}) + ' — by category';
+  document.getElementById('finDashDetailBody').innerHTML = _finDashCategorizedHtml(monthTx);
+
+  renderFinDashCharts(accFilterId);
+  renderFinDashTrendChart(accFilterId);
+}
+
+// The breakdown charts (category + subcategory) have their OWN period
+// filter, independent of the calendar's month nav above — so you can look
+// at "where does my money go" over This Month / Previous Month / All time /
+// a custom range without that also flipping which month the calendar shows.
+function _finDashChartPassesFilter(t){
+  if(!t.tx_date) return false;
+  const filterEl = document.getElementById('finDashPeriodFilter');
+  const filter = filterEl ? filterEl.value : 'this';
+  if(filter === 'all') return true;
+  const d = new Date(t.tx_date + 'T00:00:00');
+
+  if(filter === 'this'){
+    const now = new Date();
+    return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+  }
+  if(filter === 'prev'){
+    const prev = _finPreviousMonthLabel();
+    return d.getFullYear() === prev.getFullYear() && d.getMonth() === prev.getMonth();
+  }
+  if(filter === 'range'){
+    const from = document.getElementById('finDashRangeFrom')?.value;
+    const to = document.getElementById('finDashRangeTo')?.value;
+    if(from && t.tx_date < from) return false;
+    if(to && t.tx_date > to) return false;
+    return true;
+  }
+  return true;
+}
+
+function onFinDashPeriodFilterChange(){
+  const isRange = document.getElementById('finDashPeriodFilter').value === 'range';
+  document.getElementById('finDashRangeFilterRow').style.display = isRange ? 'flex' : 'none';
+  // Full re-render, not just the charts — the Period filter now drives the
+  // KPI row too.
+  renderFinDashboard();
+}
+
+function renderFinDashCharts(accFilterIdParam){
+  const accFilterVal = document.getElementById('finDashAccountFilter')?.value || 'all';
+  const accFilterId = accFilterIdParam !== undefined ? accFilterIdParam : (accFilterVal !== 'all' ? parseInt(accFilterVal, 10) : null);
+
+  const chartTx = FIN_TXNS.filter(t => {
+    if(!t.tx_date || t.tx_type === 'Transfer') return false;
+    if(accFilterId && t.account_id !== accFilterId) return false;
+    return _finDashChartPassesFilter(t);
+  });
+
+  const primary = _finPrimaryCurrencyForTxns(chartTx);
+  renderFinDashCategoryChart(chartTx, primary);
+  renderFinDashSubcategoryChart(chartTx, primary);
+  renderFinDashEquityChart(chartTx, primary);
+  renderFinDashDisciplineRadar(chartTx);
+}
+
+function _categoryPalette(n){
+  const colors = [];
+  for(let i = 0; i < n; i++) colors.push(`hsl(${Math.round((360/Math.max(n,1))*i)}, 62%, 58%)`);
+  return colors;
+}
+
+let finDashCategoryChartRef = null;
+function renderFinDashCategoryChart(monthTx, primary){
+  const canvas = document.getElementById('finDashCategoryChart');
+  const legendEl = document.getElementById('finDashCategoryLegend');
+  if(!canvas) return;
+  const ctx = canvas.getContext('2d');
+  if(finDashCategoryChartRef) finDashCategoryChartRef.destroy();
+
+  const expenses = monthTx.filter(t => t.tx_type === 'Expense' && _finTxCurrency(t) === primary);
+  if(!expenses.length){
+    legendEl.innerHTML = '<div class="empty-state">No expenses in this period.</div>';
+    return;
+  }
+
+  const byCat = {};
+  expenses.forEach(t => {
+    const cat = t.category || 'Uncategorized';
+    byCat[cat] = (byCat[cat] || 0) + (Number(t.amount) || 0);
+  });
+  const labels = Object.keys(byCat).sort((a,b) => byCat[b] - byCat[a]);
+  const dataVals = labels.map(l => byCat[l]);
+  const colors = _categoryPalette(labels.length);
+
+  finDashCategoryChartRef = new Chart(ctx, {
+    type: 'doughnut',
+    data: { labels, datasets: [{ data: dataVals, backgroundColor: colors, borderColor: cssVar('--surface'), borderWidth: 3 }] },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      cutout: '68%',
+      plugins: { legend: { display:false } }
+    }
+  });
+
+  const total = dataVals.reduce((s,v) => s + v, 0);
+  legendEl.innerHTML = labels.map((label, i) => `
+    <div style="display:flex;justify-content:space-between;margin-bottom:3px;">
+      <span><span style="color:${colors[i]};">●</span> ${escapeHtml(label)}</span>
+      <span class="num">${finMoney(dataVals[i], primary)} (${fmtNum(dataVals[i]/total*100,1)}%)</span>
+    </div>
+  `).join('');
+}
+
+// Ranks individual subcategories (across ALL categories) by spend — a finer
+// resolution than the category doughnut above, for actually spotting where
+// the money goes ("Coffee" hiding inside "Food & Groceries" is easy to miss
+// in a category-only view). Capped to the top 8, rest rolled into "Other".
+let finDashSubcategoryChartRef = null;
+function renderFinDashSubcategoryChart(chartTx, primary){
+  const canvas = document.getElementById('finDashSubcategoryChart');
+  const legendEl = document.getElementById('finDashSubcategoryLegend');
+  if(!canvas) return;
+  const ctx = canvas.getContext('2d');
+  if(finDashSubcategoryChartRef) finDashSubcategoryChartRef.destroy();
+
+  const expenses = chartTx.filter(t => t.tx_type === 'Expense' && t.subcategory && _finTxCurrency(t) === primary);
+  if(!expenses.length){
+    legendEl.innerHTML = '<div class="empty-state">No subcategorized expenses in this period — add a subcategory when logging a transaction to see this breakdown.</div>';
+    return;
+  }
+
+  const bySub = {};
+  expenses.forEach(t => {
+    const label = t.subcategory;
+    bySub[label] = (bySub[label] || 0) + (Number(t.amount) || 0);
+  });
+  let entries = Object.entries(bySub).sort((a,b) => b[1] - a[1]);
+  if(entries.length > 8){
+    const top = entries.slice(0, 8);
+    const otherTotal = entries.slice(8).reduce((s,[,v]) => s + v, 0);
+    entries = [...top, ['Other', otherTotal]];
+  }
+  const labels = entries.map(([l]) => l);
+  const dataVals = entries.map(([,v]) => v);
+  const colors = _categoryPalette(labels.length);
+
+  finDashSubcategoryChartRef = new Chart(ctx, {
+    type: 'bar',
+    data: { labels, datasets: [{ data: dataVals, backgroundColor: colors, borderRadius: 3 }] },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: cssVar('--muted'), font: { size: 10 } }, grid: { color: cssVar('--rule') } },
+        y: { ticks: { color: cssVar('--muted'), font: { size: 10 } }, grid: { display: false } }
+      }
+    }
+  });
+
+  legendEl.innerHTML = '';
+}
+
+function _finPrimaryCurrencyForTxns(txns){
+  const counts = {};
+  txns.forEach(t => { const c = _finTxCurrency(t); counts[c] = (counts[c] || 0) + 1; });
+  const sorted = Object.keys(counts).sort((a,b) => counts[b] - counts[a]);
+  return sorted[0] || (FIN_ACCOUNTS[0]?.currency || 'PHP');
+}
+
+// Same idea as the Trading Journal's equity curve, but there's no single
+// stored "balance" to plot across a mixed set of accounts — so this plots
+// cumulative NET (Income − Expense) over the filtered period instead,
+// starting from 0 at the first transaction in view. Reads the same way:
+// climbing = building up, dropping = bleeding out.
+let finDashEquityChartRef = null;
+function renderFinDashEquityChart(chartTx, primary){
+  const canvas = document.getElementById('finDashEquityChart');
+  const emptyEl = document.getElementById('finDashEquityEmpty');
+  if(!canvas) return;
+  const ctx = canvas.getContext('2d');
+  if(finDashEquityChartRef) finDashEquityChartRef.destroy();
+
+  const sameCurrency = chartTx
+    .filter(t => _finTxCurrency(t) === primary)
+    .slice()
+    .sort((a,b) => (a.tx_date < b.tx_date ? -1 : (a.tx_date > b.tx_date ? 1 : (a.id||0) - (b.id||0))));
+
+  if(!sameCurrency.length){
+    canvas.style.display = 'none';
+    if(emptyEl) emptyEl.style.display = 'block';
+    return;
+  }
+  canvas.style.display = 'block';
+  if(emptyEl) emptyEl.style.display = 'none';
+
+  let running = 0;
+  const labels = [], data = [];
+  sameCurrency.forEach(t => {
+    running = Number((running + (t.tx_type === 'Income' ? (Number(t.amount)||0) : -(Number(t.amount)||0))).toFixed(2));
+    labels.push(new Date(t.tx_date+'T00:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'}));
+    data.push(running);
+  });
+
+  finDashEquityChartRef = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        data,
+        borderColor: cssVar('--accent'),
+        backgroundColor: cssVar('--accent') + '1a',
+        fill: true,
+        tension: 0.2,
+        pointRadius: 0,
+        pointHitRadius: 8,
+        pointHoverRadius: 4,
+        pointHoverBackgroundColor: cssVar('--accent'),
+        pointHoverBorderColor: cssVar('--surface'),
+        pointHoverBorderWidth: 2,
+        borderWidth: 2
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      // 'index' + intersect:false — hovering anywhere along that x position
+      // triggers the tooltip, not just a pixel-perfect hit on the line
+      // itself (which was basically impossible with pointRadius:0).
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display:false },
+        tooltip: {
+          callbacks: {
+            title: (items) => {
+              const t = sameCurrency[items[0].dataIndex];
+              return new Date(t.tx_date+'T00:00:00').toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
+            },
+            label: (ctx) => {
+              const t = sameCurrency[ctx.dataIndex];
+              const sign = t.tx_type === 'Income' ? '+' : '−';
+              return [
+                `${t.description || t.category || t.tx_type}: ${sign}${finMoney(t.amount, primary)}`,
+                `Running total: ${finMoney(ctx.parsed.y, primary)}`
+              ];
+            }
+          }
+        }
+      },
+      scales: {
+        x: { display: labels.length < 30, ticks:{color:cssVar('--muted'), font:{size:10}}, grid:{color:cssVar('--rule')} },
+        y: { ticks:{color:cssVar('--muted'), font:{size:10}, callback: v => finMoney(v, primary)}, grid:{color:cssVar('--rule')} }
+      }
+    }
+  });
+}
+
+// Financial "discipline" — same spirit as the Trading Journal's radar (Win
+// Rate, Discipline, Reward, Consistency, Risk Control all measure real
+// trading BEHAVIOR), rebuilt around real personal-finance discipline
+// concepts instead of just "did you fill out every field" — categorized/
+// subcategorized % measured data hygiene, not actual money habits.
+const FIN_NEEDS_CATEGORIES = ['🏠 Housing', '💡 Utilities', '🍽️ Food & Groceries', '🚗 Transportation', '🏥 Healthcare', '📚 Education'];
+const FIN_WANTS_CATEGORIES = ['🎉 Entertainment', '🚬 Vices', '🛍️ Shopping', '🎁 Gifts & Donations', '✈️ Travel', '📦 Subscriptions'];
+
+function _finDisciplineMetrics(chartTx){
+  // 1. Savings Rate — are you keeping more than you spend.
+  const income = chartTx.filter(t => t.tx_type === 'Income').reduce((s,t) => s + (Number(t.amount)||0), 0);
+  const expenses = chartTx.filter(t => t.tx_type === 'Expense');
+  const expenseTotal = expenses.reduce((s,t) => s + (Number(t.amount)||0), 0);
+  const savingsRate = income > 0
+    ? Math.max(0, Math.min(100, Math.round((income - expenseTotal) / income * 100)))
+    : (expenseTotal > 0 ? 0 : 100);
+
+  // 2. Credit Utilization (inverted — LOW usage scores HIGH) — are you
+  // leaning on credit sparingly. A right-now snapshot, not period-filtered.
+  const creditAccs = FIN_ACCOUNTS.filter(a => a.account_class === 'Credit');
+  const totalOwed = creditAccs.reduce((s,a) => s + finOwedFor(a), 0);
+  const totalLimit = creditAccs.reduce((s,a) => s + (Number(a.credit_limit)||0), 0);
+  const utilizationPct = totalLimit > 0 ? (totalOwed / totalLimit * 100) : 0;
+  const creditUtilizationScore = totalLimit > 0 ? Math.max(0, Math.min(100, Math.round(100 - utilizationPct))) : 100;
+
+  // 3. No-Spend Days — restraint: what fraction of days in the selected
+  // period had zero Expense activity at all. Unlike Bills On Time, this
+  // gives every account a real score even with no credit cards at all.
+  const { start: periodStart, end: periodEnd } = _finPeriodRange();
+  const totalDays = Math.max(1, Math.round((periodEnd - periodStart) / 86400000) + 1);
+  const expenseDays = new Set(expenses.map(t => t.tx_date));
+  const noSpendDays = Math.max(0, totalDays - expenseDays.size);
+  const noSpendPct = Math.round(noSpendDays / totalDays * 100);
+
+  // 4. Needs vs Wants — of your CLEARLY-classifiable spending (obligations
+  // like Debt & Loans and the act of Savings & Investments itself are left
+  // out — neither is really a discretionary "want"), how much went to
+  // needs vs wants.
+  let needsTotal = 0, wantsTotal = 0;
+  expenses.forEach(t => {
+    if(FIN_NEEDS_CATEGORIES.includes(t.category)) needsTotal += Number(t.amount) || 0;
+    else if(FIN_WANTS_CATEGORIES.includes(t.category)) wantsTotal += Number(t.amount) || 0;
+  });
+  const classifiableTotal = needsTotal + wantsTotal;
+  const needsPct = classifiableTotal > 0 ? Math.round(needsTotal / classifiableTotal * 100) : 100;
+
+  // 5. Debt Progress — how far along are you actually paying off what
+  // you've financed (not period-filtered — this is the state of your
+  // installments overall, not just what happened in the selected window).
+  const installments = FIN_RECURRING.filter(r => r.kind === 'Installment');
+  let debtProgressPct = 100;
+  if(installments.length){
+    const avg = installments.reduce((s,r) => {
+      const total = Number(r.total_payments) || 1;
+      const paid = Math.min(Number(r.payments_applied) || 0, total);
+      return s + (paid / total * 100);
+    }, 0) / installments.length;
+    debtProgressPct = Math.round(avg);
+  }
+
+  return {
+    savingsRate, creditUtilizationScore, noSpendPct, needsPct, debtProgressPct,
+    utilizationPct, creditCount: creditAccs.length, totalDays, noSpendDays,
+    classifiableTotal, installmentCount: installments.length, totalLimit
+  };
+}
+
+// Resolves the current "Where it goes" period filter into an actual
+// calendar span — needed for No-Spend Days, which has to know the total
+// number of days in view (not just which days happen to have a transaction).
+function _finPeriodRange(){
+  const filterEl = document.getElementById('finDashPeriodFilter');
+  const filter = filterEl ? filterEl.value : 'all';
+  const now = new Date();
+  now.setHours(0,0,0,0);
+
+  if(filter === 'this'){
+    return { start: new Date(now.getFullYear(), now.getMonth(), 1), end: now };
+  }
+  if(filter === 'prev'){
+    const prev = _finPreviousMonthLabel();
+    return { start: new Date(prev.getFullYear(), prev.getMonth(), 1), end: new Date(prev.getFullYear(), prev.getMonth()+1, 0) };
+  }
+  if(filter === 'range'){
+    const fromVal = document.getElementById('finDashRangeFrom')?.value;
+    const toVal = document.getElementById('finDashRangeTo')?.value;
+    const start = fromVal ? new Date(fromVal + 'T00:00:00') : now;
+    const end = toVal ? new Date(toVal + 'T00:00:00') : now;
+    return { start, end };
+  }
+  // 'all' — from the earliest transaction on record to today.
+  const dates = FIN_TXNS.map(t => t.tx_date).filter(Boolean).sort();
+  const start = dates.length ? new Date(dates[0] + 'T00:00:00') : now;
+  return { start, end: now };
+}
+
+let finDashDisciplineRadarRef = null;
+function renderFinDashDisciplineRadar(chartTx){
+  const canvas = document.getElementById('finDashDisciplineRadar');
+  if(!canvas) return;
+  const ctx = canvas.getContext('2d');
+  if(finDashDisciplineRadarRef) finDashDisciplineRadarRef.destroy();
+
+  const m = _finDisciplineMetrics(chartTx);
+  const labels = ['Savings Rate', 'Credit Utilization', 'No-Spend Days', 'Needs vs Wants', 'Debt Progress'];
+  const data = [m.savingsRate, m.creditUtilizationScore, m.noSpendPct, m.needsPct, m.debtProgressPct];
+  const score = Math.round(data.reduce((s,v) => s+v, 0) / data.length);
+
+  const valueEl = document.getElementById('finDashDisciplineValue');
+  const markerEl = document.getElementById('finDashDisciplineMarker');
+  const tagEl = document.getElementById('finDashDisciplineTag');
+  if(valueEl) valueEl.textContent = score;
+  if(markerEl) markerEl.style.left = `${Math.max(0, Math.min(100, score))}%`;
+  if(tagEl){
+    const tier = score >= 80 ? {label:'Excellent', cls:'tag-excellent'}
+      : score >= 60 ? {label:'Good', cls:'tag-good'}
+      : score >= 40 ? {label:'Average', cls:'tag-average'}
+      : score >= 20 ? {label:'Needs Work', cls:'tag-needswork'}
+      : {label:'Poor', cls:'tag-poor'};
+    tagEl.textContent = tier.label;
+    tagEl.className = 'discipline-score-tag ' + tier.cls;
+  }
+
+  finDashDisciplineRadarRef = new Chart(ctx, {
+    type: 'radar',
+    data: {
+      labels,
+      datasets: [{
+        data,
+        backgroundColor: cssVar('--accent') + '33',
+        borderColor: cssVar('--accent'),
+        borderWidth: 1,
+        pointBackgroundColor: cssVar('--accent'),
+        pointBorderColor: cssVar('--surface'),
+        pointBorderWidth: 2,
+        pointRadius: 4,
+        pointHoverRadius: 6
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        r: {
+          min: 0, max: 100,
+          ticks: { display:false, stepSize:20 },
+          grid: { color: cssVar('--rule') },
+          angleLines: { color: cssVar('--rule') },
+          pointLabels: { color: cssVar('--ink'), font:{size:11} }
+        }
+      },
+      plugins: {
+        legend: { display:false },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => {
+              const explanations = {
+                'Savings Rate': `You kept ${m.savingsRate}% of what you earned in view (Income − Expense ÷ Income) — the rest went to spending.`,
+                'Credit Utilization': m.totalLimit
+                  ? `Using ${Math.round(m.utilizationPct)}% of your total credit limit across ${m.creditCount} credit account${m.creditCount!==1?'s':''} — lower utilization scores higher.`
+                  : 'No credit limit set on any credit account yet.',
+                'No-Spend Days': `${m.noSpendDays} of ${m.totalDays} day${m.totalDays!==1?'s':''} in view had zero Expense activity.`,
+                'Needs vs Wants': m.classifiableTotal
+                  ? `${m.needsPct}% of your needs-vs-wants-classified spending went to needs (Housing, Utilities, Food, Transport, Healthcare, Education) rather than wants (Entertainment, Vices, Shopping, Gifts, Travel, Subscriptions).`
+                  : 'No spending yet in a category classified as a need or a want.',
+                'Debt Progress': m.installmentCount
+                  ? `Averaging ${m.debtProgressPct}% paid off across ${m.installmentCount} installment${m.installmentCount!==1?'s':''}.`
+                  : 'No active installments — nothing being paid down.'
+              };
+              const label = ctx.label;
+              const val = ctx.parsed.r;
+              const lines = [`${label}: ${val.toFixed(0)} / 100`];
+              if(explanations[label]) lines.push(explanations[label]);
+              return lines;
+            }
+          }
+        }
+      }
+    }
+  });
+}
+
+function catCountLabel(pct, total){
+  return `${Math.round(pct/100*total)}/${total}`;
+}
+
+let finDashTrendChartRef = null;
+function renderFinDashTrendChart(accFilterId){
+  const canvas = document.getElementById('finDashTrendChart');
+  if(!canvas) return;
+  const ctx = canvas.getContext('2d');
+  if(finDashTrendChartRef) finDashTrendChartRef.destroy();
+
+  // Always the trailing 6 real-world months, independent of whatever month
+  // the calendar above is currently drilled into — a trend widget reads
+  // better as a stable rolling window than one that jumps with the nav.
+  const now = new Date();
+  const months = [];
+  for(let i = 5; i >= 0; i--) months.push(new Date(now.getFullYear(), now.getMonth() - i, 1));
+  const rangeStart = months[0];
+  const rangeEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+
+  const relevantTx = FIN_TXNS.filter(t => {
+    if(!t.tx_date || t.tx_type === 'Transfer') return false;
+    if(accFilterId && t.account_id !== accFilterId) return false;
+    const d = new Date(t.tx_date + 'T00:00:00');
+    return d >= rangeStart && d < rangeEnd;
+  });
+  const primary = _finPrimaryCurrencyForTxns(relevantTx);
+  const sameCurrency = relevantTx.filter(t => _finTxCurrency(t) === primary);
+
+  const sumFor = (type, mo) => sameCurrency
+    .filter(t => t.tx_type === type)
+    .filter(t => { const d = new Date(t.tx_date + 'T00:00:00'); return d.getFullYear() === mo.getFullYear() && d.getMonth() === mo.getMonth(); })
+    .reduce((s,t) => s + (Number(t.amount) || 0), 0);
+
+  const incomeData = months.map(mo => sumFor('Income', mo));
+  const expenseData = months.map(mo => sumFor('Expense', mo));
+  const labels = months.map(mo => mo.toLocaleDateString('en-US',{month:'short'}));
+
+  finDashTrendChartRef = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        { label: `Income (${primary})`, data: incomeData, backgroundColor: cssVar('--win'), borderRadius: 3 },
+        { label: `Expense (${primary})`, data: expenseData, backgroundColor: cssVar('--loss'), borderRadius: 3 }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: true, labels: { color: cssVar('--muted'), font: { size: 10.5 }, boxWidth: 10 } } },
+      scales: {
+        x: { ticks: { color: cssVar('--muted'), font: { size: 10 } }, grid: { display: false } },
+        y: { ticks: { color: cssVar('--muted'), font: { size: 10 } }, grid: { color: cssVar('--rule') } }
+      }
+    }
+  });
+}
+
+function showFinDashDay(y, m, d){
+  const info = window._finDashByDay[d];
+  const txns = info ? info.txns : [];
+  document.getElementById('finDashDetailTitle').textContent = new Date(y, m, d).toLocaleDateString('en-US',{month:'long', day:'numeric', year:'numeric'}) + ' — by category';
+  document.getElementById('finDashDetailBody').innerHTML = _finDashCategorizedHtml(txns);
+}
+
+// Both Day and Week views group by category (with a per-category subtotal)
+// instead of a flat chronological list. Transfers are listed too (they can
+// carry a category now, e.g. tagging one as "Savings & Investments") but
+// contribute nothing to the numeric total — a transfer isn't a gain or
+// loss, it's money moving between your own accounts.
+function _finDashCategorizedHtml(txns){
+  if(!txns.length) return '<div class="empty-state">No transactions.</div>';
+
+  const primary = _finPrimaryCurrencyForTxns(txns);
+  const byCat = {};
+  txns.forEach(t => {
+    const cat = t.category || 'Uncategorized';
+    if(!byCat[cat]) byCat[cat] = { items: [], total: 0 };
+    byCat[cat].items.push(t);
+    if(t.tx_type !== 'Transfer' && _finTxCurrency(t) === primary){
+      byCat[cat].total += t.tx_type === 'Expense' ? -(Number(t.amount) || 0) : (Number(t.amount) || 0);
+    }
+  });
+
+  const catNames = Object.keys(byCat).sort((a,b) => Math.abs(byCat[b].total) - Math.abs(byCat[a].total));
+
+  return catNames.map(cat => {
+    const group = byCat[cat];
+    const itemsHtml = group.items
+      .slice()
+      .sort((a,b) => (a.tx_date < b.tx_date ? 1 : -1))
+      .map(t => {
+        const acc = FIN_ACCOUNTS.find(a => a.id === t.account_id);
+        const amtColor = t.tx_type === 'Income' ? 'var(--win)' : (t.tx_type === 'Expense' ? 'var(--loss)' : 'var(--muted)');
+        const sign = t.tx_type === 'Income' ? '+' : (t.tx_type === 'Expense' ? '−' : '');
+        const label = t.tx_type === 'Transfer'
+          ? `${escapeHtml(t.description || 'Transfer')} <span style="color:var(--muted);">(${escapeHtml(_finAccountName(t.account_id))} → ${escapeHtml(_finAccountName(t.to_account_id))})</span>`
+          : `${escapeHtml(t.description || t.tx_type)}${t.subcategory ? ` <span style="color:var(--muted);">· ${escapeHtml(t.subcategory)}</span>` : ''}`;
+        return `
+          <div style="display:flex;justify-content:space-between;gap:8px;padding:4px 0;font-size:11.5px;">
+            <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${label}</span>
+            <span style="color:${amtColor};flex-shrink:0;">${sign}${finMoney(t.amount, acc?.currency || '')}</span>
+          </div>
+        `;
+      }).join('');
+    return `
+      <div style="margin-bottom:14px;">
+        <div style="display:flex;justify-content:space-between;font-size:12px;font-weight:700;padding-bottom:4px;margin-bottom:3px;border-bottom:1px solid var(--rule);">
+          <span>${escapeHtml(cat)}</span>
+          <span style="color:${group.total>=0?'var(--win)':'var(--loss)'};">${group.total>=0?'+':'−'}${finMoney(Math.abs(group.total), primary)}</span>
+        </div>
+        ${itemsHtml}
+      </div>
+    `;
+  }).join('');
+}
+
+function showFinDashWeek(weekIdx){
+  const week = window._finDashByWeek[weekIdx];
+  document.getElementById('finDashDetailTitle').textContent = 'This week — by category';
+  document.getElementById('finDashDetailBody').innerHTML = _finDashCategorizedHtml(week.txns);
+}
+
 /* ---- Finance dropdown options (editable in Finance > Configuration) ---- */
+// expense_subcategories is a map { categoryName: [subcategory, ...] } — the
+// only non-flat-array option, since Category > Subcategory is the one
+// dropdown that's actually hierarchical. Everything else here stays a
+// plain editable string list.
 const FINANCE_OPTION_DEFAULTS = {
   account_types: ['Bank', 'E-Wallet', 'Cash', 'Crypto', 'Exchange', 'Other'],
   currencies: ['PHP', 'USD', 'USDT'],
   income_categories: ['Salary', 'Trading Payout', 'Business', 'Allowance', 'Gift', 'Other'],
-  expense_categories: ['Food', 'Bills', 'Transport', 'Subscriptions', 'Shopping', 'Health', 'Family', 'Entertainment', 'Other']
+  expense_categories: [
+    '🏠 Housing', '💡 Utilities', '🍽️ Food & Groceries', '🚗 Transportation', '🏥 Healthcare',
+    '🎉 Entertainment', '🚬 Vices', '🛍️ Shopping', '📚 Education', '💼 Work & Business',
+    '👨‍👩‍👧‍👦 Family Support', '🎁 Gifts & Donations', '✈️ Travel', '💳 Debt & Loans',
+    '💰 Savings & Investments', '🐶 Pets', '📦 Subscriptions', '❓ Miscellaneous'
+  ],
+  expense_subcategories: {
+    '🏠 Housing': ['Rent', 'Mortgage', 'Maintenance', 'Home supplies'],
+    '💡 Utilities': ['Electricity', 'Water', 'Internet', 'Mobile plan'],
+    '🍽️ Food & Groceries': ['Grocery', 'Restaurant', 'Coffee', 'Snacks'],
+    '🚗 Transportation': ['Fuel', 'Parking', 'Taxi/Uber/Careem', 'Public transport', 'Vehicle maintenance'],
+    '🏥 Healthcare': ['Medicines', 'Doctor consultation', 'Insurance', 'Medical tests'],
+    '🎉 Entertainment': ['Movies', 'Games', 'Streaming subscriptions', 'Hobbies'],
+    '🚬 Vices': ['Cigarettes', 'Alcohol', 'Vapes', 'Gambling'],
+    '🛍️ Shopping': ['Clothes', 'Gadgets', 'Accessories', 'Household items'],
+    '📚 Education': ['Courses', 'Books', 'Certifications'],
+    '💼 Work & Business': ['Office supplies', 'Software subscriptions', 'Business expenses'],
+    '👨‍👩‍👧‍👦 Family Support': ['Allowance', 'Gifts', 'Support for parents or relatives'],
+    '🎁 Gifts & Donations': ['Charity', 'Birthday gifts', 'Special occasions'],
+    '✈️ Travel': ['Flights', 'Hotels', 'Visa fees', 'Tours'],
+    '💳 Debt & Loans': ['Credit card payments', 'Personal loans', 'Installments'],
+    '💰 Savings & Investments': ['Emergency fund', 'Stocks', 'Crypto', 'Retirement savings'],
+    '🐶 Pets': ['Food', 'Vet', 'Grooming'],
+    '📦 Subscriptions': ['Netflix', 'Spotify', 'ChatGPT', 'Cloud storage'],
+    '❓ Miscellaneous': ['Unexpected expenses', 'Small purchases', 'Uncategorized items']
+  }
 };
 // account_types dropped from the editable lists — the account CLASS
 // (Debit/Credit/...) is structural now (it changes which fields exist),
@@ -2138,16 +2908,79 @@ function loadFinanceOptions(){
     const saved = JSON.parse(localStorage.getItem('ledger-finance-options') || 'null');
     if(saved && typeof saved === 'object'){
       Object.keys(FINANCE_OPTION_DEFAULTS).forEach(k => {
-        if(Array.isArray(saved[k]) && saved[k].length) FINANCE_OPTIONS[k] = saved[k];
+        const v = saved[k];
+        if(Array.isArray(v) && v.length) FINANCE_OPTIONS[k] = v;
+        else if(v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length) FINANCE_OPTIONS[k] = v;
       });
     }
   }catch(e){}
+  if(!FINANCE_OPTIONS.expense_subcategories || typeof FINANCE_OPTIONS.expense_subcategories !== 'object'){
+    FINANCE_OPTIONS.expense_subcategories = {};
+  }
 }
 loadFinanceOptions();
 
 function saveFinanceOptions(){
   try{ localStorage.setItem('ledger-finance-options', JSON.stringify(FINANCE_OPTIONS)); }catch(e){}
   syncUIPrefsToProfile();
+}
+
+// One-click backfill for accounts that already had their own expense
+// categories before this taxonomy existed — ADDS whatever's missing
+// (by case-insensitive name match), never removes or renames anything
+// the user already has.
+const FINANCE_RECOMMENDED_EXPENSE_TAXONOMY = [
+  { name: '🏠 Housing', subs: ['Rent', 'Mortgage', 'Maintenance', 'Home supplies'] },
+  { name: '💡 Utilities', subs: ['Electricity', 'Water', 'Internet', 'Mobile plan'] },
+  { name: '🍽️ Food & Groceries', subs: ['Grocery', 'Restaurant', 'Coffee', 'Snacks'] },
+  { name: '🚗 Transportation', subs: ['Fuel', 'Parking', 'Taxi/Uber/Careem', 'Public transport', 'Vehicle maintenance'] },
+  { name: '🏥 Healthcare', subs: ['Medicines', 'Doctor consultation', 'Insurance', 'Medical tests'] },
+  { name: '🎉 Entertainment', subs: ['Movies', 'Games', 'Streaming subscriptions', 'Hobbies'] },
+  { name: '🚬 Vices', subs: ['Cigarettes', 'Alcohol', 'Vapes', 'Gambling'] },
+  { name: '🛍️ Shopping', subs: ['Clothes', 'Gadgets', 'Accessories', 'Household items'] },
+  { name: '📚 Education', subs: ['Courses', 'Books', 'Certifications'] },
+  { name: '💼 Work & Business', subs: ['Office supplies', 'Software subscriptions', 'Business expenses'] },
+  { name: '👨‍👩‍👧‍👦 Family Support', subs: ['Allowance', 'Gifts', 'Support for parents or relatives'] },
+  { name: '🎁 Gifts & Donations', subs: ['Charity', 'Birthday gifts', 'Special occasions'] },
+  { name: '✈️ Travel', subs: ['Flights', 'Hotels', 'Visa fees', 'Tours'] },
+  { name: '💳 Debt & Loans', subs: ['Credit card payments', 'Personal loans', 'Installments'] },
+  { name: '💰 Savings & Investments', subs: ['Emergency fund', 'Stocks', 'Crypto', 'Retirement savings'] },
+  { name: '🐶 Pets', subs: ['Food', 'Vet', 'Grooming'] },
+  { name: '📦 Subscriptions', subs: ['Netflix', 'Spotify', 'ChatGPT', 'Cloud storage'] },
+  { name: '❓ Miscellaneous', subs: ['Unexpected expenses', 'Small purchases', 'Uncategorized items'] }
+];
+
+// REPLACES expense_categories/expense_subcategories with EXACTLY this list —
+// old leftover categories (Food, Bills, Transport, etc. from before this
+// taxonomy existed) are removed, not kept alongside it. Existing
+// transactions keep whatever category string they already have in the
+// database either way — this only changes what shows up in the dropdowns.
+function _finResetToRecommendedTaxonomy(){
+  FINANCE_OPTIONS.expense_categories = FINANCE_RECOMMENDED_EXPENSE_TAXONOMY.map(c => c.name);
+  FINANCE_OPTIONS.expense_subcategories = {};
+  FINANCE_RECOMMENDED_EXPENSE_TAXONOMY.forEach(({name, subs}) => {
+    FINANCE_OPTIONS.expense_subcategories[name] = subs.slice();
+  });
+  saveFinanceOptions();
+}
+
+// Runs ONCE per browser (gated by a plain localStorage flag, not part of
+// FINANCE_OPTIONS) — replaces whatever expense category list existed before
+// with exactly the recommended taxonomy. After this runs once, manual edits
+// made later in Configuration are never overwritten again.
+try{
+  if(localStorage.getItem('ledger-finance-taxonomy-reset-v1') !== '1'){
+    _finResetToRecommendedTaxonomy();
+    localStorage.setItem('ledger-finance-taxonomy-reset-v1', '1');
+  }
+}catch(e){}
+
+async function loadRecommendedFinanceTaxonomy(){
+  if(!(await customConfirm("Replace your expense categories with EXACTLY the recommended list (18 categories + subcategories)? Anything you've added beyond this list will be removed from the dropdown — existing transactions keep their category text either way.", 'Replace'))) return;
+  _finResetToRecommendedTaxonomy();
+  try{ localStorage.setItem('ledger-finance-taxonomy-reset-v1', '1'); }catch(e){}
+  renderFinanceConfig();
+  showToast('Expense categories replaced with the recommended list');
 }
 
 /* ---- Finance > Accounts ---- */
@@ -2181,60 +3014,36 @@ function finAccountCardHTML(a){
     ? `<img class="fin-acc-icon" data-icon-path="${escapeHtml(a.icon_path)}" alt="" style="width:30px;height:30px;object-fit:contain;border-radius:6px;display:none;flex-shrink:0;">`
     : '';
   const owedNow = isCredit ? finOwedFor(a) : 0; // virtual — never read from storage
+  const subAccounts = !isCredit ? FIN_ACCOUNTS.filter(s => s.parent_account_id === a.id) : [];
+  // Sub-accounts share the parent's currency (enforced on save), so a
+  // straight sum is always safe — no cross-currency math to worry about.
+  const combinedBalance = (Number(a.current_balance)||0) + subAccounts.reduce((s,sub) => s + (Number(sub.current_balance)||0), 0);
   const mainBalance = isCredit
     ? finMoney((Number(a.credit_limit)||0) - owedNow, a.currency)
-    : finMoney(a.current_balance, a.currency);
-  // --- Running Bill (this calendar month's spend) + statement payment ---
-  const now = new Date();
-  const prevMonth = _finPreviousMonthLabel();
-  const prevMonthName = prevMonth.toLocaleDateString('en-US', { month: 'long' });
+    : finMoney(subAccounts.length ? combinedBalance : a.current_balance, a.currency);
+
+  // The card face stays a quick-glance summary only — Running Bill, the
+  // Paid/Undo action, AND the sub-account list itself all live in the
+  // details popup (click the card) instead of stacking every pocket's own
+  // row right on the card face, which got cluttered fast past 2-3 subs.
   const dueForThisAccount = FIN_RECURRING.filter(r => r.account_id === a.id && !_finRecIsFullyPaid(r));
-  const prevMonthTx = isCredit ? _finMonthTxTotal(a.id, prevMonth) : 0;
-  const hasBill = dueForThisAccount.length > 0 || prevMonthTx > 0;
-  const paidThisCycle = _finBillPaidCovers(a.last_bill_paid, prevMonth);
-
-  // Recurring and Transactions shown apart on purpose — recurring is the
-  // fixed, committed part; transactions are the part still under the
-  // user's control this month. The split is what makes it actionable.
-  const runningRecurring = _finMonthlyRecurringTotal(a.id);
-  const runningTx = _finMonthTxTotal(a.id, now);
-  const runningLine = isCredit ? `
-    <div style="font-size:11px;color:var(--muted);margin-top:10px;text-transform:uppercase;letter-spacing:.05em;">Running Bill for ${now.toLocaleDateString('en-US',{month:'long'})}</div>
-    <div style="font-size:12px;margin-top:4px;">Recurring <span style="font-weight:600;">${finMoney(runningRecurring, a.currency)}</span> <span style="color:var(--muted);">·</span> Transactions <span style="font-weight:600;">${finMoney(runningTx, a.currency)}</span></div>
-    <div style="font-size:12px;margin-top:2px;">Total <span style="font-weight:700;color:var(--warn);">${finMoney(runningRecurring + runningTx, a.currency)}</span></div>
-  ` : '';
-
   let paymentLineHtml = '';
-  if(hasBill){
-    if(paidThisCycle){
-      paymentLineHtml = `<div class="fin-payment-row" style="margin-top:8px;"><span>Payment for ${prevMonthName}</span><span style="display:flex;align-items:center;gap:6px;flex-shrink:0;"><span class="pill pill-green">Paid</span><button class="fin-subacct-edit" title="Undo this payment" onclick="undoAccountBillPayment(${a.id})">Undo</button></span></div>`;
-    }else if(now.getDate() >= 5){
-      paymentLineHtml = `<div class="fin-payment-row" style="margin-top:8px;"><span>Payment for ${prevMonthName}</span><button class="poscalc-accent-btn" style="padding:3px 9px;font-size:10.5px;flex-shrink:0;" onclick="payAllDueForAccount(${a.id})">Paid</button></div>`;
-    }
-    // Days 1-4 with the bill still unpaid: nothing yet — the button
-    // (re)appears on the 5th, per the monthly rhythm the user wanted.
+  if(!isCredit && dueForThisAccount.length){
+    // Debit-linked recurring items still get their inline line — there's
+    // no card "statement" concept to fold this into on a bank/e-wallet.
+    const next = _finPreviousMonthLabel();
+    paymentLineHtml = `<div class="fin-payment-row" style="margin-top:8px;"><span>Payment for ${next.toLocaleDateString('en-US',{month:'long'})}</span><button class="poscalc-accent-btn" style="padding:3px 9px;font-size:10.5px;flex-shrink:0;" onclick="payAllDueForAccount(${a.id})">Paid</button></div>`;
   }
   const creditLines = isCredit ? `
     <div style="font-size:12px;margin-top:6px;">Owed <span style="color:var(--loss);font-weight:600;">${finMoney(owedNow, a.currency)}</span> <span style="color:var(--muted);">/ Limit ${finMoney(a.credit_limit, a.currency)}</span></div>
     ${a.billing_day || a.due_day ? `<div style="font-size:11px;color:var(--muted);margin-top:3px;">${a.billing_day ? `Bill day ${a.billing_day}` : ''}${a.billing_day && a.due_day ? ' · ' : ''}${a.due_day ? `Due day ${a.due_day}` : ''}</div>` : ''}
-    ${runningLine}
-    ${paymentLineHtml}
+    <div class="fin-view-bill-hint">View bill details →</div>
   ` : '';
-  const subAccounts = !isCredit ? FIN_ACCOUNTS.filter(s => s.parent_account_id === a.id) : [];
-  const subAccountsHtml = subAccounts.length ? `
-    <div class="fin-subacct-list">
-      ${subAccounts.map(s => `
-        <div class="fin-subacct-row">
-          <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(s.account_name)}</span>
-          <span class="fin-balance" style="font-family:'IBM Plex Mono',monospace;flex-shrink:0;">${finMoney(s.current_balance, s.currency)}</span>
-          <button class="fin-subacct-edit" title="Edit" onclick="openFinAccountModal(${s.id})">✎</button>
-          <button class="fin-subacct-edit" title="Delete" onclick="deleteFinAccount(${s.id})">✕</button>
-        </div>
-      `).join('')}
-    </div>
-  ` : '';
+  const subAccountsHint = subAccounts.length
+    ? `<div style="font-size:10.5px;color:var(--muted);margin-top:2px;">Own <span class="fin-balance">${finMoney(a.current_balance, a.currency)}</span> + ${subAccounts.length} sub-account${subAccounts.length>1?'s':''}</div>`
+    : '';
   return `
-    <div class="account-card" style="cursor:default;">
+    <div class="account-card" style="cursor:pointer;" onclick="openFinAccountDetailsModal(${a.id})">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
         ${iconImg}
         <div style="min-width:0;overflow:hidden;">
@@ -2246,10 +3055,11 @@ function finAccountCardHTML(a){
       <div class="account-card-balance${isCredit ? '' : ' fin-balance'}">${mainBalance}</div>
       ${isCredit ? `<div style="font-size:10.5px;color:var(--muted);margin-top:2px;text-transform:uppercase;letter-spacing:.05em;">Available credit</div>` : ''}
       ${creditLines}
+      ${subAccountsHint}
+      ${!isCredit ? `<div class="fin-view-bill-hint">View details →</div>` : ''}
       ${a.notes ? `<div style="font-size:12px;color:var(--muted);margin-top:8px;font-style:italic;">${escapeHtml(a.notes)}</div>` : ''}
-      ${subAccountsHtml}
       ${!isCredit && paymentLineHtml ? `<div class="fin-payment-list">${paymentLineHtml}</div>` : ''}
-      <div style="display:flex;justify-content:${!isCredit ? 'space-between' : 'flex-end'};align-items:center;gap:6px;margin-top:12px;">
+      <div style="display:flex;justify-content:${!isCredit ? 'space-between' : 'flex-end'};align-items:center;gap:6px;margin-top:12px;" onclick="event.stopPropagation();">
         ${!isCredit ? `<button class="fin-subacct-add" onclick="openFinSubAccountModal(${a.id})">+ Sub-account</button>` : ''}
         <div style="display:flex;gap:6px;">
           <button class="drawer-secondary-btn" style="padding:4px 10px;font-size:11px;" onclick="openFinAccountModal(${a.id})">Edit</button>
@@ -2258,6 +3068,234 @@ function finAccountCardHTML(a){
       </div>
     </div>
   `;
+}
+
+// Chronological ledger for one account (or sub-account) — every Income/
+// Expense/Transfer that touches it, newest first. Debit accounts get a
+// running balance column reconstructed BACKWARD from current_balance (the
+// one stored, authoritative running total); Credit doesn't, since Owed is
+// a virtual value with no single "balance after this row" concept. Computed
+// over the FULL unfiltered list so filtering which rows are shown never
+// throws off the running-balance math.
+function _finAccountHistoryRows(accountId){
+  const acc = FIN_ACCOUNTS.find(a => a.id === accountId);
+  if(!acc) return [];
+
+  const txns = FIN_TXNS
+    .filter(t => (t.account_id === accountId || t.to_account_id === accountId) && t.tx_date)
+    .slice()
+    .sort((a,b) => (a.tx_date < b.tx_date ? 1 : (a.tx_date > b.tx_date ? -1 : (b.id||0) - (a.id||0))));
+
+  const showRunning = acc.account_class === 'Debit';
+  let running = showRunning ? (Number(acc.current_balance) || 0) : null;
+
+  return txns.map(t => {
+    let amt = 0, label = '';
+    if(t.tx_type === 'Income'){ amt = Number(t.amount) || 0; label = t.description || t.category || 'Income'; }
+    else if(t.tx_type === 'Expense'){ amt = -(Number(t.amount) || 0); label = t.description || t.category || 'Expense'; }
+    else if(t.tx_type === 'Transfer'){
+      if(t.account_id === accountId){ amt = -(Number(t.amount) || 0); label = `Transfer to ${_finAccountName(t.to_account_id)}`; }
+      else { amt = Number(t.amount) || 0; label = `Transfer from ${_finAccountName(t.account_id)}`; }
+    }
+    const balanceAfter = running;
+    if(showRunning) running = Number((running - amt).toFixed(2));
+    return { tx_date: t.tx_date, label, amt, balanceAfter, showRunning };
+  });
+}
+
+// Same All time / This Month / Previous Month / Custom Range shape as the
+// Transactions tab filter, just scoped to this account's history popup.
+function _finAccHistoryPassesFilter(row){
+  const filterEl = document.getElementById('finAccHistoryPeriodFilter');
+  const filter = filterEl ? filterEl.value : 'all';
+  if(filter === 'all') return true;
+  if(!row.tx_date) return false;
+  const d = new Date(row.tx_date + 'T00:00:00');
+
+  if(filter === 'this'){
+    const now = new Date();
+    return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+  }
+  if(filter === 'prev'){
+    const prev = _finPreviousMonthLabel();
+    return d.getFullYear() === prev.getFullYear() && d.getMonth() === prev.getMonth();
+  }
+  if(filter === 'range'){
+    const from = document.getElementById('finAccHistoryFrom')?.value;
+    const to = document.getElementById('finAccHistoryTo')?.value;
+    if(from && row.tx_date < from) return false;
+    if(to && row.tx_date > to) return false;
+    return true;
+  }
+  return true;
+}
+
+function onFinAccHistoryFilterChange(accountId){
+  const isRange = document.getElementById('finAccHistoryPeriodFilter').value === 'range';
+  document.getElementById('finAccHistoryRangeRow').style.display = isRange ? 'flex' : 'none';
+  renderFinAccountHistory(accountId);
+}
+
+function renderFinAccountHistory(accountId){
+  const body = document.getElementById('finAccHistoryBody');
+  if(!body) return;
+  const acc = FIN_ACCOUNTS.find(a => a.id === accountId);
+  if(!acc){ body.innerHTML = '<div class="empty-state">Account not found.</div>'; return; }
+
+  const allRows = _finAccountHistoryRows(accountId);
+  if(!allRows.length){ body.innerHTML = '<div class="empty-state">No transactions yet.</div>'; return; }
+
+  const rows = allRows.filter(_finAccHistoryPassesFilter);
+  if(!rows.length){ body.innerHTML = '<div class="empty-state">No transactions in this period.</div>'; return; }
+
+  body.innerHTML = `<div style="max-height:280px;overflow-y:auto;">${rows.map(r => `
+    <div style="display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px solid var(--rule);font-size:12px;">
+      <div style="min-width:0;">
+        <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(r.label)}</div>
+        <div style="font-size:10px;color:var(--muted);margin-top:2px;">${new Date(r.tx_date+'T00:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</div>
+      </div>
+      <div style="text-align:right;flex-shrink:0;">
+        <div style="color:${r.amt>=0?'var(--win)':'var(--loss)'};font-weight:600;">${r.amt>=0?'+':'−'}${finMoney(Math.abs(r.amt), acc.currency)}</div>
+        ${r.showRunning ? `<div style="font-size:10px;color:var(--muted);margin-top:2px;">Bal ${finMoney(r.balanceAfter, acc.currency)}</div>` : ''}
+      </div>
+    </div>
+  `).join('')}</div>`;
+}
+
+// Filter controls + empty container reused by both the Debit and Credit
+// branches of openFinAccountDetailsModal below.
+function _finAccHistoryFilterHtml(accountId){
+  return `
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+      <select id="finAccHistoryPeriodFilter" onchange="onFinAccHistoryFilterChange(${accountId})" style="max-width:150px;font-size:11.5px;padding:5px 8px;">
+        <option value="all">All time</option>
+        <option value="this">This Month</option>
+        <option value="prev">Previous Month</option>
+        <option value="range">Custom Range</option>
+      </select>
+      <div id="finAccHistoryRangeRow" style="display:none;align-items:center;gap:5px;">
+        <input type="date" id="finAccHistoryFrom" onchange="renderFinAccountHistory(${accountId})" style="font-size:11px;padding:4px 6px;">
+        <span style="color:var(--muted);font-size:11px;">to</span>
+        <input type="date" id="finAccHistoryTo" onchange="renderFinAccountHistory(${accountId})" style="font-size:11px;padding:4px 6px;">
+      </div>
+    </div>
+    <div id="finAccHistoryBody"></div>
+  `;
+}
+
+/* ---- Finance account details popup: bill breakdown (Credit) or full
+   transaction history (Debit / sub-accounts) ---- */
+function openFinAccountDetailsModal(accountId){
+  const a = FIN_ACCOUNTS.find(x => x.id === accountId);
+  if(!a) return;
+  document.getElementById('finAccDetailsTitle').textContent = a.account_name;
+
+  // Debit-only — Hide Balances only ever blurred Debit amounts by design
+  // (Credit's Owed/Limit aren't considered "sensitive" the same way), so a
+  // toggle here would just be a dead button on a Credit card.
+  const hideBalBtn = document.getElementById('finAccDetailsHideBalBtn');
+  if(hideBalBtn){
+    hideBalBtn.style.display = a.account_class !== 'Credit' ? '' : 'none';
+    hideBalBtn.textContent = FIN_BALANCES_HIDDEN ? 'Show Balances' : 'Hide Balances';
+  }
+
+  if(a.account_class !== 'Credit'){
+    // Sub-account list lives here now (not on the card face) — clicking one
+    // just reopens this same modal scoped to that sub-account.
+    const subAccounts = FIN_ACCOUNTS.filter(s => s.parent_account_id === a.id);
+    const combinedBalance = (Number(a.current_balance)||0) + subAccounts.reduce((s,sub) => s + (Number(sub.current_balance)||0), 0);
+    // Table instead of stacked rows — keeps Name/Balance/Actions in real
+    // aligned columns instead of each row wrapping wherever its own content
+    // happens to end.
+    const subAccountsSectionHtml = subAccounts.length ? `
+      <div class="fin-acc-details-section">
+        <div class="fin-acc-details-heading">SUB-ACCOUNTS</div>
+        <table class="journal" style="margin-top:6px;">
+          <thead><tr><th>Name</th><th>Balance</th><th></th></tr></thead>
+          <tbody>
+            <tr>
+              <td>${escapeHtml(a.account_name)} <span style="color:var(--muted);">(own)</span></td>
+              <td class="fin-balance">${finMoney(a.current_balance, a.currency)}</td>
+              <td></td>
+            </tr>
+            ${subAccounts.map(s => `
+              <tr style="cursor:pointer;" title="View history" onclick="openFinAccountDetailsModal(${s.id})">
+                <td>${escapeHtml(s.account_name)}</td>
+                <td class="fin-balance">${finMoney(s.current_balance, s.currency)}</td>
+                <td style="text-align:right;white-space:nowrap;" onclick="event.stopPropagation();">
+                  <button class="fin-subacct-edit" title="Edit" onclick="openFinAccountModal(${s.id})">✎</button>
+                  <button class="fin-subacct-edit" title="Delete" onclick="deleteFinAccount(${s.id})">✕</button>
+                </td>
+              </tr>
+            `).join('')}
+            <tr style="font-weight:700;">
+              <td>Total Balance</td>
+              <td class="fin-balance">${finMoney(combinedBalance, a.currency)}</td>
+              <td></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    ` : '';
+
+    document.getElementById('finAccDetailsBody').innerHTML = `
+      <div class="fin-acc-details-summary">Balance <strong class="fin-balance">${finMoney(subAccounts.length ? combinedBalance : a.current_balance, a.currency)}</strong></div>
+      ${subAccountsSectionHtml}
+      <div class="fin-acc-details-section">
+        <div class="fin-acc-details-heading">FULL HISTORY</div>
+        ${_finAccHistoryFilterHtml(accountId)}
+      </div>
+    `;
+    renderFinAccountHistory(accountId);
+    document.getElementById('finAccountDetailsModal').classList.add('open');
+    return;
+  }
+
+  const now = new Date();
+  const prevMonth = _finPreviousMonthLabel();
+  const monthlyRecurring = _finMonthlyRecurringTotal(a.id);
+  const curTx = _finMonthTxTotal(a.id, now);
+  const prevTx = _finMonthTxTotal(a.id, prevMonth);
+  const dueForThisAccount = FIN_RECURRING.filter(r => r.account_id === a.id && !_finRecIsFullyPaid(r));
+  const hasBill = dueForThisAccount.length > 0 || prevTx > 0;
+  const paidThisCycle = _finBillPaidCovers(a.last_bill_paid, prevMonth);
+
+  const billSection = (label, recurring, tx) => `
+    <div class="fin-acc-details-heading">${label}</div>
+    <div class="fin-acc-details-row"><span>Recurring</span><span>${finMoney(recurring, a.currency)}</span></div>
+    <div class="fin-acc-details-row"><span>Transactions</span><span>${finMoney(tx, a.currency)}</span></div>
+    <div class="fin-acc-details-row fin-acc-details-total"><span>Total</span><span>${finMoney(recurring + tx, a.currency)}</span></div>
+  `;
+
+  let paymentHtml = '';
+  if(hasBill){
+    if(paidThisCycle){
+      paymentHtml = `<div class="fin-payment-row" style="margin-top:10px;"><span>Payment for ${prevMonth.toLocaleDateString('en-US',{month:'long'})}</span><span style="display:flex;align-items:center;gap:6px;flex-shrink:0;"><span class="pill pill-green">Paid</span><button class="fin-subacct-edit" title="Undo this payment" onclick="undoAccountBillPayment(${a.id})">Undo</button></span></div>`;
+    }else if(now.getDate() >= 5){
+      paymentHtml = `<div class="fin-payment-row" style="margin-top:10px;"><span>Payment for ${prevMonth.toLocaleDateString('en-US',{month:'long'})}</span><button class="poscalc-accent-btn" style="padding:3px 9px;font-size:10.5px;flex-shrink:0;" onclick="payAllDueForAccount(${a.id})">Paid</button></div>`;
+    }else{
+      paymentHtml = `<div style="font-size:11px;color:var(--muted);margin-top:8px;">Payment button opens on the 5th.</div>`;
+    }
+  }
+
+  document.getElementById('finAccDetailsBody').innerHTML = `
+    <div class="fin-acc-details-summary">Owed <strong style="color:var(--loss);">${finMoney(finOwedFor(a), a.currency)}</strong> · Limit ${finMoney(a.credit_limit, a.currency)}</div>
+    <div class="fin-acc-details-section">${billSection('RUNNING BILL FOR ' + now.toLocaleDateString('en-US',{month:'long'}).toUpperCase(), monthlyRecurring, curTx)}</div>
+    <div class="fin-acc-details-section">
+      ${billSection('BILL FOR ' + prevMonth.toLocaleDateString('en-US',{month:'long'}).toUpperCase(), monthlyRecurring, prevTx)}
+      ${paymentHtml}
+    </div>
+    <div class="fin-acc-details-section">
+      <div class="fin-acc-details-heading">FULL HISTORY</div>
+      ${_finAccHistoryFilterHtml(accountId)}
+    </div>
+  `;
+  renderFinAccountHistory(accountId);
+  document.getElementById('finAccountDetailsModal').classList.add('open');
+}
+
+function closeFinAccountDetailsModal(){
+  document.getElementById('finAccountDetailsModal').classList.remove('open');
 }
 
 function renderFinanceAccounts(){
@@ -2521,21 +3559,135 @@ function _finAccountName(id){
   return a ? a.account_name : '—';
 }
 
+// Whether a transaction falls inside the currently-selected Transactions
+// period filter (All time / This Month / Previous Month / Custom Range —
+// plain calendar months, matching how Running Bill/Bill breakdowns already
+// think about "month").
+function _finTxPassesPeriodFilter(t){
+  const filterEl = document.getElementById('finTxPeriodFilter');
+  const filter = filterEl ? filterEl.value : 'all';
+  if(filter === 'all') return true;
+  if(!t.tx_date) return false;
+  const d = new Date(t.tx_date + 'T00:00:00');
+
+  if(filter === 'this'){
+    const now = new Date();
+    return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+  }
+  if(filter === 'prev'){
+    const prev = _finPreviousMonthLabel();
+    return d.getFullYear() === prev.getFullYear() && d.getMonth() === prev.getMonth();
+  }
+  if(filter === 'range'){
+    const from = document.getElementById('finTxRangeFrom')?.value;
+    const to = document.getElementById('finTxRangeTo')?.value;
+    if(from && t.tx_date < from) return false;
+    if(to && t.tx_date > to) return false;
+    return true;
+  }
+  return true;
+}
+
+function onFinTxPeriodFilterChange(){
+  const isRange = document.getElementById('finTxPeriodFilter').value === 'range';
+  document.getElementById('finTxRangeFilterRow').style.display = isRange ? 'flex' : 'none';
+  renderFinanceTransactions();
+}
+
+// Account filter's options are rebuilt from FIN_ACCOUNTS on every render
+// (accounts can be added/deleted while this tab is open) but the user's
+// current selection is preserved across that rebuild.
+function _populateFinTxAccountFilter(){
+  const sel = document.getElementById('finTxAccountFilter');
+  if(!sel) return;
+  const prevValue = sel.value;
+  sel.innerHTML = '<option value="all">All accounts</option>' +
+    FIN_ACCOUNTS.map(a => `<option value="${a.id}">${escapeHtml(a.account_name)}</option>`).join('');
+  if([...sel.options].some(o => o.value === prevValue)) sel.value = prevValue;
+}
+
+// Combines the period filter with the Account and Type filters — a
+// transaction must pass all three to show up (or be included in Delete All).
+function _finTxPassesFilters(t){
+  if(!_finTxPassesPeriodFilter(t)) return false;
+
+  const accFilter = document.getElementById('finTxAccountFilter')?.value || 'all';
+  if(accFilter !== 'all'){
+    const accId = parseInt(accFilter, 10);
+    if(t.account_id !== accId && t.to_account_id !== accId) return false;
+  }
+
+  const typeFilter = document.getElementById('finTxTypeFilter')?.value || 'all';
+  if(typeFilter !== 'all' && t.tx_type !== typeFilter) return false;
+
+  const search = (document.getElementById('finTxSearchFilter')?.value || '').trim().toLowerCase();
+  if(search){
+    const haystack = [
+      t.description, t.category, t.subcategory,
+      _finAccountName(t.account_id), _finAccountName(t.to_account_id)
+    ].filter(Boolean).join(' ').toLowerCase();
+    if(!haystack.includes(search)) return false;
+  }
+
+  return true;
+}
+
+let FIN_TX_SELECTED = new Set();
+
+function toggleFinTxRowSelect(id, checked){
+  if(checked) FIN_TX_SELECTED.add(id); else FIN_TX_SELECTED.delete(id);
+  _updateFinTxBulkBar();
+}
+
+function toggleFinTxSelectAll(checked){
+  const visibleIds = FIN_TXNS.filter(_finTxPassesFilters).map(t => t.id);
+  if(checked) visibleIds.forEach(id => FIN_TX_SELECTED.add(id));
+  else visibleIds.forEach(id => FIN_TX_SELECTED.delete(id));
+  renderFinanceTransactions();
+}
+
+function clearFinTxSelection(){
+  FIN_TX_SELECTED.clear();
+  renderFinanceTransactions();
+}
+
+function _updateFinTxBulkBar(){
+  const bar = document.getElementById('finTxBulkBar');
+  const countEl = document.getElementById('finTxBulkCount');
+  if(!bar || !countEl) return;
+  if(FIN_TX_SELECTED.size > 0){
+    bar.style.display = 'flex';
+    countEl.textContent = `${FIN_TX_SELECTED.size} selected`;
+  }else{
+    bar.style.display = 'none';
+  }
+}
+
 function renderFinanceTransactions(){
   const wrap = document.getElementById('finTxWrap');
   const empty = document.getElementById('finTxEmpty');
   const body = document.getElementById('finTxBody');
   if(!wrap || !empty || !body) return;
 
-  if(!FIN_TXNS.length){
+  _populateFinTxAccountFilter();
+  const rows = FIN_TXNS.filter(_finTxPassesFilters);
+
+  // Selection is kept by id (not by visible row), so it survives filter
+  // changes — but "select all" should only reflect/affect what's visible.
+  const selectAllBox = document.getElementById('finTxSelectAll');
+  if(selectAllBox) selectAllBox.checked = rows.length > 0 && rows.every(t => FIN_TX_SELECTED.has(t.id));
+  _updateFinTxBulkBar();
+
+  if(!rows.length){
     wrap.style.display = 'none';
     empty.style.display = 'block';
+    empty.textContent = FIN_TXNS.length ? 'No transactions match these filters.' : 'No transactions yet — click "+ Add Transaction" to log your first one.';
     return;
   }
   wrap.style.display = 'block';
   empty.style.display = 'none';
 
-  body.innerHTML = FIN_TXNS.map(t => {
+  body.innerHTML = rows.map(t => {
     const acc = FIN_ACCOUNTS.find(x => x.id === t.account_id);
     const cur = acc?.currency || '';
     let amountHtml, accountHtml;
@@ -2550,20 +3702,112 @@ function renderFinanceTransactions(){
       accountHtml = `${escapeHtml(_finAccountName(t.account_id))} → ${escapeHtml(_finAccountName(t.to_account_id))}`;
     }
     const typePill = t.tx_type === 'Income' ? 'pill-green' : (t.tx_type === 'Expense' ? 'pill-red' : 'pill-blue');
+    // Only Credit accounts have a "bill" to settle — Debit spending is
+    // immediate real cash, there's nothing to mark as paid.
+    const statusHtml = acc && acc.account_class === 'Credit'
+      ? (t.settled_bill ? '<span class="pill pill-green">Paid</span>' : '<span class="pill pill-orange">Owed</span>')
+      : '<span style="color:var(--muted);">—</span>';
+    // Every type (including Transfer, now that it can be categorized too)
+    // gets flagged the same way when it's missing one. A drawn badge instead
+    // of a Unicode ⚠ glyph — those render inconsistently (or not at all)
+    // depending on the OS/browser's emoji font, a plain colored circle
+    // never fails to show.
+    const incompleteFlag = !t.category
+      ? `<span title="Missing category" style="display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;border-radius:50%;background:var(--warn);color:#1a1200;font-size:10.5px;font-weight:800;line-height:1;margin-left:6px;vertical-align:middle;cursor:help;">!</span>`
+      : '';
     return `
       <tr>
-        <td>${t.tx_date ? new Date(t.tx_date + 'T00:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : '—'}</td>
+        <td><input type="checkbox" class="fin-tx-row-check" ${FIN_TX_SELECTED.has(t.id) ? 'checked' : ''} onchange="toggleFinTxRowSelect(${t.id}, this.checked)"></td>
+        <td>${t.tx_date ? new Date(t.tx_date + 'T00:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : '—'}${incompleteFlag}</td>
         <td><span class="pill ${typePill}">${t.tx_type}</span></td>
         <td>${amountHtml}</td>
         <td>${accountHtml}</td>
-        <td>${escapeHtml(t.category || '—')}</td>
+        <td>${t.category ? escapeHtml(t.category) + (t.subcategory ? `<div style="font-size:10px;color:var(--muted);margin-top:1px;">${escapeHtml(t.subcategory)}</div>` : '') : '—'}</td>
         <td>${escapeHtml(t.description || '—')}</td>
-        <td style="text-align:right;">
-          <button class="drawer-danger-btn" style="padding:4px 10px;font-size:11px;" onclick="deleteFinTx(${t.id})">${deleteIconSVG()}</button>
+        <td>${statusHtml}</td>
+        <td style="text-align:right;white-space:nowrap;">
+          <button class="drawer-secondary-btn" style="padding:4px 10px;font-size:11px;" onclick="openFinTxModal({editId:${t.id}})">Edit</button>
+          <button class="drawer-danger-btn" style="padding:4px 10px;font-size:11px;margin-left:4px;" onclick="deleteFinTx(${t.id})">${deleteIconSVG()}</button>
         </td>
       </tr>
     `;
   }).join('');
+}
+
+function openFinBulkCategoryModal(){
+  if(!FIN_TX_SELECTED.size) return;
+  const selectedRows = FIN_TXNS.filter(t => FIN_TX_SELECTED.has(t.id));
+  // Expense and Transfer now share the same taxonomy (Transfers can be
+  // tagged too, e.g. "Savings & Investments"), so they can be bulk-edited
+  // together — only Income (its own separate category list) can't mix in.
+  const groups = new Set(selectedRows.map(t => t.tx_type === 'Income' ? 'Income' : 'Expense'));
+
+  if(groups.size > 1){
+    customAlert("Bulk category edit only works within one taxonomy — Income uses a different category list. Select only Income rows, or only Expense/Transfer rows.");
+    return;
+  }
+
+  const type = [...groups][0];
+  const cats = type === 'Income' ? FINANCE_OPTIONS.income_categories : FINANCE_OPTIONS.expense_categories;
+  document.getElementById('finBulkCategorySelect').innerHTML = '<option value="">— none —</option>' +
+    cats.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+  document.getElementById('finBulkCategoryInfo').textContent = `Applying to ${selectedRows.length} transaction${selectedRows.length===1?'':'s'}.`;
+  document.getElementById('finBulkCategoryError').textContent = '';
+  document.getElementById('finBulkCategoryModal').dataset.type = type;
+  onFinBulkCategoryChange();
+  document.getElementById('finBulkCategoryModal').classList.add('open');
+}
+
+// Subcategory only applies when bulk-editing Expense rows, and only once
+// a category with subcategories is picked.
+function onFinBulkCategoryChange(){
+  const type = document.getElementById('finBulkCategoryModal').dataset.type;
+  const category = document.getElementById('finBulkCategorySelect').value;
+  const subs = (type === 'Expense' && category) ? (FINANCE_OPTIONS.expense_subcategories[category] || []) : [];
+  document.getElementById('finBulkSubcategoryRow').style.display = subs.length ? '' : 'none';
+  document.getElementById('finBulkSubcategorySelect').innerHTML = '<option value="">— none —</option>' +
+    subs.map(s => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join('');
+}
+
+function closeFinBulkCategoryModal(){
+  document.getElementById('finBulkCategoryModal').classList.remove('open');
+}
+
+async function saveFinBulkCategory(){
+  const errEl = document.getElementById('finBulkCategoryError');
+  errEl.textContent = '';
+  const type = document.getElementById('finBulkCategoryModal').dataset.type;
+  const category = document.getElementById('finBulkCategorySelect').value || null;
+  const subcategory = type === 'Expense' ? (document.getElementById('finBulkSubcategorySelect').value || null) : null;
+  const ids = [...FIN_TX_SELECTED];
+  if(!ids.length) return;
+
+  const btn = document.querySelector('#finBulkCategoryModal .ai-btn');
+  btn.disabled = true; btn.textContent = 'Saving…';
+  try{
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/finance_transactions?id=in.(${ids.join(',')})`, {
+      method: 'PATCH',
+      headers: {
+        "apikey": SUPABASE_KEY,
+        "Authorization": `Bearer ${USER_ACCESS_TOKEN}`,
+        "Content-Type": "application/json",
+        "Prefer": "return=minimal"
+      },
+      body: JSON.stringify({ category, subcategory })
+    });
+    if(!res.ok) throw new Error(await res.text());
+
+    FIN_TXNS.forEach(t => { if(FIN_TX_SELECTED.has(t.id)){ t.category = category; t.subcategory = subcategory; } });
+    FIN_TX_SELECTED.clear();
+    closeFinBulkCategoryModal();
+    renderFinanceTransactions();
+    showToast('Category updated');
+  }catch(e){
+    errEl.textContent = 'Failed to update: ' + (e.message || e);
+  }finally{
+    btn.disabled = false;
+    btn.textContent = 'Apply';
+  }
 }
 
 async function _adjustFinAccountBalance(accountId, delta){
@@ -2596,27 +3840,67 @@ async function _adjustFinAccountBalance(accountId, delta){
   }
 }
 
+// Sub-accounts are listed right under their parent (indented with "↳")
+// instead of flat/alphabetical — which pocket vs. the parent account you
+// pick actually matters for Transfers.
+function _finAccountOptionsHtml(){
+  const parents = FIN_ACCOUNTS.filter(a => !a.parent_account_id);
+  return parents.map(p => {
+    const subs = FIN_ACCOUNTS.filter(s => s.parent_account_id === p.id);
+    const parentOpt = `<option value="${p.id}">${escapeHtml(p.account_name)} (${escapeHtml(p.currency)})</option>`;
+    const subOpts = subs.map(s => `<option value="${s.id}">↳ ${escapeHtml(s.account_name)} (${escapeHtml(s.currency)})</option>`).join('');
+    return parentOpt + subOpts;
+  }).join('');
+}
+
+let editingFinTxId = null;
+
 function openFinTxModal(prefill){
   if(!FIN_ACCOUNTS.length){
     customAlert('Add at least one account first (Finance > Accounts) — every transaction needs an account.');
     return;
   }
-  const accOpts = FIN_ACCOUNTS.map(a => `<option value="${a.id}">${escapeHtml(a.account_name)} (${escapeHtml(a.currency)})</option>`).join('');
+  editingFinTxId = prefill?.editId || null;
+  const editingRow = editingFinTxId ? FIN_TXNS.find(t => t.id === editingFinTxId) : null;
+
+  // Blank leading option so an unmatched Easy Add (e.g. Salary alerts, which
+  // can't auto-pick an account) can't silently save against whatever
+  // account happens to be first in the list.
+  const accOpts = '<option value="">— choose account —</option>' + _finAccountOptionsHtml();
   document.getElementById('finTxAccount').innerHTML = accOpts;
   document.getElementById('finTxToAccount').innerHTML = accOpts;
-  document.getElementById('finTxDate').value = new Date().toISOString().slice(0,10);
-  document.getElementById('finTxAmount').value = '';
-  document.getElementById('finTxDesc').value = '';
-  document.getElementById('finTxType').value = 'Expense';
+  document.getElementById('finTxModalTitle').textContent = editingRow ? 'Edit Transaction' : 'Add Transaction';
+  document.getElementById('finTxDate').value = editingRow?.tx_date || new Date().toISOString().slice(0,10);
+  document.getElementById('finTxAmount').value = editingRow?.amount ?? '';
+  document.getElementById('finTxDesc').value = editingRow?.description || '';
+  document.getElementById('finTxType').value = editingRow?.tx_type || prefill?.tx_type || 'Expense';
   onFinTxTypeChange();
+  if(editingRow){
+    document.getElementById('finTxAccount').value = editingRow.account_id;
+    if(editingRow.tx_type === 'Transfer') document.getElementById('finTxToAccount').value = editingRow.to_account_id;
+    if(editingRow.category){
+      const catSel = document.getElementById('finTxCategory');
+      if([...catSel.options].some(o => o.value === editingRow.category)) catSel.value = editingRow.category;
+    }
+    onFinTxCategoryChange();
+    if(editingRow.subcategory){
+      const subSel = document.getElementById('finTxSubcategory');
+      if([...subSel.options].some(o => o.value === editingRow.subcategory)) subSel.value = editingRow.subcategory;
+    }
+  }
 
-  if(prefill){
+  if(prefill && !editingRow){
     if(prefill.amount != null) document.getElementById('finTxAmount').value = prefill.amount;
     if(prefill.description) document.getElementById('finTxDesc').value = prefill.description;
     if(prefill.accountId) document.getElementById('finTxAccount').value = prefill.accountId;
     if(prefill.category){
       const catSel = document.getElementById('finTxCategory');
       if([...catSel.options].some(o => o.value === prefill.category)) catSel.value = prefill.category;
+    }
+    onFinTxCategoryChange();
+    if(prefill.subcategory){
+      const subSel = document.getElementById('finTxSubcategory');
+      if([...subSel.options].some(o => o.value === prefill.subcategory)) subSel.value = prefill.subcategory;
     }
   }
 
@@ -2625,14 +3909,35 @@ function openFinTxModal(prefill){
 }
 
 /* ---- Finance > Transactions: Easy Add (bank purchase-alert text) ---- */
+let _finEasyAddStatementRows = null;
+
 function openFinTxEasyAddModal(){
+  document.getElementById('finTxEasyAddFormat').value = 'text';
   document.getElementById('finTxEasyAddInput').value = '';
+  document.getElementById('finTxEasyAddStatementInput').value = '';
+  document.getElementById('finTxEasyAddStatementPreview').innerHTML = '';
+  document.getElementById('finTxEasyAddStatementAccount').innerHTML = _finAccountOptionsHtml();
   document.getElementById('finTxEasyAddError').textContent = '';
+  _finEasyAddStatementRows = null;
+  const btn = document.querySelector('#finTxEasyAddModal .ai-btn');
+  if(btn) btn.textContent = 'Proceed';
+  onFinTxEasyAddFormatChange();
   document.getElementById('finTxEasyAddModal').classList.add('open');
 }
 
 function closeFinTxEasyAddModal(){
   document.getElementById('finTxEasyAddModal').classList.remove('open');
+}
+
+function onFinTxEasyAddFormatChange(){
+  const isStatement = document.getElementById('finTxEasyAddFormat').value === 'statement';
+  document.getElementById('finTxEasyAddTextMode').style.display = isStatement ? 'none' : '';
+  document.getElementById('finTxEasyAddStatementMode').style.display = isStatement ? '' : 'none';
+  document.getElementById('finTxEasyAddError').textContent = '';
+  document.getElementById('finTxEasyAddStatementPreview').innerHTML = '';
+  _finEasyAddStatementRows = null;
+  const btn = document.querySelector('#finTxEasyAddModal .ai-btn');
+  if(btn) btn.textContent = 'Proceed';
 }
 
 // Matches bank purchase-alert text like:
@@ -2651,10 +3956,39 @@ function parseFinTxEasyAddText(raw){
   };
 }
 
+// Matches a salary-credit alert like:
+// "Salary of AED 8,192.00 has been credited into your account 021XXX82XXX01.
+//  The available balance is AED 8,192.00."
+// Unlike the purchase alert, the account number here is masked with X's in
+// a way that doesn't reliably reduce to a clean last-4-digit match, so this
+// deliberately does NOT try to auto-pick an account — it just prefills the
+// amount/description/Income type and lets the user pick the account.
+function parseFinTxEasyAddSalaryText(raw){
+  const m = raw.match(/salary of\s+[a-z]{2,4}\s*([\d,]+\.?\d*)\s+has been credited into your account\s+[\dx]+\.\s*the available balance/i);
+  if(!m) return null;
+  return { amount: parseFloat(m[1].replace(/,/g,'')) };
+}
+
 // Keyword guess against the user's OWN expense categories (Configuration) —
 // only offers a category that actually exists in that list; otherwise
 // leaves it for the user to pick, rather than inventing a new option.
+// Not real ML — just remembers your own past corrections. If this EXACT
+// description was categorized before (manually, or by a previous Easy Add
+// you kept), the most recent one wins — so fixing a wrong guess once
+// teaches it going forward. Falls back to the keyword rules below when
+// there's no history yet.
+function _finHistoryMatchFor(merchant){
+  const needle = merchant.trim().toUpperCase();
+  if(!needle) return null;
+  return FIN_TXNS
+    .filter(t => t.category && (t.description || '').trim().toUpperCase() === needle)
+    .sort((a,b) => (b.tx_date || '').localeCompare(a.tx_date || ''))[0] || null;
+}
+
 function guessFinCategory(merchant){
+  const match = _finHistoryMatchFor(merchant);
+  if(match && FINANCE_OPTIONS.expense_categories.includes(match.category)) return match.category;
+
   const m = merchant.toUpperCase();
   const rules = [
     [/HOSPITAL|CLINIC|PHARMAC|MEDICAL|DENTAL/, 'Health'],
@@ -2670,42 +4004,262 @@ function guessFinCategory(merchant){
   return guess && FINANCE_OPTIONS.expense_categories.includes(guess) ? guess : null;
 }
 
+// Companion to guessFinCategory — only fires when the SAME history match
+// that supplied the category also had a subcategory recorded. No keyword
+// fallback here (there's no reliable keyword→subcategory mapping), so a
+// merchant with no history just gets left blank for the user to fill in.
+function guessFinSubcategory(merchant, category){
+  const match = _finHistoryMatchFor(merchant);
+  if(match && match.category === category && match.subcategory) return match.subcategory;
+  return null;
+}
+
+// Bulk statement paste: conceptually 4 columns — transaction dates, posting
+// dates, descriptions, amounts — but a real copy-paste from a statement
+// PDF/page often breaks a single column into several blank-line-separated
+// chunks wherever the source had a page break. So instead of assuming
+// exactly 4 blocks, every blank-line chunk is classified by content (date /
+// amount / text) and adjacent chunks of the same type are merged back into
+// one column. The one ambiguity that creates — transaction dates and
+// posting dates are both "date" type and sit right next to each other, so
+// they merge into a single double-length run — is resolved by using the
+// (unambiguous) description count as the true row count and splitting that
+// run in half; transaction date is always the first half. Amounts can pick
+// up stray leading numbers too (e.g. an "installment conversion" total
+// noted separately in the statement) — the real per-row column is always
+// the LAST n lines, so anything before that is reported back as skipped
+// rather than silently guessed into a row. A trailing "CR" on an amount
+// means a credit/refund (e.g. a purchase reversed into an installment plan,
+// or a payment received), not an actual purchase — those rows are left out
+// entirely rather than added as a transaction, and reported back so the
+// user can see what was skipped.
+function parseFinTxEasyAddStatement(raw){
+  const DATE_RE = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/;
+  const AMOUNT_RE = /^[\d,]+\.\d{1,2}\s*(CR)?$/i;
+
+  const chunks = raw.trim().split(/\n\s*\n/)
+    .map(b => b.split('\n').map(l => l.trim()).filter(Boolean))
+    .filter(b => b.length);
+  if(!chunks.length) return null;
+
+  const classify = chunk => {
+    if(chunk.every(l => DATE_RE.test(l))) return 'date';
+    if(chunk.every(l => AMOUNT_RE.test(l))) return 'amount';
+    return 'text';
+  };
+
+  const runs = [];
+  for(const chunk of chunks){
+    const type = classify(chunk);
+    const last = runs[runs.length - 1];
+    if(last && last.type === type) last.lines.push(...chunk);
+    else runs.push({ type, lines: chunk.slice() });
+  }
+
+  const textRun = runs.find(r => r.type === 'text');
+  const dateRun = runs.find(r => r.type === 'date');
+  const amountRun = runs.find(r => r.type === 'amount');
+  if(!textRun || !dateRun || !amountRun) return null;
+
+  const n = textRun.lines.length;
+  if(!n || dateRun.lines.length < n || amountRun.lines.length < n) return null;
+
+  const txDates = dateRun.lines.slice(0, n);
+  const amounts = amountRun.lines.slice(-n);
+  const skipped = amountRun.lines.slice(0, amountRun.lines.length - n);
+
+  const rows = [];
+  const skippedCredits = [];
+  for(let i = 0; i < n; i++){
+    const dm = txDates[i].match(DATE_RE);
+    if(!dm) return null;
+    const isoDate = `${dm[3]}-${dm[2].padStart(2,'0')}-${dm[1].padStart(2,'0')}`;
+    const raw = amounts[i].trim();
+    const isCredit = /CR$/i.test(raw);
+    const amount = parseFloat(raw.replace(/,/g,'').replace(/CR$/i,''));
+    if(!amount || isNaN(amount)) return null;
+    const merchant = textRun.lines[i];
+    if(isCredit){
+      skippedCredits.push(`${merchant} (${amounts[i]})`);
+      continue;
+    }
+    const category = guessFinCategory(merchant);
+    rows.push({
+      tx_date: isoDate,
+      amount,
+      tx_type: 'Expense',
+      description: merchant,
+      category,
+      subcategory: guessFinSubcategory(merchant, category)
+    });
+  }
+  return { rows, skipped, skippedCredits };
+}
+
 function parseFinTxEasyAdd(){
+  const format = document.getElementById('finTxEasyAddFormat').value;
+  if(format === 'statement'){ proceedFinTxEasyAddStatement(); return; }
+
   const raw = document.getElementById('finTxEasyAddInput').value;
   const errEl = document.getElementById('finTxEasyAddError');
   errEl.textContent = '';
 
   const parsed = parseFinTxEasyAddText(raw);
-  if(!parsed){
-    errEl.textContent = "Couldn't recognize that text — make sure you copied the full purchase alert.";
+  if(parsed){
+    const account = FIN_ACCOUNTS.find(a => a.card_number === parsed.cardLast);
+    if(!account){
+      errEl.textContent = `No account found with card ending ${parsed.cardLast} — add that number under Edit on the right account first, or add it manually.`;
+      return;
+    }
+    closeFinTxEasyAddModal();
+    const category = guessFinCategory(parsed.merchant);
+    openFinTxModal({
+      amount: parsed.amount,
+      accountId: account.id,
+      description: parsed.merchant,
+      category,
+      subcategory: guessFinSubcategory(parsed.merchant, category)
+    });
     return;
   }
 
-  const account = FIN_ACCOUNTS.find(a => a.card_number === parsed.cardLast);
-  if(!account){
-    errEl.textContent = `No account found with card ending ${parsed.cardLast} — add that number under Edit on the right account first, or add it manually.`;
+  const salary = parseFinTxEasyAddSalaryText(raw);
+  if(salary){
+    closeFinTxEasyAddModal();
+    openFinTxModal({
+      amount: salary.amount,
+      tx_type: 'Income',
+      description: 'Salary',
+      category: FINANCE_OPTIONS.income_categories.includes('Salary') ? 'Salary' : null
+    });
     return;
   }
 
-  closeFinTxEasyAddModal();
-  openFinTxModal({
-    amount: parsed.amount,
-    accountId: account.id,
-    description: parsed.merchant,
-    category: guessFinCategory(parsed.merchant)
-  });
+  errEl.textContent = "Couldn't recognize that text — make sure you copied the full purchase alert or salary credit notice.";
+}
+
+// Statement mode is a two-click flow on the same Proceed button: first
+// click parses + shows a preview list and re-labels the button; second
+// click (rows already parsed) actually inserts them.
+async function proceedFinTxEasyAddStatement(){
+  const errEl = document.getElementById('finTxEasyAddError');
+  errEl.textContent = '';
+  const accountId = parseInt(document.getElementById('finTxEasyAddStatementAccount').value, 10) || null;
+
+  if(_finEasyAddStatementRows){
+    if(!accountId){ errEl.textContent = 'Please pick an account.'; return; }
+    await insertFinTxEasyAddStatementRows(_finEasyAddStatementRows, accountId);
+    return;
+  }
+
+  if(!accountId){
+    errEl.textContent = 'Add at least one account first (Finance > Accounts) — every transaction needs an account.';
+    return;
+  }
+
+  const raw = document.getElementById('finTxEasyAddStatementInput').value;
+  const parsed = parseFinTxEasyAddStatement(raw);
+  if(!parsed || !parsed.rows.length){
+    errEl.textContent = "Couldn't parse that — make sure it has a block of transaction dates, a block of posting dates, a block of descriptions, and a block of amounts (each DD/MM/YYYY or decimal, one per line). Blank lines splitting a single column into several chunks are fine.";
+    return;
+  }
+  const { rows, skipped, skippedCredits } = parsed;
+  if(!rows.length){
+    errEl.textContent = "Nothing to add — every row in that paste looked like a credit/refund, not a purchase.";
+    return;
+  }
+
+  _finEasyAddStatementRows = rows;
+  const acc = FIN_ACCOUNTS.find(a => a.id === accountId);
+  const previewEl = document.getElementById('finTxEasyAddStatementPreview');
+  const ignoredCount = skipped.length + skippedCredits.length;
+  previewEl.innerHTML = `
+    <div style="margin-top:10px;font-size:12px;color:var(--muted);">${rows.length} transaction${rows.length===1?'':'s'} found — review, then confirm below:</div>
+    ${ignoredCount ? `<div style="margin-top:6px;font-size:11.5px;color:var(--muted);">Ignored ${ignoredCount} line${ignoredCount===1?'':'s'} that weren't purchases (credits/refunds or numbers that didn't line up): ${[...skipped, ...skippedCredits].map(s => escapeHtml(s)).join(', ')}</div>` : ''}
+    <div style="margin-top:6px;max-height:200px;overflow-y:auto;display:flex;flex-direction:column;gap:5px;">
+      ${rows.map(r => `<div style="display:flex;justify-content:space-between;gap:8px;font-size:12px;padding:4px 0;border-bottom:1px dashed var(--rule);">
+        <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;">${new Date(r.tx_date+'T00:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'})} — ${escapeHtml(r.description)}${r.category ? ` <span style="color:var(--accent);">(${escapeHtml(r.category)}${r.subcategory ? ' — ' + escapeHtml(r.subcategory) : ''})</span>` : ''}</span>
+        <span style="flex-shrink:0;color:var(--loss);">−${finMoney(r.amount, acc.currency)}</span>
+      </div>`).join('')}
+    </div>
+  `;
+  const btn = document.querySelector('#finTxEasyAddModal .ai-btn');
+  if(btn) btn.textContent = `Confirm & Add ${rows.length}`;
+}
+
+async function insertFinTxEasyAddStatementRows(rows, accountId){
+  const errEl = document.getElementById('finTxEasyAddError');
+  const btn = document.querySelector('#finTxEasyAddModal .ai-btn');
+  if(btn){ btn.disabled = true; btn.textContent = 'Adding…'; }
+  try{
+    const payload = rows.map(r => ({
+      tx_date: r.tx_date,
+      tx_type: r.tx_type,
+      amount: r.amount,
+      account_id: accountId,
+      to_account_id: null,
+      category: r.category,
+      subcategory: r.subcategory,
+      description: r.description
+    }));
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/finance_transactions`, {
+      method: 'POST',
+      headers: {
+        "apikey": SUPABASE_KEY,
+        "Authorization": `Bearer ${USER_ACCESS_TOKEN}`,
+        "Content-Type": "application/json",
+        "Prefer": "return=minimal"
+      },
+      body: JSON.stringify(payload)
+    });
+    if(!res.ok) throw new Error(await res.text());
+
+    const balanceDelta = rows.reduce((s, r) => s + (r.tx_type === 'Income' ? r.amount : -r.amount), 0);
+    await _adjustFinAccountBalance(accountId, balanceDelta);
+
+    closeFinTxEasyAddModal();
+    await loadFinanceTransactions();
+    renderFinanceAccounts();
+    showToast(`${rows.length} transaction${rows.length===1?'':'s'} added`);
+  }catch(err){
+    errEl.textContent = 'Failed to add: ' + err.message;
+    if(btn){ btn.disabled = false; btn.textContent = `Confirm & Add ${rows.length}`; }
+  }
 }
 
 function closeFinTxModal(){
   document.getElementById('finTxModal').classList.remove('open');
+  editingFinTxId = null;
 }
 
 function onFinTxTypeChange(){
   const type = document.getElementById('finTxType').value;
   document.getElementById('finTxToAccountRow').style.display = type === 'Transfer' ? '' : 'none';
-  document.getElementById('finTxCategoryRow').style.display = type === 'Transfer' ? 'none' : '';
+  // Transfers get a category/subcategory too now (e.g. tagging a transfer
+  // into a savings pocket as "Savings & Investments") — using the Expense
+  // taxonomy, since Income's list (Salary, Gift...) doesn't fit a transfer.
   const cats = type === 'Income' ? FINANCE_OPTIONS.income_categories : FINANCE_OPTIONS.expense_categories;
-  document.getElementById('finTxCategory').innerHTML = cats.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+  // Leading blank option so "no category" is an actual, selectable state —
+  // without it the <select> always defaults to the first real category,
+  // which silently got saved as the category on Edit > Save even when the
+  // row originally had none (e.g. Easy Add rows guessFinCategory couldn't match).
+  document.getElementById('finTxCategory').innerHTML = '<option value="">— none —</option>' +
+    cats.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+  onFinTxCategoryChange();
+}
+
+// Subcategories only exist for the Expense taxonomy — shared by Expense AND
+// Transfer (Income never shows the row at all), and it hides itself for a
+// category that has no subcategories defined (e.g. one the user added
+// without any).
+function onFinTxCategoryChange(){
+  const type = document.getElementById('finTxType').value;
+  const category = document.getElementById('finTxCategory').value;
+  const subs = ((type === 'Expense' || type === 'Transfer') && category) ? (FINANCE_OPTIONS.expense_subcategories[category] || []) : [];
+  const row = document.getElementById('finTxSubcategoryRow');
+  row.style.display = subs.length ? '' : 'none';
+  document.getElementById('finTxSubcategory').innerHTML = '<option value="">— none —</option>' +
+    subs.map(s => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join('');
 }
 
 async function saveFinTx(){
@@ -2719,6 +4273,7 @@ async function saveFinTx(){
 
   if(!amount || amount <= 0){ errEl.textContent = 'Please enter an amount greater than zero.'; return; }
   if(!accountId){ errEl.textContent = 'Please pick an account.'; return; }
+  if(type === 'Transfer' && !toAccountId){ errEl.textContent = 'Please pick a destination account.'; return; }
   if(type === 'Transfer' && toAccountId === accountId){ errEl.textContent = 'Transfer needs two DIFFERENT accounts.'; return; }
 
   const payload = {
@@ -2727,16 +4282,22 @@ async function saveFinTx(){
     amount,
     account_id: accountId,
     to_account_id: toAccountId,
-    category: type === 'Transfer' ? null : document.getElementById('finTxCategory').value || null,
+    category: document.getElementById('finTxCategory').value || null,
+    subcategory: (type === 'Expense' || type === 'Transfer') ? document.getElementById('finTxSubcategory').value || null : null,
     description: document.getElementById('finTxDesc').value.trim() || null
   };
+
+  const editingRow = editingFinTxId ? FIN_TXNS.find(t => t.id === editingFinTxId) : null;
 
   const btn = document.getElementById('finTxSaveBtn');
   btn.disabled = true;
   btn.textContent = 'Saving…';
   try{
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/finance_transactions`, {
-      method: 'POST',
+    const url = editingFinTxId
+      ? `${SUPABASE_URL}/rest/v1/finance_transactions?id=eq.${editingFinTxId}`
+      : `${SUPABASE_URL}/rest/v1/finance_transactions`;
+    const res = await fetch(url, {
+      method: editingFinTxId ? 'PATCH' : 'POST',
       headers: {
         "apikey": SUPABASE_KEY,
         "Authorization": `Bearer ${USER_ACCESS_TOKEN}`,
@@ -2747,8 +4308,18 @@ async function saveFinTx(){
     });
     if(!res.ok) throw new Error(await res.text());
 
-    // Keep account balances live: income adds, expense subtracts, transfer
-    // moves the amount between the two accounts.
+    // DEBIT balances are real stored numbers, so editing/re-typing a
+    // transaction has to reverse the OLD effect before applying the new
+    // one. CREDIT is virtual (computed from the rows themselves), so
+    // these calls are harmless no-ops there — nothing to reverse.
+    if(editingRow){
+      if(editingRow.tx_type === 'Income') await _adjustFinAccountBalance(editingRow.account_id, -editingRow.amount);
+      if(editingRow.tx_type === 'Expense') await _adjustFinAccountBalance(editingRow.account_id, editingRow.amount);
+      if(editingRow.tx_type === 'Transfer'){
+        await _adjustFinAccountBalance(editingRow.account_id, editingRow.amount);
+        await _adjustFinAccountBalance(editingRow.to_account_id, -editingRow.amount);
+      }
+    }
     if(type === 'Income') await _adjustFinAccountBalance(accountId, amount);
     if(type === 'Expense') await _adjustFinAccountBalance(accountId, -amount);
     if(type === 'Transfer'){
@@ -2790,12 +4361,57 @@ async function deleteFinTx(id){
     }
 
     FIN_TXNS = FIN_TXNS.filter(x => x.id !== id);
+    FIN_TX_SELECTED.delete(id);
     renderFinanceTransactions();
     renderFinanceAccounts();
     showToast('Transaction deleted');
   }catch(e){
     console.error("Couldn't delete transaction:", e);
     await customAlert("Couldn't delete this transaction — please try again.");
+  }
+}
+
+// Deletes every transaction currently matching ALL active filters (period +
+// account + type — "All"/"all time" counts as "everything") in one click,
+// instead of one-by-one — for when you've filtered down to a batch (e.g. a
+// bad bulk import) and want it gone.
+async function deleteAllFilteredFinTx(){
+  const rows = FIN_TXNS.filter(_finTxPassesFilters);
+  if(!rows.length){ await customAlert('No transactions match the current filters.'); return; }
+
+  const periodEl = document.getElementById('finTxPeriodFilter');
+  const accEl = document.getElementById('finTxAccountFilter');
+  const typeEl = document.getElementById('finTxTypeFilter');
+  const scoped = (periodEl && periodEl.value !== 'all') || (accEl && accEl.value !== 'all') || (typeEl && typeEl.value !== 'all');
+  if(!(await customConfirm(`Delete all ${rows.length} transaction${rows.length===1?'':'s'}${scoped ? ' matching the current filters' : ''}? Account balances will be adjusted back. This can't be undone.`, 'Delete All'))) return;
+
+  try{
+    const ids = rows.map(r => r.id);
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/finance_transactions?id=in.(${ids.join(',')})`, {
+      method: 'DELETE',
+      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}` }
+    });
+    if(!res.ok) throw new Error(await res.text());
+
+    for(const t of rows){
+      const amount = Number(t.amount) || 0;
+      if(t.tx_type === 'Income') await _adjustFinAccountBalance(t.account_id, -amount);
+      if(t.tx_type === 'Expense') await _adjustFinAccountBalance(t.account_id, amount);
+      if(t.tx_type === 'Transfer'){
+        await _adjustFinAccountBalance(t.account_id, amount);
+        await _adjustFinAccountBalance(t.to_account_id, -amount);
+      }
+    }
+
+    const idSet = new Set(ids);
+    FIN_TXNS = FIN_TXNS.filter(x => !idSet.has(x.id));
+    ids.forEach(id => FIN_TX_SELECTED.delete(id));
+    renderFinanceTransactions();
+    renderFinanceAccounts();
+    showToast(`${rows.length} transaction${rows.length===1?'':'s'} deleted`);
+  }catch(e){
+    console.error("Couldn't bulk-delete transactions:", e);
+    await customAlert("Couldn't delete these transactions — please try again.");
   }
 }
 
@@ -2808,6 +4424,14 @@ function renderFinanceConfig(){
     picker.dataset.filled = '1';
   }
   renderFinanceOptionsListFor(picker.value);
+
+  const subPicker = document.getElementById('finSubcatPicker');
+  if(subPicker){
+    const prevValue = subPicker.value;
+    subPicker.innerHTML = FINANCE_OPTIONS.expense_categories.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+    if([...subPicker.options].some(o => o.value === prevValue)) subPicker.value = prevValue;
+    renderFinanceSubcategoryListFor(subPicker.value);
+  }
 }
 
 function renderFinanceOptionsListFor(key){
@@ -2848,6 +4472,43 @@ async function removeFinanceOption(key, idx){
   renderFinanceOptionsListFor(key);
 }
 
+function renderFinanceSubcategoryListFor(category){
+  const list = document.getElementById('finSubcatList');
+  if(!list) return;
+  const arr = FINANCE_OPTIONS.expense_subcategories[category] || [];
+  list.innerHTML = arr.map((opt, i) => `
+    <div class="config-option-row">
+      <span>${escapeHtml(opt)}</span>
+      <button onclick="removeFinanceSubcategory('${escapeHtml(category)}', ${i})" title="Remove">✕</button>
+    </div>
+  `).join('') || '<div class="empty-state" style="padding:10px 0;">No subcategories yet — add one below, or use "Load Recommended Categories" above.</div>';
+}
+
+function addFinanceSubcategory(){
+  const picker = document.getElementById('finSubcatPicker');
+  const input = document.getElementById('finNewSubcatInput');
+  const val = input.value.trim();
+  if(!val || !picker.value) return;
+  const category = picker.value;
+  const list = FINANCE_OPTIONS.expense_subcategories[category] = FINANCE_OPTIONS.expense_subcategories[category] || [];
+  if(list.some(o => o.toLowerCase() === val.toLowerCase())){
+    showToast('That subcategory already exists.');
+    return;
+  }
+  list.push(val);
+  saveFinanceOptions();
+  input.value = '';
+  renderFinanceSubcategoryListFor(category);
+}
+
+function removeFinanceSubcategory(category, idx){
+  const list = FINANCE_OPTIONS.expense_subcategories[category];
+  if(!list) return;
+  list.splice(idx, 1);
+  saveFinanceOptions();
+  renderFinanceSubcategoryListFor(category);
+}
+
 /* ---- Finance: hide balances (privacy toggle, per-device) ---- */
 let FIN_BALANCES_HIDDEN = false;
 try{ FIN_BALANCES_HIDDEN = localStorage.getItem('ledger-fin-hide-balances') === '1'; }catch(e){}
@@ -2859,10 +4520,15 @@ function toggleFinBalances(){
 }
 
 function applyFinBalanceVisibility(){
-  const view = document.getElementById('view-finance');
-  if(view) view.classList.toggle('fin-balances-hidden', FIN_BALANCES_HIDDEN);
+  // On <body>, not #view-finance — the account details modal (and its
+  // sub-account table / history amounts) lives outside #view-finance in the
+  // DOM, so scoping the class there meant .fin-balance never blurred inside
+  // the modal no matter how many elements got the class.
+  document.body.classList.toggle('fin-balances-hidden', FIN_BALANCES_HIDDEN);
   const btn = document.getElementById('finHideBalBtn');
   if(btn) btn.textContent = FIN_BALANCES_HIDDEN ? 'Show Balances' : 'Hide Balances';
+  const modalBtn = document.getElementById('finAccDetailsHideBalBtn');
+  if(modalBtn && modalBtn.style.display !== 'none') modalBtn.textContent = FIN_BALANCES_HIDDEN ? 'Show Balances' : 'Hide Balances';
 }
 
 /* ---- Finance > Recurring (Installments & Subscriptions) ---- */
@@ -2950,15 +4616,15 @@ function finOwedFor(a){
   return instRemaining + _finUnsettledTxTotal(a);
 }
 
-// Card transactions still riding on the card: everything dated AFTER the
-// last settled statement month (or all of them if no statement was ever
-// paid). Income on a credit card counts as a payment/refund against it.
+// Card transactions still riding on the card: every transaction NOT yet
+// settled by a paid statement (settled_bill is null), regardless of its
+// own tx_date. Settlement is per-transaction, stamped at the moment a bill
+// is paid — so backdating a new transaction into an already-paid month
+// still counts toward Owed instead of being silently excluded by a date
+// cutoff. Income on a credit card counts as a payment/refund against it.
 function _finUnsettledTxTotal(a){
-  const settled = a.last_bill_paid ? new Date(a.last_bill_paid + 'T00:00:00') : null;
-  const cutoff = settled ? new Date(settled.getFullYear(), settled.getMonth() + 1, 1) : null;
   return FIN_TXNS
-    .filter(t => t.account_id === a.id && t.tx_date)
-    .filter(t => !cutoff || new Date(t.tx_date + 'T00:00:00') >= cutoff)
+    .filter(t => t.account_id === a.id && !t.settled_bill)
     .reduce((s, t) => {
       if(t.tx_type === 'Expense') return s + (Number(t.amount) || 0);
       if(t.tx_type === 'Income') return s - (Number(t.amount) || 0);
@@ -3003,14 +4669,66 @@ async function _markOneRecPaid(r){
   return { ok: true };
 }
 
-// The account card's single "Paid" button — pays every not-yet-fully-paid
-// installment/subscription billed to this account in one click (one
-// statement, one payment), each still advancing its own Progress/Remaining.
+// The account card's single "Paid" button opens a small "which account did
+// this come from" picker — confirmPayAllDueForAccount() below does the
+// actual work once that's answered.
+let _finCreditPaymentAccountId = null;
+
+function _finDebitAccountOptionsHtml(){
+  const parents = FIN_ACCOUNTS.filter(a => !a.parent_account_id && a.account_class === 'Debit');
+  return parents.map(p => {
+    const subs = FIN_ACCOUNTS.filter(s => s.parent_account_id === p.id);
+    const parentOpt = `<option value="${p.id}">${escapeHtml(p.account_name)} (${escapeHtml(p.currency)})</option>`;
+    const subOpts = subs.map(s => `<option value="${s.id}">↳ ${escapeHtml(s.account_name)} (${escapeHtml(s.currency)})</option>`).join('');
+    return parentOpt + subOpts;
+  }).join('');
+}
+
 async function payAllDueForAccount(accountId){
   const acc = FIN_ACCOUNTS.find(a => a.id === accountId);
   if(!acc) return;
   const prevMonth = _finPreviousMonthLabel();
   if(_finBillPaidCovers(acc.last_bill_paid, prevMonth)) return; // already settled this cycle
+
+  if(!FIN_ACCOUNTS.some(a => a.account_class === 'Debit')){
+    await customAlert('Add at least one Debit account first — the payment needs to come from somewhere.');
+    return;
+  }
+
+  _finCreditPaymentAccountId = accountId;
+  const billAmount = _finMonthlyRecurringTotal(accountId) + _finMonthTxTotal(accountId, prevMonth);
+  document.getElementById('finCreditPaymentInfo').textContent =
+    `Paying ${finMoney(billAmount, acc.currency)} for ${prevMonth.toLocaleDateString('en-US',{month:'long'})} — logged as a Transfer tagged Debt & Loans / Credit card payments.`;
+  document.getElementById('finCreditPaymentSourceAccount').innerHTML = _finDebitAccountOptionsHtml();
+  document.getElementById('finCreditPaymentError').textContent = '';
+  const btn = document.querySelector('#finCreditPaymentModal .ai-btn');
+  if(btn){ btn.disabled = false; btn.textContent = 'Confirm Payment'; }
+  document.getElementById('finCreditPaymentModal').classList.add('open');
+}
+
+function closeFinCreditPaymentModal(){
+  document.getElementById('finCreditPaymentModal').classList.remove('open');
+  _finCreditPaymentAccountId = null;
+}
+
+// pays every not-yet-fully-paid installment/subscription billed to this
+// account in one click (one statement, one payment), each still advancing
+// its own Progress/Remaining — AND logs the real-world payment itself as a
+// Transfer from the account you picked, tagged Debt & Loans / Credit card
+// payments, so it shows up in Transactions like any money movement would.
+async function confirmPayAllDueForAccount(){
+  const accountId = _finCreditPaymentAccountId;
+  const acc = FIN_ACCOUNTS.find(a => a.id === accountId);
+  if(!acc) return;
+  const errEl = document.getElementById('finCreditPaymentError');
+  errEl.textContent = '';
+  const sourceAccountId = parseInt(document.getElementById('finCreditPaymentSourceAccount').value, 10) || null;
+  if(!sourceAccountId){ errEl.textContent = 'Please pick an account.'; return; }
+
+  const btn = document.querySelector('#finCreditPaymentModal .ai-btn');
+  if(btn){ btn.disabled = true; btn.textContent = 'Paying…'; }
+
+  const prevMonth = _finPreviousMonthLabel();
 
   // 1. Advance every linked recurring item by one payment.
   const due = FIN_RECURRING.filter(r => r.account_id === accountId && !_finRecIsFullyPaid(r));
@@ -3018,14 +4736,76 @@ async function payAllDueForAccount(accountId){
     const result = await _markOneRecPaid(r);
     if(!result.ok){
       await customAlert(`Couldn't process "${r.name}": ${result.error} — make sure supabase_finance_recurring_account_link.sql has been run in Supabase.`);
+      if(btn){ btn.disabled = false; btn.textContent = 'Confirm Payment'; }
       return; // stop before marking the statement settled — retry cleanly next click
     }
   }
 
-  // 2. Remember the statement is settled — advancing last_bill_paid is
-  //    what settles last month's transactions too: the virtual Owed stops
-  //    counting them the moment this date moves forward. The button flips
-  //    to a "Paid" pill and the next one appears on the 5th of next month.
+  // 2. Settle every transaction on this account that's STILL unsettled
+  //    right now — this locks in exactly what existed at payment time.
+  //    A transaction added later, even backdated into this same month,
+  //    won't have settled_bill set and will still count toward Owed.
+  const billMonthIso = _finMonthISO(prevMonth);
+  try{
+    const unsettled = FIN_TXNS.filter(t => t.account_id === accountId && !t.settled_bill);
+    if(unsettled.length){
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/finance_transactions?account_id=eq.${accountId}&settled_bill=is.null`, {
+        method: 'PATCH',
+        headers: {
+          "apikey": SUPABASE_KEY,
+          "Authorization": `Bearer ${USER_ACCESS_TOKEN}`,
+          "Content-Type": "application/json",
+          "Prefer": "return=minimal"
+        },
+        body: JSON.stringify({ settled_bill: billMonthIso })
+      });
+      if(!res.ok) throw new Error(await res.text());
+      unsettled.forEach(t => t.settled_bill = billMonthIso);
+    }
+  }catch(e){
+    console.error("Couldn't settle transactions:", e);
+    await customAlert("Payment applied, but couldn't mark transactions as settled: " + (e.message || e) + " — make sure supabase_finance_transactions_add_settled_bill.sql has been run in Supabase.");
+  }
+
+  // 3. Log the actual payment as a Transfer, tagged so it's easy to find/
+  //    total later, and deduct it from the account it really came from.
+  const billAmount = _finMonthlyRecurringTotal(accountId) + _finMonthTxTotal(accountId, prevMonth);
+  let paymentTxId = null;
+  if(billAmount > 0){
+    try{
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/finance_transactions`, {
+        method: 'POST',
+        headers: {
+          "apikey": SUPABASE_KEY,
+          "Authorization": `Bearer ${USER_ACCESS_TOKEN}`,
+          "Content-Type": "application/json",
+          "Prefer": "return=representation"
+        },
+        body: JSON.stringify({
+          tx_date: new Date().toISOString().slice(0,10),
+          tx_type: 'Transfer',
+          amount: billAmount,
+          account_id: sourceAccountId,
+          to_account_id: accountId,
+          category: '💳 Debt & Loans',
+          subcategory: 'Credit card payments',
+          description: `${prevMonth.toLocaleDateString('en-US',{month:'long'})} bill payment`
+        })
+      });
+      if(!res.ok) throw new Error(await res.text());
+      const rows = await res.json();
+      paymentTxId = rows[0]?.id || null;
+      await _adjustFinAccountBalance(sourceAccountId, -billAmount);
+      await loadFinanceTransactions();
+    }catch(e){
+      console.error("Couldn't log the payment transaction:", e);
+      await customAlert("Payment applied, but couldn't log the transaction record: " + (e.message || e));
+    }
+  }
+
+  // 4. Remember the statement is settled, and which transaction paid it —
+  //    used to gate the Paid button / cycle, and so Undo can find that
+  //    exact transaction again.
   try{
     const res = await fetch(`${SUPABASE_URL}/rest/v1/finance_accounts?id=eq.${accountId}`, {
       method: 'PATCH',
@@ -3035,28 +4815,33 @@ async function payAllDueForAccount(accountId){
         "Content-Type": "application/json",
         "Prefer": "return=minimal"
       },
-      body: JSON.stringify({ last_bill_paid: _finMonthISO(prevMonth) })
+      body: JSON.stringify({ last_bill_paid: billMonthIso, last_bill_payment_tx_id: paymentTxId })
     });
     if(!res.ok) throw new Error(await res.text());
-    acc.last_bill_paid = _finMonthISO(prevMonth);
+    acc.last_bill_paid = billMonthIso;
+    acc.last_bill_payment_tx_id = paymentTxId;
   }catch(e){
     console.error("Couldn't record the bill as paid:", e);
     await customAlert("Payment applied, but couldn't save the paid marker: " + (e.message || e) + " — make sure supabase_finance_add_last_bill_paid.sql has been run in Supabase.");
   }
 
+  closeFinCreditPaymentModal();
   renderFinanceRecurring();
   renderFinanceAccounts();
+  if(document.getElementById('finAccountDetailsModal').classList.contains('open')) openFinAccountDetailsModal(accountId);
   showToast(`${prevMonth.toLocaleDateString('en-US',{month:'long'})} bill paid`);
 }
 
 // Reverses one "Paid" click: every linked installment's progress steps
-// back by 1, subscriptions forget their last billing, and the statement
-// counts as unpaid again (so last month's transactions return to Owed).
-// Mainly for testing and for "na-click ko pero hindi pa pala ako bayad".
+// back by 1, subscriptions forget their last billing, the statement counts
+// as unpaid again (so last month's transactions return to Owed), and the
+// Transfer transaction that "Paid" auto-logged (if any) gets deleted, with
+// its deduction reversed on whichever account it came from. Mainly for
+// testing and for "na-click ko pero hindi pa pala ako bayad".
 async function undoAccountBillPayment(accountId){
   const acc = FIN_ACCOUNTS.find(a => a.id === accountId);
   if(!acc) return;
-  if(!(await customConfirm("Mark this bill as UNPAID again? Installment progress steps back by 1 and last month's transactions count as owed again.", 'Undo'))) return;
+  if(!(await customConfirm("Mark this bill as UNPAID again? Installment progress steps back by 1, last month's transactions count as owed again, and the logged payment transaction (if any) will be deleted.", 'Undo'))) return;
 
   const linked = FIN_RECURRING.filter(r => r.account_id === accountId);
   for(const r of linked){
@@ -3070,6 +4855,48 @@ async function undoAccountBillPayment(accountId){
     }
   }
 
+  // Unsettle exactly the transactions this payment settled — matched by
+  // the monthISO stamped in settled_bill, before last_bill_paid is cleared.
+  const settledMonthIso = acc.last_bill_paid;
+  if(settledMonthIso){
+    try{
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/finance_transactions?account_id=eq.${accountId}&settled_bill=eq.${settledMonthIso}`, {
+        method: 'PATCH',
+        headers: {
+          "apikey": SUPABASE_KEY,
+          "Authorization": `Bearer ${USER_ACCESS_TOKEN}`,
+          "Content-Type": "application/json",
+          "Prefer": "return=minimal"
+        },
+        body: JSON.stringify({ settled_bill: null })
+      });
+      if(!res.ok) throw new Error(await res.text());
+      FIN_TXNS.forEach(t => { if(t.account_id === accountId && t.settled_bill === settledMonthIso) t.settled_bill = null; });
+    }catch(e){
+      console.error("Couldn't unsettle transactions:", e);
+      await customAlert("Couldn't unsettle transactions: " + (e.message || e));
+    }
+  }
+
+  // Delete the auto-logged payment Transfer, if there is one, and put its
+  // amount back on whichever account it was deducted from.
+  if(acc.last_bill_payment_tx_id){
+    const paymentTxId = acc.last_bill_payment_tx_id;
+    try{
+      const paymentTx = FIN_TXNS.find(t => t.id === paymentTxId);
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/finance_transactions?id=eq.${paymentTxId}`, {
+        method: 'DELETE',
+        headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}` }
+      });
+      if(!res.ok) throw new Error(await res.text());
+      if(paymentTx) await _adjustFinAccountBalance(paymentTx.account_id, Number(paymentTx.amount) || 0);
+      FIN_TXNS = FIN_TXNS.filter(t => t.id !== paymentTxId);
+    }catch(e){
+      console.error("Couldn't delete the logged payment transaction:", e);
+      await customAlert("Couldn't delete the logged payment transaction: " + (e.message || e));
+    }
+  }
+
   try{
     const res = await fetch(`${SUPABASE_URL}/rest/v1/finance_accounts?id=eq.${accountId}`, {
       method: 'PATCH',
@@ -3079,10 +4906,11 @@ async function undoAccountBillPayment(accountId){
         "Content-Type": "application/json",
         "Prefer": "return=minimal"
       },
-      body: JSON.stringify({ last_bill_paid: null })
+      body: JSON.stringify({ last_bill_paid: null, last_bill_payment_tx_id: null })
     });
     if(!res.ok) throw new Error(await res.text());
     acc.last_bill_paid = null;
+    acc.last_bill_payment_tx_id = null;
   }catch(e){
     console.error("Couldn't clear the paid marker:", e);
     await customAlert("Couldn't clear the paid marker: " + (e.message || e));
@@ -3090,6 +4918,7 @@ async function undoAccountBillPayment(accountId){
 
   renderFinanceRecurring();
   renderFinanceAccounts();
+  if(document.getElementById('finAccountDetailsModal').classList.contains('open')) openFinAccountDetailsModal(accountId);
   showToast('Bill marked as unpaid');
 }
 
@@ -3133,7 +4962,16 @@ function renderFinanceRecurring(){
     const done = paid >= total;
     // Read-only here on purpose — the actual "Paid" action lives on the
     // account card that pays this bill, not duplicated in this list.
-    const dueCell = done ? '<span class="pill pill-green">Fully paid</span>' : fmtPeriod(_finPreviousMonthLabel());
+    // Installments don't track their own "last paid month" — paying always
+    // advances every item on the account together — so whether THIS cycle
+    // is already settled is read off the linked account's last_bill_paid.
+    const linkedAcc = FIN_ACCOUNTS.find(a => a.id === r.account_id);
+    const cycleAlreadyPaid = linkedAcc && _finBillPaidCovers(linkedAcc.last_bill_paid, _finPreviousMonthLabel());
+    const dueCell = done
+      ? '<span class="pill pill-green">Fully paid</span>'
+      : (cycleAlreadyPaid
+          ? `<span class="pill pill-green">Paid — ${fmtPeriod(_finPreviousMonthLabel())}</span>`
+          : fmtPeriod(_finPreviousMonthLabel()));
     const remaining = (Number(r.total_amount) || 0) - (monthly * paid);
     return `
       <tr>
@@ -3156,12 +4994,18 @@ function renderFinanceRecurring(){
   document.getElementById('finSubWrap').style.display = subs.length ? 'block' : 'none';
   document.getElementById('finSubBody').innerHTML = subs.map(r => {
     const next = _finPreviousMonthLabel();
+    // Subscriptions DO track their own last_billed per item, so this reads
+    // straight off that instead of the linked account's last_bill_paid.
+    const cycleAlreadyPaid = _finBillPaidCovers(r.last_billed, next);
+    const dueCell = cycleAlreadyPaid
+      ? `<span class="pill pill-green">Paid — ${fmtPeriod(next)}</span>`
+      : fmtPeriod(next);
     return `
       <tr>
         <td>${escapeHtml(r.name)}<div style="font-size:10.5px;color:var(--muted);">${escapeHtml(_finAccountName(r.account_id))}</div></td>
         <td>${finMoney(r.price, 'PHP')}</td>
         <td>${escapeHtml(r.cycle || 'Monthly')}</td>
-        <td style="white-space:nowrap;">${fmtPeriod(next)}</td>
+        <td style="white-space:nowrap;">${dueCell}</td>
         <td>${escapeHtml(r.notes || '—')}</td>
         <td style="text-align:right;white-space:nowrap;">
           <button class="drawer-secondary-btn" style="padding:4px 10px;font-size:11px;" onclick="openFinRecModal('Subscription', ${r.id})">Edit</button>
@@ -3497,6 +5341,438 @@ function renderJournalTable(){
   `).join('')}</tbody>`;
 
   table.innerHTML = thead + tbody;
+}
+
+/* ---------------- Finance Challenges (same pattern as the Trading Journal's
+   Challenges — computed fresh from real data, nothing stored per-challenge,
+   only the aggregate score gets shared to a leaderboard) ----------------
+   Reuses CHALLENGE_ICONS/challengeIconSVG/tierBarHTML and every relevant
+   CSS class (.challenge-card, .challenge-grid, .rank-track, .tabs,
+   .leaderboard-list, etc.) from the Trading Challenges feature — a Finance
+   challenge is the exact same {icon,title,points,desc,howTo,current,tiers|
+   target,done} shape, just computed from money data instead of trades. */
+
+function _finDateISO(d){
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
+// Consecutive days ending TODAY with zero Expense activity — bounded by the
+// earliest transaction on record, so a brand-new/empty account gets 0
+// instead of a false "infinite" streak.
+function _finNoSpendStreak(){
+  if(!FIN_TXNS.length) return 0;
+  const expenseDates = new Set(FIN_TXNS.filter(t => t.tx_type === 'Expense').map(t => t.tx_date));
+  const earliest = FIN_TXNS.reduce((min,t) => (t.tx_date && t.tx_date < min) ? t.tx_date : min, FIN_TXNS[0].tx_date || '9999-12-31');
+  let streak = 0;
+  const cursor = new Date(); cursor.setHours(0,0,0,0);
+  while(true){
+    const iso = _finDateISO(cursor);
+    if(iso < earliest) break;
+    if(expenseDates.has(iso)) break;
+    streak++;
+    cursor.setDate(cursor.getDate() - 1);
+  }
+  return streak;
+}
+
+// Consecutive full calendar months (ending last month) with positive Net —
+// stops at the first month with no transactions at all (silence isn't a win).
+function _finSavingsStreak(){
+  let streak = 0;
+  let cursor = _finPreviousMonthLabel();
+  while(streak < 240){
+    const monthTx = FIN_TXNS.filter(t => {
+      if(t.tx_type === 'Transfer' || !t.tx_date) return false;
+      const d = new Date(t.tx_date + 'T00:00:00');
+      return d.getFullYear() === cursor.getFullYear() && d.getMonth() === cursor.getMonth();
+    });
+    if(!monthTx.length) break;
+    const net = monthTx.reduce((s,t) => s + (t.tx_type === 'Income' ? (Number(t.amount)||0) : -(Number(t.amount)||0)), 0);
+    if(net <= 0) break;
+    streak++;
+    cursor = new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1);
+  }
+  return streak;
+}
+
+// Consecutive full calendar months (ending last month) where needs made up
+// at least 70% of needs-vs-wants-classified spending.
+function _finNeedsFocusedStreak(){
+  let streak = 0;
+  let cursor = _finPreviousMonthLabel();
+  while(streak < 240){
+    const monthExpenses = FIN_TXNS.filter(t => {
+      if(t.tx_type !== 'Expense' || !t.tx_date) return false;
+      const d = new Date(t.tx_date + 'T00:00:00');
+      return d.getFullYear() === cursor.getFullYear() && d.getMonth() === cursor.getMonth();
+    });
+    let needsTotal = 0, wantsTotal = 0;
+    monthExpenses.forEach(t => {
+      if(FIN_NEEDS_CATEGORIES.includes(t.category)) needsTotal += Number(t.amount) || 0;
+      else if(FIN_WANTS_CATEGORIES.includes(t.category)) wantsTotal += Number(t.amount) || 0;
+    });
+    const classifiable = needsTotal + wantsTotal;
+    if(classifiable === 0) break;
+    if((needsTotal / classifiable * 100) < 70) break;
+    streak++;
+    cursor = new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1);
+  }
+  return streak;
+}
+
+function _finTotalDebtPaidDown(){
+  return FIN_RECURRING.filter(r => r.kind === 'Installment').reduce((s,r) => {
+    const total = Number(r.total_amount) || 0;
+    const totalPayments = Math.max(1, Number(r.total_payments) || 1);
+    const monthly = total / totalPayments;
+    const paid = Math.min(Number(r.payments_applied) || 0, totalPayments);
+    return s + (monthly * paid);
+  }, 0);
+}
+
+function _finEmergencyFundTotal(){
+  return FIN_TXNS.reduce((s,t) => {
+    if(t.subcategory !== 'Emergency fund') return s;
+    if(t.tx_type === 'Expense') return s - (Number(t.amount) || 0);
+    return s + (Number(t.amount) || 0); // Income or Transfer in
+  }, 0);
+}
+
+function computeFinanceChallenges(){
+  const primaryCurrency = FIN_ACCOUNTS[0]?.currency || 'PHP';
+
+  const noSpendStreak = _finNoSpendStreak();
+  const c1 = {
+    icon: 'flame', title: 'No-Spend Streak', points: 60,
+    desc: 'Consecutive days with zero logged Expense.',
+    howTo: 'Counts back from today — the streak ends at the most recent day with any Expense transaction logged.',
+    current: noSpendStreak, tiers: [3,7,14,21,30], target: 30, done: noSpendStreak >= 30
+  };
+
+  const savingsStreak = _finSavingsStreak();
+  const c2 = {
+    icon: 'trending-up', title: 'Savings Streak', points: 90,
+    desc: 'Consecutive months where Income beat Expense.',
+    howTo: 'Walks backward from last month — one month with Net at or below zero (or with no transactions at all) ends the streak.',
+    current: savingsStreak, tiers: [1,2,3,6,12], target: 12, done: savingsStreak >= 12
+  };
+
+  const totalTx = FIN_TXNS.length;
+  const c3 = {
+    icon: 'book', title: 'Transaction Historian', points: 40,
+    desc: 'Keep logging — every transaction adds to this count.',
+    howTo: 'A simple running total of every Income, Expense, and Transfer you\'ve ever logged.',
+    current: totalTx, tiers: [10,25,50,100,250], target: 250, done: totalTx >= 250
+  };
+
+  const debtPaidDown = _finTotalDebtPaidDown();
+  const c4 = {
+    icon: 'dollar', title: 'Debt Slayer', points: 120,
+    desc: 'Total amount paid down across all installments.',
+    howTo: `Sums each installment's (Total Amount ÷ Total Payments) × Payments Made So Far, across every installment you've ever added — in ${primaryCurrency}.`,
+    current: Math.round(debtPaidDown), tiers: [1000,5000,10000,25000,50000], target: 50000, done: debtPaidDown >= 50000,
+    statOverride: `${finMoney(debtPaidDown, primaryCurrency)} / ${finMoney(50000, primaryCurrency)}`
+  };
+
+  const emergencyFund = _finEmergencyFundTotal();
+  const c5 = {
+    icon: 'shield', title: 'Emergency Fund Builder', points: 100,
+    desc: 'Net amount tagged as Emergency Fund (Savings & Investments).',
+    howTo: `Every transaction with subcategory "Emergency fund" — money in adds, money out (an Expense from it) subtracts — in ${primaryCurrency}.`,
+    current: Math.round(emergencyFund), tiers: [500,2000,5000,10000,25000], target: 25000, done: emergencyFund >= 25000,
+    statOverride: `${finMoney(emergencyFund, primaryCurrency)} / ${finMoney(25000, primaryCurrency)}`
+  };
+
+  const hasSubAccount = FIN_ACCOUNTS.some(a => a.parent_account_id);
+  const c6 = {
+    icon: 'shuffle', title: 'Organizer', points: 20,
+    desc: 'Create at least one sub-account (pocket) under a Debit account.',
+    howTo: 'A one-time check — add a sub-account under any Debit account (e.g. splitting "Emergency Fund" out from your main savings) to complete this.',
+    current: hasSubAccount ? 1 : 0, target: 1, done: hasSubAccount
+  };
+
+  const needsStreak = _finNeedsFocusedStreak();
+  const c7 = {
+    icon: 'target', title: 'Needs-Focused Living', points: 70,
+    desc: 'Consecutive months where 70%+ of classified spending went to needs, not wants.',
+    howTo: 'Needs = Housing, Utilities, Food & Groceries, Transportation, Healthcare, Education. Wants = Entertainment, Vices, Shopping, Gifts & Donations, Travel, Subscriptions. A month with no spending in either bucket, or below 70% needs, ends the streak.',
+    current: needsStreak, tiers: [1,3,6,12], target: 12, done: needsStreak >= 12
+  };
+
+  const challenges = [c1,c2,c3,c4,c5,c6,c7];
+
+  // Debt Free only appears once there's actually a Credit account to be
+  // free of — otherwise it'd be a trivially "free" achievement for anyone
+  // who's never touched a credit card.
+  if(FIN_ACCOUNTS.some(a => a.account_class === 'Credit')){
+    const activeInstallments = FIN_RECURRING.filter(r => r.kind === 'Installment' && !_finRecIsFullyPaid(r));
+    const creditAccs = FIN_ACCOUNTS.filter(a => a.account_class === 'Credit');
+    const totalOwed = creditAccs.reduce((s,a) => s + finOwedFor(a), 0);
+    const isDebtFree = activeInstallments.length === 0 && totalOwed <= 0;
+    challenges.push({
+      icon: 'check-circle', title: 'Debt Free', points: 150,
+      desc: 'Zero active installments and zero Owed across every credit card.',
+      howTo: 'Pass/fail — any active (not-yet-fully-paid) installment, or any credit card with Owed above zero, keeps this unmet.',
+      current: isDebtFree ? 1 : 0, target: 1, done: isDebtFree
+    });
+  }
+
+  return challenges;
+}
+
+const FINANCE_LOCKED_CHALLENGES = [
+  {icon:'clock', title:'Bill Streak', desc:'Paying every credit card bill before its due date, months in a row.', needs:'Needs a payment-history log — right now only the MOST RECENT paid month is stored per account, not a full history.'},
+  {icon:'list', title:'Budget Master', desc:'Staying within a self-set monthly budget, per category.', needs:'Needs a new Budgets feature (a target amount per category) — not built yet.'},
+  {icon:'refresh', title:'Automatic Saver', desc:'A recurring transfer into savings, hit consistently.', needs:'Needs a scheduled/recurring Transfer feature — Transfers are manual-only right now.'}
+];
+
+const FINANCE_CHALLENGE_RANKS = [
+  {min:0, label:'Broke'},
+  {min:100, label:'Budgeter'},
+  {min:250, label:'Saver'},
+  {min:400, label:'Planner'},
+  {min:550, label:'Investor'},
+  {min:650, label:'Money Mogul'}
+];
+function rankForFinancePoints(points){
+  let current = FINANCE_CHALLENGE_RANKS[0], next = null;
+  for(const r of FINANCE_CHALLENGE_RANKS){
+    if(points >= r.min) current = r; else { next = r; break; }
+  }
+  return { current, next };
+}
+
+const FINANCE_RANK_DESCRIPTIONS = {
+  'Broke': "Everyone starts here. Log your income and expenses and work through the challenges to start building points.",
+  'Budgeter': "You're paying attention now — small, consistent habits are starting to show up in the numbers.",
+  'Saver': "Keeping more than you spend, more often than not. That's the whole game, and you're playing it.",
+  'Planner': "Consistency across several different areas of your money, not just one lucky month.",
+  'Investor': "A refined, well-rounded level of financial discipline — this takes sustained effort to reach.",
+  'Money Mogul': "You've cleared nearly every challenge here. This reflects a long track record, not one good month."
+};
+
+let COMPUTED_FINANCE_CHALLENGES = [];
+let financeChallengeFilter = 'all';
+
+function switchFinanceChallengeFilter(f){
+  financeChallengeFilter = f;
+  document.querySelectorAll('#financeChallengeFilterTabs .tab').forEach(el => el.classList.toggle('active', el.dataset.f === f));
+  renderFinanceChallengeGrid();
+}
+
+function renderFinanceRankLadder(totalPoints){
+  const wrap = document.getElementById('financeRankLadder');
+  if(!wrap) return;
+  const { current } = rankForFinancePoints(totalPoints);
+  const n = FINANCE_CHALLENGE_RANKS.length;
+  const maxMin = FINANCE_CHALLENGE_RANKS[n - 1].min;
+  const overallPct = Math.min(100, (totalPoints / maxMin) * 100);
+  const rankIcons = ['star', 'flame', 'trending-up', 'shield-check', 'medal', 'trophy'];
+
+  const medals = FINANCE_CHALLENGE_RANKS.map((r, i) => {
+    const reached = totalPoints >= r.min;
+    const isCurrent = r.label === current.label;
+    return `
+      <div class="rank-medal ${reached ? 'reached' : ''} ${isCurrent ? 'current' : ''}" onclick='openFinanceRankDetail(${JSON.stringify(r.label)}, ${totalPoints})'>
+        ${isCurrent ? `<div class="rank-medal-you">You are here</div>` : ''}
+        <div class="rank-medal-shape">${challengeIconSVG(rankIcons[i] || 'star')}</div>
+        <div class="rank-medal-label">${r.label}</div>
+      </div>
+    `;
+  }).join('');
+
+  wrap.innerHTML = `
+    <div class="rank-track">
+      <div class="rank-track-bar"><div class="rank-track-fill" style="width:${overallPct}%;"></div></div>
+      <div class="rank-medals">${medals}</div>
+    </div>
+  `;
+}
+
+function openFinanceRankDetail(label, totalPoints){
+  const idx = FINANCE_CHALLENGE_RANKS.findIndex(r => r.label === label);
+  if(idx === -1) return;
+  const rank = FINANCE_CHALLENGE_RANKS[idx];
+  const nextRank = FINANCE_CHALLENGE_RANKS[idx + 1];
+  const rangeText = nextRank ? `${rank.min} – ${nextRank.min - 1} points` : `${rank.min}+ points`;
+  const reached = totalPoints >= rank.min;
+
+  let statusText;
+  if(!reached){
+    statusText = `Not reached yet — ${rank.min - totalPoints} more point${rank.min - totalPoints === 1 ? '' : 's'} gets you here.`;
+  }else if(nextRank && totalPoints < nextRank.min){
+    statusText = `This is where you are right now — ${nextRank.min - totalPoints} point${nextRank.min - totalPoints === 1 ? '' : 's'} away from ${nextRank.label}.`;
+  }else if(!nextRank){
+    statusText = `You're at the top of the ladder — every rank below this one is behind you.`;
+  }else{
+    statusText = `You passed through this rank already on your way to where you are now.`;
+  }
+
+  const { current } = rankForFinancePoints(totalPoints);
+  const isCurrent = label === current.label;
+  let breakdownSection = '';
+  if(isCurrent){
+    const achievedList = COMPUTED_FINANCE_CHALLENGES.filter(c => c.done).sort((a,b) => b.points - a.points);
+    const breakdownHTML = achievedList.length
+      ? achievedList.map(c => `
+          <div style="display:flex;justify-content:space-between;gap:10px;font-size:12px;padding:6px 0;border-bottom:1px solid var(--rule);">
+            <span>${escapeHtml(c.title)}</span>
+            <span style="color:var(--win);font-weight:600;flex-shrink:0;">+${c.points}</span>
+          </div>
+        `).join('')
+      : `<div class="empty-state" style="padding:10px 0;">No challenges achieved yet — every one you complete adds points here.</div>`;
+    breakdownSection = `
+      <div style="font-size:10.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-bottom:8px;">How your points were earned</div>
+      ${breakdownHTML}
+    `;
+  }
+
+  document.getElementById('modalTitle').textContent = label;
+  document.getElementById('modalSub').textContent = rangeText;
+  document.getElementById('modalBody').innerHTML = `
+    <div style="font-size:13px;color:var(--ink);line-height:1.6;margin-bottom:10px;">${FINANCE_RANK_DESCRIPTIONS[label] || ''}</div>
+    <div style="font-size:12px;color:var(--muted);line-height:1.5;margin-bottom:18px;">${statusText}</div>
+    ${breakdownSection}
+  `;
+  document.getElementById('tradeModal').classList.add('open');
+}
+
+function renderFinanceChallengeGrid(){
+  const grid = document.getElementById('financeChallengesGrid');
+  const lockedGrid = document.getElementById('financeChallengesLockedGrid');
+  if(!grid) return;
+
+  const doneCount = COMPUTED_FINANCE_CHALLENGES.filter(c => c.done).length;
+  const totalPoints = COMPUTED_FINANCE_CHALLENGES.filter(c => c.done).reduce((s,c) => s + c.points, 0);
+  const maxPoints = COMPUTED_FINANCE_CHALLENGES.reduce((s,c) => s + c.points, 0);
+
+  const label = document.getElementById('financeChallengesCountLabel');
+  if(label) label.textContent = `${doneCount} / ${COMPUTED_FINANCE_CHALLENGES.length} achieved`;
+
+  const { current, next } = rankForFinancePoints(totalPoints);
+  document.getElementById('financeChallengeRankLabel').textContent = current.label;
+  document.getElementById('financeChallengePointsTotal').textContent = totalPoints;
+  document.getElementById('financeChallengePointsAway').textContent = next
+    ? `${next.min - totalPoints} points to ${next.label}`
+    : `Max rank reached — ${maxPoints} points available`;
+  renderFinanceRankLadder(totalPoints);
+
+  const progressFraction = c => {
+    const finalTarget = c.tiers ? c.tiers[c.tiers.length - 1] : c.target;
+    return finalTarget > 0 ? Math.min(1, c.current / finalTarget) : 0;
+  };
+  const done = [...COMPUTED_FINANCE_CHALLENGES].filter(c => c.done).sort((a,b) => a.points - b.points);
+  const notDone = [...COMPUTED_FINANCE_CHALLENGES].filter(c => !c.done).sort((a,b) => progressFraction(b) - progressFraction(a));
+  const withStatus = [
+    ...done.map(c => ({ c, status: 'done' })),
+    ...notDone.map((c, i) => ({ c, status: i === 0 ? 'next' : 'upcoming' }))
+  ];
+
+  const rows = financeChallengeFilter === 'achieved' ? withStatus.filter(x => x.status === 'done')
+    : financeChallengeFilter === 'unachieved' ? withStatus.filter(x => x.status !== 'done')
+    : withStatus;
+
+  grid.innerHTML = rows.length ? rows.map(x => financeActiveCardHTML(x.c, x.status)).join('') : `<div class="empty-state">No challenges in this filter.</div>`;
+  if(lockedGrid) lockedGrid.innerHTML = FINANCE_LOCKED_CHALLENGES.map(lockedCardHTML).join('');
+
+  LAST_FINANCE_LEADERBOARD_SCORE = { points: totalPoints, label: current.label };
+  syncFinanceLeaderboardScore(totalPoints, current.label);
+}
+
+function financeActiveCardHTML(c, status){
+  const badgeCls = status === 'done' ? 'badge-done' : status === 'next' ? 'badge-next' : '';
+  const tagText = status === 'done' ? 'Achieved' : status === 'next' ? 'Next up' : 'In Progress';
+  const progressHTML = c.tiers
+    ? tierBarHTML(c.current, c.tiers)
+    : `<div class="challenge-progress-bar"><div class="challenge-progress-fill" style="width:${c.target ? Math.min(100, (c.current / c.target) * 100) : 0}%;"></div></div>`;
+  const statText = c.statOverride || `${c.current} / ${c.target}`;
+  return `
+    <div class="challenge-card ${status}" onclick='openFinanceChallengeDetail(${JSON.stringify(c.title)})'>
+      <div class="challenge-hover-tip">${c.howTo || c.desc}</div>
+      <div class="challenge-badge ${badgeCls}">
+        <div class="challenge-badge-shape">${challengeIconSVG(c.icon)}</div>
+        ${status === 'done' ? `<span class="challenge-badge-mark check">✓</span>` : ''}
+      </div>
+      <div class="challenge-info">
+        <div class="card-tag">${tagText}</div>
+        <div class="challenge-title">${c.title}</div>
+        <div class="challenge-desc">${c.desc}</div>
+        ${progressHTML}
+        <div class="challenge-stat">${statText}</div>
+      </div>
+      <div class="challenge-points">+${c.points}</div>
+    </div>
+  `;
+}
+
+function openFinanceChallengeDetail(title){
+  const c = COMPUTED_FINANCE_CHALLENGES.find(x => x.title === title);
+  if(!c) return;
+  const statText = c.statOverride || `${c.current} / ${c.target}`;
+  const badge = document.getElementById('challengeDetailBadge');
+  badge.className = 'challenge-badge' + (c.done ? ' badge-done' : '');
+  badge.innerHTML = `<div class="challenge-badge-shape">${challengeIconSVG(c.icon)}</div>` + (c.done ? '<span class="challenge-badge-mark check">✓</span>' : '');
+  document.getElementById('challengeDetailTitle').textContent = c.title;
+  document.getElementById('challengeDetailPoints').textContent = `+${c.points} points${c.done ? ' · Achieved' : ''}`;
+  document.getElementById('challengeDetailHowTo').textContent = c.howTo || c.desc;
+  document.getElementById('challengeDetailProgressWrap').innerHTML = c.tiers
+    ? tierBarHTML(c.current, c.tiers)
+    : `<div class="challenge-progress-bar" style="height:8px;"><div class="challenge-progress-fill" style="width:${c.target ? Math.min(100, (c.current / c.target) * 100) : 0}%;"></div></div>`;
+  document.getElementById('challengeDetailStat').textContent = statText;
+  document.getElementById('challengeDetailModal').classList.add('open');
+}
+
+let LAST_FINANCE_LEADERBOARD_SCORE = null;
+
+async function syncFinanceLeaderboardScore(points, rankLabel){
+  try{
+    const displayName = PROFILE_DATA?.display_name || PROFILE_DATA?.username || (CURRENT_USER_EMAIL || '').split('@')[0] || 'Trader';
+    await fetch(`${SUPABASE_URL}/rest/v1/finance_leaderboard?on_conflict=user_id`, {
+      method: 'POST',
+      headers: {
+        "apikey": SUPABASE_KEY,
+        "Authorization": `Bearer ${USER_ACCESS_TOKEN}`,
+        "Content-Type": "application/json",
+        "Prefer": "resolution=merge-duplicates,return=minimal"
+      },
+      body: JSON.stringify({ display_name: displayName, points, rank_label: rankLabel, updated_at: new Date().toISOString() })
+    });
+  }catch(e){
+    console.error("Couldn't sync finance leaderboard score:", e);
+  }
+}
+
+async function renderFinanceLeaderboard(){
+  const body = document.getElementById('financeLeaderboardBody');
+  if(!body) return;
+  body.innerHTML = `<div class="empty-state">Loading…</div>`;
+  try{
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/finance_leaderboard?select=*&order=points.desc`, {
+      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}` }
+    });
+    if(!res.ok) throw new Error(await res.text());
+    const rows = await res.json();
+    body.innerHTML = rows.length ? rows.map((r, i) => `
+      <div class="leaderboard-row ${r.user_id === CURRENT_USER_ID ? 'leaderboard-row-me' : ''}">
+        <div class="leaderboard-rank">#${i + 1}</div>
+        <div class="leaderboard-name">${escapeHtml(r.display_name || 'Trader')}${r.user_id === CURRENT_USER_ID ? '<span class="pill pill-blue">You</span>' : ''}</div>
+        <div class="leaderboard-tier">${escapeHtml(r.rank_label || '—')}</div>
+        <div class="leaderboard-points">${r.points} pts</div>
+      </div>
+    `).join('') : `<div class="empty-state">No scores yet — this fills in once someone's Finance Challenges have been computed.</div>`;
+  }catch(e){
+    console.error("Couldn't load finance leaderboard:", e);
+    body.innerHTML = `<div class="empty-state">Couldn't load the leaderboard — make sure supabase_finance_leaderboard.sql has been run in Supabase.</div>`;
+  }
+}
+
+// No async data fetch needed (unlike Trading's Challenges, which awaits
+// achievement rows) — everything Finance Challenges needs is already
+// loaded into FIN_TXNS/FIN_ACCOUNTS/FIN_RECURRING by the time Finance's own
+// tabs are reachable at all.
+function renderFinanceChallenges(){
+  COMPUTED_FINANCE_CHALLENGES = computeFinanceChallenges();
+  renderFinanceChallengeGrid();
 }
 
 /* ---------------- Drawer (view / edit / create trade) ---------------- */

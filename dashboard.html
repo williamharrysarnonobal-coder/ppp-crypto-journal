@@ -16,7 +16,7 @@
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Public+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<link rel="stylesheet" href="css/style.css?v=110">
+<link rel="stylesheet" href="css/style.css?v=117">
 </head>
 <body>
 
@@ -660,13 +660,82 @@
         <div class="subnav-item" data-tab="transactions" onclick="switchFinanceTab('transactions')">Transactions</div>
         <div class="subnav-item" data-tab="recurring" onclick="switchFinanceTab('recurring')">Recurring</div>
         <div class="subnav-item" data-tab="config" onclick="switchFinanceTab('config')">Configuration</div>
+        <div class="subnav-item" data-tab="challenges" onclick="switchFinanceTab('challenges')">Challenges</div>
       </nav>
 
       <div class="subnav-content">
         <div class="subnav-panel active" id="financePanel-dashboard">
-          <div class="panel">
-            <h2>Dashboard</h2>
-            <div class="empty-state">Coming soon — monthly income vs expenses, balances, and charts will live here.</div>
+          <div class="fin-dash-filters">
+            <select id="finDashAccountFilter" onchange="renderFinDashboard()">
+              <option value="all">All accounts</option>
+            </select>
+            <select id="finDashPeriodFilter" onchange="onFinDashPeriodFilterChange()">
+              <option value="this">This Month</option>
+              <option value="prev">Previous Month</option>
+              <option value="all" selected>All time</option>
+              <option value="range">Custom Range</option>
+            </select>
+            <div id="finDashRangeFilterRow" style="display:none;align-items:center;gap:6px;">
+              <input type="date" id="finDashRangeFrom" onchange="renderFinDashboard()">
+              <span style="color:var(--muted);font-size:12px;">to</span>
+              <input type="date" id="finDashRangeTo" onchange="renderFinDashboard()">
+            </div>
+          </div>
+          <div class="fin-dash-kpis" id="finDashKpis"></div>
+          <div class="sub" id="finDashOtherCurrencies" style="font-size:11px;margin:-8px 0 14px;"></div>
+          <div class="fin-dash-layout">
+            <div class="panel fin-dash-list-panel">
+              <h2>Calendar
+                <span class="nav">
+                  <button onclick="shiftFinDashMonth(-1)">‹</button>
+                  <span id="finDashLabel">—</span>
+                  <button onclick="shiftFinDashMonth(1)">›</button>
+                </span>
+              </h2>
+              <div class="cal-grid" id="finDashGrid"></div>
+            </div>
+            <div class="panel fin-dash-detail-panel">
+              <h2 id="finDashDetailTitle">Select a day</h2>
+              <div id="finDashDetailBody" class="empty-state">Click a day or week total to see its transactions.</div>
+            </div>
+          </div>
+
+          <div class="sub" style="font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;margin:20px 0 12px;">Where it goes</div>
+          <div class="fin-dash-chart-row">
+            <div class="panel panel-fixed-h-sm">
+              <h2>By category</h2>
+              <div class="chart-fill"><canvas id="finDashCategoryChart"></canvas></div>
+              <div id="finDashCategoryLegend" style="font-size:11.5px;color:var(--muted);flex-shrink:0;max-height:150px;overflow-y:auto;"></div>
+            </div>
+            <div class="panel panel-fixed-h-sm">
+              <h2>Top subcategories</h2>
+              <div class="chart-fill"><canvas id="finDashSubcategoryChart"></canvas></div>
+              <div id="finDashSubcategoryLegend" style="font-size:11px;color:var(--muted);flex-shrink:0;"></div>
+            </div>
+          </div>
+
+          <div class="panel" style="margin-bottom:20px;">
+            <h2>Equity curve — cumulative net (Income − Expense)</h2>
+            <div class="chart-fill" style="height:260px;"><canvas id="finDashEquityChart"></canvas></div>
+            <div id="finDashEquityEmpty" class="empty-state" style="display:none;">No transactions in this period.</div>
+          </div>
+
+          <div class="panel discipline-panel" style="margin-bottom:20px;">
+            <h2>Discipline radar</h2>
+            <div class="chart-fill" style="height:280px;"><canvas id="finDashDisciplineRadar"></canvas></div>
+            <div class="discipline-score-row">
+              <div>
+                <div class="discipline-score-label">Discipline Score</div>
+                <div class="discipline-score-tag" id="finDashDisciplineTag"></div>
+              </div>
+              <div class="discipline-score-value" id="finDashDisciplineValue">—</div>
+            </div>
+            <div class="discipline-score-bar"><div class="discipline-score-marker" id="finDashDisciplineMarker"></div></div>
+          </div>
+
+          <div class="panel panel-fixed-h-sm">
+            <h2>Income vs Expense — last 6 months</h2>
+            <div class="chart-fill"><canvas id="finDashTrendChart"></canvas></div>
           </div>
         </div>
 
@@ -682,12 +751,41 @@
 
         <div class="subnav-panel" id="financePanel-transactions">
           <div class="panel">
-            <h2 style="display:flex;align-items:center;justify-content:space-between;gap:10px;">Transactions <span style="display:flex;gap:8px;"><button class="poscalc-accent-btn" onclick="openFinTxEasyAddModal()">Easy Add</button><button class="poscalc-accent-btn" onclick="openFinTxModal()">+ Add Transaction</button></span></h2>
+            <h2 style="display:flex;align-items:center;justify-content:space-between;gap:10px;">Transactions <span style="display:flex;gap:8px;"><button class="poscalc-accent-btn" onclick="openFinTxEasyAddModal()">Easy Add</button><button class="poscalc-accent-btn" onclick="openFinTxModal({tx_type:'Transfer'})">Transfer</button><button class="poscalc-accent-btn" onclick="openFinTxModal()">+ Add Transaction</button></span></h2>
             <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">Every peso in and out — income, expenses, and transfers between accounts. Balances update automatically.</div>
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px;">
+              <input type="text" id="finTxSearchFilter" placeholder="Search description, category, account…" oninput="renderFinanceTransactions()" style="flex:1;min-width:180px;max-width:260px;">
+              <select id="finTxPeriodFilter" onchange="onFinTxPeriodFilterChange()" style="max-width:170px;">
+                <option value="all">All time</option>
+                <option value="this">This Month</option>
+                <option value="prev">Previous Month</option>
+                <option value="range">Custom Range</option>
+              </select>
+              <div id="finTxRangeFilterRow" style="display:none;align-items:center;gap:6px;">
+                <input type="date" id="finTxRangeFrom" onchange="renderFinanceTransactions()">
+                <span style="color:var(--muted);font-size:12px;">to</span>
+                <input type="date" id="finTxRangeTo" onchange="renderFinanceTransactions()">
+              </div>
+              <select id="finTxAccountFilter" onchange="renderFinanceTransactions()" style="max-width:180px;">
+                <option value="all">All accounts</option>
+              </select>
+              <select id="finTxTypeFilter" onchange="renderFinanceTransactions()" style="max-width:150px;">
+                <option value="all">All types</option>
+                <option value="Income">Income</option>
+                <option value="Expense">Expense</option>
+                <option value="Transfer">Transfer</option>
+              </select>
+              <button class="drawer-danger-btn" style="margin-left:auto;" onclick="deleteAllFilteredFinTx()">Delete All</button>
+            </div>
+            <div id="finTxBulkBar" style="display:none;align-items:center;gap:10px;margin-bottom:12px;font-size:12.5px;">
+              <span id="finTxBulkCount"></span>
+              <button class="poscalc-accent-btn" onclick="openFinBulkCategoryModal()">Edit Category</button>
+              <button class="drawer-secondary-btn" onclick="clearFinTxSelection()">Clear</button>
+            </div>
             <div class="empty-state" id="finTxEmpty" style="display:none;">No transactions yet — click "+ Add Transaction" to log your first one.</div>
             <div class="journal-wrap" id="finTxWrap" style="display:none;">
               <table class="journal">
-                <thead><tr><th>Date</th><th>Type</th><th>Amount</th><th>Account</th><th>Category</th><th>Description</th><th></th></tr></thead>
+                <thead><tr><th><input type="checkbox" id="finTxSelectAll" onchange="toggleFinTxSelectAll(this.checked)"></th><th>Date</th><th>Type</th><th>Amount</th><th>Account</th><th>Category</th><th>Description</th><th>Status</th><th></th></tr></thead>
                 <tbody id="finTxBody"></tbody>
               </table>
             </div>
@@ -730,6 +828,55 @@
               <input id="finNewOptionInput" placeholder="New option…" onkeydown="if(event.key==='Enter') addFinanceOption()">
               <button class="ai-btn" style="padding:8px 14px;" onclick="addFinanceOption()">Add</button>
             </div>
+          </div>
+
+          <div class="panel" style="margin-top:20px;">
+            <h2 style="display:flex;align-items:center;justify-content:space-between;gap:10px;">Expense Subcategories <button class="poscalc-accent-btn" onclick="loadRecommendedFinanceTaxonomy()">Reset to Recommended Categories</button></h2>
+            <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">Optional finer breakdown under each expense category — so "Food &amp; Groceries" can split into Grocery, Restaurant, Coffee, etc.</div>
+            <select id="finSubcatPicker" onchange="renderFinanceSubcategoryListFor(this.value)"></select>
+            <div id="finSubcatList" style="margin-top:14px;"></div>
+            <div class="config-add-row">
+              <input id="finNewSubcatInput" placeholder="New subcategory…" onkeydown="if(event.key==='Enter') addFinanceSubcategory()">
+              <button class="ai-btn" style="padding:8px 14px;" onclick="addFinanceSubcategory()">Add</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="subnav-panel" id="financePanel-challenges">
+          <div class="sub" id="financeChallengesCountLabel" style="margin-bottom:10px;">—</div>
+
+          <div class="challenge-caution-banner">
+            These reflect your money habits — they shouldn't decide them. Breaking a No-Spend streak for a real emergency, or a real need, is always the right call. Ignore the challenge.
+          </div>
+
+          <div class="panel challenge-rank-panel" style="margin-bottom:20px;">
+            <div class="challenge-rank-label" id="financeChallengeRankLabel">—</div>
+            <div class="challenge-points-total" id="financeChallengePointsTotal">0</div>
+            <div class="challenge-points-caption">TOTAL POINTS</div>
+            <div class="rank-ladder" id="financeRankLadder"></div>
+            <div class="challenge-points-away" id="financeChallengePointsAway">—</div>
+          </div>
+
+          <div class="panel" style="margin-bottom:20px;">
+            <h2 style="display:flex;align-items:center;justify-content:space-between;gap:10px;">Finance Challenges <button class="poscalc-accent-btn" onclick="renderFinanceLeaderboard(); document.getElementById('financeLeaderboardPanel').scrollIntoView({behavior:'smooth'});">Leaderboard ↓</button></h2>
+            <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">Automatically tracked from your accounts, transactions, and recurring bills — nothing to mark manually.</div>
+            <div class="tabs" id="financeChallengeFilterTabs">
+              <div class="tab active" data-f="all" onclick="switchFinanceChallengeFilter('all')">All</div>
+              <div class="tab" data-f="achieved" onclick="switchFinanceChallengeFilter('achieved')">Achieved</div>
+              <div class="tab" data-f="unachieved" onclick="switchFinanceChallengeFilter('unachieved')">In Progress</div>
+            </div>
+            <div class="challenge-grid" id="financeChallengesGrid"></div>
+          </div>
+
+          <div class="panel" style="margin-bottom:20px;">
+            <h2>Still Locked</h2>
+            <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">These need extra data before we can track them — this shows what's still missing.</div>
+            <div class="challenge-grid" id="financeChallengesLockedGrid"></div>
+          </div>
+
+          <div class="panel" id="financeLeaderboardPanel">
+            <h2>Leaderboard</h2>
+            <div class="leaderboard-list" id="financeLeaderboardBody"></div>
           </div>
         </div>
       </div>
@@ -787,6 +934,17 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="finAccountDetailsModal" onclick="if(event.target===this) closeFinAccountDetailsModal()">
+  <div class="modal-box" style="position:relative;max-width:460px;">
+    <button class="modal-close" onclick="closeFinAccountDetailsModal()">✕</button>
+    <h3 style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding-right:28px;">
+      <span id="finAccDetailsTitle" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Account</span>
+      <button class="poscalc-accent-btn" id="finAccDetailsHideBalBtn" style="display:none;font-size:11px;padding:4px 9px;flex-shrink:0;" onclick="toggleFinBalances()">Hide Balances</button>
+    </h3>
+    <div id="finAccDetailsBody" style="margin-top:14px;"></div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="finAccountModal" onclick="if(event.target===this) closeFinAccountModal()">
   <div class="modal-box" style="position:relative;max-height:88vh;overflow-y:auto;">
     <button class="modal-close" onclick="closeFinAccountModal()">✕</button>
@@ -810,7 +968,7 @@
       <label id="finAccNameLabel">Bank / Account Name</label>
       <input id="finAccName" placeholder="e.g. BPI, GCash, Cash on hand">
     </div>
-    <div class="field-row fin-parent-only">
+    <div class="field-row">
       <label>Card / Account Number — last 4 digits only</label>
       <input id="finAccCardNumber" maxlength="4" inputmode="numeric" placeholder="e.g. 5678">
     </div>
@@ -845,20 +1003,73 @@
 </div>
 
 <div class="modal-overlay" id="finTxEasyAddModal" onclick="if(event.target===this) closeFinTxEasyAddModal()">
-  <div class="modal-box" style="position:relative;">
+  <div class="modal-box" style="position:relative;max-height:88vh;overflow-y:auto;">
     <button class="modal-close" onclick="closeFinTxEasyAddModal()">✕</button>
     <h3>Easy Add</h3>
-    <div class="modal-sub">Paste the bank purchase-alert text (SMS/email/notification) and we'll fill in the details.</div>
-    <textarea id="finTxEasyAddInput" placeholder="Purchase of AED 14.73 with Credit Card ending 8491 at GRAND EMIRATES MARKET, ABU DHABI. Avl Cr. Limit is AED 13,665.04" style="width:100%;min-height:140px;margin-top:12px;padding:10px 12px;background:var(--surface-2);border:1px solid var(--rule);border-radius:6px;color:var(--ink);font-size:13px;font-family:'IBM Plex Mono',monospace;resize:vertical;"></textarea>
+    <div class="field-row" style="margin-top:10px;">
+      <label>Format</label>
+      <select id="finTxEasyAddFormat" onchange="onFinTxEasyAddFormatChange()">
+        <option value="text">Text — single purchase alert</option>
+        <option value="statement">Statement — bulk paste from a card statement</option>
+      </select>
+    </div>
+
+    <div id="finTxEasyAddTextMode">
+      <div class="modal-sub">Paste the bank purchase-alert text (SMS/email/notification) and we'll fill in the details.</div>
+      <textarea id="finTxEasyAddInput" placeholder="Purchase of AED 14.73 with Credit Card ending 8491 at GRAND EMIRATES MARKET, ABU DHABI. Avl Cr. Limit is AED 13,665.04" style="width:100%;min-height:140px;margin-top:12px;padding:10px 12px;background:var(--surface-2);border:1px solid var(--rule);border-radius:6px;color:var(--ink);font-size:13px;font-family:'IBM Plex Mono',monospace;resize:vertical;"></textarea>
+    </div>
+
+    <div id="finTxEasyAddStatementMode" style="display:none;">
+      <div class="modal-sub">Paste 4 blocks separated by a blank line, in this order: transaction dates, posting dates, descriptions, amounts. All rows will be added as Expenses on the account below.</div>
+      <div class="field-row" style="margin-top:10px;">
+        <label>Account</label>
+        <select id="finTxEasyAddStatementAccount"></select>
+      </div>
+      <textarea id="finTxEasyAddStatementInput" placeholder="04/06/2026&#10;07/06/2026&#10;&#10;05/06/2026&#10;08/06/2026&#10;&#10;PREMIUM VAPES ELECTRONI ABU DHABI ARE&#10;ADNOC LAST EXIT 545 DUBAI ARE&#10;&#10;50.00&#10;68.98" style="width:100%;min-height:180px;margin-top:10px;padding:10px 12px;background:var(--surface-2);border:1px solid var(--rule);border-radius:6px;color:var(--ink);font-size:13px;font-family:'IBM Plex Mono',monospace;resize:vertical;"></textarea>
+      <div id="finTxEasyAddStatementPreview"></div>
+    </div>
+
     <div id="finTxEasyAddError" class="auth-error"></div>
     <button class="ai-btn" style="margin-top:14px;width:100%;" onclick="parseFinTxEasyAdd()">Proceed</button>
+  </div>
+</div>
+
+<div class="modal-overlay" id="finCreditPaymentModal" onclick="if(event.target===this) closeFinCreditPaymentModal()">
+  <div class="modal-box" style="position:relative;">
+    <button class="modal-close" onclick="closeFinCreditPaymentModal()">✕</button>
+    <h3>Pay Bill</h3>
+    <div class="modal-sub" id="finCreditPaymentInfo"></div>
+    <div class="field-row" style="margin-top:12px;">
+      <label>Pay From</label>
+      <select id="finCreditPaymentSourceAccount"></select>
+    </div>
+    <div id="finCreditPaymentError" class="auth-error"></div>
+    <button class="ai-btn" style="margin-top:14px;width:100%;" onclick="confirmPayAllDueForAccount()">Confirm Payment</button>
+  </div>
+</div>
+
+<div class="modal-overlay" id="finBulkCategoryModal" onclick="if(event.target===this) closeFinBulkCategoryModal()">
+  <div class="modal-box" style="position:relative;">
+    <button class="modal-close" onclick="closeFinBulkCategoryModal()">✕</button>
+    <h3>Edit Category</h3>
+    <div class="modal-sub" id="finBulkCategoryInfo"></div>
+    <div class="field-row" style="margin-top:12px;">
+      <label>Category</label>
+      <select id="finBulkCategorySelect" onchange="onFinBulkCategoryChange()"></select>
+    </div>
+    <div class="field-row" id="finBulkSubcategoryRow" style="display:none;">
+      <label>Subcategory (optional)</label>
+      <select id="finBulkSubcategorySelect"></select>
+    </div>
+    <div id="finBulkCategoryError" class="auth-error"></div>
+    <button class="ai-btn" style="margin-top:14px;width:100%;" onclick="saveFinBulkCategory()">Apply</button>
   </div>
 </div>
 
 <div class="modal-overlay" id="finTxModal" onclick="if(event.target===this) closeFinTxModal()">
   <div class="modal-box" style="position:relative;">
     <button class="modal-close" onclick="closeFinTxModal()">✕</button>
-    <h3>Add Transaction</h3>
+    <h3 id="finTxModalTitle">Add Transaction</h3>
     <div class="field-row" style="margin-top:14px;">
       <label>Date</label>
       <input id="finTxDate" type="date">
@@ -885,7 +1096,11 @@
     </div>
     <div class="field-row" id="finTxCategoryRow">
       <label>Category</label>
-      <select id="finTxCategory"></select>
+      <select id="finTxCategory" onchange="onFinTxCategoryChange()"></select>
+    </div>
+    <div class="field-row" id="finTxSubcategoryRow" style="display:none;">
+      <label>Subcategory (optional)</label>
+      <select id="finTxSubcategory"></select>
     </div>
     <div class="field-row">
       <label>Description (optional)</label>
@@ -1353,6 +1568,6 @@
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=1"></script>
-<script src="js/dashboard.js?v=125"></script>
+<script src="js/dashboard.js?v=152"></script>
 </body>
 </html>

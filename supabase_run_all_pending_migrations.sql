@@ -69,3 +69,15 @@ alter table finance_accounts add column if not exists last_bill_paid date;
 alter table finance_recurring add column if not exists account_id bigint references finance_accounts(id) on delete set null;
 alter table finance_recurring add column if not exists payments_applied int not null default 0;
 alter table finance_recurring add column if not exists last_billed date;
+
+-- finance_transactions (per-transaction bill settlement — replaces the old
+-- date-cutoff approach so backdated transactions added AFTER a bill was
+-- paid still count toward Owed instead of being silently excluded)
+alter table finance_transactions add column if not exists settled_bill date;
+
+-- finance_transactions (optional Category > Subcategory breakdown)
+alter table finance_transactions add column if not exists subcategory text;
+
+-- finance_accounts (which transaction the "Paid" button auto-logged, so
+-- Undo can find and delete that exact row)
+alter table finance_accounts add column if not exists last_bill_payment_tx_id bigint references finance_transactions(id) on delete set null;

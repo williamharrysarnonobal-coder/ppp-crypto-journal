@@ -1016,6 +1016,67 @@
   .fin-payment-row{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;color:var(--ink);}
   .fin-payment-row span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 
+  /* Finance: "View bill details" hint on the credit card face */
+  .fin-view-bill-hint{font-size:11px;color:var(--accent);font-weight:600;margin-top:8px;}
+
+  /* Finance: Account Details modal (clickable credit card popup) —
+     Running Bill for current month + Bill for last month, each split
+     into Recurring / Transactions / Total. */
+  .fin-acc-details-summary{
+    font-size:13.5px;color:var(--muted);padding-bottom:12px;border-bottom:1px solid var(--rule);
+  }
+  .fin-acc-details-section{margin-top:16px;padding-top:2px;}
+  .fin-acc-details-heading{
+    font-size:11px;font-weight:700;letter-spacing:.04em;color:var(--accent);margin-bottom:8px;
+  }
+  .fin-acc-details-row{
+    display:flex;align-items:center;justify-content:space-between;font-size:12.5px;
+    color:var(--ink);padding:4px 0;
+  }
+  .fin-acc-details-row span:first-child{color:var(--muted);}
+  .fin-acc-details-total{
+    border-top:1px dashed var(--rule);margin-top:4px;padding-top:7px;font-weight:700;
+  }
+  .fin-acc-details-total span{color:var(--ink) !important;}
+
+  /* Finance: Dashboard tab — Income/Expense/Net KPI trio + calendar/detail
+     two-panel layout, same visual language as the Trading Journal calendar
+     (.cal-grid/.cal-cell are shared, defined once, further up this file). */
+  .fin-dash-kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--rule);border:1px solid var(--rule);border-radius:8px;overflow:hidden;margin-bottom:10px;}
+  @media(max-width:640px){.fin-dash-kpis{grid-template-columns:1fr;}}
+  .fin-dash-layout{display:grid;grid-template-columns:1.3fr 1fr;gap:20px;align-items:stretch;}
+  @container (max-width:900px){.fin-dash-layout{grid-template-columns:1fr;}}
+  /* Both panels pinned to the SAME fixed height so the two columns line up
+     evenly — each scrolls its own content internally (the calendar grid
+     rarely needs it; the "whole month, by category" list often does)
+     instead of one panel quietly running taller than the other. */
+  .fin-dash-list-panel{height:520px;display:flex;flex-direction:column;}
+  .fin-dash-list-panel .cal-grid{flex:1;min-height:0;overflow-y:auto;}
+  .fin-dash-detail-panel{display:flex;flex-direction:column;height:520px;}
+  .fin-dash-detail-panel #finDashDetailBody{overflow-y:auto;flex:1;min-height:0;}
+  body.mobile-mode .fin-dash-layout{grid-template-columns:1fr !important;}
+  body.mobile-mode .fin-dash-kpis{grid-template-columns:1fr !important;}
+  /* .cal-cell/.cal-dow are shared with the Trading Journal calendar, whose
+     cells carry 2 lines (P&L + trade count) — scoped down here since the
+     Finance calendar felt oversized next to its thinner day cells. */
+  #finDashGrid.cal-grid{gap:3px;}
+  #finDashGrid .cal-cell{min-height:46px;padding:6px 5px;}
+  #finDashGrid .cal-dow{font-size:9px;}
+  #finDashGrid .cal-cell .d{font-size:10.5px;}
+  #finDashGrid .cal-cell .p{font-size:11.5px;}
+  #finDashGrid .cal-cell .cal-count{font-size:9px !important;}
+
+  /* Finance: Dashboard filter row + analytics charts below the calendar */
+  .fin-dash-filters{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px;}
+  .fin-dash-chart-row{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px;}
+  @container (max-width:900px){.fin-dash-chart-row{grid-template-columns:1fr;}}
+  body.mobile-mode .fin-dash-chart-row{grid-template-columns:1fr !important;}
+  /* Bigger than the default .panel-fixed-h-sm (230px) — these two are the
+     main "where does my money go" answer, so they get more room to breathe
+     than a supporting chart elsewhere in the app would. */
+  .fin-dash-chart-row .panel-fixed-h-sm{height:400px;}
+  .fin-dash-chart-row .chart-fill{min-height:0;}
+
   /* Mobile Mode round 3: modals + sub-menu tabs (Configuration, Finance,
      Trade Alerts) + Setup Notes internals, from live phone testing */
   body.mobile-mode .modal-box{width:94vw !important;max-width:94vw !important;padding:18px 14px;max-height:90vh;overflow-y:auto;}
