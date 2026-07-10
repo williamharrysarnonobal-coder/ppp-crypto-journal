@@ -990,6 +990,28 @@
   .fin-account-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:16px;}
   body.mobile-mode .fin-account-grid{grid-template-columns:1fr !important;}
 
+  /* Finance account card internals — pulled out of inline styles so Mobile
+     Mode (below) can re-center them instead of fighting inline specificity. */
+  .fin-acc-card-head{display:flex;align-items:center;gap:10px;margin-bottom:10px;}
+  .fin-acc-card-titlewrap{min-width:0;overflow:hidden;}
+  .fin-acc-card-currency{margin-left:auto;flex-shrink:0;}
+  .fin-acc-card-actions{display:flex;align-items:center;gap:6px;margin-top:12px;justify-content:flex-end;}
+  .fin-acc-card-actions.has-subadd{justify-content:space-between;}
+  .fin-acc-card-actions-btns{display:flex;gap:6px;}
+
+  /* Finance > Accounts on mobile: cards go full-width single-column (above),
+     and their contents get re-centered here — icon+name stacked and
+     centered, balance/hints/action row centered — a deliberate "mobile
+     tile" look distinct from the left+right-justified desktop row layout. */
+  body.mobile-mode .fin-account-grid .account-card{text-align:center;}
+  body.mobile-mode .fin-account-grid .fin-acc-card-head{flex-direction:column;align-items:center;margin-bottom:8px;}
+  body.mobile-mode .fin-account-grid .fin-acc-card-titlewrap{overflow:visible;white-space:normal;}
+  body.mobile-mode .fin-account-grid .fin-acc-card-currency{margin-left:0 !important;margin-top:2px;}
+  body.mobile-mode .fin-account-grid .fin-payment-row{justify-content:center !important;flex-wrap:wrap;text-align:left;}
+  body.mobile-mode .fin-account-grid .fin-acc-card-actions{flex-direction:column;gap:8px;}
+  body.mobile-mode .fin-account-grid .fin-acc-card-actions-btns{width:100%;justify-content:center;}
+  body.mobile-mode .fin-account-grid .fin-subacct-add{width:100%;}
+
   /* Finance: hide-balances privacy toggle — blurs every value tagged
      .fin-balance (Debit only — credit card limits/owed stay visible).
      Per-device, not account-synced (like Mobile Mode). */
@@ -1096,9 +1118,15 @@
 
   /* Finance Transactions specifically — a 9-column table was still "too
      big" even compacted, so on mobile it drops the table/scroll approach
-     entirely and becomes one labeled card per transaction instead (same
-     idea as the Trading Journal's own mobile simplifications — show less
-     at once, stacked, instead of shrinking everything to fit sideways). */
+     entirely and becomes one card per transaction instead (same idea as
+     the Trading Journal's own mobile simplifications). Round 2: instead of
+     a label:value row per field (7 stacked rows, still felt like a table
+     lying on its side), the per-field <td>s are hidden and a single
+     consolidated "list item" <td> (.fin-tx-mobile-card, built alongside the
+     others in renderFinanceTransactions) takes over — description+amount
+     on one line, date/account/category as a muted line under it, type and
+     bill-status as small pills — matching how the categorized calendar
+     drill-down already presents transactions elsewhere in Finance. */
   body.mobile-mode #finTxWrap{overflow-x:visible;}
   body.mobile-mode #finTxWrap table.journal thead{display:none;}
   body.mobile-mode #finTxWrap table.journal,
@@ -1108,15 +1136,50 @@
     border:1px solid var(--rule);border-radius:8px;margin-bottom:10px;padding:10px 12px;background:var(--surface);
   }
   body.mobile-mode #finTxWrap table.journal tbody tr:hover td{background:none;}
-  body.mobile-mode #finTxWrap table.journal td{
-    display:flex;justify-content:space-between;align-items:center;gap:10px;
-    border:none;padding:5px 0;max-width:none;white-space:normal;font-size:12px;
+  body.mobile-mode #finTxWrap table.journal td[data-label]{display:none;}
+  body.mobile-mode #finTxWrap table.journal td.fin-tx-td-check,
+  body.mobile-mode #finTxWrap table.journal td.fin-tx-td-actions{
+    display:flex;justify-content:flex-end;align-items:center;gap:10px;border:none;padding:0;
   }
-  body.mobile-mode #finTxWrap table.journal td[data-label]::before{
-    content:attr(data-label);font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);flex-shrink:0;
+  body.mobile-mode #finTxWrap table.journal td.fin-tx-td-check{padding-bottom:8px;border-bottom:1px dashed var(--rule);margin-bottom:8px;}
+  body.mobile-mode #finTxWrap table.journal td.fin-tx-td-actions{padding-top:8px;border-top:1px dashed var(--rule);margin-top:8px;}
+  body.mobile-mode #finTxWrap table.journal td.fin-tx-mobile-card{display:block !important;padding:0;}
+  .fin-tx-mcard-top{display:flex;justify-content:space-between;align-items:baseline;gap:10px;font-size:13.5px;font-weight:700;}
+  .fin-tx-mcard-desc{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;}
+  .fin-tx-mcard-amt{flex-shrink:0;font-size:13.5px;}
+  .fin-tx-mcard-meta{font-size:11px;color:var(--muted);margin-top:4px;}
+  .fin-tx-mcard-badges{display:flex;gap:6px;flex-wrap:wrap;margin-top:7px;}
+
+  /* Recurring (Installments + Subscriptions) — same card-list treatment as
+     Transactions above, reusing the .fin-tx-mcard-* classes. These two
+     tables never had data-label attributes, so instead of listing every
+     plain <td> the rule below hides everything except the two purpose-
+     built ones (:not() keeps it working regardless of column count). */
+  body.mobile-mode #finInstWrap{overflow-x:visible;}
+  body.mobile-mode #finSubWrap{overflow-x:visible;}
+  body.mobile-mode #finInstWrap table.journal thead,
+  body.mobile-mode #finSubWrap table.journal thead{display:none;}
+  body.mobile-mode #finInstWrap table.journal,
+  body.mobile-mode #finInstWrap table.journal tbody,
+  body.mobile-mode #finInstWrap table.journal tr,
+  body.mobile-mode #finSubWrap table.journal,
+  body.mobile-mode #finSubWrap table.journal tbody,
+  body.mobile-mode #finSubWrap table.journal tr{display:block;width:100%;}
+  body.mobile-mode #finInstWrap table.journal tr,
+  body.mobile-mode #finSubWrap table.journal tr{
+    border:1px solid var(--rule);border-radius:8px;margin-bottom:10px;padding:10px 12px;background:var(--surface);
   }
-  body.mobile-mode #finTxWrap table.journal td.fin-tx-td-check{justify-content:flex-end;padding-bottom:8px;border-bottom:1px dashed var(--rule);margin-bottom:4px;}
-  body.mobile-mode #finTxWrap table.journal td.fin-tx-td-actions{justify-content:flex-end;padding-top:8px;border-top:1px dashed var(--rule);margin-top:4px;}
+  body.mobile-mode #finInstWrap table.journal tbody tr:hover td,
+  body.mobile-mode #finSubWrap table.journal tbody tr:hover td{background:none;}
+  body.mobile-mode #finInstWrap table.journal td:not(.fin-tx-mobile-card):not(.fin-tx-td-actions),
+  body.mobile-mode #finSubWrap table.journal td:not(.fin-tx-mobile-card):not(.fin-tx-td-actions){display:none;}
+  body.mobile-mode #finInstWrap table.journal td.fin-tx-mobile-card,
+  body.mobile-mode #finSubWrap table.journal td.fin-tx-mobile-card{display:block !important;padding:0;}
+  body.mobile-mode #finInstWrap table.journal td.fin-tx-td-actions,
+  body.mobile-mode #finSubWrap table.journal td.fin-tx-td-actions{
+    display:flex;justify-content:flex-end;align-items:center;gap:10px;border:none;
+    padding-top:8px;border-top:1px dashed var(--rule);margin-top:8px;
+  }
   /* .cal-cell/.cal-dow are shared with the Trading Journal calendar, whose
      cells carry 2 lines (P&L + trade count) — scoped down here since the
      Finance calendar felt oversized next to its thinner day cells. */

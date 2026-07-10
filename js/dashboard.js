@@ -3045,13 +3045,13 @@ function finAccountCardHTML(a){
     : '';
   return `
     <div class="account-card" style="cursor:pointer;" onclick="openFinAccountDetailsModal(${a.id})">
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+      <div class="fin-acc-card-head">
         ${iconImg}
-        <div style="min-width:0;overflow:hidden;">
+        <div class="fin-acc-card-titlewrap">
           <div style="font-weight:700;font-size:15px;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(a.account_name)}</div>
           ${a.card_number ? `<div style="font-size:11px;color:var(--muted);font-family:'IBM Plex Mono',monospace;">•••• ${escapeHtml(a.card_number)}</div>` : ''}
         </div>
-        <span class="pill pill-muted" style="margin-left:auto;flex-shrink:0;">${escapeHtml(a.currency)}</span>
+        <span class="pill pill-muted fin-acc-card-currency">${escapeHtml(a.currency)}</span>
       </div>
       <div class="account-card-balance${isCredit ? '' : ' fin-balance'}">${mainBalance}</div>
       ${isCredit ? `<div style="font-size:10.5px;color:var(--muted);margin-top:2px;text-transform:uppercase;letter-spacing:.05em;">Available credit</div>` : ''}
@@ -3060,9 +3060,9 @@ function finAccountCardHTML(a){
       ${!isCredit ? `<div class="fin-view-bill-hint">View details →</div>` : ''}
       ${a.notes ? `<div style="font-size:12px;color:var(--muted);margin-top:8px;font-style:italic;">${escapeHtml(a.notes)}</div>` : ''}
       ${!isCredit && paymentLineHtml ? `<div class="fin-payment-list">${paymentLineHtml}</div>` : ''}
-      <div style="display:flex;justify-content:${!isCredit ? 'space-between' : 'flex-end'};align-items:center;gap:6px;margin-top:12px;" onclick="event.stopPropagation();">
+      <div class="fin-acc-card-actions${!isCredit ? ' has-subadd' : ''}" onclick="event.stopPropagation();">
         ${!isCredit ? `<button class="fin-subacct-add" onclick="openFinSubAccountModal(${a.id})">+ Sub-account</button>` : ''}
-        <div style="display:flex;gap:6px;">
+        <div class="fin-acc-card-actions-btns">
           <button class="drawer-secondary-btn" style="padding:4px 10px;font-size:11px;" onclick="openFinAccountModal(${a.id})">Edit</button>
           <button class="drawer-danger-btn" style="padding:4px 10px;font-size:11px;margin-left:0;" onclick="deleteFinAccount(${a.id})">${deleteIconSVG()}</button>
         </div>
@@ -3733,16 +3733,33 @@ function renderFinanceTransactions(){
     const incompleteFlag = !t.category
       ? `<span title="Missing category" style="display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;border-radius:50%;background:var(--warn);color:#1a1200;font-size:10.5px;font-weight:800;line-height:1;margin-left:6px;vertical-align:middle;cursor:help;">!</span>`
       : '';
+    const dateStr = t.tx_date ? new Date(t.tx_date + 'T00:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : '—';
+    const catStr = t.category ? escapeHtml(t.category) + (t.subcategory ? ` · ${escapeHtml(t.subcategory)}` : '') : '';
+    // Mobile-only consolidated summary — desktop never shows this <td> (it's
+    // display:none inline), the per-field <td>s above it stay the source of
+    // truth for the desktop table. Mobile Mode CSS flips which set is shown.
+    const mobileCardHtml = `
+      <div class="fin-tx-mcard-top">
+        <span class="fin-tx-mcard-desc">${escapeHtml(t.description || t.category || t.tx_type)}${incompleteFlag}</span>
+        <span class="fin-tx-mcard-amt">${amountHtml}</span>
+      </div>
+      <div class="fin-tx-mcard-meta">${dateStr} · ${accountHtml}${catStr ? ` · ${catStr}` : ''}</div>
+      <div class="fin-tx-mcard-badges">
+        <span class="pill ${typePill}">${t.tx_type}</span>
+        ${acc && acc.account_class === 'Credit' ? statusHtml : ''}
+      </div>
+    `;
     return `
       <tr>
         <td class="fin-tx-td-check"><input type="checkbox" class="fin-tx-row-check" ${FIN_TX_SELECTED.has(t.id) ? 'checked' : ''} onchange="toggleFinTxRowSelect(${t.id}, this.checked)"></td>
-        <td data-label="Date">${t.tx_date ? new Date(t.tx_date + 'T00:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : '—'}${incompleteFlag}</td>
+        <td data-label="Date">${dateStr}${incompleteFlag}</td>
         <td data-label="Type"><span class="pill ${typePill}">${t.tx_type}</span></td>
         <td data-label="Amount">${amountHtml}</td>
         <td data-label="Account">${accountHtml}</td>
         <td data-label="Category"><div>${t.category ? escapeHtml(t.category) + (t.subcategory ? `<div style="font-size:10px;color:var(--muted);margin-top:1px;">${escapeHtml(t.subcategory)}</div>` : '') : '—'}</div></td>
         <td data-label="Description">${escapeHtml(t.description || '—')}</td>
         <td data-label="Status">${statusHtml}</td>
+        <td class="fin-tx-mobile-card" style="display:none;">${mobileCardHtml}</td>
         <td class="fin-tx-td-actions" style="text-align:right;white-space:nowrap;">
           <button class="drawer-secondary-btn" style="padding:4px 10px;font-size:11px;" onclick="openFinTxModal({editId:${t.id}})">Edit</button>
           <button class="drawer-danger-btn" style="padding:4px 10px;font-size:11px;margin-left:4px;" onclick="deleteFinTx(${t.id})">${deleteIconSVG()}</button>
@@ -5125,6 +5142,19 @@ function renderFinanceRecurring(){
           ? `<span class="pill pill-green">Paid — ${fmtPeriod(_finPreviousMonthLabel())}</span>`
           : fmtPeriod(_finPreviousMonthLabel()));
     const remaining = (Number(r.total_amount) || 0) - (monthly * paid);
+    const mobileCardHtml = `
+      <div class="fin-tx-mcard-top">
+        <span class="fin-tx-mcard-desc">${escapeHtml(r.name)}</span>
+        <span class="fin-tx-mcard-amt">${finMoney(monthly, 'PHP')}/mo</span>
+      </div>
+      <div class="fin-tx-mcard-meta">${escapeHtml(_finAccountName(r.account_id))}${r.category ? ` · ${escapeHtml(r.category)}` : ''}</div>
+      <div class="fin-tx-mcard-badges">
+        <span class="pill ${done ? 'pill-green' : 'pill-orange'}">${paid} / ${total} paid</span>
+        ${done ? '' : `<span style="font-size:11px;color:var(--muted);align-self:center;">${finMoney(remaining, 'PHP')} left</span>`}
+      </div>
+      <div class="fin-tx-mcard-meta" style="margin-top:5px;">Due: ${dueCell}</div>
+      ${r.notes ? `<div class="fin-tx-mcard-meta" style="font-style:italic;">${escapeHtml(r.notes)}</div>` : ''}
+    `;
     return `
       <tr>
         <td>${escapeHtml(r.name)}<div style="font-size:10.5px;color:var(--muted);">${escapeHtml(_finAccountName(r.account_id))}</div></td>
@@ -5134,7 +5164,8 @@ function renderFinanceRecurring(){
         <td><span class="pill ${done ? 'pill-green' : 'pill-orange'}">${paid} / ${total} paid</span><div style="font-size:10.5px;color:var(--muted);margin-top:3px;">${done ? '' : `${finMoney(remaining, 'PHP')} remaining`}</div></td>
         <td style="white-space:nowrap;">${dueCell}</td>
         <td>${escapeHtml(r.notes || '—')}</td>
-        <td style="text-align:right;white-space:nowrap;">
+        <td class="fin-tx-mobile-card" style="display:none;">${mobileCardHtml}</td>
+        <td class="fin-tx-td-actions" style="text-align:right;white-space:nowrap;">
           <button class="drawer-secondary-btn" style="padding:4px 10px;font-size:11px;" onclick="openFinRecModal('Installment', ${r.id})">Edit</button>
           <button class="drawer-danger-btn" style="padding:4px 10px;font-size:11px;margin-left:4px;" onclick="deleteFinRec(${r.id})">${deleteIconSVG()}</button>
         </td>
@@ -5152,6 +5183,15 @@ function renderFinanceRecurring(){
     const dueCell = cycleAlreadyPaid
       ? `<span class="pill pill-green">Paid — ${fmtPeriod(next)}</span>`
       : fmtPeriod(next);
+    const mobileCardHtml = `
+      <div class="fin-tx-mcard-top">
+        <span class="fin-tx-mcard-desc">${escapeHtml(r.name)}</span>
+        <span class="fin-tx-mcard-amt">${finMoney(r.price, 'PHP')}</span>
+      </div>
+      <div class="fin-tx-mcard-meta">${escapeHtml(_finAccountName(r.account_id))} · ${escapeHtml(r.cycle || 'Monthly')}</div>
+      <div class="fin-tx-mcard-meta" style="margin-top:5px;">Due: ${dueCell}</div>
+      ${r.notes ? `<div class="fin-tx-mcard-meta" style="font-style:italic;">${escapeHtml(r.notes)}</div>` : ''}
+    `;
     return `
       <tr>
         <td>${escapeHtml(r.name)}<div style="font-size:10.5px;color:var(--muted);">${escapeHtml(_finAccountName(r.account_id))}</div></td>
@@ -5159,7 +5199,8 @@ function renderFinanceRecurring(){
         <td>${escapeHtml(r.cycle || 'Monthly')}</td>
         <td style="white-space:nowrap;">${dueCell}</td>
         <td>${escapeHtml(r.notes || '—')}</td>
-        <td style="text-align:right;white-space:nowrap;">
+        <td class="fin-tx-mobile-card" style="display:none;">${mobileCardHtml}</td>
+        <td class="fin-tx-td-actions" style="text-align:right;white-space:nowrap;">
           <button class="drawer-secondary-btn" style="padding:4px 10px;font-size:11px;" onclick="openFinRecModal('Subscription', ${r.id})">Edit</button>
           <button class="drawer-danger-btn" style="padding:4px 10px;font-size:11px;margin-left:4px;" onclick="deleteFinRec(${r.id})">${deleteIconSVG()}</button>
         </td>
@@ -5629,6 +5670,40 @@ function _finTotalDebtPaidDown(){
   }, 0);
 }
 
+// Consecutive days ending TODAY with at least one transaction logged (any
+// type) — a logging-habit streak, the mirror image of _finNoSpendStreak.
+function _finLoggingStreak(){
+  if(!FIN_TXNS.length) return 0;
+  const txDates = new Set(FIN_TXNS.filter(t => t.tx_date).map(t => t.tx_date));
+  let streak = 0;
+  const cursor = new Date(); cursor.setHours(0,0,0,0);
+  while(true){
+    const iso = _finDateISO(cursor);
+    if(!txDates.has(iso)) break;
+    streak++;
+    cursor.setDate(cursor.getDate() - 1);
+  }
+  return streak;
+}
+
+// Highest ((Income - Expense) / Income) savings rate ever recorded across
+// any single calendar month with transactions — a personal-best, not a
+// streak, so one great month sticks even if it wasn't sustained.
+function _finBestSavingsRateMonth(){
+  const months = new Set();
+  FIN_TXNS.forEach(t => { if(t.tx_date && t.tx_type !== 'Transfer') months.add(t.tx_date.slice(0,7)); });
+  let best = 0;
+  months.forEach(m => {
+    const monthTx = FIN_TXNS.filter(t => t.tx_date && t.tx_date.slice(0,7) === m && t.tx_type !== 'Transfer');
+    const income = monthTx.filter(t => t.tx_type === 'Income').reduce((s,t) => s + (Number(t.amount)||0), 0);
+    const expense = monthTx.filter(t => t.tx_type === 'Expense').reduce((s,t) => s + (Number(t.amount)||0), 0);
+    if(income <= 0) return;
+    const rate = Math.round((income - expense) / income * 100);
+    if(rate > best) best = rate;
+  });
+  return best;
+}
+
 function _finEmergencyFundTotal(){
   return FIN_TXNS.reduce((s,t) => {
     if(t.subcategory !== 'Emergency fund') return s;
@@ -5737,7 +5812,49 @@ function computeFinanceChallenges(){
     current: subCount, tiers: [1,3,5,8], target: 8, done: subCount >= 8
   };
 
-  const challenges = [c1,c2,c3,c4,c5,c6,c7,c8,c9,c10,c12];
+  // 13. Subcategory Explorer — a deeper cut than Category Explorer: counts
+  // unique SUBcategories, so "Grocery" and "Restaurant" (both under Food &
+  // Groceries) count separately instead of collapsing into one category.
+  const distinctSubcats = new Set(FIN_TXNS.filter(t => t.tx_type === 'Expense' && t.subcategory).map(t => t.subcategory)).size;
+  const c13 = {
+    icon: 'search', title: 'Subcategory Explorer', points: 60,
+    desc: 'Distinct expense subcategories tagged at least once.',
+    howTo: 'Counts unique subcategories across your Expense transactions — a deeper cut than Category Explorer, since two subcategories under the same category (e.g. "Grocery" and "Restaurant" under Food & Groceries) both count.',
+    current: distinctSubcats, tiers: [5,10,20,30,45], target: 45, done: distinctSubcats >= 45
+  };
+
+  // 14. Income Diversifier — distinct Income categories logged, encouraging
+  // more than one income source to be tracked (not spending-related, but
+  // still built from the same category taxonomy the other challenges use).
+  const distinctIncomeCats = new Set(FIN_TXNS.filter(t => t.tx_type === 'Income' && t.category).map(t => t.category)).size;
+  const c14 = {
+    icon: 'globe', title: 'Income Diversifier', points: 50,
+    desc: 'Distinct income categories logged (Salary, Business, Trading Payout, etc.).',
+    howTo: 'Counts how many different Income categories show up across your Income transactions — relying on just one income source keeps this low.',
+    current: distinctIncomeCats, tiers: [1,2,3,4], target: 4, done: distinctIncomeCats >= 4
+  };
+
+  // 15. Consistent Logger — a daily-logging habit streak, the mirror image
+  // of No-Spend Streak (that one wants inactivity, this one wants activity).
+  const loggingStreak = _finLoggingStreak();
+  const c15 = {
+    icon: 'calendar', title: 'Consistent Logger', points: 50,
+    desc: 'Consecutive days with at least one transaction logged (any type).',
+    howTo: 'Counts back from today — the streak ends at the most recent day with no Income, Expense, or Transfer logged at all. Rewards the habit of journaling regularly, not just spending less.',
+    current: loggingStreak, tiers: [3,7,14,30,60], target: 60, done: loggingStreak >= 60
+  };
+
+  // 16. Best Savings Month — a personal-best record rather than a streak,
+  // so one great month is remembered even if it wasn't sustained afterward.
+  const bestSavingsRate = _finBestSavingsRateMonth();
+  const c16 = {
+    icon: 'star', title: 'Best Savings Month', points: 70,
+    desc: 'Highest savings rate ((Income − Expense) ÷ Income) ever hit in a single calendar month.',
+    howTo: 'Checks every calendar month you have transactions for and remembers the best one — a personal record, not something that resets if a later month is worse.',
+    current: bestSavingsRate, tiers: [10,25,40,60,80], target: 80, done: bestSavingsRate >= 80
+  };
+
+  const challenges = [c1,c2,c3,c4,c5,c6,c7,c8,c9,c10,c12,c13,c14,c15,c16];
 
   // 11. Top Spender Trimmed — only appears once there's a real "last
   // month's top category" to compare against.
