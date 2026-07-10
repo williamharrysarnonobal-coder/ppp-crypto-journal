@@ -16,7 +16,7 @@
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Public+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<link rel="stylesheet" href="css/style.css?v=135">
+<link rel="stylesheet" href="css/style.css?v=136">
 </head>
 <body>
 
@@ -1559,16 +1559,30 @@
 <div class="modal-overlay" id="moodModal" onclick="if(event.target===this) closeMoodModal()">
   <div class="modal-box" style="position:relative;">
     <button class="modal-close" onclick="closeMoodModal()">✕</button>
-    <h3 id="moodModalTitle" style="padding-right:24px;">How were you feeling?</h3>
-    <div class="mood-picker" id="moodPicker"></div>
-    <div class="field-row" style="margin-top:14px;">
-      <label>What happened? (optional)</label>
-      <textarea id="moodNote" rows="4" placeholder="Write about your day..."></textarea>
+    <h3 id="moodModalTitle" style="padding-right:24px;">—</h3>
+
+    <div id="moodViewWrap" style="display:none;">
+      <div class="mood-view-mood">
+        <span class="mood-view-emoji" id="moodViewEmoji"></span>
+        <span class="mood-view-label" id="moodViewLabel"></span>
+      </div>
+      <div class="note-detail-text" id="moodViewNote"></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:16px;">
+        <button class="drawer-danger-btn" onclick="deleteMoodEntry()">Delete</button>
+        <button class="drawer-secondary-btn" onclick="enterMoodEditMode()"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px;"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>Edit</button>
+      </div>
     </div>
-    <div class="sub" id="moodModalError" style="color:var(--loss);margin-top:6px;"></div>
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:16px;">
-      <button class="drawer-danger-btn" id="moodDeleteBtn" style="display:none;" onclick="deleteMoodEntry()">Delete</button>
-      <button class="poscalc-accent-btn" id="moodSaveBtn" style="margin-left:auto;" onclick="saveMoodEntry()">Save</button>
+
+    <div id="moodEditWrap">
+      <div class="mood-picker" id="moodPicker"></div>
+      <div class="field-row" style="margin-top:14px;">
+        <label>What happened? (optional)</label>
+        <textarea id="moodNote" rows="4" placeholder="Write about your day..."></textarea>
+      </div>
+      <div class="sub" id="moodModalError" style="color:var(--loss);margin-top:6px;"></div>
+      <div style="display:flex;justify-content:flex-end;align-items:center;margin-top:16px;">
+        <button class="poscalc-accent-btn" id="moodSaveBtn" onclick="saveMoodEntry()">Save</button>
+      </div>
     </div>
   </div>
 </div>
@@ -1634,6 +1648,6 @@
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=1"></script>
-<script src="js/dashboard.js?v=164"></script>
+<script src="js/dashboard.js?v=165"></script>
 </body>
 </html>

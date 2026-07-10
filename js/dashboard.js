@@ -10705,7 +10705,6 @@ function renderMoodCalendar(){
     const entry = byDate[iso];
     const mood = entry ? MOOD_OPTIONS.find(o => o.key === entry.mood) : null;
     html += `<div class="cal-cell${iso === todayISO ? ' today' : ''}" onclick="openMoodModal('${iso}')">
-      ${mood ? `<span class="mood-cell-edit" title="Edit"><svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></span>` : ''}
       <div class="d">${d}</div>
       ${mood ? `<div class="mood-emoji" title="${escapeHtml(mood.label)}">${mood.emoji}</div><div class="mood-cell-label">${escapeHtml(mood.label)}</div>` : ''}
     </div>`;
@@ -10732,17 +10731,37 @@ function selectMood(key){
   renderMoodPicker();
 }
 
+// Clicking a day opens straight into a read-only VIEW layout when it
+// already has an entry (mood + note, like a diary page) with a pencil
+// button to switch into the edit form — days with nothing logged yet go
+// straight to the edit form, since there's nothing to view.
 function openMoodModal(dateStr){
   editingMoodDate = dateStr;
   const entry = MOOD_ENTRIES.find(e => e.entry_date === dateStr);
-  selectedMoodKey = entry?.mood || null;
   const d = new Date(dateStr + 'T00:00:00');
   document.getElementById('moodModalTitle').textContent = d.toLocaleDateString('en-US',{weekday:'long', month:'long', day:'numeric', year:'numeric'});
+  document.getElementById('moodModal').classList.add('open');
+  if(entry) renderMoodViewMode(entry);
+  else enterMoodEditMode();
+}
+
+function renderMoodViewMode(entry){
+  const mood = MOOD_OPTIONS.find(o => o.key === entry.mood);
+  document.getElementById('moodViewEmoji').textContent = mood?.emoji || '';
+  document.getElementById('moodViewLabel').textContent = mood?.label || entry.mood;
+  document.getElementById('moodViewNote').textContent = entry.note || 'No notes for this day.';
+  document.getElementById('moodViewWrap').style.display = 'block';
+  document.getElementById('moodEditWrap').style.display = 'none';
+}
+
+function enterMoodEditMode(){
+  const entry = MOOD_ENTRIES.find(e => e.entry_date === editingMoodDate);
+  selectedMoodKey = entry?.mood || null;
   document.getElementById('moodNote').value = entry?.note || '';
   document.getElementById('moodModalError').textContent = '';
-  document.getElementById('moodDeleteBtn').style.display = entry ? 'inline-flex' : 'none';
   renderMoodPicker();
-  document.getElementById('moodModal').classList.add('open');
+  document.getElementById('moodViewWrap').style.display = 'none';
+  document.getElementById('moodEditWrap').style.display = 'block';
 }
 
 function closeMoodModal(){
