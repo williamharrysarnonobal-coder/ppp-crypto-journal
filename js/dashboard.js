@@ -2269,7 +2269,7 @@ function renderFinDashboard(){
         // A day with ONLY transfers nets to exactly 0 with no real
         // income/expense — that's "nothing gained or lost," not a win.
         const onlyTransfers = info.income === 0 && info.expense === 0;
-        cls = onlyTransfers ? '' : (dayNet >= 0 ? 'win' : 'loss');
+        cls = onlyTransfers ? 'neutral' : (dayNet >= 0 ? 'win' : 'loss');
         body = onlyTransfers
           ? `<div class="cal-count" style="font-size:10.5px;color:var(--muted);">${info.count} tx</div>`
           : `<div class="p">${finMoney(dayNet, primary)}</div><div class="cal-count" style="font-size:10.5px;color:var(--muted);">${info.count} tx</div>`;
@@ -2279,7 +2279,7 @@ function renderFinDashboard(){
     });
 
     const weekOnlyTransfers = weekIncome === 0 && weekExpense === 0;
-    const wkCls = weekCount > 0 ? (weekOnlyTransfers ? '' : (weekNet >= 0 ? 'win' : 'loss')) : '';
+    const wkCls = weekCount > 0 ? (weekOnlyTransfers ? 'neutral' : (weekNet >= 0 ? 'win' : 'loss')) : '';
     const wkBody = weekCount > 0
       ? (weekOnlyTransfers
           ? `<div class="cal-count" style="font-size:10.5px;color:var(--muted);">${weekCount} tx</div>`
@@ -3734,21 +3734,6 @@ function renderFinanceTransactions(){
       ? `<span title="Missing category" style="display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;border-radius:50%;background:var(--warn);color:#1a1200;font-size:10.5px;font-weight:800;line-height:1;margin-left:6px;vertical-align:middle;cursor:help;">!</span>`
       : '';
     const dateStr = t.tx_date ? new Date(t.tx_date + 'T00:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : '—';
-    const catStr = t.category ? escapeHtml(t.category) + (t.subcategory ? ` · ${escapeHtml(t.subcategory)}` : '') : '';
-    // Mobile-only consolidated summary — desktop never shows this <td> (it's
-    // display:none inline), the per-field <td>s above it stay the source of
-    // truth for the desktop table. Mobile Mode CSS flips which set is shown.
-    const mobileCardHtml = `
-      <div class="fin-tx-mcard-top">
-        <span class="fin-tx-mcard-desc">${escapeHtml(t.description || t.category || t.tx_type)}${incompleteFlag}</span>
-        <span class="fin-tx-mcard-amt">${amountHtml}</span>
-      </div>
-      <div class="fin-tx-mcard-meta">${dateStr} · ${accountHtml}${catStr ? ` · ${catStr}` : ''}</div>
-      <div class="fin-tx-mcard-badges">
-        <span class="pill ${typePill}">${t.tx_type}</span>
-        ${acc && acc.account_class === 'Credit' ? statusHtml : ''}
-      </div>
-    `;
     return `
       <tr>
         <td class="fin-tx-td-check"><input type="checkbox" class="fin-tx-row-check" ${FIN_TX_SELECTED.has(t.id) ? 'checked' : ''} onchange="toggleFinTxRowSelect(${t.id}, this.checked)"></td>
@@ -3759,7 +3744,6 @@ function renderFinanceTransactions(){
         <td data-label="Category"><div>${t.category ? escapeHtml(t.category) + (t.subcategory ? `<div style="font-size:10px;color:var(--muted);margin-top:1px;">${escapeHtml(t.subcategory)}</div>` : '') : '—'}</div></td>
         <td data-label="Description">${escapeHtml(t.description || '—')}</td>
         <td data-label="Status">${statusHtml}</td>
-        <td class="fin-tx-mobile-card" style="display:none;">${mobileCardHtml}</td>
         <td class="fin-tx-td-actions" style="text-align:right;white-space:nowrap;">
           <button class="drawer-secondary-btn" style="padding:4px 10px;font-size:11px;" onclick="openFinTxModal({editId:${t.id}})">Edit</button>
           <button class="drawer-danger-btn" style="padding:4px 10px;font-size:11px;margin-left:4px;" onclick="deleteFinTx(${t.id})">${deleteIconSVG()}</button>
@@ -5142,19 +5126,6 @@ function renderFinanceRecurring(){
           ? `<span class="pill pill-green">Paid — ${fmtPeriod(_finPreviousMonthLabel())}</span>`
           : fmtPeriod(_finPreviousMonthLabel()));
     const remaining = (Number(r.total_amount) || 0) - (monthly * paid);
-    const mobileCardHtml = `
-      <div class="fin-tx-mcard-top">
-        <span class="fin-tx-mcard-desc">${escapeHtml(r.name)}</span>
-        <span class="fin-tx-mcard-amt">${finMoney(monthly, 'PHP')}/mo</span>
-      </div>
-      <div class="fin-tx-mcard-meta">${escapeHtml(_finAccountName(r.account_id))}${r.category ? ` · ${escapeHtml(r.category)}` : ''}</div>
-      <div class="fin-tx-mcard-badges">
-        <span class="pill ${done ? 'pill-green' : 'pill-orange'}">${paid} / ${total} paid</span>
-        ${done ? '' : `<span style="font-size:11px;color:var(--muted);align-self:center;">${finMoney(remaining, 'PHP')} left</span>`}
-      </div>
-      <div class="fin-tx-mcard-meta" style="margin-top:5px;">Due: ${dueCell}</div>
-      ${r.notes ? `<div class="fin-tx-mcard-meta" style="font-style:italic;">${escapeHtml(r.notes)}</div>` : ''}
-    `;
     return `
       <tr>
         <td>${escapeHtml(r.name)}<div style="font-size:10.5px;color:var(--muted);">${escapeHtml(_finAccountName(r.account_id))}</div></td>
@@ -5164,8 +5135,7 @@ function renderFinanceRecurring(){
         <td><span class="pill ${done ? 'pill-green' : 'pill-orange'}">${paid} / ${total} paid</span><div style="font-size:10.5px;color:var(--muted);margin-top:3px;">${done ? '' : `${finMoney(remaining, 'PHP')} remaining`}</div></td>
         <td style="white-space:nowrap;">${dueCell}</td>
         <td>${escapeHtml(r.notes || '—')}</td>
-        <td class="fin-tx-mobile-card" style="display:none;">${mobileCardHtml}</td>
-        <td class="fin-tx-td-actions" style="text-align:right;white-space:nowrap;">
+        <td style="text-align:right;white-space:nowrap;">
           <button class="drawer-secondary-btn" style="padding:4px 10px;font-size:11px;" onclick="openFinRecModal('Installment', ${r.id})">Edit</button>
           <button class="drawer-danger-btn" style="padding:4px 10px;font-size:11px;margin-left:4px;" onclick="deleteFinRec(${r.id})">${deleteIconSVG()}</button>
         </td>
@@ -5183,15 +5153,6 @@ function renderFinanceRecurring(){
     const dueCell = cycleAlreadyPaid
       ? `<span class="pill pill-green">Paid — ${fmtPeriod(next)}</span>`
       : fmtPeriod(next);
-    const mobileCardHtml = `
-      <div class="fin-tx-mcard-top">
-        <span class="fin-tx-mcard-desc">${escapeHtml(r.name)}</span>
-        <span class="fin-tx-mcard-amt">${finMoney(r.price, 'PHP')}</span>
-      </div>
-      <div class="fin-tx-mcard-meta">${escapeHtml(_finAccountName(r.account_id))} · ${escapeHtml(r.cycle || 'Monthly')}</div>
-      <div class="fin-tx-mcard-meta" style="margin-top:5px;">Due: ${dueCell}</div>
-      ${r.notes ? `<div class="fin-tx-mcard-meta" style="font-style:italic;">${escapeHtml(r.notes)}</div>` : ''}
-    `;
     return `
       <tr>
         <td>${escapeHtml(r.name)}<div style="font-size:10.5px;color:var(--muted);">${escapeHtml(_finAccountName(r.account_id))}</div></td>
@@ -5199,8 +5160,7 @@ function renderFinanceRecurring(){
         <td>${escapeHtml(r.cycle || 'Monthly')}</td>
         <td style="white-space:nowrap;">${dueCell}</td>
         <td>${escapeHtml(r.notes || '—')}</td>
-        <td class="fin-tx-mobile-card" style="display:none;">${mobileCardHtml}</td>
-        <td class="fin-tx-td-actions" style="text-align:right;white-space:nowrap;">
+        <td style="text-align:right;white-space:nowrap;">
           <button class="drawer-secondary-btn" style="padding:4px 10px;font-size:11px;" onclick="openFinRecModal('Subscription', ${r.id})">Edit</button>
           <button class="drawer-danger-btn" style="padding:4px 10px;font-size:11px;margin-left:4px;" onclick="deleteFinRec(${r.id})">${deleteIconSVG()}</button>
         </td>
