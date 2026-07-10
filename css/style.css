@@ -995,23 +995,25 @@
   }
   .fin-acc-section-title:first-child{margin-top:4px;}
   .fin-account-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:16px;}
-  body.mobile-mode .fin-account-grid{grid-template-columns:1fr !important;}
 
-  /* Transactions + Recurring on mobile: same boxed-card look as Accounts
-     (.account-card), swapped in for the table. Both are always rendered
-     (renderFinanceTransactions/renderFinanceRecurring fill the table body
-     AND the card grid every time) — this just decides which one is
-     visible. Desktop keeps the table; only Mobile Mode swaps. */
-  #finTxCardGrid, #finInstCardGrid, #finSubCardGrid{display:none;}
-  body.mobile-mode #finTxWrap,
+  /* Recurring on mobile: same boxed-card look as Accounts (.account-card),
+     swapped in for the table. Both are always rendered (renderFinanceRecurring
+     fills the table body AND the card grid every time) — this just decides
+     which one is visible. Desktop keeps the table; only Mobile Mode swaps. */
+  #finInstCardGrid, #finSubCardGrid{display:none;}
   body.mobile-mode #finInstWrap,
   body.mobile-mode #finSubWrap{display:none !important;}
-  body.mobile-mode #finTxCardGrid,
   body.mobile-mode #finInstCardGrid,
   body.mobile-mode #finSubCardGrid{display:grid !important;}
-  /* The card's checkbox sits inline in the head row — Accounts cards don't
-     have one, so this is Transactions-only sizing. */
-  #finTxCardGrid .fin-acc-card-head input[type="checkbox"]{flex-shrink:0;width:16px;height:16px;}
+
+  /* Transactions on mobile: back to the plain table (matching Trade
+     Journal), but this time also copying the part that was actually
+     missing before — Trade Journal locks its table into a "canvas" sized
+     to fit the screen (#view-journal.active{height:calc(100vh - 20px)})
+     so ONLY the table scrolls (both directions) inside that fixed box,
+     instead of the whole page scrolling. Same idea here: cap the wrap's
+     height so it becomes its own fixed, independently-scrollable region. */
+  body.mobile-mode #finTxWrap{max-height:55vh;overflow:auto;}
 
   /* Finance account card internals — pulled out of inline styles so Mobile
      Mode (below) can re-center them instead of fighting inline specificity. */
@@ -1022,17 +1024,15 @@
   .fin-acc-card-actions.has-subadd{justify-content:space-between;}
   .fin-acc-card-actions-btns{display:flex;gap:6px;}
 
-  /* Finance > Accounts on mobile: the card BOX itself sits centered with
-     breathing room on both sides (not stretched edge-to-edge) — text
-     inside stays left/right-aligned exactly like desktop, only the card's
-     own position within the grid column is centered. */
-  body.mobile-mode .fin-account-grid{justify-items:center;}
-  /* width:100% here was a bug — on almost every real phone, 100% of the
-     track is ALREADY under 400px, so max-width never kicked in and the
-     card kept filling the full width edge-to-edge (looked uncentered
-     because there was never any spare room to center it in). Using a
-     percentage below 100% guarantees visible margin on both sides. */
-  body.mobile-mode .fin-account-grid .account-card{width:87%;max-width:360px;}
+  /* Finance > Accounts on mobile: it's the CONTAINER holding the cards that
+     needs to be centered, not the individual cards inside it (shrinking
+     each card was the wrong fix — reverted). The grid itself becomes a
+     narrower, centered column; cards stay 100% of that column so they
+     don't look individually shrunk. */
+  body.mobile-mode .fin-account-grid{
+    grid-template-columns:1fr !important;
+    width:88%;max-width:360px;margin:0 auto;
+  }
 
   /* Finance: hide-balances privacy toggle — blurs every value tagged
      .fin-balance (Debit only — credit card limits/owed stay visible).

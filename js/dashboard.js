@@ -3685,7 +3685,6 @@ function renderFinanceTransactions(){
   const wrap = document.getElementById('finTxWrap');
   const empty = document.getElementById('finTxEmpty');
   const body = document.getElementById('finTxBody');
-  const cardGrid = document.getElementById('finTxCardGrid');
   if(!wrap || !empty || !body) return;
 
   _populateFinTxAccountFilter();
@@ -3699,13 +3698,11 @@ function renderFinanceTransactions(){
 
   if(!rows.length){
     wrap.style.display = 'none';
-    if(cardGrid) cardGrid.style.display = 'none';
     empty.style.display = 'block';
     empty.textContent = FIN_TXNS.length ? 'No transactions match these filters.' : 'No transactions yet — click "+ Add Transaction" to log your first one.';
     return;
   }
   wrap.style.display = 'block';
-  if(cardGrid) cardGrid.style.display = '';
   empty.style.display = 'none';
 
   body.innerHTML = rows.map(t => {
@@ -3752,55 +3749,6 @@ function renderFinanceTransactions(){
           <button class="drawer-danger-btn" style="padding:4px 10px;font-size:11px;margin-left:4px;" onclick="deleteFinTx(${t.id})">${deleteIconSVG()}</button>
         </td>
       </tr>
-    `;
-  }).join('');
-
-  // Mobile-only card grid — same rows, laid out as boxed cards styled like
-  // the Accounts grid (.account-card) instead of a horizontally-scrolling
-  // table. CSS picks which of the two (table vs grid) is actually shown.
-  if(cardGrid) cardGrid.innerHTML = rows.map(t => {
-    const acc = FIN_ACCOUNTS.find(x => x.id === t.account_id);
-    const cur = acc?.currency || '';
-    let amountHtml, accountHtml;
-    if(t.tx_type === 'Income'){
-      amountHtml = `<span style="color:var(--win);">+${finMoney(t.amount, cur)}</span>`;
-      accountHtml = escapeHtml(_finAccountName(t.account_id));
-    }else if(t.tx_type === 'Expense'){
-      amountHtml = `<span style="color:var(--loss);">−${finMoney(t.amount, cur)}</span>`;
-      accountHtml = escapeHtml(_finAccountName(t.account_id));
-    }else{
-      amountHtml = finMoney(t.amount, cur);
-      accountHtml = `${escapeHtml(_finAccountName(t.account_id))} → ${escapeHtml(_finAccountName(t.to_account_id))}`;
-    }
-    const typePill = t.tx_type === 'Income' ? 'pill-green' : (t.tx_type === 'Expense' ? 'pill-red' : 'pill-blue');
-    const statusHtml = acc && acc.account_class === 'Credit'
-      ? (t.settled_bill ? '<span class="pill pill-green">Paid</span>' : '<span class="pill pill-orange">Owed</span>')
-      : '';
-    const incompleteFlag = !t.category
-      ? `<span title="Missing category" style="display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;border-radius:50%;background:var(--warn);color:#1a1200;font-size:10.5px;font-weight:800;line-height:1;margin-left:6px;vertical-align:middle;cursor:help;">!</span>`
-      : '';
-    const dateStr = t.tx_date ? new Date(t.tx_date + 'T00:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : '—';
-    const catStr = t.category ? escapeHtml(t.category) + (t.subcategory ? ` · ${escapeHtml(t.subcategory)}` : '') : '';
-    return `
-      <div class="account-card">
-        <div class="fin-acc-card-head">
-          <input type="checkbox" class="fin-tx-row-check" ${FIN_TX_SELECTED.has(t.id) ? 'checked' : ''} onchange="toggleFinTxRowSelect(${t.id}, this.checked)" onclick="event.stopPropagation();">
-          <div class="fin-acc-card-titlewrap">
-            <div style="font-weight:700;font-size:15px;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(t.description || t.category || t.tx_type)}${incompleteFlag}</div>
-            <div style="font-size:11px;color:var(--muted);">${dateStr}</div>
-          </div>
-          <span class="pill ${typePill} fin-acc-card-currency">${t.tx_type}</span>
-        </div>
-        <div class="account-card-balance">${amountHtml}</div>
-        <div style="font-size:12px;color:var(--muted);margin-top:2px;">${accountHtml}${catStr ? ` · ${catStr}` : ''}</div>
-        ${statusHtml ? `<div style="margin-top:8px;">${statusHtml}</div>` : ''}
-        <div class="fin-acc-card-actions">
-          <div class="fin-acc-card-actions-btns">
-            <button class="drawer-secondary-btn" style="padding:4px 10px;font-size:11px;" onclick="openFinTxModal({editId:${t.id}})">Edit</button>
-            <button class="drawer-danger-btn" style="padding:4px 10px;font-size:11px;margin-left:0;" onclick="deleteFinTx(${t.id})">${deleteIconSVG()}</button>
-          </div>
-        </div>
-      </div>
     `;
   }).join('');
 }
