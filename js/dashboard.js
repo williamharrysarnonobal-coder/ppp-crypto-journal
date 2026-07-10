@@ -10644,14 +10644,16 @@ async function deleteSelectedNote(){
 }
 
 /* ---------- Diary (mood check-in) ---------- */
+// sentiment drives the color coding in both the picker (selection ring) and
+// the view-mode badge — positive/neutral/negative, not a color per mood.
 const MOOD_OPTIONS = [
-  { key: 'great', emoji: '😄', label: 'Great' },
-  { key: 'good', emoji: '🙂', label: 'Good' },
-  { key: 'okay', emoji: '😐', label: 'Okay' },
-  { key: 'down', emoji: '😔', label: 'Down' },
-  { key: 'anxious', emoji: '😰', label: 'Anxious' },
-  { key: 'angry', emoji: '😡', label: 'Angry' },
-  { key: 'sick', emoji: '🤒', label: 'Sick' }
+  { key: 'great', emoji: '😄', label: 'Great', sentiment: 'positive' },
+  { key: 'good', emoji: '🙂', label: 'Good', sentiment: 'positive' },
+  { key: 'okay', emoji: '😐', label: 'Okay', sentiment: 'neutral' },
+  { key: 'down', emoji: '😔', label: 'Down', sentiment: 'negative' },
+  { key: 'anxious', emoji: '😰', label: 'Anxious', sentiment: 'negative' },
+  { key: 'angry', emoji: '😡', label: 'Angry', sentiment: 'negative' },
+  { key: 'sick', emoji: '🤒', label: 'Sick', sentiment: 'negative' }
 ];
 
 let MOOD_ENTRIES = [];
@@ -10717,13 +10719,18 @@ function renderMoodCalendar(){
   grid.innerHTML = html;
 }
 
+// One tidy row of circular emoji dots (instead of 7 bordered boxes each
+// carrying its own label, which wrapped messily) — the selected mood's
+// name shows once, below the row, so the row itself stays uncluttered.
 function renderMoodPicker(){
-  document.getElementById('moodPicker').innerHTML = MOOD_OPTIONS.map(o => `
-    <button type="button" class="mood-option${selectedMoodKey === o.key ? ' selected' : ''}" onclick="selectMood('${o.key}')" title="${escapeHtml(o.label)}">
-      <span class="mood-option-emoji">${o.emoji}</span>
-      <span class="mood-option-label">${escapeHtml(o.label)}</span>
-    </button>
+  const dotsHtml = MOOD_OPTIONS.map(o => `
+    <button type="button" class="mood-dot mood-dot-${o.sentiment}${selectedMoodKey === o.key ? ' selected' : ''}" onclick="selectMood('${o.key}')" title="${escapeHtml(o.label)}">${o.emoji}</button>
   `).join('');
+  const selected = MOOD_OPTIONS.find(o => o.key === selectedMoodKey);
+  document.getElementById('moodPicker').innerHTML = `
+    <div class="mood-dot-row">${dotsHtml}</div>
+    <div class="mood-picker-label">${selected ? escapeHtml(selected.label) : 'Pick how you felt'}</div>
+  `;
 }
 
 function selectMood(key){
@@ -10749,6 +10756,7 @@ function renderMoodViewMode(entry){
   const mood = MOOD_OPTIONS.find(o => o.key === entry.mood);
   document.getElementById('moodViewEmoji').textContent = mood?.emoji || '';
   document.getElementById('moodViewLabel').textContent = mood?.label || entry.mood;
+  document.getElementById('moodViewBadge').className = `mood-view-badge mood-view-badge-${mood?.sentiment || 'neutral'}`;
   document.getElementById('moodViewNote').textContent = entry.note || 'No notes for this day.';
   document.getElementById('moodViewWrap').style.display = 'block';
   document.getElementById('moodEditWrap').style.display = 'none';

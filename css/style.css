@@ -388,20 +388,41 @@
   .mood-cal-grid .cal-cell.today{outline:1.5px solid var(--accent);}
   .mood-cal-grid .cal-cell .mood-emoji{font-size:19px;margin-top:3px;line-height:1;}
   .mood-cal-grid .cal-cell .mood-cell-label{font-size:9px;color:var(--muted);margin-top:2px;text-transform:uppercase;letter-spacing:.03em;}
-  .mood-view-mood{display:flex;align-items:center;gap:10px;margin-top:10px;}
-  .mood-view-emoji{font-size:32px;line-height:1;}
-  .mood-view-label{font-size:16px;font-weight:700;}
-  .mood-picker{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;}
-  .mood-option{
-    display:flex;flex-direction:column;align-items:center;gap:4px;
-    background:var(--surface-2);border:1.5px solid transparent;border-radius:8px;
-    padding:10px 12px;cursor:pointer;font-family:var(--font-ui);color:var(--muted);
-    transition:border-color .1s, transform .1s;
+  /* View mode: a sentiment-tinted badge (green/muted/red background per
+     positive/neutral/negative mood) instead of plain text, so the emotion
+     reads at a glance before you even read the label. */
+  .mood-view-badge{
+    display:inline-flex;align-items:center;gap:10px;
+    padding:10px 16px;border-radius:10px;margin-top:12px;
+    background:var(--surface-2);
   }
-  .mood-option:hover{transform:translateY(-1px);}
-  .mood-option.selected{border-color:var(--accent);color:var(--ink);background:color-mix(in srgb, var(--accent) 10%, var(--surface-2));}
-  .mood-option-emoji{font-size:24px;line-height:1;}
-  .mood-option-label{font-size:10px;text-transform:uppercase;letter-spacing:.04em;}
+  .mood-view-badge-positive{background:color-mix(in srgb, var(--win) 16%, var(--surface-2));}
+  .mood-view-badge-neutral{background:var(--surface-2);}
+  .mood-view-badge-negative{background:color-mix(in srgb, var(--loss) 14%, var(--surface-2));}
+  .mood-view-emoji{font-size:30px;line-height:1;}
+  .mood-view-label{font-size:16px;font-weight:700;}
+  .mood-view-note{margin-top:16px;padding-top:14px;border-top:1px solid var(--rule);}
+
+  /* Edit mode: one clean row of circular emoji dots (replaces the earlier
+     7 bordered boxes each carrying emoji+label, which wrapped unevenly and
+     looked cluttered) — the selected mood's name shows once, centered,
+     below the row. Selection reads as a colored ring, not a resize. */
+  .mood-picker{margin-top:12px;}
+  .mood-dot-row{display:flex;flex-wrap:wrap;justify-content:center;gap:10px;}
+  .mood-dot{
+    width:44px;height:44px;border-radius:50%;flex-shrink:0;
+    display:flex;align-items:center;justify-content:center;
+    font-size:21px;line-height:1;background:var(--surface-2);
+    border:2px solid transparent;cursor:pointer;transition:border-color .1s, transform .1s;
+  }
+  .mood-dot:hover{transform:translateY(-2px);}
+  .mood-dot-positive.selected{border-color:var(--win);}
+  .mood-dot-neutral.selected{border-color:var(--muted);}
+  .mood-dot-negative.selected{border-color:var(--loss);}
+  .mood-picker-label{
+    text-align:center;font-size:11px;font-weight:700;color:var(--muted);
+    margin-top:12px;text-transform:uppercase;letter-spacing:.05em;
+  }
 
   table.breakdown tbody tr{cursor:pointer;}
   table.breakdown tbody tr:hover{background:var(--surface-2);}
