@@ -921,7 +921,19 @@
   body.mobile-mode .poscalc-layout{grid-template-columns:1fr !important;}
   body.mobile-mode .econ-cal-layout{grid-template-columns:1fr !important;}
   body.mobile-mode .notebook-layout{grid-template-columns:1fr !important;}
-  body.mobile-mode .subnav-shell{flex-direction:column;}
+  /* THE root cause of every "hindi naka-center / lumalampas sa screen ang
+     canvas" complaint on Finance's mobile tabs: the base shell keeps
+     align-items:flex-start (correct on desktop, where the cross axis is
+     VERTICAL and it just top-aligns the rail and content). But once the
+     shell flips to column on mobile, the cross axis becomes HORIZONTAL —
+     flex-start then means .subnav-content stops stretching to the screen
+     width and gets sized by its own CONTENT instead. A wide table inside
+     (Transactions) ballooned the whole panel to ~1200px, overflowing the
+     page sideways and dragging every tab's layout off-center; narrower
+     content left panels pinned left. stretch restores "panel = screen
+     width", which finally lets the inner overflow:auto wraps do their job. */
+  body.mobile-mode .subnav-shell{flex-direction:column;align-items:stretch;}
+  body.mobile-mode .subnav-content{width:100%;min-width:0;}
   body.mobile-mode header.top{flex-wrap:wrap;gap:10px;}
 
   /* Mobile Mode refinements (round 2, from live phone testing) */
