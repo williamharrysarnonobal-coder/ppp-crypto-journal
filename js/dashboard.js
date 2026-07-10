@@ -480,6 +480,7 @@ function switchView(view){
   if(view === 'calculator'){ renderPositionCalculator(); loadSavedSetups(); }
   if(view === 'settings') renderSettingsPage();
   if(view === 'notebook') loadNotes();
+  if(view === 'mood') loadMoodEntries();
   if(view === 'admin') renderAdminConsole();
 }
 
@@ -10638,6 +10639,175 @@ async function deleteSelectedNote(){
     showToast('Note deleted');
   }catch(e){
     console.error("Couldn't delete note:", e);
+    await customAlert("Couldn't delete — please try again.");
+  }
+}
+
+/* ---------- How Was Your Day? (mood check-in) ---------- */
+const MOOD_OPTIONS = [
+  { key: 'great', emoji: '😄', label: 'Great' },
+  { key: 'good', emoji: '🙂', label: 'Good' },
+  { key: 'okay', emoji: '😐', label: 'Okay' },
+  { key: 'down', emoji: '😔', label: 'Down' },
+  { key: 'anxious', emoji: '😰', label: 'Anxious' },
+  { key: 'angry', emoji: '😡', label: 'Angry' },
+  { key: 'sick', emoji: '🤒', label: 'Sick' }
+];
+
+let MOOD_ENTRIES = [];
+let moodCalMonth = new Date();
+let editingMoodDate = null;
+let selectedMoodKey = null;
+
+function _moodTodayISO(){
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
+async function loadMoodEntries(){
+  try{
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/mood_entries?select=*`, {
+      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}` }
+    });
+    if(!res.ok) throw new Error(await res.text());
+    MOOD_ENTRIES = await res.json();
+  }catch(e){
+    console.error("Couldn't load mood entries:", e);
+    MOOD_ENTRIES = [];
+  }
+  renderMoodCalendar();
+}
+
+function shiftMoodMonth(dir){
+  moodCalMonth.setMonth(moodCalMonth.getMonth() + dir);
+  renderMoodCalendar();
+}
+
+function renderMoodCalendar(){
+  const grid = document.getElementById('moodCalGrid');
+  if(!grid) return;
+  const y = moodCalMonth.getFullYear(), m = moodCalMonth.getMonth();
+  document.getElementById('moodCalLabel').textContent = moodCalMonth.toLocaleDateString('en-US',{month:'long', year:'numeric'});
+
+  const byDate = {};
+  MOOD_ENTRIES.forEach(e => { byDate[e.entry_date] = e; });
+
+  const firstDow = new Date(y, m, 1).getDay();
+  const daysInMonth = new Date(y, m+1, 0).getDate();
+  const dows = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  let html = dows.map(d => `<div class="cal-dow">${d}</div>`).join('');
+
+  for(let i=0;i<firstDow;i++) html += `<div class="cal-cell empty"></div>`;
+
+  const todayISO = _moodTodayISO();
+  for(let d=1; d<=daysInMonth; d++){
+    const iso = `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const entry = byDate[iso];
+    const mood = entry ? MOOD_OPTIONS.find(o => o.key === entry.mood) : null;
+    html += `<div class="cal-cell${iso === todayISO ? ' today' : ''}" onclick="openMoodModal('${iso}')">
+      <div class="d">${d}</div>
+      ${mood ? `<div class="mood-emoji" title="${escapeHtml(mood.label)}">${mood.emoji}</div>` : ''}
+    </div>`;
+  }
+
+  const totalCells = firstDow + daysInMonth;
+  const remainder = totalCells % 7;
+  if(remainder !== 0) for(let i=0; i<7-remainder; i++) html += `<div class="cal-cell empty"></div>`;
+
+  grid.innerHTML = html;
+}
+
+function renderMoodPicker(){
+  document.getElementById('moodPicker').innerHTML = MOOD_OPTIONS.map(o => `
+    <button type="button" class="mood-option${selectedMoodKey === o.key ? ' selected' : ''}" onclick="selectMood('${o.key}')" title="${escapeHtml(o.label)}">
+      <span class="mood-option-emoji">${o.emoji}</span>
+      <span class="mood-option-label">${escapeHtml(o.label)}</span>
+    </button>
+  `).join('');
+}
+
+function selectMood(key){
+  selectedMoodKey = key;
+  renderMoodPicker();
+}
+
+function openMoodModal(dateStr){
+  editingMoodDate = dateStr;
+  const entry = MOOD_ENTRIES.find(e => e.entry_date === dateStr);
+  selectedMoodKey = entry?.mood || null;
+  const d = new Date(dateStr + 'T00:00:00');
+  document.getElementById('moodModalTitle').textContent = d.toLocaleDateString('en-US',{weekday:'long', month:'long', day:'numeric', year:'numeric'});
+  document.getElementById('moodNote').value = entry?.note || '';
+  document.getElementById('moodModalError').textContent = '';
+  document.getElementById('moodDeleteBtn').style.display = entry ? 'inline-flex' : 'none';
+  renderMoodPicker();
+  document.getElementById('moodModal').classList.add('open');
+}
+
+function closeMoodModal(){
+  document.getElementById('moodModal').classList.remove('open');
+  editingMoodDate = null;
+  selectedMoodKey = null;
+}
+
+async function saveMoodEntry(){
+  const errEl = document.getElementById('moodModalError');
+  errEl.textContent = '';
+  if(!selectedMoodKey){ errEl.textContent = 'Please pick how you felt.'; return; }
+
+  const btn = document.getElementById('moodSaveBtn');
+  btn.disabled = true;
+  btn.textContent = 'Saving…';
+  try{
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/mood_entries?on_conflict=user_id,entry_date`, {
+      method: 'POST',
+      headers: {
+        "apikey": SUPABASE_KEY,
+        "Authorization": `Bearer ${USER_ACCESS_TOKEN}`,
+        "Content-Type": "application/json",
+        "Prefer": "resolution=merge-duplicates,return=representation"
+      },
+      body: JSON.stringify([{
+        entry_date: editingMoodDate,
+        mood: selectedMoodKey,
+        note: document.getElementById('moodNote').value.trim() || null
+      }])
+    });
+    if(!res.ok) throw new Error(await res.text());
+    const rows = await res.json();
+
+    const existingIdx = MOOD_ENTRIES.findIndex(e => e.entry_date === editingMoodDate);
+    if(existingIdx >= 0) MOOD_ENTRIES[existingIdx] = rows[0];
+    else MOOD_ENTRIES.push(rows[0]);
+
+    closeMoodModal();
+    renderMoodCalendar();
+    showToast('Mood saved');
+  }catch(e){
+    console.error("Couldn't save mood entry:", e);
+    errEl.textContent = 'Failed to save: ' + (e.message || e);
+  }finally{
+    btn.disabled = false;
+    btn.textContent = 'Save';
+  }
+}
+
+async function deleteMoodEntry(){
+  const existing = MOOD_ENTRIES.find(e => e.entry_date === editingMoodDate);
+  if(!existing) return;
+  if(!(await customConfirm('Delete this mood entry?', 'Delete'))) return;
+  try{
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/mood_entries?id=eq.${existing.id}`, {
+      method: 'DELETE',
+      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}` }
+    });
+    if(!res.ok) throw new Error(await res.text());
+    MOOD_ENTRIES = MOOD_ENTRIES.filter(e => e.id !== existing.id);
+    closeMoodModal();
+    renderMoodCalendar();
+    showToast('Mood entry deleted');
+  }catch(e){
+    console.error("Couldn't delete mood entry:", e);
     await customAlert("Couldn't delete — please try again.");
   }
 }

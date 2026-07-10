@@ -382,6 +382,23 @@
   .cal-cell.week-cell.loss{background:rgba(255,92,92,0.09);border-color:rgba(255,92,92,0.35);cursor:pointer;}
   .cal-cell.week-cell:hover{filter:brightness(1.15);}
 
+  /* ---------- How Was Your Day? (mood check-in) ---------- */
+  .mood-cal-grid .cal-cell{cursor:pointer;transition:transform .1s;}
+  .mood-cal-grid .cal-cell:hover{transform:scale(1.04);background:var(--surface-2);}
+  .mood-cal-grid .cal-cell.today{outline:1.5px solid var(--accent);}
+  .mood-cal-grid .cal-cell .mood-emoji{font-size:19px;margin-top:3px;line-height:1;}
+  .mood-picker{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;}
+  .mood-option{
+    display:flex;flex-direction:column;align-items:center;gap:4px;
+    background:var(--surface-2);border:1.5px solid transparent;border-radius:8px;
+    padding:10px 12px;cursor:pointer;font-family:var(--font-ui);color:var(--muted);
+    transition:border-color .1s, transform .1s;
+  }
+  .mood-option:hover{transform:translateY(-1px);}
+  .mood-option.selected{border-color:var(--accent);color:var(--ink);background:color-mix(in srgb, var(--accent) 10%, var(--surface-2));}
+  .mood-option-emoji{font-size:24px;line-height:1;}
+  .mood-option-label{font-size:10px;text-transform:uppercase;letter-spacing:.04em;}
+
   table.breakdown tbody tr{cursor:pointer;}
   table.breakdown tbody tr:hover{background:var(--surface-2);}
 
