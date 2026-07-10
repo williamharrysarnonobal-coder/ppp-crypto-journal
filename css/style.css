@@ -932,6 +932,13 @@
   body.mobile-mode .cal-grid{gap:2px;}
   body.mobile-mode .cal-cell{min-height:38px;padding:4px 2px;font-size:10px;border-radius:4px;}
   body.mobile-mode .cal-dow{font-size:8px;letter-spacing:.02em;}
+  /* Touchscreens fake a ":hover" on tap (and don't reliably clear it), so
+     the desktop-only "scale up + brighten" hover effect on win/loss cells
+     was firing/sticking on tap and making the whole grid look like it was
+     jumping/glitching as you clicked around. Hover is a mouse-only affordance
+     anyway, so it's simplest to just turn it off in Mobile Mode entirely. */
+  body.mobile-mode .cal-cell.win:hover,
+  body.mobile-mode .cal-cell.loss:hover{transform:none;filter:none;}
 
   /* 2b. Charts: fill and center inside their panel after the layout collapses */
   body.mobile-mode .chart-fill{display:flex;justify-content:center;}
@@ -989,6 +996,16 @@
   .fin-acc-section-title:first-child{margin-top:4px;}
   .fin-account-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:16px;}
   body.mobile-mode .fin-account-grid{grid-template-columns:1fr !important;}
+
+  /* Recurring on mobile: same boxed-card look as Accounts (.account-card),
+     swapped in for the table. Both are always rendered (renderFinanceRecurring
+     fills the table body AND the card grid every time) — this just decides
+     which one is visible. Desktop keeps the table; only Mobile Mode swaps. */
+  #finInstCardGrid, #finSubCardGrid{display:none;}
+  body.mobile-mode #finInstWrap,
+  body.mobile-mode #finSubWrap{display:none !important;}
+  body.mobile-mode #finInstCardGrid,
+  body.mobile-mode #finSubCardGrid{display:grid !important;}
 
   /* Finance account card internals — pulled out of inline styles so Mobile
      Mode (below) can re-center them instead of fighting inline specificity. */

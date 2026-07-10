@@ -5108,6 +5108,7 @@ function renderFinanceRecurring(){
 
   document.getElementById('finInstEmpty').style.display = insts.length ? 'none' : 'block';
   document.getElementById('finInstWrap').style.display = insts.length ? 'block' : 'none';
+  document.getElementById('finInstCardGrid').style.display = insts.length ? '' : 'none';
   instBody.innerHTML = insts.map(r => {
     const monthly = (Number(r.total_amount) || 0) / Math.max(1, Number(r.total_payments) || 1);
     const paid = Number(r.payments_applied) || 0;
@@ -5143,8 +5144,52 @@ function renderFinanceRecurring(){
     `;
   }).join('');
 
+  // Mobile-only card grid — same underlying rows, laid out as boxed cards
+  // styled exactly like the Accounts grid (.account-card) instead of a
+  // horizontally-scrolling table. CSS picks which of the two shows.
+  document.getElementById('finInstCardGrid').innerHTML = insts.map(r => {
+    const monthly = (Number(r.total_amount) || 0) / Math.max(1, Number(r.total_payments) || 1);
+    const paid = Number(r.payments_applied) || 0;
+    const total = Number(r.total_payments) || 0;
+    const done = paid >= total;
+    const linkedAcc = FIN_ACCOUNTS.find(a => a.id === r.account_id);
+    const cycleAlreadyPaid = linkedAcc && _finBillPaidCovers(linkedAcc.last_bill_paid, _finPreviousMonthLabel());
+    const dueCell = done
+      ? '<span class="pill pill-green">Fully paid</span>'
+      : (cycleAlreadyPaid
+          ? `<span class="pill pill-green">Paid — ${fmtPeriod(_finPreviousMonthLabel())}</span>`
+          : fmtPeriod(_finPreviousMonthLabel()));
+    const remaining = (Number(r.total_amount) || 0) - (monthly * paid);
+    return `
+      <div class="account-card">
+        <div class="fin-acc-card-head">
+          <div class="fin-acc-card-titlewrap">
+            <div style="font-weight:700;font-size:15px;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(r.name)}</div>
+            <div style="font-size:11px;color:var(--muted);">${escapeHtml(_finAccountName(r.account_id))}</div>
+          </div>
+          ${r.category ? `<span class="pill pill-muted fin-acc-card-currency">${escapeHtml(r.category)}</span>` : ''}
+        </div>
+        <div class="account-card-balance">${finMoney(monthly, 'PHP')}<span style="font-size:12px;color:var(--muted);font-weight:400;"> /mo</span></div>
+        <div style="font-size:10.5px;color:var(--muted);margin-top:2px;text-transform:uppercase;letter-spacing:.05em;">Monthly payment</div>
+        <div style="font-size:12px;margin-top:10px;">
+          <span class="pill ${done ? 'pill-green' : 'pill-orange'}">${paid} / ${total} paid</span>
+          ${done ? '' : `<span style="color:var(--muted);margin-left:6px;">${finMoney(remaining, 'PHP')} remaining</span>`}
+        </div>
+        <div style="font-size:12px;margin-top:8px;">Due: ${dueCell}</div>
+        ${r.notes ? `<div style="font-size:12px;color:var(--muted);margin-top:8px;font-style:italic;">${escapeHtml(r.notes)}</div>` : ''}
+        <div class="fin-acc-card-actions">
+          <div class="fin-acc-card-actions-btns">
+            <button class="drawer-secondary-btn" style="padding:4px 10px;font-size:11px;" onclick="openFinRecModal('Installment', ${r.id})">Edit</button>
+            <button class="drawer-danger-btn" style="padding:4px 10px;font-size:11px;margin-left:0;" onclick="deleteFinRec(${r.id})">${deleteIconSVG()}</button>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
   document.getElementById('finSubEmpty').style.display = subs.length ? 'none' : 'block';
   document.getElementById('finSubWrap').style.display = subs.length ? 'block' : 'none';
+  document.getElementById('finSubCardGrid').style.display = subs.length ? '' : 'none';
   document.getElementById('finSubBody').innerHTML = subs.map(r => {
     const next = _finPreviousMonthLabel();
     // Subscriptions DO track their own last_billed per item, so this reads
@@ -5165,6 +5210,34 @@ function renderFinanceRecurring(){
           <button class="drawer-danger-btn" style="padding:4px 10px;font-size:11px;margin-left:4px;" onclick="deleteFinRec(${r.id})">${deleteIconSVG()}</button>
         </td>
       </tr>
+    `;
+  }).join('');
+
+  document.getElementById('finSubCardGrid').innerHTML = subs.map(r => {
+    const next = _finPreviousMonthLabel();
+    const cycleAlreadyPaid = _finBillPaidCovers(r.last_billed, next);
+    const dueCell = cycleAlreadyPaid
+      ? `<span class="pill pill-green">Paid — ${fmtPeriod(next)}</span>`
+      : fmtPeriod(next);
+    return `
+      <div class="account-card">
+        <div class="fin-acc-card-head">
+          <div class="fin-acc-card-titlewrap">
+            <div style="font-weight:700;font-size:15px;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(r.name)}</div>
+            <div style="font-size:11px;color:var(--muted);">${escapeHtml(_finAccountName(r.account_id))}</div>
+          </div>
+          <span class="pill pill-muted fin-acc-card-currency">${escapeHtml(r.cycle || 'Monthly')}</span>
+        </div>
+        <div class="account-card-balance">${finMoney(r.price, 'PHP')}</div>
+        <div style="font-size:12px;margin-top:8px;">Due: ${dueCell}</div>
+        ${r.notes ? `<div style="font-size:12px;color:var(--muted);margin-top:8px;font-style:italic;">${escapeHtml(r.notes)}</div>` : ''}
+        <div class="fin-acc-card-actions">
+          <div class="fin-acc-card-actions-btns">
+            <button class="drawer-secondary-btn" style="padding:4px 10px;font-size:11px;" onclick="openFinRecModal('Subscription', ${r.id})">Edit</button>
+            <button class="drawer-danger-btn" style="padding:4px 10px;font-size:11px;margin-left:0;" onclick="deleteFinRec(${r.id})">${deleteIconSVG()}</button>
+          </div>
+        </div>
+      </div>
     `;
   }).join('');
 }
