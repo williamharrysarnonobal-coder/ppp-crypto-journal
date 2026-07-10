@@ -16,7 +16,7 @@
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Public+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<link rel="stylesheet" href="css/style.css?v=119">
+<link rel="stylesheet" href="css/style.css?v=120">
 </head>
 <body>
 
@@ -959,8 +959,9 @@
 <div class="modal-overlay" id="finAccountDetailsModal" onclick="if(event.target===this) closeFinAccountDetailsModal()">
   <div class="modal-box" style="position:relative;max-width:460px;">
     <button class="modal-close" onclick="closeFinAccountDetailsModal()">✕</button>
-    <h3 style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding-right:28px;">
-      <span id="finAccDetailsTitle" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Account</span>
+    <h3 style="display:flex;align-items:center;gap:8px;padding-right:28px;">
+      <button id="finAccDetailsBackBtn" onclick="finAccDetailsGoBack()" title="Back" style="display:none;background:none;border:none;color:var(--muted);cursor:pointer;font-size:18px;line-height:1;padding:0;flex-shrink:0;">←</button>
+      <span id="finAccDetailsTitle" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0;">Account</span>
       <button class="poscalc-accent-btn" id="finAccDetailsHideBalBtn" style="display:none;font-size:11px;padding:4px 9px;flex-shrink:0;" onclick="toggleFinBalances()">Hide Balances</button>
     </h3>
     <div id="finAccDetailsBody" style="margin-top:14px;"></div>
@@ -1590,6 +1591,6 @@
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=1"></script>
-<script src="js/dashboard.js?v=154"></script>
+<script src="js/dashboard.js?v=155"></script>
 </body>
 </html>

@@ -3186,10 +3186,24 @@ function _finAccHistoryFilterHtml(accountId){
 
 /* ---- Finance account details popup: bill breakdown (Credit) or full
    transaction history (Debit / sub-accounts) ---- */
-function openFinAccountDetailsModal(accountId){
+// Remembers which account to return to when a sub-account was opened FROM
+// its parent's already-open details view — so the header's "← Back" goes
+// back to the parent instead of the only way out being X (closing
+// everything and losing your place).
+let _finAccDetailsBackId = null;
+
+function finAccDetailsGoBack(){
+  if(_finAccDetailsBackId) openFinAccountDetailsModal(_finAccDetailsBackId);
+}
+
+function openFinAccountDetailsModal(accountId, backToId){
   const a = FIN_ACCOUNTS.find(x => x.id === accountId);
   if(!a) return;
+  _finAccDetailsBackId = backToId || null;
   document.getElementById('finAccDetailsTitle').textContent = a.account_name;
+
+  const backBtn = document.getElementById('finAccDetailsBackBtn');
+  if(backBtn) backBtn.style.display = _finAccDetailsBackId ? '' : 'none';
 
   // Debit-only — Hide Balances only ever blurred Debit amounts by design
   // (Credit's Owed/Limit aren't considered "sensitive" the same way), so a
@@ -3221,7 +3235,7 @@ function openFinAccountDetailsModal(accountId){
                 <td></td>
               </tr>
               ${subAccounts.map(s => `
-                <tr style="cursor:pointer;" title="View history" onclick="openFinAccountDetailsModal(${s.id})">
+                <tr style="cursor:pointer;" title="View history" onclick="openFinAccountDetailsModal(${s.id}, ${a.id})">
                   <td>${escapeHtml(s.account_name)}</td>
                   <td class="fin-balance">${finMoney(s.current_balance, s.currency)}</td>
                   <td style="text-align:right;white-space:nowrap;" onclick="event.stopPropagation();">
@@ -3299,6 +3313,7 @@ function openFinAccountDetailsModal(accountId){
 
 function closeFinAccountDetailsModal(){
   document.getElementById('finAccountDetailsModal').classList.remove('open');
+  _finAccDetailsBackId = null;
 }
 
 function renderFinanceAccounts(){
