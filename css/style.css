@@ -1144,6 +1144,16 @@
      exactly, whether the month has 5 or 6 rows. Scoped to the Finance
      dashboard calendar only — Trading Journal's own calendar is untouched. */
   #finDashGrid.cal-grid{grid-template-rows:auto;}
+  /* The shared .cal-cell.win/.loss:hover grows the box 1.04x + brightens it
+     — fine on Trading Journal where rows have slack, but now that Finance's
+     rows are sized exactly to fill the panel (no spare room), that same
+     hover made the box visibly poke into/over its neighbors on mouseover.
+     Swapped for a same-size highlight (outline only, no transform) so
+     hover still gives feedback without the grid ever "growing". */
+  #finDashGrid .cal-cell.win:hover,
+  #finDashGrid .cal-cell.loss:hover{transform:none;filter:none;}
+  #finDashGrid .cal-cell.win:hover{outline:1.5px solid var(--win);}
+  #finDashGrid .cal-cell.loss:hover{outline:1.5px solid var(--loss);}
   .fin-dash-detail-panel{display:flex;flex-direction:column;height:520px;}
   .fin-dash-detail-panel #finDashDetailBody{overflow-y:auto;flex:1;min-height:0;}
   body.mobile-mode .fin-dash-layout{grid-template-columns:1fr !important;}
