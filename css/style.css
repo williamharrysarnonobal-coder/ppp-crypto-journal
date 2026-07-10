@@ -1134,6 +1134,16 @@
      instead of one panel quietly running taller than the other. */
   .fin-dash-list-panel{height:520px;display:flex;flex-direction:column;}
   .fin-dash-list-panel .cal-grid{flex:1;min-height:0;overflow-y:auto;}
+  /* The weekday-header row (Sun/Mon/.../Week) was getting the SAME 1fr
+     share as every day row (grid-auto-rows:1fr applies to ALL auto-placed
+     rows, header included), so it ate space the day cells needed and the
+     grid never quite filled the panel edge-to-edge. Declaring only the
+     header row explicitly with height:auto shrinks it to its actual
+     content size; grid-auto-rows:1fr still governs every day/week row
+     after it, so those now split 100% of the remaining panel height
+     exactly, whether the month has 5 or 6 rows. Scoped to the Finance
+     dashboard calendar only — Trading Journal's own calendar is untouched. */
+  #finDashGrid.cal-grid{grid-template-rows:auto;}
   .fin-dash-detail-panel{display:flex;flex-direction:column;height:520px;}
   .fin-dash-detail-panel #finDashDetailBody{overflow-y:auto;flex:1;min-height:0;}
   body.mobile-mode .fin-dash-layout{grid-template-columns:1fr !important;}
