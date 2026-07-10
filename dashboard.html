@@ -16,7 +16,7 @@
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Public+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<link rel="stylesheet" href="css/style.css?v=117">
+<link rel="stylesheet" href="css/style.css?v=119">
 </head>
 <body>
 
@@ -660,6 +660,7 @@
         <div class="subnav-item" data-tab="transactions" onclick="switchFinanceTab('transactions')">Transactions</div>
         <div class="subnav-item" data-tab="recurring" onclick="switchFinanceTab('recurring')">Recurring</div>
         <div class="subnav-item" data-tab="config" onclick="switchFinanceTab('config')">Configuration</div>
+        <div class="subnav-item" data-tab="budget" onclick="switchFinanceTab('budget')">Budget</div>
         <div class="subnav-item" data-tab="challenges" onclick="switchFinanceTab('challenges')">Challenges</div>
       </nav>
 
@@ -753,7 +754,7 @@
           <div class="panel">
             <h2 style="display:flex;align-items:center;justify-content:space-between;gap:10px;">Transactions <span style="display:flex;gap:8px;"><button class="poscalc-accent-btn" onclick="openFinTxEasyAddModal()">Easy Add</button><button class="poscalc-accent-btn" onclick="openFinTxModal({tx_type:'Transfer'})">Transfer</button><button class="poscalc-accent-btn" onclick="openFinTxModal()">+ Add Transaction</button></span></h2>
             <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">Every peso in and out — income, expenses, and transfers between accounts. Balances update automatically.</div>
-            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px;">
+            <div class="fin-tx-filters" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px;">
               <input type="text" id="finTxSearchFilter" placeholder="Search description, category, account…" oninput="renderFinanceTransactions()" style="flex:1;min-width:180px;max-width:260px;">
               <select id="finTxPeriodFilter" onchange="onFinTxPeriodFilterChange()" style="max-width:170px;">
                 <option value="all">All time</option>
@@ -839,6 +840,27 @@
               <input id="finNewSubcatInput" placeholder="New subcategory…" onkeydown="if(event.key==='Enter') addFinanceSubcategory()">
               <button class="ai-btn" style="padding:8px 14px;" onclick="addFinanceSubcategory()">Add</button>
             </div>
+          </div>
+        </div>
+
+        <div class="subnav-panel" id="financePanel-budget">
+          <div class="panel">
+            <h2>Monthly Budgets</h2>
+            <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:14px;">Set a target per expense category, tracked against THIS calendar month's actual spending — resets automatically each month, no rollover.</div>
+            <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;">
+              <div class="field-row" style="flex:1;min-width:180px;margin-bottom:0;">
+                <label>Category</label>
+                <select id="finBudgetCategory"></select>
+              </div>
+              <div class="field-row" style="flex:1;min-width:140px;margin-bottom:0;">
+                <label>Monthly Amount</label>
+                <input id="finBudgetAmount" type="number" step="any" placeholder="e.g. 5000">
+              </div>
+              <button class="ai-btn" style="padding:9px 16px;flex-shrink:0;" onclick="saveFinanceBudget()">Save</button>
+            </div>
+            <div id="finBudgetError" class="auth-error"></div>
+            <div class="empty-state" id="finBudgetEmpty" style="display:none;margin-top:16px;">No budgets set yet — pick a category above and give it a monthly amount.</div>
+            <div id="finBudgetList" style="margin-top:18px;"></div>
           </div>
         </div>
 
@@ -1568,6 +1590,6 @@
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=1"></script>
-<script src="js/dashboard.js?v=152"></script>
+<script src="js/dashboard.js?v=154"></script>
 </body>
 </html>

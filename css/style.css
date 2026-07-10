@@ -1039,6 +1039,17 @@
   }
   .fin-acc-details-total span{color:var(--ink) !important;}
 
+  /* Finance: Budget tab — one row per budgeted category */
+  .fin-budget-row{padding:14px 0;border-bottom:1px solid var(--rule);}
+  .fin-budget-row:last-child{border-bottom:none;}
+  .fin-budget-row-top{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:8px;}
+  .fin-budget-row-cat{font-weight:700;font-size:13.5px;}
+  .fin-budget-row-amt{font-size:12px;color:var(--muted);flex-shrink:0;}
+  .fin-budget-bar{height:8px;border-radius:4px;background:var(--surface-2);overflow:hidden;}
+  .fin-budget-bar-fill{height:100%;border-radius:4px;transition:width .3s ease;}
+  .fin-budget-row-foot{display:flex;justify-content:space-between;align-items:center;margin-top:6px;font-size:11px;color:var(--muted);}
+  .fin-budget-row-actions{display:flex;gap:4px;}
+
   /* Finance: Dashboard tab — Income/Expense/Net KPI trio + calendar/detail
      two-panel layout, same visual language as the Trading Journal calendar
      (.cal-grid/.cal-cell are shared, defined once, further up this file). */
@@ -1056,6 +1067,21 @@
   .fin-dash-detail-panel #finDashDetailBody{overflow-y:auto;flex:1;min-height:0;}
   body.mobile-mode .fin-dash-layout{grid-template-columns:1fr !important;}
   body.mobile-mode .fin-dash-kpis{grid-template-columns:1fr !important;}
+  /* Stacked instead of side-by-side on mobile — two fixed-520px panels
+     stacked would be 1000px+ of scrolling just for the calendar, so each
+     shrinks to a size that actually fits a phone screen. */
+  body.mobile-mode .fin-dash-list-panel,
+  body.mobile-mode .fin-dash-detail-panel{height:360px !important;}
+  body.mobile-mode .fin-dash-filters{flex-direction:column;align-items:stretch;}
+  body.mobile-mode .fin-dash-filters select,
+  body.mobile-mode .fin-dash-filters input{width:100%;}
+  body.mobile-mode .fin-dash-filters #finDashRangeFilterRow{flex-direction:column;align-items:stretch;}
+  /* Transactions filter/search row — same "stack full-width" treatment. */
+  body.mobile-mode .fin-tx-filters{flex-direction:column;align-items:stretch;}
+  body.mobile-mode .fin-tx-filters select,
+  body.mobile-mode .fin-tx-filters input{width:100% !important;max-width:none !important;}
+  body.mobile-mode .fin-tx-filters #finTxRangeFilterRow{flex-direction:column;align-items:stretch;}
+  body.mobile-mode .fin-tx-filters .drawer-danger-btn{margin-left:0 !important;width:100%;}
   /* .cal-cell/.cal-dow are shared with the Trading Journal calendar, whose
      cells carry 2 lines (P&L + trade count) — scoped down here since the
      Finance calendar felt oversized next to its thinner day cells. */

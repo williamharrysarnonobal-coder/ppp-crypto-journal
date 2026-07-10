@@ -2121,6 +2121,7 @@ function switchFinanceTab(tab){
   }
   if(tab === 'recurring') loadFinanceRecurring();
   if(tab === 'config') renderFinanceConfig();
+  if(tab === 'budget') loadFinanceBudgets();
   if(tab === 'challenges') renderFinanceChallenges();
 }
 
@@ -3210,31 +3211,33 @@ function openFinAccountDetailsModal(accountId){
     const subAccountsSectionHtml = subAccounts.length ? `
       <div class="fin-acc-details-section">
         <div class="fin-acc-details-heading">SUB-ACCOUNTS</div>
-        <table class="journal" style="margin-top:6px;">
-          <thead><tr><th>Name</th><th>Balance</th><th></th></tr></thead>
-          <tbody>
-            <tr>
-              <td>${escapeHtml(a.account_name)} <span style="color:var(--muted);">(own)</span></td>
-              <td class="fin-balance">${finMoney(a.current_balance, a.currency)}</td>
-              <td></td>
-            </tr>
-            ${subAccounts.map(s => `
-              <tr style="cursor:pointer;" title="View history" onclick="openFinAccountDetailsModal(${s.id})">
-                <td>${escapeHtml(s.account_name)}</td>
-                <td class="fin-balance">${finMoney(s.current_balance, s.currency)}</td>
-                <td style="text-align:right;white-space:nowrap;" onclick="event.stopPropagation();">
-                  <button class="fin-subacct-edit" title="Edit" onclick="openFinAccountModal(${s.id})">✎</button>
-                  <button class="fin-subacct-edit" title="Delete" onclick="deleteFinAccount(${s.id})">✕</button>
-                </td>
+        <div style="overflow-x:auto;margin-top:6px;">
+          <table class="journal">
+            <thead><tr><th>Name</th><th>Balance</th><th></th></tr></thead>
+            <tbody>
+              <tr>
+                <td>${escapeHtml(a.account_name)} <span style="color:var(--muted);">(own)</span></td>
+                <td class="fin-balance">${finMoney(a.current_balance, a.currency)}</td>
+                <td></td>
               </tr>
-            `).join('')}
-            <tr style="font-weight:700;">
-              <td>Total Balance</td>
-              <td class="fin-balance">${finMoney(combinedBalance, a.currency)}</td>
-              <td></td>
-            </tr>
-          </tbody>
-        </table>
+              ${subAccounts.map(s => `
+                <tr style="cursor:pointer;" title="View history" onclick="openFinAccountDetailsModal(${s.id})">
+                  <td>${escapeHtml(s.account_name)}</td>
+                  <td class="fin-balance">${finMoney(s.current_balance, s.currency)}</td>
+                  <td style="text-align:right;white-space:nowrap;" onclick="event.stopPropagation();">
+                    <button class="fin-subacct-edit" title="Edit" onclick="openFinAccountModal(${s.id})">✎</button>
+                    <button class="fin-subacct-edit" title="Delete" onclick="deleteFinAccount(${s.id})">✕</button>
+                  </td>
+                </tr>
+              `).join('')}
+              <tr style="font-weight:700;">
+                <td>Total Balance</td>
+                <td class="fin-balance">${finMoney(combinedBalance, a.currency)}</td>
+                <td></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
     ` : '';
 
@@ -4509,6 +4512,140 @@ function removeFinanceSubcategory(category, idx){
   renderFinanceSubcategoryListFor(category);
 }
 
+/* ---- Finance > Budget: a flat monthly target per expense category,
+   tracked against THIS calendar month's actual spend only — no rollover,
+   no multi-month history, on purpose (a v1 to react to, not the full
+   thing). ---- */
+let FIN_BUDGETS = [];
+let editingFinBudgetCategory = null;
+
+async function loadFinanceBudgets(){
+  try{
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/finance_budgets?select=*&order=created_at.asc`, {
+      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}` }
+    });
+    if(!res.ok) throw new Error(await res.text());
+    FIN_BUDGETS = await res.json();
+  }catch(e){
+    console.error("Couldn't load finance budgets:", e);
+    FIN_BUDGETS = [];
+  }
+  renderFinanceBudgets();
+}
+
+function _finMonthCategorySpend(category){
+  const now = new Date();
+  return FIN_TXNS
+    .filter(t => t.tx_type === 'Expense' && t.category === category && t.tx_date)
+    .filter(t => { const d = new Date(t.tx_date + 'T00:00:00'); return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth(); })
+    .reduce((s,t) => s + (Number(t.amount) || 0), 0);
+}
+
+function renderFinanceBudgets(){
+  const picker = document.getElementById('finBudgetCategory');
+  const list = document.getElementById('finBudgetList');
+  const empty = document.getElementById('finBudgetEmpty');
+  if(!picker || !list) return;
+
+  picker.innerHTML = FINANCE_OPTIONS.expense_categories.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+  if(editingFinBudgetCategory && [...picker.options].some(o => o.value === editingFinBudgetCategory)){
+    picker.value = editingFinBudgetCategory;
+  }
+
+  if(!FIN_BUDGETS.length){
+    empty.style.display = 'block';
+    list.innerHTML = '';
+    return;
+  }
+  empty.style.display = 'none';
+
+  const primaryCurrency = FIN_ACCOUNTS[0]?.currency || 'PHP';
+  const sorted = [...FIN_BUDGETS].sort((a,b) => a.category.localeCompare(b.category));
+  list.innerHTML = sorted.map(b => {
+    const spent = _finMonthCategorySpend(b.category);
+    const pct = b.monthly_amount > 0 ? Math.min(100, Math.round(spent / b.monthly_amount * 100)) : 0;
+    const barColor = pct >= 100 ? 'var(--loss)' : pct >= 80 ? 'var(--warn)' : 'var(--win)';
+    const remaining = b.monthly_amount - spent;
+    return `
+      <div class="fin-budget-row">
+        <div class="fin-budget-row-top">
+          <span class="fin-budget-row-cat">${escapeHtml(b.category)}</span>
+          <span class="fin-budget-row-amt">${finMoney(spent, primaryCurrency)} / ${finMoney(b.monthly_amount, primaryCurrency)}</span>
+        </div>
+        <div class="fin-budget-bar"><div class="fin-budget-bar-fill" style="width:${pct}%;background:${barColor};"></div></div>
+        <div class="fin-budget-row-foot">
+          <span>${remaining >= 0 ? `${finMoney(remaining, primaryCurrency)} left` : `${finMoney(Math.abs(remaining), primaryCurrency)} over budget`}</span>
+          <span class="fin-budget-row-actions">
+            <button class="fin-subacct-edit" title="Edit" onclick='editFinanceBudget(${JSON.stringify(b.category)}, ${b.monthly_amount})'>✎</button>
+            <button class="fin-subacct-edit" title="Delete" onclick="deleteFinanceBudget(${b.id})">✕</button>
+          </span>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function editFinanceBudget(category, amount){
+  editingFinBudgetCategory = category;
+  const picker = document.getElementById('finBudgetCategory');
+  if(picker && [...picker.options].some(o => o.value === category)) picker.value = category;
+  document.getElementById('finBudgetAmount').value = amount;
+  document.getElementById('finBudgetError').textContent = '';
+}
+
+async function saveFinanceBudget(){
+  const errEl = document.getElementById('finBudgetError');
+  errEl.textContent = '';
+  const category = document.getElementById('finBudgetCategory').value;
+  const amount = parseFloat(document.getElementById('finBudgetAmount').value);
+  if(!category){ errEl.textContent = 'Please pick a category.'; return; }
+  if(!amount || amount <= 0){ errEl.textContent = 'Please enter an amount greater than zero.'; return; }
+
+  try{
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/finance_budgets?on_conflict=user_id,category`, {
+      method: 'POST',
+      headers: {
+        "apikey": SUPABASE_KEY,
+        "Authorization": `Bearer ${USER_ACCESS_TOKEN}`,
+        "Content-Type": "application/json",
+        "Prefer": "resolution=merge-duplicates,return=representation"
+      },
+      body: JSON.stringify([{ category, monthly_amount: amount }])
+    });
+    if(!res.ok) throw new Error(await res.text());
+    const rows = await res.json();
+
+    const existingIdx = FIN_BUDGETS.findIndex(b => b.category === category);
+    if(existingIdx >= 0) FIN_BUDGETS[existingIdx] = rows[0];
+    else FIN_BUDGETS.push(rows[0]);
+
+    editingFinBudgetCategory = null;
+    document.getElementById('finBudgetAmount').value = '';
+    renderFinanceBudgets();
+    showToast('Budget saved');
+  }catch(e){
+    console.error("Couldn't save budget:", e);
+    errEl.textContent = 'Failed to save: ' + (e.message || e);
+  }
+}
+
+async function deleteFinanceBudget(id){
+  if(!(await customConfirm('Delete this budget?', 'Delete'))) return;
+  try{
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/finance_budgets?id=eq.${id}`, {
+      method: 'DELETE',
+      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}` }
+    });
+    if(!res.ok) throw new Error(await res.text());
+    FIN_BUDGETS = FIN_BUDGETS.filter(b => b.id !== id);
+    renderFinanceBudgets();
+    showToast('Budget deleted');
+  }catch(e){
+    console.error("Couldn't delete budget:", e);
+    await customAlert("Couldn't delete this budget — please try again.");
+  }
+}
+
 /* ---- Finance: hide balances (privacy toggle, per-device) ---- */
 let FIN_BALANCES_HIDDEN = false;
 try{ FIN_BALANCES_HIDDEN = localStorage.getItem('ledger-fin-hide-balances') === '1'; }catch(e){}
@@ -5420,6 +5557,53 @@ function _finNeedsFocusedStreak(){
   return streak;
 }
 
+// Consecutive full calendar months (ending last month) with zero spending
+// tagged "🚬 Vices" — stops at the first month with no transactions at all.
+function _finViceFreeStreak(){
+  let streak = 0;
+  let cursor = _finPreviousMonthLabel();
+  while(streak < 240){
+    const monthTx = FIN_TXNS.filter(t => {
+      if(t.tx_type !== 'Expense' || !t.tx_date) return false;
+      const d = new Date(t.tx_date + 'T00:00:00');
+      return d.getFullYear() === cursor.getFullYear() && d.getMonth() === cursor.getMonth();
+    });
+    if(!monthTx.length) break;
+    const viceSpend = monthTx.filter(t => t.category === '🚬 Vices').reduce((s,t) => s + (Number(t.amount) || 0), 0);
+    if(viceSpend > 0) break;
+    streak++;
+    cursor = new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1);
+  }
+  return streak;
+}
+
+// Finds last month's single biggest expense category, then compares this
+// month's spend (so far) in that SAME category against it — null if last
+// month had no categorized expense at all (nothing to compare against).
+function _finTopCategoryTrim(){
+  const prevMonth = _finPreviousMonthLabel();
+  const now = new Date();
+  const prevExpenses = FIN_TXNS.filter(t => {
+    if(t.tx_type !== 'Expense' || !t.tx_date || !t.category) return false;
+    const d = new Date(t.tx_date + 'T00:00:00');
+    return d.getFullYear() === prevMonth.getFullYear() && d.getMonth() === prevMonth.getMonth();
+  });
+  if(!prevExpenses.length) return null;
+
+  const byCat = {};
+  prevExpenses.forEach(t => { byCat[t.category] = (byCat[t.category] || 0) + (Number(t.amount) || 0); });
+  const topCat = Object.keys(byCat).reduce((a,b) => byCat[a] >= byCat[b] ? a : b);
+  const prevAmount = byCat[topCat];
+
+  const thisMonthSameCat = FIN_TXNS
+    .filter(t => t.tx_type === 'Expense' && t.category === topCat && t.tx_date)
+    .filter(t => { const d = new Date(t.tx_date + 'T00:00:00'); return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth(); })
+    .reduce((s,t) => s + (Number(t.amount) || 0), 0);
+
+  const reductionPct = prevAmount > 0 ? Math.round((prevAmount - thisMonthSameCat) / prevAmount * 100) : 0;
+  return { topCat, prevAmount, thisMonthSameCat, reductionPct };
+}
+
 function _finTotalDebtPaidDown(){
   return FIN_RECURRING.filter(r => r.kind === 'Installment').reduce((s,r) => {
     const total = Number(r.total_amount) || 0;
@@ -5499,7 +5683,59 @@ function computeFinanceChallenges(){
     current: needsStreak, tiers: [1,3,6,12], target: 12, done: needsStreak >= 12
   };
 
-  const challenges = [c1,c2,c3,c4,c5,c6,c7];
+  // 8. Category Explorer — a wider spread across the taxonomy, not just
+  // one or two favorite categories.
+  const distinctCategories = new Set(FIN_TXNS.filter(t => t.tx_type === 'Expense' && t.category).map(t => t.category)).size;
+  const c8 = {
+    icon: 'compass', title: 'Category Explorer', points: 40,
+    desc: 'Distinct expense categories tagged at least once.',
+    howTo: 'Counts how many different categories show up across your Expense transactions — a wider spread across the taxonomy, not just one or two favorites.',
+    current: distinctCategories, tiers: [3,6,10,14,18], target: 18, done: distinctCategories >= 18
+  };
+
+  // 9. Fully Tagged — category AND subcategory both filled in.
+  const allExpenses = FIN_TXNS.filter(t => t.tx_type === 'Expense');
+  const fullyTaggedCount = allExpenses.filter(t => t.category && t.subcategory).length;
+  const fullyTaggedPct = allExpenses.length ? Math.round(fullyTaggedCount / allExpenses.length * 100) : 100;
+  const c9 = {
+    icon: 'hash', title: 'Fully Tagged', points: 50,
+    desc: 'Percent of your Expense transactions with BOTH a category and a subcategory.',
+    howTo: `${fullyTaggedCount} of ${allExpenses.length} Expense transaction${allExpenses.length!==1?'s':''} have both fields filled in.`,
+    current: fullyTaggedPct, tiers: [25,50,75,90,100], target: 100, done: fullyTaggedPct >= 100
+  };
+
+  // 10. Vice-Free Streak — consecutive months with zero "🚬 Vices" spending.
+  const viceFreeStreak = _finViceFreeStreak();
+  const c10 = {
+    icon: 'ban', title: 'Vice-Free Streak', points: 90,
+    desc: 'Consecutive months with zero spending tagged Vices.',
+    howTo: 'Walks backward from last month — any month with spending tagged "🚬 Vices" (or a month with no transactions logged at all) ends the streak.',
+    current: viceFreeStreak, tiers: [1,3,6,12], target: 12, done: viceFreeStreak >= 12
+  };
+
+  // 12. Subscription Tracker — recorded Subscriptions in Recurring.
+  const subCount = FIN_RECURRING.filter(r => r.kind === 'Subscription').length;
+  const c12 = {
+    icon: 'refresh', title: 'Subscription Tracker', points: 30,
+    desc: 'Distinct subscriptions recorded in Recurring.',
+    howTo: 'A running count of every Subscription added under Finance > Recurring — keeping tabs on recurring costs is the first step to trimming them.',
+    current: subCount, tiers: [1,3,5,8], target: 8, done: subCount >= 8
+  };
+
+  const challenges = [c1,c2,c3,c4,c5,c6,c7,c8,c9,c10,c12];
+
+  // 11. Top Spender Trimmed — only appears once there's a real "last
+  // month's top category" to compare against.
+  const topTrim = _finTopCategoryTrim();
+  if(topTrim){
+    const reductionClamped = Math.max(0, topTrim.reductionPct);
+    challenges.push({
+      icon: 'trending-down', title: 'Top Spender Trimmed', points: 80,
+      desc: `Cutting back this month on last month's biggest category (${topTrim.topCat}).`,
+      howTo: `Last month's top category was "${topTrim.topCat}" at ${finMoney(topTrim.prevAmount, primaryCurrency)}. So far this month, that same category is at ${finMoney(topTrim.thisMonthSameCat, primaryCurrency)} — a ${reductionClamped}% cut (a bigger spend than last month just shows 0%, it isn't penalized further).`,
+      current: reductionClamped, tiers: [5,10,20,30,50], target: 50, done: reductionClamped >= 50
+    });
+  }
 
   // Debt Free only appears once there's actually a Credit account to be
   // free of — otherwise it'd be a trivially "free" achievement for anyone
