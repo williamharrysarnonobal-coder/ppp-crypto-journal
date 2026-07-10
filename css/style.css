@@ -1169,11 +1169,11 @@
      cells carry 2 lines (P&L + trade count) — scoped down here since the
      Finance calendar felt oversized next to its thinner day cells. */
   #finDashGrid.cal-grid{gap:3px;}
-  #finDashGrid .cal-cell{min-height:46px;padding:6px 5px;}
-  #finDashGrid .cal-dow{font-size:9px;}
-  #finDashGrid .cal-cell .d{font-size:10.5px;}
-  #finDashGrid .cal-cell .p{font-size:11.5px;}
-  #finDashGrid .cal-cell .cal-count{font-size:9px !important;}
+  #finDashGrid .cal-cell{min-height:40px;padding:5px 4px;}
+  #finDashGrid .cal-dow{font-size:8px;}
+  #finDashGrid .cal-cell .d{font-size:9px;}
+  #finDashGrid .cal-cell .p{font-size:9.5px;}
+  #finDashGrid .cal-cell .cal-count{font-size:7.5px !important;}
 
   /* Finance dashboard calendar on mobile: the amount text was crowding the
      tiny cells and breaking the grid layout — same fix as the Trading
@@ -1185,9 +1185,9 @@
      beats two classes) and was keeping these cells bigger than the Trading
      Journal's on mobile even after the dot swap — this re-scopes the same
      shrink here, slightly smaller still per request, so it actually wins. */
-  body.mobile-mode #finDashGrid .cal-cell{min-height:34px;padding:3px 2px;}
-  body.mobile-mode #finDashGrid .cal-dow{font-size:7px;}
-  body.mobile-mode #finDashGrid .cal-cell .d{font-size:9px;}
+  body.mobile-mode #finDashGrid .cal-cell{min-height:30px;padding:2px 2px;}
+  body.mobile-mode #finDashGrid .cal-dow{font-size:6.5px;}
+  body.mobile-mode #finDashGrid .cal-cell .d{font-size:8px;}
   body.mobile-mode #finDashGrid .cal-cell .p,
   body.mobile-mode #finDashGrid .cal-cell .cal-count{display:none;}
   body.mobile-mode #finDashGrid .cal-cell.win::after,
