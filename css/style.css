@@ -1019,7 +1019,10 @@
   /* Mobile Mode round 3: modals + sub-menu tabs (Configuration, Finance,
      Trade Alerts) + Setup Notes internals, from live phone testing */
   body.mobile-mode .modal-box{width:94vw !important;max-width:94vw !important;padding:18px 14px;max-height:90vh;overflow-y:auto;}
-  body.mobile-mode .subnav-list{flex-direction:row !important;flex-wrap:wrap;gap:6px;width:100% !important;}
+  /* position:sticky on the desktop tab rail floats over the page as you
+     scroll a column-stacked mobile layout — kills the overlap the user hit
+     on Configuration (and anywhere else using .subnav-shell). */
+  body.mobile-mode .subnav-list{flex-direction:row !important;flex-wrap:wrap;gap:6px;width:100% !important;position:static !important;top:auto !important;}
   body.mobile-mode .subnav-item{flex:0 0 auto;padding:8px 12px;font-size:12.5px;}
   body.mobile-mode .setup-notes-shots{grid-template-columns:1fr !important;}
   body.mobile-mode .config-add-row{flex-wrap:wrap;}

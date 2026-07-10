@@ -2596,7 +2596,7 @@ async function _adjustFinAccountBalance(accountId, delta){
   }
 }
 
-function openFinTxModal(){
+function openFinTxModal(prefill){
   if(!FIN_ACCOUNTS.length){
     customAlert('Add at least one account first (Finance > Accounts) — every transaction needs an account.');
     return;
@@ -2609,8 +2609,91 @@ function openFinTxModal(){
   document.getElementById('finTxDesc').value = '';
   document.getElementById('finTxType').value = 'Expense';
   onFinTxTypeChange();
+
+  if(prefill){
+    if(prefill.amount != null) document.getElementById('finTxAmount').value = prefill.amount;
+    if(prefill.description) document.getElementById('finTxDesc').value = prefill.description;
+    if(prefill.accountId) document.getElementById('finTxAccount').value = prefill.accountId;
+    if(prefill.category){
+      const catSel = document.getElementById('finTxCategory');
+      if([...catSel.options].some(o => o.value === prefill.category)) catSel.value = prefill.category;
+    }
+  }
+
   document.getElementById('finTxError').textContent = '';
   document.getElementById('finTxModal').classList.add('open');
+}
+
+/* ---- Finance > Transactions: Easy Add (bank purchase-alert text) ---- */
+function openFinTxEasyAddModal(){
+  document.getElementById('finTxEasyAddInput').value = '';
+  document.getElementById('finTxEasyAddError').textContent = '';
+  document.getElementById('finTxEasyAddModal').classList.add('open');
+}
+
+function closeFinTxEasyAddModal(){
+  document.getElementById('finTxEasyAddModal').classList.remove('open');
+}
+
+// Matches bank purchase-alert text like:
+// "Purchase of AED 14.73 with Credit Card ending 8491 at GRAND EMIRATES
+//  MARKET, ABU DHABI. Avl Cr. Limit is AED 13,665.04"
+// Only the amount, card's last digits, and merchant are actually needed —
+// the "Avl Cr. Limit" tail is parsed too but currently unused (Owed is
+// computed live, not set from a bank-reported snapshot).
+function parseFinTxEasyAddText(raw){
+  const m = raw.match(/purchase of\s+[a-z]{2,4}\s*([\d,]+\.?\d*)\s+with\s+credit\s+card\s+ending\s+(\d{3,6})\s+at\s+(.+?)\.\s*avl\.?\s*cr\.?\s*limit/i);
+  if(!m) return null;
+  return {
+    amount: parseFloat(m[1].replace(/,/g,'')),
+    cardLast: m[2].slice(-4),
+    merchant: m[3].trim()
+  };
+}
+
+// Keyword guess against the user's OWN expense categories (Configuration) —
+// only offers a category that actually exists in that list; otherwise
+// leaves it for the user to pick, rather than inventing a new option.
+function guessFinCategory(merchant){
+  const m = merchant.toUpperCase();
+  const rules = [
+    [/HOSPITAL|CLINIC|PHARMAC|MEDICAL|DENTAL/, 'Health'],
+    [/MARKET|SUPERMARKET|GROCERY|MART|HYPERMARKET/, 'Food'],
+    [/RESTAURANT|CAFE|COFFEE|BAKERY|KITCHEN/, 'Food'],
+    [/UBER|CAREEM|TAXI|METRO|PARKING|FUEL|PETROL|GAS STATION/, 'Transport'],
+    [/NETFLIX|SPOTIFY|SUBSCRIPTION|PRIME/, 'Subscriptions'],
+    [/MALL|STORE|SHOP|BOUTIQUE/, 'Shopping'],
+    [/GYM|FITNESS|SPORT/, 'Health']
+  ];
+  const hit = rules.find(([re]) => re.test(m));
+  const guess = hit ? hit[1] : null;
+  return guess && FINANCE_OPTIONS.expense_categories.includes(guess) ? guess : null;
+}
+
+function parseFinTxEasyAdd(){
+  const raw = document.getElementById('finTxEasyAddInput').value;
+  const errEl = document.getElementById('finTxEasyAddError');
+  errEl.textContent = '';
+
+  const parsed = parseFinTxEasyAddText(raw);
+  if(!parsed){
+    errEl.textContent = "Couldn't recognize that text — make sure you copied the full purchase alert.";
+    return;
+  }
+
+  const account = FIN_ACCOUNTS.find(a => a.card_number === parsed.cardLast);
+  if(!account){
+    errEl.textContent = `No account found with card ending ${parsed.cardLast} — add that number under Edit on the right account first, or add it manually.`;
+    return;
+  }
+
+  closeFinTxEasyAddModal();
+  openFinTxModal({
+    amount: parsed.amount,
+    accountId: account.id,
+    description: parsed.merchant,
+    category: guessFinCategory(parsed.merchant)
+  });
 }
 
 function closeFinTxModal(){
@@ -7189,6 +7272,22 @@ function setActiveScreenshotSlot(slot){
   activeScreenshotSlot = slot;
 }
 
+// Second way in besides Ctrl+V — opens the OS file/photo picker (gallery,
+// camera roll, or "Take Photo" on mobile) for whichever slot was clicked.
+function triggerScreenshotFilePicker(slot){
+  activeScreenshotSlot = slot;
+  document.getElementById(slot === 'before' ? 'setupNotesBeforeFileInput' : 'setupNotesAfterFileInput').click();
+}
+
+function handleScreenshotFileSelect(slot, inputEl){
+  const file = inputEl.files[0];
+  if(!file) return;
+  pendingScreenshotBlobs[slot] = file;
+  removedScreenshotSlots[slot] = false;
+  renderScreenshotSlotPreview(slot, URL.createObjectURL(file));
+  inputEl.value = ''; // allow picking the same file again later (e.g. after Remove)
+}
+
 function _screenshotZoneId(slot){
   return slot === 'before' ? 'setupNotesBeforeDropzone' : 'setupNotesAfterDropzone';
 }
@@ -7378,6 +7477,80 @@ function openLinkedSetupNotesFromTradeView(){
   const row = tradeViewList[tradeViewIndex];
   if(!row || !row.linked_setup_id) return;
   openSetupNotesModal(row.linked_setup_id);
+}
+
+/* ---- Trade Notes (quick timestamped log directly on a trade — no Edit needed) ---- */
+let editingTradeNotePositionId = null;
+
+function openTradeNoteModalFromTradeView(){
+  const row = tradeViewList[tradeViewIndex];
+  if(!row) return;
+  openTradeNoteModal(row.position_id);
+}
+
+function openTradeNoteModal(positionId){
+  const row = RAW_TRADES.find(t => t.position_id === positionId);
+  if(!row) return;
+  editingTradeNotePositionId = positionId;
+  document.getElementById('tradeNoteModalTitle').textContent = `Notes — ${row.symbol || 'Trade'}`;
+  document.getElementById('tradeNoteNewEntry').value = '';
+  document.getElementById('tradeNoteError').textContent = '';
+  renderTradeNoteLog(row.notes_log || []);
+  document.getElementById('tradeNoteModal').classList.add('open');
+}
+
+function closeTradeNoteModal(){
+  document.getElementById('tradeNoteModal').classList.remove('open');
+  editingTradeNotePositionId = null;
+}
+
+function renderTradeNoteLog(log){
+  const el = document.getElementById('tradeNoteLog');
+  if(!log.length){
+    el.innerHTML = '<div style="color:var(--muted);font-size:13px;">No notes yet.</div>';
+    return;
+  }
+  el.innerHTML = log.map(entry => `
+    <div style="margin-bottom:10px;">
+      <div style="font-size:11px;color:var(--muted);font-family:'IBM Plex Mono',monospace;">${new Date(entry.ts).toLocaleString(undefined,{dateStyle:'medium',timeStyle:'short'})}</div>
+      <div style="font-size:13px;color:var(--ink);white-space:pre-wrap;">${escapeHtml(entry.text)}</div>
+    </div>
+  `).join('');
+}
+
+async function saveTradeNote(){
+  const errEl = document.getElementById('tradeNoteError');
+  errEl.textContent = '';
+  if(!editingTradeNotePositionId) return;
+  const text = document.getElementById('tradeNoteNewEntry').value.trim();
+  if(!text){ errEl.textContent = 'Write something first.'; return; }
+
+  const row = RAW_TRADES.find(t => t.position_id === editingTradeNotePositionId);
+  if(!row) return;
+  const log = Array.isArray(row.notes_log) ? [...row.notes_log] : [];
+  log.push({ ts: new Date().toISOString(), text });
+
+  try{
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/${TABLE_NAME}?position_id=eq.${encodeURIComponent(editingTradeNotePositionId)}`, {
+      method: 'PATCH',
+      headers: {
+        "apikey": SUPABASE_KEY,
+        "Authorization": `Bearer ${USER_ACCESS_TOKEN}`,
+        "Content-Type": "application/json",
+        "Prefer": "return=minimal"
+      },
+      body: JSON.stringify({ notes_log: log })
+    });
+    if(!res.ok) throw new Error(await res.text());
+    row.notes_log = log;
+    const normIdx = ALL_TRADES.findIndex(t => t.position_id === editingTradeNotePositionId);
+    if(normIdx > -1) ALL_TRADES[normIdx].notes_log = log;
+    document.getElementById('tradeNoteNewEntry').value = '';
+    renderTradeNoteLog(log);
+  }catch(e){
+    console.error("Couldn't save trade note:", e);
+    errEl.textContent = "Couldn't save — make sure you've run supabase_trading_journal_add_notes_log.sql in Supabase.";
+  }
 }
 
 // Carries a saved setup's Account/Position Size/Symbol/notes log into the

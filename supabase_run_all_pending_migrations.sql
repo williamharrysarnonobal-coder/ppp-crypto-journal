@@ -17,6 +17,7 @@ alter table trading_accounts add column if not exists phase_start_date date;
 alter table trading_accounts add column if not exists phase_start_balance numeric;
 
 -- trading_journal
+alter table trading_journal add column if not exists notes_log jsonb not null default '[]'::jsonb;
 alter table trading_journal add column if not exists entry_price numeric;
 alter table trading_journal add column if not exists close_price numeric;
 alter table trading_journal add column if not exists position_size numeric;
