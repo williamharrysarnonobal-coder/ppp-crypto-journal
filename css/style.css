@@ -1015,3 +1015,12 @@
   .fin-payment-list{margin-top:10px;padding-top:10px;border-top:1px dashed var(--rule);display:flex;flex-direction:column;gap:8px;}
   .fin-payment-row{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;color:var(--ink);}
   .fin-payment-row span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+
+  /* Mobile Mode round 3: modals + sub-menu tabs (Configuration, Finance,
+     Trade Alerts) + Setup Notes internals, from live phone testing */
+  body.mobile-mode .modal-box{width:94vw !important;max-width:94vw !important;padding:18px 14px;max-height:90vh;overflow-y:auto;}
+  body.mobile-mode .subnav-list{flex-direction:row !important;flex-wrap:wrap;gap:6px;width:100% !important;}
+  body.mobile-mode .subnav-item{flex:0 0 auto;padding:8px 12px;font-size:12.5px;}
+  body.mobile-mode .setup-notes-shots{grid-template-columns:1fr !important;}
+  body.mobile-mode .config-add-row{flex-wrap:wrap;}
+  body.mobile-mode .config-add-row input{min-width:0;}

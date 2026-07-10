@@ -2207,7 +2207,7 @@ function finAccountCardHTML(a){
   let paymentLineHtml = '';
   if(hasBill){
     if(paidThisCycle){
-      paymentLineHtml = `<div class="fin-payment-row" style="margin-top:8px;"><span>Payment for ${prevMonthName}</span><span class="pill pill-green">Paid</span></div>`;
+      paymentLineHtml = `<div class="fin-payment-row" style="margin-top:8px;"><span>Payment for ${prevMonthName}</span><span style="display:flex;align-items:center;gap:6px;flex-shrink:0;"><span class="pill pill-green">Paid</span><button class="fin-subacct-edit" title="Undo this payment" onclick="undoAccountBillPayment(${a.id})">Undo</button></span></div>`;
     }else if(now.getDate() >= 5){
       paymentLineHtml = `<div class="fin-payment-row" style="margin-top:8px;"><span>Payment for ${prevMonthName}</span><button class="poscalc-accent-btn" style="padding:3px 9px;font-size:10.5px;flex-shrink:0;" onclick="payAllDueForAccount(${a.id})">Paid</button></div>`;
     }
@@ -2964,6 +2964,50 @@ async function payAllDueForAccount(accountId){
   renderFinanceRecurring();
   renderFinanceAccounts();
   showToast(`${prevMonth.toLocaleDateString('en-US',{month:'long'})} bill paid`);
+}
+
+// Reverses one "Paid" click: every linked installment's progress steps
+// back by 1, subscriptions forget their last billing, and the statement
+// counts as unpaid again (so last month's transactions return to Owed).
+// Mainly for testing and for "na-click ko pero hindi pa pala ako bayad".
+async function undoAccountBillPayment(accountId){
+  const acc = FIN_ACCOUNTS.find(a => a.id === accountId);
+  if(!acc) return;
+  if(!(await customConfirm("Mark this bill as UNPAID again? Installment progress steps back by 1 and last month's transactions count as owed again.", 'Undo'))) return;
+
+  const linked = FIN_RECURRING.filter(r => r.account_id === accountId);
+  for(const r of linked){
+    if(r.kind === 'Installment' && (Number(r.payments_applied) || 0) > 0){
+      const newCount = (Number(r.payments_applied) || 0) - 1;
+      const patch = await _finPatchRecurring(r.id, { payments_applied: newCount });
+      if(patch.ok) r.payments_applied = newCount;
+    }else if(r.kind === 'Subscription' && r.last_billed){
+      const patch = await _finPatchRecurring(r.id, { last_billed: null });
+      if(patch.ok) r.last_billed = null;
+    }
+  }
+
+  try{
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/finance_accounts?id=eq.${accountId}`, {
+      method: 'PATCH',
+      headers: {
+        "apikey": SUPABASE_KEY,
+        "Authorization": `Bearer ${USER_ACCESS_TOKEN}`,
+        "Content-Type": "application/json",
+        "Prefer": "return=minimal"
+      },
+      body: JSON.stringify({ last_bill_paid: null })
+    });
+    if(!res.ok) throw new Error(await res.text());
+    acc.last_bill_paid = null;
+  }catch(e){
+    console.error("Couldn't clear the paid marker:", e);
+    await customAlert("Couldn't clear the paid marker: " + (e.message || e));
+  }
+
+  renderFinanceRecurring();
+  renderFinanceAccounts();
+  showToast('Bill marked as unpaid');
 }
 
 // Both helpers below return {ok, error} instead of just logging to the

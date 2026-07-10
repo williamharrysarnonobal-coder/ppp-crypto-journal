@@ -16,7 +16,7 @@
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Public+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<link rel="stylesheet" href="css/style.css?v=108">
+<link rel="stylesheet" href="css/style.css?v=109">
 </head>
 <body>
 
@@ -944,7 +944,7 @@
 </div>
 
 <div class="modal-overlay" id="setupNotesModal" onclick="if(event.target===this) closeSetupNotesModal()">
-  <div class="modal-box" style="position:relative;max-width:760px;width:92vw;max-height:92vh;display:flex;flex-direction:column;">
+  <div class="modal-box" style="position:relative;max-width:760px;width:92vw;max-height:92vh;display:flex;flex-direction:column;overflow-y:auto;">
     <button class="modal-close" onclick="closeSetupNotesModal()">✕</button>
     <h3>Setup Notes</h3>
     <div class="modal-sub">Jot the symbol and log how the trade's going — every note gets its own timestamp.</div>
@@ -952,17 +952,17 @@
       <label>Symbol</label>
       <input id="setupNotesSymbol" placeholder="e.g. BTC/USDT">
     </div>
-    <div class="field-row" style="flex:1.4;min-height:0;display:flex;flex-direction:column;">
+    <div class="field-row" style="flex-shrink:0;">
       <label>Log</label>
-      <div id="setupNotesLog" style="flex:1;min-height:180px;max-height:none;overflow-y:auto;background:var(--surface-2);border:1px solid var(--rule);border-radius:6px;padding:12px 14px;"></div>
+      <div id="setupNotesLog" style="min-height:100px;max-height:30vh;overflow-y:auto;background:var(--surface-2);border:1px solid var(--rule);border-radius:6px;padding:12px 14px;"></div>
     </div>
-    <div class="field-row" style="flex:1;min-height:0;display:flex;flex-direction:column;">
+    <div class="field-row" style="flex-shrink:0;">
       <label>New Note</label>
-      <textarea id="setupNotesNewEntry" placeholder="What are you feeling right now?" style="width:100%;flex:1;min-height:120px;padding:10px 12px;background:var(--surface-2);border:1px solid var(--rule);border-radius:6px;color:var(--ink);font-size:13px;font-family:var(--font-ui);resize:vertical;"></textarea>
+      <textarea id="setupNotesNewEntry" placeholder="What are you feeling right now?" style="width:100%;min-height:80px;padding:10px 12px;background:var(--surface-2);border:1px solid var(--rule);border-radius:6px;color:var(--ink);font-size:13px;font-family:var(--font-ui);resize:vertical;"></textarea>
     </div>
     <div class="field-row" style="flex-shrink:0;">
       <label>Screenshots</label>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+      <div class="setup-notes-shots" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
         <div>
           <div style="font-size:10px;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:.05em;">Before</div>
           <div id="setupNotesBeforeDropzone" class="poscalc-image-dropzone" tabindex="0" onclick="setActiveScreenshotSlot('before')">Click, then paste (Ctrl+V)</div>
@@ -1317,6 +1317,6 @@
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=1"></script>
-<script src="js/dashboard.js?v=123"></script>
+<script src="js/dashboard.js?v=124"></script>
 </body>
 </html>
