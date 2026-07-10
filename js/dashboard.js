@@ -10705,6 +10705,7 @@ function renderMoodCalendar(){
     const entry = byDate[iso];
     const mood = entry ? MOOD_OPTIONS.find(o => o.key === entry.mood) : null;
     html += `<div class="cal-cell${iso === todayISO ? ' today' : ''}" onclick="openMoodModal('${iso}')">
+      ${mood ? `<span class="mood-cell-edit" title="Edit"><svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></span>` : ''}
       <div class="d">${d}</div>
       ${mood ? `<div class="mood-emoji" title="${escapeHtml(mood.label)}">${mood.emoji}</div><div class="mood-cell-label">${escapeHtml(mood.label)}</div>` : ''}
     </div>`;
