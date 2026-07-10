@@ -1013,7 +1013,7 @@
      so ONLY the table scrolls (both directions) inside that fixed box,
      instead of the whole page scrolling. Same idea here: cap the wrap's
      height so it becomes its own fixed, independently-scrollable region. */
-  body.mobile-mode #finTxWrap{max-height:55vh;overflow:auto;}
+  body.mobile-mode #finTxWrap{max-height:calc(100vh - 215px);overflow:auto;}
 
   /* Finance account card internals — pulled out of inline styles so Mobile
      Mode (below) can re-center them instead of fighting inline specificity. */
@@ -1024,15 +1024,13 @@
   .fin-acc-card-actions.has-subadd{justify-content:space-between;}
   .fin-acc-card-actions-btns{display:flex;gap:6px;}
 
-  /* Finance > Accounts on mobile: it's the CONTAINER holding the cards that
-     needs to be centered, not the individual cards inside it (shrinking
-     each card was the wrong fix — reverted). The grid itself becomes a
-     narrower, centered column; cards stay 100% of that column so they
-     don't look individually shrunk. */
-  body.mobile-mode .fin-account-grid{
-    grid-template-columns:1fr !important;
-    width:88%;max-width:360px;margin:0 auto;
-  }
+  /* Finance > Accounts (and Recurring's card grids) on mobile: an exact
+     copy of the Trading Journal "My Accounts" mobile treatment — one
+     full-width card per row, nothing narrowed or re-centered beyond what
+     .content's own max-width:640px centering already provides. Earlier
+     attempts to shrink/center this differently from My Accounts were the
+     problem; identical rules = identical look. */
+  body.mobile-mode .fin-account-grid{grid-template-columns:1fr !important;}
 
   /* Finance: hide-balances privacy toggle — blurs every value tagged
      .fin-balance (Debit only — credit card limits/owed stay visible).
