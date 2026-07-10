@@ -387,6 +387,7 @@
   .mood-cal-grid .cal-cell:hover{transform:scale(1.04);background:var(--surface-2);}
   .mood-cal-grid .cal-cell.today{outline:1.5px solid var(--accent);}
   .mood-cal-grid .cal-cell .mood-emoji{font-size:19px;margin-top:3px;line-height:1;}
+  .mood-cal-grid .cal-cell .mood-cell-label{font-size:9px;color:var(--muted);margin-top:2px;text-transform:uppercase;letter-spacing:.03em;}
   .mood-picker{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;}
   .mood-option{
     display:flex;flex-direction:column;align-items:center;gap:4px;
