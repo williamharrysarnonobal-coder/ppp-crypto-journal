@@ -265,14 +265,14 @@
     </header>
 
     <nav class="subnav-list alerts-tab-nav">
-      <div class="subnav-item active" data-tab="bitcoin" onclick="switchAlertsTab('bitcoin')">Bitcoin</div>
+      <div class="subnav-item" data-tab="bitcoin" onclick="switchAlertsTab('bitcoin')">Bitcoin</div>
       <div class="subnav-item" data-tab="altcoin" onclick="switchAlertsTab('altcoin')">Alt Coins</div>
-      <div class="subnav-item" data-tab="screener" onclick="switchAlertsTab('screener')">Screener</div>
+      <div class="subnav-item active" data-tab="screener" onclick="switchAlertsTab('screener')">Screener</div>
     </nav>
 
     <div class="subnav-shell">
       <div class="subnav-content">
-        <div class="subnav-panel active" id="alertsPanel-bitcoin">
+        <div class="subnav-panel" id="alertsPanel-bitcoin">
           <div class="journal-wrap">
             <table class="journal" id="alertsTable-bitcoin"></table>
           </div>
@@ -282,13 +282,18 @@
             <table class="journal" id="alertsTable-altcoin"></table>
           </div>
         </div>
-        <div class="subnav-panel" id="alertsPanel-screener">
+        <div class="subnav-panel active" id="alertsPanel-screener">
           <div class="screener-toolbar">
             <input type="text" class="note-search screener-search" id="screenerSearch" placeholder="Search coin..." oninput="renderScreenerTable()">
             <select id="screenerCorrFilter" onchange="renderScreenerTable()">
               <option value="all">All coins</option>
               <option value="correlated">Correlated to BTC</option>
               <option value="non_correlated">Non-Correlated to BTC</option>
+            </select>
+            <select id="screenerSortBy" onchange="renderScreenerTable()">
+              <option value="symbol">Sort: Symbol (A-Z)</option>
+              <option value="pct_desc">Sort: 24H % (High to Low)</option>
+              <option value="macd_match_desc">Sort: MACD Match with BTC</option>
             </select>
             <div class="sub" id="screenerCountLabel">—</div>
           </div>
@@ -1669,6 +1674,6 @@
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=1"></script>
-<script src="js/dashboard.js?v=170"></script>
+<script src="js/dashboard.js?v=173"></script>
 </body>
 </html>

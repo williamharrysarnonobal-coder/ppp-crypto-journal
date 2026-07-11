@@ -469,7 +469,7 @@ function switchView(view){
 
   if(view === 'journal') renderJournalTable();
   if(view === 'config'){ renderColumnConfigUI(); renderOptionsEditor(); renderFormFieldConfigUI(); }
-  if(view === 'alerts'){ loadSignalAlerts(); startAlertsPolling(); } else { stopAlertsPolling(); }
+  if(view === 'alerts'){ loadSignalAlerts(); loadScreenerData(); startAlertsPolling(); } else { stopAlertsPolling(); }
   if(view === 'achievements') loadAchievements();
   if(view === 'news'){ loadMarketNewsWidget(); } else { clearInterval(econSyncLabelTimer); }
   if(view === 'challenges') renderChallenges();
@@ -7585,9 +7585,6 @@ async function loadScreenerData(){
     });
     if(!res.ok) throw new Error(await res.text());
     SCREENER_COINS = await res.json();
-    // BTC is the market's reference coin — always pin it to the top
-    // regardless of the otherwise-alphabetical order.
-    SCREENER_COINS.sort((a,b) => (a.symbol === 'BTC' ? -1 : b.symbol === 'BTC' ? 1 : 0));
   }catch(e){
     console.error("Couldn't load screener data:", e);
     SCREENER_COINS = [];
@@ -7647,6 +7644,17 @@ function _screenerMacdPill(zone, cross){
   return `<span class="screener-macd-pill"><span class="screener-macd-half ${zoneCls}">${zoneLabel}</span><span class="screener-macd-half ${crossCls}">${crossLabel}</span></span>`;
 }
 
+// How many of the 4 MACD timeframes have BOTH zone AND cross identical to
+// BTC's own (0-4) — a quick way to sort "which coins are painting the
+// exact same MACD picture as BTC right now" to the top.
+function _screenerMacdMatchScore(coin, btcRow){
+  if(!btcRow) return 0;
+  return ['1d','4h','1h','15m'].reduce((score, tf) => {
+    const zoneKey = `macd_${tf}_zone`, crossKey = `macd_${tf}_cross`;
+    return score + (coin[zoneKey] && coin[zoneKey] === btcRow[zoneKey] && coin[crossKey] === btcRow[crossKey] ? 1 : 0);
+  }, 0);
+}
+
 function renderScreenerTable(){
   const wrap = document.getElementById('screenerWrap');
   const empty = document.getElementById('screenerEmpty');
@@ -7663,8 +7671,20 @@ function renderScreenerTable(){
 
   const q = (document.getElementById('screenerSearch').value || '').trim().toLowerCase();
   const corrFilter = document.getElementById('screenerCorrFilter').value;
-  let rows = q ? SCREENER_COINS.filter(c => c.symbol.toLowerCase().includes(q)) : SCREENER_COINS;
+  const sortBy = document.getElementById('screenerSortBy').value;
+  let rows = q ? SCREENER_COINS.filter(c => c.symbol.toLowerCase().includes(q)) : SCREENER_COINS.slice();
   if(corrFilter !== 'all') rows = rows.filter(c => _screenerCorrBucket(c.btc_correlation) === corrFilter);
+
+  // BTC is the market's reference coin — pinned to the very top no matter
+  // which sort is picked; the sort only decides how everyone else orders.
+  const btcRow = SCREENER_COINS.find(c => c.symbol === 'BTC');
+  rows = rows.slice().sort((a, b) => {
+    if(a.symbol === 'BTC') return -1;
+    if(b.symbol === 'BTC') return 1;
+    if(sortBy === 'pct_desc') return (b.price_change_24h ?? -Infinity) - (a.price_change_24h ?? -Infinity);
+    if(sortBy === 'macd_match_desc') return _screenerMacdMatchScore(b, btcRow) - _screenerMacdMatchScore(a, btcRow);
+    return a.symbol.localeCompare(b.symbol);
+  });
 
   wrap.style.display = rows.length ? 'block' : 'none';
   empty.style.display = rows.length ? 'none' : 'block';
