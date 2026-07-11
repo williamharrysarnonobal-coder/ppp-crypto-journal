@@ -7284,7 +7284,6 @@ async function manualRefreshAlerts(){
 let alertsSeenFilter = 'all';
 function switchAlertsSeenFilter(f){
   alertsSeenFilter = f;
-  document.querySelectorAll('#alertsSeenFilterTabs .tab').forEach(el => el.classList.toggle('active', el.dataset.f === f));
   renderAlertsTables();
 }
 
@@ -7569,6 +7568,131 @@ function renderAlertsTableFor(category){
 function switchAlertsTab(tab){
   document.querySelectorAll('#view-alerts .subnav-item').forEach(el => el.classList.toggle('active', el.dataset.tab === tab));
   document.querySelectorAll('#view-alerts .subnav-panel').forEach(el => el.classList.toggle('active', el.id === 'alertsPanel-' + tab));
+  if(tab === 'screener') loadScreenerData();
+}
+
+/* ---------- Trade Alerts > Screener ---------- */
+// Reads a live snapshot a Python bot upserts into screener_coins every
+// ~5 minutes (same pattern as the existing crypto_live_bot.py →
+// trading_signals pipeline) — this file only renders whatever's already
+// in the table, it never talks to an exchange itself.
+let SCREENER_COINS = [];
+
+async function loadScreenerData(){
+  try{
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/screener_coins?select=*&order=symbol.asc`, {
+      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}` }
+    });
+    if(!res.ok) throw new Error(await res.text());
+    SCREENER_COINS = await res.json();
+    // BTC is the market's reference coin — always pin it to the top
+    // regardless of the otherwise-alphabetical order.
+    SCREENER_COINS.sort((a,b) => (a.symbol === 'BTC' ? -1 : b.symbol === 'BTC' ? 1 : 0));
+  }catch(e){
+    console.error("Couldn't load screener data:", e);
+    SCREENER_COINS = [];
+  }
+  renderScreenerTable();
+}
+
+// Pearson correlation of 1H returns vs. BTC's own 1H returns, computed by
+// screener_bot.py. Positive/strong = moves with BTC ("Correlated"); low or
+// negative = moves independently (or inversely) — "Non-Correlated". The
+// middle band is real information too (shown in the column) but isn't its
+// own filter option, since the ask was specifically Correlated/Non-Correlated.
+function _screenerCorrBucket(value){
+  if(value === null || value === undefined) return null;
+  if(value >= 0.7) return 'correlated';
+  if(value <= 0.3) return 'non_correlated';
+  return 'moderate';
+}
+
+function _screenerCorrPill(value){
+  if(value === null || value === undefined) return `<span class="screener-pill screener-pill-muted">—</span>`;
+  const bucket = _screenerCorrBucket(value);
+  const label = bucket === 'correlated' ? 'Correlated' : bucket === 'non_correlated' ? 'Non-Correlated' : 'Moderate';
+  const cls = bucket === 'correlated' ? 'green' : bucket === 'non_correlated' ? 'orange' : 'muted';
+  return `<span class="screener-pill screener-pill-${cls}">${label} ${Number(value).toFixed(2)}</span>`;
+}
+
+function _screenerRsiZone(value){
+  if(value >= 70) return { label: 'Overbought', cls: 'red' };
+  if(value <= 30) return { label: 'Oversold', cls: 'green' };
+  return { label: 'Neutral', cls: 'muted' };
+}
+
+function _screenerRsiPill(value){
+  if(value === null || value === undefined) return `<span class="screener-pill screener-pill-muted">—</span>`;
+  const zone = _screenerRsiZone(value);
+  return `<span class="screener-pill screener-pill-${zone.cls}">${zone.label} ${Number(value).toFixed(1)}</span>`;
+}
+
+// Zone (MACD line vs. zero) and Cross (MACD vs. signal, most recent
+// crossover) combine into 4 colors, not just 2 — both bullish is green,
+// both bearish is red, and the two "disagreeing" combos get their own
+// colors: bearish zone + bullish cross (blue) reads as an early reversal
+// worth watching, bullish zone + bearish cross (orange) reads as losing
+// steam — genuinely different signals, not just "some bull, some bear".
+// Split in half instead of one solid color for the combination — Bear is
+// always red, Bull is always green, on EITHER side, so the color alone
+// (not which of the 4 combos it is) tells you what you're looking at:
+// green|green = strongly bullish, red|red = strongly bearish, and a mixed
+// half/half reads as "zone and momentum disagree" at a glance.
+function _screenerMacdPill(zone, cross){
+  if(!zone || !cross) return `<span class="screener-pill screener-pill-muted">—</span>`;
+  const zoneLabel = zone === 'bull' ? 'Bull Zone' : 'Bear Zone';
+  const crossLabel = cross === 'bull' ? 'Bull Cross' : 'Bear Cross';
+  const zoneCls = zone === 'bull' ? 'screener-macd-bull' : 'screener-macd-bear';
+  const crossCls = cross === 'bull' ? 'screener-macd-bull' : 'screener-macd-bear';
+  return `<span class="screener-macd-pill"><span class="screener-macd-half ${zoneCls}">${zoneLabel}</span><span class="screener-macd-half ${crossCls}">${crossLabel}</span></span>`;
+}
+
+function renderScreenerTable(){
+  const wrap = document.getElementById('screenerWrap');
+  const empty = document.getElementById('screenerEmpty');
+  const body = document.getElementById('screenerBody');
+  const countLabel = document.getElementById('screenerCountLabel');
+  if(!wrap || !empty || !body) return;
+
+  if(!SCREENER_COINS.length){
+    wrap.style.display = 'none';
+    empty.style.display = 'block';
+    countLabel.textContent = '';
+    return;
+  }
+
+  const q = (document.getElementById('screenerSearch').value || '').trim().toLowerCase();
+  const corrFilter = document.getElementById('screenerCorrFilter').value;
+  let rows = q ? SCREENER_COINS.filter(c => c.symbol.toLowerCase().includes(q)) : SCREENER_COINS;
+  if(corrFilter !== 'all') rows = rows.filter(c => _screenerCorrBucket(c.btc_correlation) === corrFilter);
+
+  wrap.style.display = rows.length ? 'block' : 'none';
+  empty.style.display = rows.length ? 'none' : 'block';
+  empty.textContent = 'No coins match your search/filter.';
+  countLabel.textContent = `Showing ${rows.length} of ${SCREENER_COINS.length}`;
+
+  body.innerHTML = rows.map(c => {
+    const pct = c.price_change_24h;
+    const pctHtml = (pct === null || pct === undefined)
+      ? '—'
+      : `<span style="color:${pct >= 0 ? 'var(--win)' : 'var(--loss)'};font-weight:600;">${pct >= 0 ? '+' : ''}${Number(pct).toFixed(2)}%</span>`;
+    const nameCell = c.tradingview_url
+      ? `<a href="${escapeHtml(c.tradingview_url)}" target="_blank" rel="noopener" style="color:var(--ink);font-weight:700;text-decoration:none;">${escapeHtml(c.symbol)}</a>`
+      : `<span style="font-weight:700;">${escapeHtml(c.symbol)}</span>`;
+    return `
+      <tr>
+        <td>${nameCell}</td>
+        <td>${pctHtml}</td>
+        <td>${_screenerCorrPill(c.btc_correlation)}</td>
+        <td>${_screenerRsiPill(c.rsi_4h)}</td>
+        <td>${_screenerRsiPill(c.rsi_1h)}</td>
+        <td>${_screenerMacdPill(c.macd_1d_zone, c.macd_1d_cross)}</td>
+        <td>${_screenerMacdPill(c.macd_4h_zone, c.macd_4h_cross)}</td>
+        <td>${_screenerMacdPill(c.macd_1h_zone, c.macd_1h_cross)}</td>
+        <td>${_screenerMacdPill(c.macd_15m_zone, c.macd_15m_cross)}</td>
+      </tr>
+    `;
+  }).join('');
 }
 
 let currentAlertDetailId = null;

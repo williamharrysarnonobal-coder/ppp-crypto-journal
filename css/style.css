@@ -269,6 +269,11 @@
   }
   #view-journal .top{flex-shrink:0;margin-bottom:14px;}
   #view-journal .journal-toolbar{flex-shrink:0;}
+
+  /* Trade Alerts: same "reclaim .content's side padding" trick as Trade
+     Journal above — pushes the canvas to the edges so the Screener's 8
+     columns get maximum real width instead of losing 22px to each side. */
+  #view-alerts.active{margin-left:-22px;margin-right:-22px;padding-left:10px;padding-right:10px;}
   header.top{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:24px;border-bottom:1px solid var(--rule);padding-bottom:18px;}
   header.top > div:first-child{display:flex;flex-direction:column;gap:4px;}
   header.top .header-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
@@ -513,6 +518,35 @@
   .pill-blue{background:rgba(108,155,201,.16);color:var(--info);}
   .pill-orange{background:rgba(208,143,78,.16);color:var(--warn);}
   .pill-muted{background:var(--surface-2);color:var(--muted);}
+
+  /* ---------- Trade Alerts > Screener ---------- */
+  .screener-toolbar{display:flex;align-items:center;gap:14px;margin-bottom:14px;}
+  .screener-search{width:280px;margin-bottom:0;}
+  #screenerCountLabel{margin-left:auto;font-size:11.5px;}
+  /* Rectangular outlined pills (vs. the app's default fully-rounded .pill)
+     so a "Zone • Cross" label reads as one solid chip instead of a long
+     rounded capsule — matches the screener mock more closely. Reuses the
+     same 4 semantic colors as .pill-* for consistency with the rest of
+     the app; RSI gets its own 3-way (oversold/neutral/overbought). */
+  .screener-pill{
+    display:inline-flex;align-items:center;justify-content:center;
+    padding:5px 10px;border-radius:6px;font-size:11px;font-weight:600;
+    border:1px solid transparent;white-space:nowrap;font-family:var(--font-ui);
+  }
+  .screener-pill-muted{background:var(--surface-2);color:var(--ink);border-color:var(--rule);}
+  .screener-pill-green{background:rgba(111,162,135,.14);color:var(--win);border-color:rgba(111,162,135,.4);}
+  .screener-pill-red{background:rgba(193,101,79,.14);color:var(--loss);border-color:rgba(193,101,79,.45);}
+  .screener-pill-orange{background:rgba(208,143,78,.14);color:var(--warn);border-color:rgba(208,143,78,.45);}
+  #screenerBody td{white-space:nowrap;}
+
+  /* MACD "Zone • Cross" pill, split down the middle instead of one solid
+     color — Bear is always the red half, Bull is always the green half,
+     on either side, so the color alone (not memorizing 4 combos) tells
+     you what you're looking at. */
+  .screener-macd-pill{display:inline-flex;border-radius:6px;overflow:hidden;font-size:10.5px;font-weight:600;white-space:nowrap;}
+  .screener-macd-half{padding:5px 9px;}
+  .screener-macd-bear{background:rgba(193,101,79,.22);color:var(--loss);}
+  .screener-macd-bull{background:rgba(111,162,135,.22);color:var(--win);}
 
   .leaderboard-list{display:flex;flex-direction:column;}
   .leaderboard-row{display:flex;align-items:center;gap:14px;padding:12px 6px;border-bottom:1px solid var(--rule);}
@@ -904,6 +938,21 @@
   .subnav-list{width:200px;flex-shrink:0;display:flex;flex-direction:column;gap:3px;position:sticky;top:20px;}
   .subnav-item{padding:10px 12px;border-radius:6px;font-size:13px;color:var(--muted);cursor:pointer;}
   .subnav-item:hover{background:var(--surface-2);color:var(--ink);}
+
+  /* Trade Alerts specifically: the Bitcoin/Alt Coins/Screener tabs now sit
+     in their own row right below the header (where the old All/New/Seen
+     tabs used to be — that filter became a plain <select> in the header
+     instead), not as a left rail — so .subnav-shell here only ever wraps
+     .subnav-content now. align-items:stretch keeps that one child at full
+     width regardless (the same "flex-start sizes to content, not the row"
+     trap that broke Finance's mobile canvas width earlier — cheap enough
+     to guard against here even with a single child). */
+  #view-alerts .subnav-shell{align-items:stretch;}
+  #view-alerts .subnav-content{width:100%;min-width:0;}
+  .alerts-tab-nav{
+    flex-direction:row;width:auto;gap:4px;position:static;top:auto;margin-bottom:14px;
+  }
+  .alerts-tab-nav .subnav-item{padding:7px 12px;font-size:12.5px;}
   .subnav-item.active{background:var(--surface-2);color:var(--accent);font-weight:500;}
   .subnav-content{flex:1;min-width:0;}
   .subnav-panel{display:none;}

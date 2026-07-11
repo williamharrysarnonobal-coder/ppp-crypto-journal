@@ -16,7 +16,7 @@
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Public+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<link rel="stylesheet" href="css/style.css?v=137">
+<link rel="stylesheet" href="css/style.css?v=144">
 </head>
 <body>
 
@@ -253,24 +253,24 @@
         <div class="sub" id="alertsLastSync" style="font-size:11px;"></div>
       </div>
       <div class="header-actions">
+        <select id="alertsSeenFilterSelect" onchange="switchAlertsSeenFilter(this.value)">
+          <option value="all">All</option>
+          <option value="new">New</option>
+          <option value="seen">Seen</option>
+        </select>
         <button class="poscalc-accent-btn" onclick="markAllAlertsSeen()">Read All</button>
         <button class="poscalc-accent-btn" onclick="deleteOldAlerts()"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px;"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>Delete Old</button>
         <button class="poscalc-accent-btn" onclick="manualRefreshAlerts()"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px;"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>Refresh</button>
       </div>
     </header>
 
-    <div class="tabs" id="alertsSeenFilterTabs">
-      <div class="tab active" data-f="all" onclick="switchAlertsSeenFilter('all')">All</div>
-      <div class="tab" data-f="new" onclick="switchAlertsSeenFilter('new')">New</div>
-      <div class="tab" data-f="seen" onclick="switchAlertsSeenFilter('seen')">Seen</div>
-    </div>
+    <nav class="subnav-list alerts-tab-nav">
+      <div class="subnav-item active" data-tab="bitcoin" onclick="switchAlertsTab('bitcoin')">Bitcoin</div>
+      <div class="subnav-item" data-tab="altcoin" onclick="switchAlertsTab('altcoin')">Alt Coins</div>
+      <div class="subnav-item" data-tab="screener" onclick="switchAlertsTab('screener')">Screener</div>
+    </nav>
 
     <div class="subnav-shell">
-      <nav class="subnav-list">
-        <div class="subnav-item active" data-tab="bitcoin" onclick="switchAlertsTab('bitcoin')">Bitcoin</div>
-        <div class="subnav-item" data-tab="altcoin" onclick="switchAlertsTab('altcoin')">Alt Coins</div>
-      </nav>
-
       <div class="subnav-content">
         <div class="subnav-panel active" id="alertsPanel-bitcoin">
           <div class="journal-wrap">
@@ -280,6 +280,27 @@
         <div class="subnav-panel" id="alertsPanel-altcoin">
           <div class="journal-wrap">
             <table class="journal" id="alertsTable-altcoin"></table>
+          </div>
+        </div>
+        <div class="subnav-panel" id="alertsPanel-screener">
+          <div class="screener-toolbar">
+            <input type="text" class="note-search screener-search" id="screenerSearch" placeholder="Search coin..." oninput="renderScreenerTable()">
+            <select id="screenerCorrFilter" onchange="renderScreenerTable()">
+              <option value="all">All coins</option>
+              <option value="correlated">Correlated to BTC</option>
+              <option value="non_correlated">Non-Correlated to BTC</option>
+            </select>
+            <div class="sub" id="screenerCountLabel">—</div>
+          </div>
+          <div class="empty-state" id="screenerEmpty" style="display:none;">No screener data yet — the scanner script hasn't pushed any rows.</div>
+          <div class="journal-wrap" id="screenerWrap" style="display:none;">
+            <table class="journal">
+              <thead><tr>
+                <th>Coin</th><th>24H %</th><th>BTC Corr.</th><th>RSI 4H</th><th>RSI 1H</th>
+                <th>MACD 1D</th><th>MACD 4H</th><th>MACD 1H</th><th>MACD 15M</th>
+              </tr></thead>
+              <tbody id="screenerBody"></tbody>
+            </table>
           </div>
         </div>
       </div>
@@ -1648,6 +1669,6 @@
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=1"></script>
-<script src="js/dashboard.js?v=166"></script>
+<script src="js/dashboard.js?v=170"></script>
 </body>
 </html>
