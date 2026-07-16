@@ -6447,6 +6447,22 @@ function renderTradeViewModal(){
         <div class="field-static">${computeTradeSummary(row)}</div>
       </div>`;
     }
+    if(f.key === 'notes'){
+      // The "Add Note" popup (openTradeNoteModalFromTradeView) saves into
+      // notes_log, a separate timestamped-entries array — merge it in here
+      // so a note you just added actually shows up in this view instead of
+      // only being visible inside that popup.
+      const plainHtml = row.notes ? `<div style="white-space:pre-wrap;margin-bottom:10px;">${escapeHtml(row.notes)}</div>` : '';
+      const log = Array.isArray(row.notes_log) ? row.notes_log : [];
+      const logHtml = log.map(entry => `
+        <div style="margin-bottom:10px;">
+          <div style="font-size:11px;color:var(--muted);font-family:'IBM Plex Mono',monospace;">${new Date(entry.ts).toLocaleString(undefined,{dateStyle:'medium',timeStyle:'short'})}</div>
+          <div style="white-space:pre-wrap;">${escapeHtml(entry.text)}</div>
+        </div>
+      `).join('');
+      const combined = plainHtml + logHtml;
+      return `<div class="field-row${spanCls}"><label>${f.label}</label><div class="field-static">${combined || '—'}</div></div>`;
+    }
     if(f.key === 'open_date' || f.key === 'close_date'){
       const raw = row[f.key];
       const display = raw ? new Date(raw).toLocaleString(undefined,{dateStyle:'medium', timeStyle:'short'}) : '—';
@@ -10369,6 +10385,10 @@ async function saveTradeNote(){
     if(normIdx > -1) ALL_TRADES[normIdx].notes_log = log;
     document.getElementById('tradeNoteNewEntry').value = '';
     renderTradeNoteLog(log);
+    // The Trade View modal (if that's where "Add Note" was opened from)
+    // sits open in the background — refresh its Notes section immediately
+    // instead of making the user close and reopen it to see the new entry.
+    if(document.getElementById('tradeViewModal').classList.contains('open')) renderTradeViewModal();
   }catch(e){
     console.error("Couldn't save trade note:", e);
     errEl.textContent = "Couldn't save — make sure you've run supabase_trading_journal_add_notes_log.sql in Supabase.";
