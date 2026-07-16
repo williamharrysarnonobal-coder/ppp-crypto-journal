@@ -388,6 +388,15 @@
   .cal-cell.week-cell:hover{filter:brightness(1.15);}
 
   /* ---------- Diary (mood check-in) ---------- */
+  /* .cal-grid is 8 columns (repeat(7,1fr) 0.9fr) — built for Trade Journal/
+     Finance, which both add an 8th "Week" summary cell per row. The Diary
+     calendar has no such concept and only ever emits 7 cells (dow headers
+     + days), so the browser's grid auto-placement kept spilling the 8th
+     slot of each row into the START of the next, drifting the whole
+     calendar sideways by one column per row down — by week 3 a date could
+     land 2-3 weekdays off from where it actually falls. Forcing exactly
+     7 columns here is the fix. */
+  .mood-cal-grid{grid-template-columns:repeat(7,1fr) !important;}
   .mood-cal-grid .cal-cell{cursor:pointer;transition:transform .1s;}
   .mood-cal-grid .cal-cell:hover{transform:scale(1.04);background:var(--surface-2);}
   .mood-cal-grid .cal-cell.today{outline:1.5px solid var(--accent);}
