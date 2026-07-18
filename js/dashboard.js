@@ -1357,29 +1357,45 @@ function renderDisciplineRadar(){
   // target that's never checked against what actually happened, so a
   // trade planned at 2.0 RR that closed at breakeven/early TP still
   // counted as a "2.0" in the old score. exit_type is filled in AFTER the
-  // trade based on what really happened, and "Manual Early TP - Invalid"
-  // is already a self-admitted "I broke my plan here" — much harder to
-  // game than an aspirational number.
-  const invalidExits = t.filter(x => (x.exit_type||'').trim().toLowerCase() === 'manual early tp - invalid').length;
-  const exitDisciplineScore = t.length ? Math.max(0, 100 - (invalidExits/t.length*100)) : 0;
+  // trade based on what really happened. Both "Manual Early TP" variants
+  // count against this — Valid or not, it's still a manual deviation from
+  // the plan, not the plan playing out untouched (TP Hit / Stop Profit /
+  // SL Hit / Cut Loss all stay full credit).
+  const earlyExits = t.filter(x => {
+    const et = (x.exit_type||'').trim().toLowerCase();
+    return et === 'manual early tp - invalid' || et === 'manual early tp - valid';
+  }).length;
+  const exitDisciplineScore = t.length ? Math.max(0, 100 - (earlyExits/t.length*100)) : 0;
 
   // Consistency (replaces profit-factor-based "Consistency (PF)") — profit
   // factor measures profitability, not consistency (one huge lucky win can
-  // carry it). This instead looks at how tightly your realized LOSSES
-  // cluster together as a coefficient of variation (stddev ÷ mean) — a
-  // trader risking ~0.3% every time will have losses that land close to
-  // each other; a trader sizing randomly won't. Fees are stripped out
-  // first (profit_loss net of fee, fee added back) so a variable exchange
-  // fee doesn't get mistaken for inconsistent risk-taking.
+  // carry it). This looks at how tightly your realized LOSSES cluster, but
+  // NOT via coefficient of variation against the mean — CV punishes any
+  // spread at all, which unfairly tanks traders who deliberately risk
+  // within a range (e.g. 0.3%-0.5% depending on setup) rather than one
+  // fixed number. Instead this compares the 75th vs 25th percentile of
+  // loss sizes (interquartile spread) — a real, bounded range still scores
+  // well; only genuinely erratic, order-of-magnitude sizing scores low.
+  // Fees are stripped out first (profit_loss net of fee) so a variable
+  // exchange fee doesn't get mistaken for inconsistent risk-taking.
   const grossLossVals = t
     .filter(x => x.win_loss.toLowerCase() === 'loss')
-    .map(x => Math.max(0, Math.abs(x.profit_loss||0) - Math.abs(x.fee||0)));
-  let consistencyScore = 100, lossCV = 0;
+    .map(x => Math.max(0, Math.abs(x.profit_loss||0) - Math.abs(x.fee||0)))
+    .filter(v => v > 0)
+    .sort((a,b) => a-b);
+  let consistencyScore = 100, spreadRatio = 1, lossP25 = null, lossP75 = null;
   if(grossLossVals.length >= 2){
-    const mean = grossLossVals.reduce((a,b)=>a+b,0) / grossLossVals.length;
-    const variance = grossLossVals.reduce((s,v)=>s+Math.pow(v-mean,2),0) / grossLossVals.length;
-    lossCV = mean > 0 ? Math.sqrt(variance)/mean : 0;
-    consistencyScore = Math.max(0, Math.min(100, 100 - lossCV*100));
+    const percentile = (p) => {
+      const pos = (grossLossVals.length - 1) * p;
+      const lo = Math.floor(pos), hi = Math.ceil(pos);
+      return lo === hi ? grossLossVals[lo] : grossLossVals[lo] + (grossLossVals[hi]-grossLossVals[lo])*(pos-lo);
+    };
+    lossP25 = percentile(0.25);
+    lossP75 = percentile(0.75);
+    spreadRatio = lossP25 > 0 ? lossP75/lossP25 : 1;
+    // ratio 1.0 (identical every time) = 100; ~1.67 (a 0.3%-0.5%-style
+    // range) still scores ~90; falls off faster past 3x-4x spread.
+    consistencyScore = Math.max(0, Math.min(100, 100 - (spreadRatio-1)*15));
   }
 
   // Risk Control (replaces "SL Hit counts against you") — hitting your
@@ -1449,9 +1465,9 @@ function renderDisciplineRadar(){
                 'Discipline': disciplineTotal
                   ? `${followed} "Rules Followed" out of ${disciplineTotal} trade${disciplineTotal!==1?'s':''} with a discipline note logged.`
                   : 'No discipline notes logged yet — log "Rules Followed" or an unfollowed rule per trade to fill this in.',
-                'Exit Discipline': `${invalidExits} of ${t.length} trade${t.length!==1?'s':''} closed as "Manual Early TP - Invalid" (100 minus that %). Based on what actually happened at exit, not your planned RR.`,
+                'Exit Discipline': `${earlyExits} of ${t.length} trade${t.length!==1?'s':''} closed as a manual early TP (Valid or Invalid) — both count as a deviation (100 minus that %). Based on what actually happened at exit, not your planned RR.`,
                 'Consistency': grossLossVals.length >= 2
-                  ? `Your ${grossLossVals.length} losing trades vary ${(lossCV*100).toFixed(0)}% around their own average loss size (fee excluded) — tighter clustering scores higher.`
+                  ? `Your middle 50% of losing trades (fee excluded) range from ${fmtMoney(lossP25)} to ${fmtMoney(lossP75)} — about ${spreadRatio.toFixed(2)}x apart. A bounded range still scores well; only wildly erratic sizing scores low.`
                   : 'Needs at least 2 losing trades to measure how consistently you size your risk.',
                 'Risk Control': `${riskViolations} of ${t.length} trade${t.length!==1?'s':''} were Liquidated, Overleveraged, or had a moved stop-loss (100 minus that %). A normal stop-loss hit no longer counts against you.`
               };
