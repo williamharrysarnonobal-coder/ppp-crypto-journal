@@ -1369,30 +1369,42 @@ function renderDisciplineRadar(){
 
   // Consistency (replaces profit-factor-based "Consistency (PF)") — profit
   // factor measures profitability, not consistency (one huge lucky win can
-  // carry it). This looks at how tightly your realized LOSSES cluster, but
-  // NOT via coefficient of variation against the mean — CV punishes any
-  // spread at all, which unfairly tanks traders who deliberately risk
-  // within a range (e.g. 0.3%-0.5% depending on setup) rather than one
-  // fixed number. Instead this compares the 75th vs 25th percentile of
-  // loss sizes (interquartile spread) — a real, bounded range still scores
-  // well; only genuinely erratic, order-of-magnitude sizing scores low.
-  // Fees are stripped out first (profit_loss net of fee) so a variable
-  // exchange fee doesn't get mistaken for inconsistent risk-taking.
-  const grossLossVals = t
-    .filter(x => x.win_loss.toLowerCase() === 'loss')
-    .map(x => Math.max(0, Math.abs(x.profit_loss||0) - Math.abs(x.fee||0)))
-    .filter(v => v > 0)
-    .sort((a,b) => a-b);
-  let consistencyScore = 100, spreadRatio = 1, lossP25 = null, lossP75 = null;
-  if(grossLossVals.length >= 2){
-    const percentile = (p) => {
-      const pos = (grossLossVals.length - 1) * p;
-      const lo = Math.floor(pos), hi = Math.ceil(pos);
-      return lo === hi ? grossLossVals[lo] : grossLossVals[lo] + (grossLossVals[hi]-grossLossVals[lo])*(pos-lo);
-    };
-    lossP25 = percentile(0.25);
-    lossP75 = percentile(0.75);
-    spreadRatio = lossP25 > 0 ? lossP75/lossP25 : 1;
+  // carry it). This looks at how tightly your realized LOSSES cluster, via
+  // interquartile spread (P75 ÷ P25) rather than coefficient of variation —
+  // CV punishes any spread at all, which unfairly tanks traders who
+  // deliberately risk within a range (e.g. 0.3%-0.5% depending on setup)
+  // instead of one fixed number; IQR still scores a real bounded range well.
+  // Spread is computed SEPARATELY PER ACCOUNT before combining — comparing
+  // raw dollar loss sizes across accounts with different balances would
+  // read as "inconsistent" even at an identical, disciplined risk % (0.3%
+  // is $30 on a $10k account, $150 on a $50k one). Fees are stripped out
+  // first (profit_loss net of fee) so a variable exchange fee doesn't get
+  // mistaken for inconsistent risk-taking either.
+  const percentile = (sortedArr, p) => {
+    const pos = (sortedArr.length - 1) * p;
+    const lo = Math.floor(pos), hi = Math.ceil(pos);
+    return lo === hi ? sortedArr[lo] : sortedArr[lo] + (sortedArr[hi]-sortedArr[lo])*(pos-lo);
+  };
+  const lossesByAccount = {};
+  t.filter(x => x.win_loss.toLowerCase() === 'loss').forEach(x => {
+    const grossLoss = Math.max(0, Math.abs(x.profit_loss||0) - Math.abs(x.fee||0));
+    if(grossLoss <= 0) return;
+    const acc = x.account || 'Unspecified';
+    (lossesByAccount[acc] = lossesByAccount[acc] || []).push(grossLoss);
+  });
+  const accountSpreads = Object.entries(lossesByAccount)
+    .filter(([,vals]) => vals.length >= 2)
+    .map(([account, vals]) => {
+      const sorted = [...vals].sort((a,b)=>a-b);
+      const p25 = percentile(sorted, 0.25), p75 = percentile(sorted, 0.75);
+      return { account, count: vals.length, ratio: p25 > 0 ? p75/p25 : 1 };
+    });
+  let consistencyScore = 100, spreadRatio = 1;
+  if(accountSpreads.length){
+    const totalCount = accountSpreads.reduce((s,a)=>s+a.count, 0);
+    // trade-count-weighted average, so a thin account doesn't skew the
+    // combined score as much as one with a full trade history.
+    spreadRatio = accountSpreads.reduce((s,a)=>s+a.ratio*a.count, 0) / totalCount;
     // ratio 1.0 (identical every time) = 100; ~1.67 (a 0.3%-0.5%-style
     // range) still scores ~90; falls off faster past 3x-4x spread.
     consistencyScore = Math.max(0, Math.min(100, 100 - (spreadRatio-1)*15));
@@ -1430,7 +1442,7 @@ function renderDisciplineRadar(){
   disciplineRadarRef = new Chart(ctx, {
     type: 'radar',
     data: {
-      labels: ['Win Rate','Discipline','Exit Discipline','Consistency','Risk Control'],
+      labels: ['Win Rate','Rule Compliance','Patience','Risk Sizing','Capital Protection'],
       datasets: [{
         data: [winRate, disciplinePct, exitDisciplineScore, consistencyScore, riskControlScore],
         backgroundColor: cssVar('--accent') + '33',
@@ -1462,14 +1474,14 @@ function renderDisciplineRadar(){
             label: (ctx) => {
               const explanations = {
                 'Win Rate': `${wins} win${wins!==1?'s':''} out of ${t.length} trade${t.length!==1?'s':''} in view (wins ÷ total).`,
-                'Discipline': disciplineTotal
+                'Rule Compliance': disciplineTotal
                   ? `${followed} "Rules Followed" out of ${disciplineTotal} trade${disciplineTotal!==1?'s':''} with a discipline note logged.`
                   : 'No discipline notes logged yet — log "Rules Followed" or an unfollowed rule per trade to fill this in.',
-                'Exit Discipline': `${earlyExits} of ${t.length} trade${t.length!==1?'s':''} closed as a manual early TP (Valid or Invalid) — both count as a deviation (100 minus that %). Based on what actually happened at exit, not your planned RR.`,
-                'Consistency': grossLossVals.length >= 2
-                  ? `Your middle 50% of losing trades (fee excluded) range from ${fmtMoney(lossP25)} to ${fmtMoney(lossP75)} — about ${spreadRatio.toFixed(2)}x apart. A bounded range still scores well; only wildly erratic sizing scores low.`
-                  : 'Needs at least 2 losing trades to measure how consistently you size your risk.',
-                'Risk Control': `${riskViolations} of ${t.length} trade${t.length!==1?'s':''} were Liquidated, Overleveraged, or had a moved stop-loss (100 minus that %). A normal stop-loss hit no longer counts against you.`
+                'Patience': `${earlyExits} of ${t.length} trade${t.length!==1?'s':''} closed as a manual early TP (Valid or Invalid) — both count as cutting the plan short (100 minus that %). Based on what actually happened at exit, not your planned RR.`,
+                'Risk Sizing': accountSpreads.length
+                  ? `Measured separately per account (${accountSpreads.map(a=>`${a.account}: ${a.ratio.toFixed(2)}x, ${a.count} losses`).join(' · ')}) then combined — about ${spreadRatio.toFixed(2)}x spread overall. A bounded range still scores well; only wildly erratic sizing scores low.`
+                  : 'Needs at least 2 losing trades on the same account to measure how consistently you size your risk.',
+                'Capital Protection': `${riskViolations} of ${t.length} trade${t.length!==1?'s':''} were Liquidated, Overleveraged, or had a moved stop-loss (100 minus that %). A normal stop-loss hit no longer counts against you.`
               };
               const label = ctx.label;
               const val = ctx.parsed.r;
