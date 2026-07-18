@@ -78,7 +78,7 @@ let winLossChartRef = null;
 let breakdownChartRef = null;
 let disciplineRadarRef = null;
 let dayOfWeekChartRef = null;
-let symbolFrequencyChartRef = null;
+let sessionFrequencyChartRef = null;
 let currentView = "profile";
 
 const MOON_ICON_SVG = '<svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>';
@@ -138,7 +138,7 @@ function applyTheme(mode){
     renderWinLossChart();
     renderDisciplineRadar();
     renderDayOfWeekChart();
-    renderSymbolFrequencyChart();
+    renderSessionFrequencyChart();
     renderBreakdown();
   }
   if(currentView === 'settings') renderSettingsPage();
@@ -208,7 +208,7 @@ function setAccentPreference(name){
     renderWinLossChart();
     renderDisciplineRadar();
     renderDayOfWeekChart();
-    renderSymbolFrequencyChart();
+    renderSessionFrequencyChart();
     renderBreakdown();
   }
   if(currentView === 'settings') renderSettingsPage();
@@ -404,7 +404,7 @@ function applyMobileMode(on){
     renderWinLossChart();
     renderDisciplineRadar();
     renderDayOfWeekChart();
-    renderSymbolFrequencyChart();
+    renderSessionFrequencyChart();
     renderBreakdown();
   }
   syncUIPrefsToProfile();
@@ -999,7 +999,7 @@ function applyFilters(){
   renderWinLossChart();
   renderDisciplineRadar();
   renderDayOfWeekChart();
-  renderSymbolFrequencyChart();
+  renderSessionFrequencyChart();
   renderBreakdownTabs();
   renderBreakdown();
   document.getElementById('aiOutput').style.display = 'none';
@@ -1353,23 +1353,49 @@ function renderDisciplineRadar(){
   const disciplineTotal = followed + broken;
   const disciplinePct = disciplineTotal ? (followed/disciplineTotal*100) : 0;
 
-  const rrVals = t.map(x=>x.rr).filter(x => x !== null && !isNaN(x));
-  const avgRR = rrVals.length ? rrVals.reduce((a,b)=>a+b,0)/rrVals.length : 0;
-  const rewardScore = Math.min(Math.max(avgRR,0)/3*100, 100);
+  // Exit Discipline (replaces "Reward (RR)") — RR is a pre-trade, typed-in
+  // target that's never checked against what actually happened, so a
+  // trade planned at 2.0 RR that closed at breakeven/early TP still
+  // counted as a "2.0" in the old score. exit_type is filled in AFTER the
+  // trade based on what really happened, and "Manual Early TP - Invalid"
+  // is already a self-admitted "I broke my plan here" — much harder to
+  // game than an aspirational number.
+  const invalidExits = t.filter(x => (x.exit_type||'').trim().toLowerCase() === 'manual early tp - invalid').length;
+  const exitDisciplineScore = t.length ? Math.max(0, 100 - (invalidExits/t.length*100)) : 0;
 
-  const grossWin = t.filter(x=>x.win_loss.toLowerCase()==='win').reduce((s,x)=>s+Math.max(x.profit_loss,0),0);
-  const grossLoss = Math.abs(t.filter(x=>x.win_loss.toLowerCase()==='loss').reduce((s,x)=>s+Math.min(x.profit_loss,0),0));
-  const profitFactor = grossLoss > 0 ? (grossWin/grossLoss) : (grossWin > 0 ? 3 : 0);
-  const consistencyScore = Math.min(profitFactor/3*100, 100);
+  // Consistency (replaces profit-factor-based "Consistency (PF)") — profit
+  // factor measures profitability, not consistency (one huge lucky win can
+  // carry it). This instead looks at how tightly your realized LOSSES
+  // cluster together as a coefficient of variation (stddev ÷ mean) — a
+  // trader risking ~0.3% every time will have losses that land close to
+  // each other; a trader sizing randomly won't. Fees are stripped out
+  // first (profit_loss net of fee, fee added back) so a variable exchange
+  // fee doesn't get mistaken for inconsistent risk-taking.
+  const grossLossVals = t
+    .filter(x => x.win_loss.toLowerCase() === 'loss')
+    .map(x => Math.max(0, Math.abs(x.profit_loss||0) - Math.abs(x.fee||0)));
+  let consistencyScore = 100, lossCV = 0;
+  if(grossLossVals.length >= 2){
+    const mean = grossLossVals.reduce((a,b)=>a+b,0) / grossLossVals.length;
+    const variance = grossLossVals.reduce((s,v)=>s+Math.pow(v-mean,2),0) / grossLossVals.length;
+    lossCV = mean > 0 ? Math.sqrt(variance)/mean : 0;
+    consistencyScore = Math.max(0, Math.min(100, 100 - lossCV*100));
+  }
 
-  const badExits = t.filter(x => {
-    const et = (x.exit_type||'').toLowerCase();
+  // Risk Control (replaces "SL Hit counts against you") — hitting your
+  // stop loss is the plan working as designed, not a failure; it shouldn't
+  // be penalized. What actually signals poor risk control is logged right
+  // in Rules Followed/Broken: "Overleveraged" and "Moved Stop Loss" are
+  // real, self-admitted risk-management lapses. "Liquidated" still counts
+  // — that's a total loss of control, not a working stop.
+  const riskViolations = t.filter(x => {
+    const rules = (x.unfollowed_rules||'').toLowerCase();
     const wl = (x.win_loss||'').toLowerCase();
-    return et === 'sl hit' || wl === 'liquidated';
+    return wl === 'liquidated' || rules.includes('overleveraged') || rules.includes('moved stop loss');
   }).length;
-  const riskControlScore = t.length ? Math.max(0, 100 - (badExits/t.length*100)) : 0;
+  const riskControlScore = t.length ? Math.max(0, 100 - (riskViolations/t.length*100)) : 0;
 
-  const disciplineScore = (winRate + disciplinePct + rewardScore + consistencyScore + riskControlScore) / 5;
+  const disciplineScore = (winRate + disciplinePct + exitDisciplineScore + consistencyScore + riskControlScore) / 5;
   const scoreValueEl = document.getElementById('disciplineScoreValue');
   const scoreMarkerEl = document.getElementById('disciplineScoreMarker');
   const scoreTagEl = document.getElementById('disciplineScoreTag');
@@ -1388,9 +1414,9 @@ function renderDisciplineRadar(){
   disciplineRadarRef = new Chart(ctx, {
     type: 'radar',
     data: {
-      labels: ['Win Rate','Discipline','Reward (RR)','Consistency (PF)','Risk Control'],
+      labels: ['Win Rate','Discipline','Exit Discipline','Consistency','Risk Control'],
       datasets: [{
-        data: [winRate, disciplinePct, rewardScore, consistencyScore, riskControlScore],
+        data: [winRate, disciplinePct, exitDisciplineScore, consistencyScore, riskControlScore],
         backgroundColor: cssVar('--accent') + '33',
         borderColor: cssVar('--accent'),
         borderWidth: 1,
@@ -1423,11 +1449,11 @@ function renderDisciplineRadar(){
                 'Discipline': disciplineTotal
                   ? `${followed} "Rules Followed" out of ${disciplineTotal} trade${disciplineTotal!==1?'s':''} with a discipline note logged.`
                   : 'No discipline notes logged yet — log "Rules Followed" or an unfollowed rule per trade to fill this in.',
-                'Reward (RR)': rrVals.length
-                  ? `Average RR is ${avgRR.toFixed(2)} across ${rrVals.length} trade${rrVals.length!==1?'s':''} with RR logged — scaled so 3.0+ RR = 100.`
-                  : 'No RR logged on any trade in view yet.',
-                'Consistency (PF)': `Profit factor is ${profitFactor===Infinity?'∞':profitFactor.toFixed(2)} — gross win ${fmtMoney(grossWin)} ÷ gross loss ${fmtMoney(grossLoss)}, scaled so PF 3.0+ = 100.`,
-                'Risk Control': `${badExits} of ${t.length} trade${t.length!==1?'s':''} hit stop-loss or were liquidated (100 minus that %).`
+                'Exit Discipline': `${invalidExits} of ${t.length} trade${t.length!==1?'s':''} closed as "Manual Early TP - Invalid" (100 minus that %). Based on what actually happened at exit, not your planned RR.`,
+                'Consistency': grossLossVals.length >= 2
+                  ? `Your ${grossLossVals.length} losing trades vary ${(lossCV*100).toFixed(0)}% around their own average loss size (fee excluded) — tighter clustering scores higher.`
+                  : 'Needs at least 2 losing trades to measure how consistently you size your risk.',
+                'Risk Control': `${riskViolations} of ${t.length} trade${t.length!==1?'s':''} were Liquidated, Overleveraged, or had a moved stop-loss (100 minus that %). A normal stop-loss hit no longer counts against you.`
               };
               const label = ctx.label;
               const val = ctx.parsed.r;
@@ -1482,26 +1508,37 @@ function renderDayOfWeekChart(){
   });
 }
 
-/* ---------------- Most traded symbols ---------------- */
-function renderSymbolFrequencyChart(){
-  const canvas = document.getElementById('symbolFrequencyChart');
+/* ---------------- Session frequency ---------------- */
+// Matches the hour ranges inside computeSession() — shown on hover so the
+// session name isn't just a label, you can see exactly what window it
+// covers (in your own local time, same as computeSession() itself uses).
+const SESSION_TIME_RANGES = {
+  'Asia': '4:00 AM – 12:00 PM',
+  'London': '12:00 PM – 5:00 PM',
+  'London + NY Overlap': '5:00 PM – 9:00 PM',
+  'New York': '9:00 PM – 2:00 AM',
+  'Low Liquidity': '2:00 AM – 4:00 AM'
+};
+
+function renderSessionFrequencyChart(){
+  const canvas = document.getElementById('sessionFrequencyChart');
   if(!canvas) return;
   const ctx = canvas.getContext('2d');
-  if(symbolFrequencyChartRef) symbolFrequencyChartRef.destroy();
+  if(sessionFrequencyChartRef) sessionFrequencyChartRef.destroy();
 
   const counts = {};
   FILTERED.forEach(t => {
-    const key = t.symbol || 'Unspecified';
+    const key = t.session || computeSession(t) || 'Unspecified';
     counts[key] = (counts[key] || 0) + 1;
   });
 
-  const top = Object.entries(counts).sort((a,b) => b[1]-a[1]).slice(0, 8);
+  const top = Object.entries(counts).sort((a,b) => b[1]-a[1]);
   const labels = top.map(([k]) => k);
   const values = top.map(([,v]) => v);
 
   if(labels.length === 0) return;
 
-  symbolFrequencyChartRef = new Chart(ctx, {
+  sessionFrequencyChartRef = new Chart(ctx, {
     type: 'bar',
     data: { labels, datasets: [{ data: values, backgroundColor: cssVar('--accent'), borderRadius: 4, maxBarThickness: 28 }] },
     options: {
@@ -1509,10 +1546,23 @@ function renderSymbolFrequencyChart(){
       responsive: true,
       maintainAspectRatio: false,
       onClick: (evt, elements) => {
-        if(elements.length) showCategoryTrades('symbol', labels[elements[0].index]);
+        if(elements.length) showCategoryTrades('session', labels[elements[0].index]);
       },
       onHover: (evt, elements) => { canvas.style.cursor = elements.length ? 'pointer' : 'default'; },
-      plugins: { legend: { display:false } },
+      plugins: {
+        legend: { display:false },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => {
+              const count = ctx.parsed.x;
+              const lines = [`${count} trade${count!==1?'s':''}`];
+              const range = SESSION_TIME_RANGES[ctx.label];
+              if(range) lines.push(`${range} (your local time)`);
+              return lines;
+            }
+          }
+        }
+      },
       scales: {
         x: { ticks:{color:cssVar('--muted'), font:{size:10}}, grid:{color:cssVar('--rule')} },
         y: { ticks:{color:cssVar('--ink'), font:{size:11}}, grid:{display:false} }
