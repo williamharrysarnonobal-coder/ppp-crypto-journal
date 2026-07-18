@@ -481,6 +481,14 @@ function switchView(view){
   if(view === 'settings') renderSettingsPage();
   if(view === 'notebook') loadNotes();
   if(view === 'mood') loadMoodEntries();
+  if(view === 'reports'){
+    // Trading data loads eagerly at app start, but Finance and Diary data
+    // are lazy (only loaded when their own view is first opened) — Reports
+    // needs all three regardless of which views the user has actually
+    // visited, so it fetches Finance + Diary itself instead of assuming.
+    renderReportPreview();
+    Promise.all([loadFinanceAccounts(), loadFinanceTransactions(), loadMoodEntries()]).then(renderReportPreview);
+  }
   if(view === 'admin') renderAdminConsole();
 }
 
@@ -11002,4 +11010,347 @@ async function deleteMoodEntry(){
     console.error("Couldn't delete mood entry:", e);
     await customAlert("Couldn't delete — please try again.");
   }
+}
+
+/* ---------- Reports (Trading + Finance + Mood recap, with PDF export) ---------- */
+let reportPeriodMode = 'this_month';
+
+function onReportPeriodChange(){
+  reportPeriodMode = document.getElementById('reportPeriod').value;
+  document.getElementById('reportRangeRow').style.display = reportPeriodMode === 'custom' ? 'flex' : 'none';
+  renderReportPreview();
+}
+
+function _reportStartOfDay(d){ return new Date(d.getFullYear(), d.getMonth(), d.getDate()); }
+function _reportEndOfDay(d){ return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999); }
+function _reportDateISO(d){ return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
+
+// Resolves the selected dropdown/range into a concrete {start, end, label}
+// window — every stat function below just filters against this.
+function _reportGetRange(){
+  const now = new Date();
+  const fmtRange = (start, end) => `${start.toLocaleDateString('en-US',{month:'short',day:'numeric'})} – ${end.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}`;
+
+  if(reportPeriodMode === 'this_week'){
+    const monday = new Date(now); monday.setDate(now.getDate() - ((now.getDay() + 6) % 7));
+    const start = _reportStartOfDay(monday), end = _reportEndOfDay(now);
+    return { start, end, label: fmtRange(start, end) };
+  }
+  if(reportPeriodMode === 'last_week'){
+    const thisMonday = new Date(now); thisMonday.setDate(now.getDate() - ((now.getDay() + 6) % 7));
+    const lastMonday = new Date(thisMonday); lastMonday.setDate(thisMonday.getDate() - 7);
+    const lastSunday = new Date(thisMonday); lastSunday.setDate(thisMonday.getDate() - 1);
+    const start = _reportStartOfDay(lastMonday), end = _reportEndOfDay(lastSunday);
+    return { start, end, label: fmtRange(start, end) };
+  }
+  if(reportPeriodMode === 'last_month'){
+    const start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const end = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
+    return { start, end, label: start.toLocaleDateString('en-US',{month:'long',year:'numeric'}) };
+  }
+  if(reportPeriodMode === 'custom'){
+    const fromVal = document.getElementById('reportRangeFrom').value;
+    const toVal = document.getElementById('reportRangeTo').value;
+    const start = fromVal ? _reportStartOfDay(new Date(fromVal + 'T00:00:00')) : _reportStartOfDay(now);
+    const end = toVal ? _reportEndOfDay(new Date(toVal + 'T00:00:00')) : _reportEndOfDay(now);
+    return { start, end, label: fmtRange(start, end) };
+  }
+  // this_month (default)
+  const start = new Date(now.getFullYear(), now.getMonth(), 1);
+  const end = _reportEndOfDay(now);
+  return { start, end, label: now.toLocaleDateString('en-US',{month:'long',year:'numeric'}) };
+}
+
+function _reportPrimaryCurrency(){
+  return FIN_ACCOUNTS[0]?.currency || 'PHP';
+}
+
+function _reportTradingStats(start, end){
+  const trades = ALL_TRADES.filter(t => t.close_date && t.close_date >= start && t.close_date <= end);
+  const total = trades.length;
+  const wins = trades.filter(t => (t.profit_loss||0) > 0).length;
+  const totalPnl = trades.reduce((s,t) => s + (t.profit_loss||0), 0);
+  const winRate = total ? Math.round(wins/total*100) : 0;
+  const rrVals = trades.map(t => t.rr).filter(v => v !== null && !isNaN(v));
+  const avgRR = rrVals.length ? (rrVals.reduce((s,v)=>s+v,0)/rrVals.length) : null;
+  let bestTrade = null, worstTrade = null;
+  trades.forEach(t => {
+    if(!bestTrade || (t.profit_loss||0) > (bestTrade.profit_loss||0)) bestTrade = t;
+    if(!worstTrade || (t.profit_loss||0) < (worstTrade.profit_loss||0)) worstTrade = t;
+  });
+  return { total, wins, totalPnl, winRate, avgRR, bestTrade, worstTrade, trades };
+}
+
+function _reportFinanceStats(start, end){
+  const txns = FIN_TXNS.filter(t => t.tx_date && new Date(t.tx_date + 'T00:00:00') >= start && new Date(t.tx_date + 'T00:00:00') <= end);
+  const income = txns.filter(t => t.tx_type === 'Income').reduce((s,t) => s + (Number(t.amount)||0), 0);
+  const expense = txns.filter(t => t.tx_type === 'Expense').reduce((s,t) => s + (Number(t.amount)||0), 0);
+  const byCat = {};
+  txns.filter(t => t.tx_type === 'Expense' && t.category).forEach(t => { byCat[t.category] = (byCat[t.category]||0) + (Number(t.amount)||0); });
+  const topCatEntries = Object.entries(byCat).sort((a,b) => b[1]-a[1]);
+  const topCategory = topCatEntries.length ? { name: topCatEntries[0][0], amount: topCatEntries[0][1] } : null;
+  return { income, expense, net: income - expense, topCategory, txCount: txns.length };
+}
+
+function _reportMoodStats(start, end){
+  const entries = MOOD_ENTRIES.filter(e => e.entry_date && new Date(e.entry_date + 'T00:00:00') >= start && new Date(e.entry_date + 'T00:00:00') <= end);
+  const counts = {};
+  MOOD_OPTIONS.forEach(o => counts[o.key] = 0);
+  entries.forEach(e => { if(counts[e.mood] !== undefined) counts[e.mood]++; });
+  const totalDays = Math.max(1, Math.round((end - start) / 86400000) + 1);
+  return { entries, counts, loggedDays: entries.length, totalDays };
+}
+
+// Average trading P&L on days carrying each logged mood — only moods with
+// at least one matching trading day are included, sorted best to worst.
+function _reportMoodPnlBreakdown(tradingStats, moodStats){
+  const byMood = {};
+  moodStats.entries.forEach(e => {
+    const dayTrades = tradingStats.trades.filter(t => t.close_date && _reportDateISO(t.close_date) === e.entry_date);
+    if(!dayTrades.length) return;
+    const dayPnl = dayTrades.reduce((s,t) => s + (t.profit_loss||0), 0);
+    if(!byMood[e.mood]) byMood[e.mood] = { sum: 0, days: 0 };
+    byMood[e.mood].sum += dayPnl;
+    byMood[e.mood].days += 1;
+  });
+  return Object.entries(byMood)
+    .map(([mood, v]) => ({ mood, avg: v.sum / v.days, days: v.days }))
+    .sort((a,b) => b.avg - a.avg);
+}
+
+// Structured (not pre-formatted) so both the on-screen preview and the PDF
+// can render it in their own markup without duplicating the comparison logic.
+function _reportMoodInsightData(moodPnl){
+  if(moodPnl.length < 2) return null;
+  const best = moodPnl[0], worst = moodPnl[moodPnl.length - 1];
+  if(best.avg <= worst.avg) return null;
+  const bestOpt = MOOD_OPTIONS.find(o => o.key === best.mood);
+  const worstOpt = MOOD_OPTIONS.find(o => o.key === worst.mood);
+  return {
+    bestLabel: bestOpt?.label || best.mood, bestAvg: best.avg, bestDays: best.days,
+    worstLabel: worstOpt?.label || worst.mood, worstAvg: worst.avg, worstDays: worst.days
+  };
+}
+
+function renderReportPreview(){
+  const wrap = document.getElementById('reportPreview');
+  if(!wrap) return;
+  const { start, end, label } = _reportGetRange();
+  document.getElementById('reportPeriodLabel').textContent = label;
+
+  const trading = _reportTradingStats(start, end);
+  const finance = _reportFinanceStats(start, end);
+  const mood = _reportMoodStats(start, end);
+  const insight = _reportMoodInsightData(_reportMoodPnlBreakdown(trading, mood));
+  const cur = _reportPrimaryCurrency();
+
+  wrap.innerHTML = `
+    <div class="report-section">
+      <div class="report-section-title">Trading</div>
+      ${trading.total ? `
+        <div class="kpi-grid" style="margin-bottom:0;">
+          <div class="kpi"><div class="label">Trades</div><div class="value">${trading.total}</div></div>
+          <div class="kpi"><div class="label">Win Rate</div><div class="value">${trading.winRate}%</div></div>
+          <div class="kpi"><div class="label">Total P&L</div><div class="value ${trading.totalPnl>=0?'pos':'neg'}">${fmtMoney(trading.totalPnl)}</div></div>
+          <div class="kpi"><div class="label">Avg R:R</div><div class="value">${trading.avgRR!=null ? trading.avgRR.toFixed(2) : '—'}</div></div>
+        </div>
+        <div style="margin-top:14px;font-size:12.5px;color:var(--muted);">
+          Best trade: <span class="pos" style="font-weight:600;">${trading.bestTrade ? fmtMoney(trading.bestTrade.profit_loss) : '—'}</span> (${escapeHtml(trading.bestTrade?.symbol || '—')})
+          &nbsp;·&nbsp; Worst trade: <span class="neg" style="font-weight:600;">${trading.worstTrade ? fmtMoney(trading.worstTrade.profit_loss) : '—'}</span> (${escapeHtml(trading.worstTrade?.symbol || '—')})
+        </div>
+      ` : `<div class="report-empty">No trades in this period.</div>`}
+    </div>
+
+    <div class="report-section">
+      <div class="report-section-title">Finance</div>
+      ${finance.txCount ? `
+        <div class="kpi-grid" style="margin-bottom:0;">
+          <div class="kpi"><div class="label">Income</div><div class="value pos">${finMoney(finance.income, cur)}</div></div>
+          <div class="kpi"><div class="label">Expense</div><div class="value neg">${finMoney(finance.expense, cur)}</div></div>
+          <div class="kpi"><div class="label">Net</div><div class="value ${finance.net>=0?'pos':'neg'}">${finMoney(finance.net, cur)}</div></div>
+        </div>
+        ${finance.topCategory ? `<div style="margin-top:14px;font-size:12.5px;color:var(--muted);">Top category: <span style="color:var(--ink);font-weight:600;">${escapeHtml(finance.topCategory.name)}</span> — ${finMoney(finance.topCategory.amount, cur)}</div>` : ''}
+      ` : `<div class="report-empty">No transactions in this period.</div>`}
+    </div>
+
+    <div class="report-section">
+      <div class="report-section-title">Mood &amp; Discipline</div>
+      ${mood.loggedDays ? `
+        <div style="font-size:12.5px;color:var(--muted);margin-bottom:12px;">Logged ${mood.loggedDays} of ${mood.totalDays} days</div>
+        <div class="report-mood-bars">
+          ${MOOD_OPTIONS.filter(o => mood.counts[o.key] > 0).map(o => {
+            const count = mood.counts[o.key];
+            const pct = mood.loggedDays ? Math.round(count/mood.loggedDays*100) : 0;
+            return `<div class="report-mood-row">
+              <span class="report-mood-emoji">${o.emoji}</span>
+              <span class="report-mood-label">${escapeHtml(o.label)}</span>
+              <div class="report-mood-track"><div class="report-mood-fill" style="width:${pct}%;"></div></div>
+              <span class="report-mood-count">${count}</span>
+            </div>`;
+          }).join('')}
+        </div>
+      ` : `<div class="report-empty">No mood entries in this period.</div>`}
+    </div>
+
+    ${insight ? `
+      <div class="report-section">
+        <div class="report-section-title">Insight</div>
+        <div class="report-insight">On days you logged feeling <b>${escapeHtml(insight.bestLabel)}</b>, your average trading result was <b>${fmtMoney(insight.bestAvg)}</b> (${insight.bestDays} day${insight.bestDays>1?'s':''}). On <b>${escapeHtml(insight.worstLabel)}</b> days, it was <b>${fmtMoney(insight.worstAvg)}</b> (${insight.worstDays} day${insight.worstDays>1?'s':''}).</div>
+      </div>
+    ` : ''}
+  `;
+}
+
+// ---- PDF export ----
+function downloadReportPDF(){
+  if(!window.jspdf){ showToast("PDF library didn't load — check your connection and try again."); return; }
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const margin = 44;
+  let y = 56;
+
+  // Light-theme palette (a PDF is a white page, so this uses the app's
+  // light-mode tokens rather than the dark UI's neon-on-black values).
+  const ACCENT = [214, 158, 46], INK = [28, 32, 39], MUTED = [107, 113, 120],
+        WIN = [22, 163, 74], LOSS = [229, 62, 62], RULE = [226, 221, 209],
+        TINT = [247, 240, 220];
+
+  const { start, end, label } = _reportGetRange();
+  const trading = _reportTradingStats(start, end);
+  const finance = _reportFinanceStats(start, end);
+  const mood = _reportMoodStats(start, end);
+  const insight = _reportMoodInsightData(_reportMoodPnlBreakdown(trading, mood));
+  const cur = _reportPrimaryCurrency();
+
+  function ensureSpace(needed){
+    if(y + needed > pageHeight - 50){ doc.addPage(); y = 56; }
+  }
+
+  function sectionTitle(text){
+    ensureSpace(40);
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.setTextColor(...ACCENT);
+    doc.text(text.toUpperCase(), margin, y);
+    y += 6;
+    doc.setDrawColor(...RULE); doc.setLineWidth(1);
+    doc.line(margin, y, pageWidth - margin, y);
+    y += 22;
+  }
+
+  function statRow(items){
+    ensureSpace(44);
+    const colWidth = (pageWidth - margin*2) / items.length;
+    items.forEach((item, i) => {
+      const x = margin + i*colWidth;
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(...MUTED);
+      doc.text(item.label.toUpperCase(), x, y);
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(15); doc.setTextColor(...(item.color || INK));
+      doc.text(item.value, x, y + 18);
+    });
+    y += 42;
+  }
+
+  function noteLine(text){
+    ensureSpace(20);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5); doc.setTextColor(...MUTED);
+    doc.text(text, margin, y);
+    y += 26;
+  }
+
+  function emptyLine(text){
+    ensureSpace(24);
+    doc.setFont('helvetica', 'italic'); doc.setFontSize(10); doc.setTextColor(...MUTED);
+    doc.text(text, margin, y);
+    y += 26;
+  }
+
+  // Header
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(20); doc.setTextColor(...INK);
+  doc.text('TANAYDANA', margin, y);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(11); doc.setTextColor(...MUTED);
+  doc.text('Performance Report', margin, y + 16);
+  doc.setFontSize(10);
+  doc.text(label, pageWidth - margin, y, { align: 'right' });
+  doc.text(`Generated ${new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}`, pageWidth - margin, y + 14, { align: 'right' });
+  y += 36;
+  doc.setDrawColor(...RULE); doc.setLineWidth(1.2);
+  doc.line(margin, y, pageWidth - margin, y);
+  y += 28;
+
+  // Trading
+  sectionTitle('Trading');
+  if(trading.total){
+    statRow([
+      { label: 'Trades', value: String(trading.total) },
+      { label: 'Win Rate', value: trading.winRate + '%' },
+      { label: 'Total P&L', value: fmtMoney(trading.totalPnl), color: trading.totalPnl >= 0 ? WIN : LOSS },
+      { label: 'Avg R:R', value: trading.avgRR != null ? trading.avgRR.toFixed(2) : '—' }
+    ]);
+    noteLine(`Best trade: ${trading.bestTrade ? fmtMoney(trading.bestTrade.profit_loss) : '—'} (${trading.bestTrade?.symbol || '—'})   ·   Worst trade: ${trading.worstTrade ? fmtMoney(trading.worstTrade.profit_loss) : '—'} (${trading.worstTrade?.symbol || '—'})`);
+  }else{
+    emptyLine('No trades in this period.');
+  }
+
+  // Finance
+  sectionTitle('Finance');
+  if(finance.txCount){
+    statRow([
+      { label: 'Income', value: finMoney(finance.income, cur), color: WIN },
+      { label: 'Expense', value: finMoney(finance.expense, cur), color: LOSS },
+      { label: 'Net', value: finMoney(finance.net, cur), color: finance.net >= 0 ? WIN : LOSS }
+    ]);
+    if(finance.topCategory) noteLine(`Top category: ${finance.topCategory.name} — ${finMoney(finance.topCategory.amount, cur)}`);
+  }else{
+    emptyLine('No transactions in this period.');
+  }
+
+  // Mood
+  sectionTitle('Mood & Discipline');
+  if(mood.loggedDays){
+    noteLine(`Logged ${mood.loggedDays} of ${mood.totalDays} days`);
+    y -= 12;
+    const barX = margin + 76, barMaxWidth = 220;
+    MOOD_OPTIONS.filter(o => mood.counts[o.key] > 0).forEach(o => {
+      ensureSpace(18);
+      const count = mood.counts[o.key];
+      const pct = mood.loggedDays ? count / mood.loggedDays : 0;
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...INK);
+      doc.text(o.label, margin, y + 6);
+      doc.setFillColor(...RULE);
+      doc.roundedRect(barX, y, barMaxWidth, 8, 2, 2, 'F');
+      doc.setFillColor(...ACCENT);
+      doc.roundedRect(barX, y, Math.max(4, barMaxWidth * pct), 8, 2, 2, 'F');
+      doc.setTextColor(...MUTED);
+      doc.text(String(count), barX + barMaxWidth + 12, y + 6);
+      y += 18;
+    });
+    y += 12;
+  }else{
+    emptyLine('No mood entries in this period.');
+  }
+
+  // Insight
+  if(insight){
+    sectionTitle('Insight');
+    const text = `On days you logged feeling ${insight.bestLabel}, your average trading result was ${fmtMoney(insight.bestAvg)} (${insight.bestDays} day${insight.bestDays>1?'s':''}). On ${insight.worstLabel} days, it was ${fmtMoney(insight.worstAvg)} (${insight.worstDays} day${insight.worstDays>1?'s':''}).`;
+    const lines = doc.splitTextToSize(text, pageWidth - margin*2 - 24);
+    const boxHeight = lines.length * 14 + 20;
+    ensureSpace(boxHeight);
+    doc.setFillColor(...TINT);
+    doc.rect(margin, y - 14, pageWidth - margin*2, boxHeight, 'F');
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(...INK);
+    doc.text(lines, margin + 12, y);
+    y += boxHeight + 10;
+  }
+
+  // Footer (every page)
+  const pageCount = doc.internal.getNumberOfPages();
+  for(let i = 1; i <= pageCount; i++){
+    doc.setPage(i);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(...MUTED);
+    doc.text(`Generated by Tanaydana · Page ${i} of ${pageCount}`, pageWidth/2, pageHeight - 24, { align: 'center' });
+  }
+
+  doc.save(`Tanaydana-Report-${label.replace(/[^\w\d]+/g,'-')}.pdf`);
 }

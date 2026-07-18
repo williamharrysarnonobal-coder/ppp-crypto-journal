@@ -15,8 +15,9 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Public+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<link rel="stylesheet" href="css/style.css?v=147">
+<link rel="stylesheet" href="css/style.css?v=148">
 </head>
 <body>
 
@@ -57,6 +58,7 @@
       <button class="toggle-btn" onclick="toggleSidebar()" title="Collapse menu">☰</button>
     </div>
     <div class="nav-item active" data-view="profile" onclick="switchView('profile')"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg> <span class="nav-label">Profile</span><span class="nav-tooltip">Profile</span></div>
+    <div class="nav-item" data-view="reports" onclick="switchView('reports')"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="15" y2="17"/></svg> <span class="nav-label">Reports</span><span class="nav-tooltip">Reports</span></div>
     <div class="nav-section-label">Trading</div>
     <div class="nav-item" data-view="dashboard" onclick="switchView('dashboard')"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg> <span class="nav-label">Dashboard</span><span class="nav-tooltip">Dashboard</span></div>
     <div class="nav-item" data-view="journal" onclick="switchView('journal')"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V4a1 1 0 0 0-1-1H6.5A2.5 2.5 0 0 0 4 5.5v14z"/><path d="M4 19.5A2.5 2.5 0 0 0 6.5 22H20"/></svg> <span class="nav-label">Trade Journals</span><span class="nav-badge" id="navBadge-journal" style="display:none;"></span><span class="nav-tooltip">Trade Journals</span></div>
@@ -376,6 +378,38 @@
       </div>
     </div>
 
+  </div>
+
+  <div class="view" id="view-reports">
+    <header class="top">
+      <div>
+        <h1>Reports</h1>
+        <div class="sub">A combined recap of your trading, finances, and mood — export a clean PDF summary anytime.</div>
+      </div>
+      <div class="header-actions">
+        <button class="poscalc-accent-btn" onclick="downloadReportPDF()"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Download PDF</button>
+      </div>
+    </header>
+
+    <div class="panel" style="margin-bottom:20px;">
+      <div class="report-period-row">
+        <select id="reportPeriod" onchange="onReportPeriodChange()">
+          <option value="this_week">This Week</option>
+          <option value="last_week">Last Week</option>
+          <option value="this_month" selected>This Month</option>
+          <option value="last_month">Last Month</option>
+          <option value="custom">Custom Range</option>
+        </select>
+        <div id="reportRangeRow" style="display:none;align-items:center;gap:6px;">
+          <input type="date" id="reportRangeFrom" onchange="renderReportPreview()">
+          <span style="color:var(--muted);font-size:12px;">to</span>
+          <input type="date" id="reportRangeTo" onchange="renderReportPreview()">
+        </div>
+        <div class="sub" id="reportPeriodLabel"></div>
+      </div>
+    </div>
+
+    <div id="reportPreview"></div>
   </div>
 
   <div class="view" id="view-accounts">
@@ -1679,6 +1713,6 @@
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=1"></script>
-<script src="js/dashboard.js?v=174"></script>
+<script src="js/dashboard.js?v=175"></script>
 </body>
 </html>
