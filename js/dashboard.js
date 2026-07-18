@@ -1094,12 +1094,12 @@ function renderKPIs(){
       bar: `<div class="kpi-dual-bar"><div style="width:${pfDisplay}%;background:${cssVar('--win')};"></div><div style="width:${100-pfDisplay}%;background:${cssVar('--loss')};"></div></div>`},
     {label:"Avg RR", value: avgRR===null?"—":fmtNum(avgRR,2), cls:'',
       bar: `<div class="kpi-dual-bar"><div style="width:${rrDisplay}%;background:${cssVar('--win')};"></div><div style="width:${100-rrDisplay}%;background:${cssVar('--loss')};"></div></div>`},
-    {label:"Total trades", value: t.length, cls:'',
-      bar: t.length ? `<div style="margin-top:8px;font-size:11px;color:var(--muted);">${wins.length} win${wins.length!==1?'s':''} · ${losses.length} loss${losses.length!==1?'es':''}</div>` : ''},
     {label:"Avg win / loss", value: fmtMoney(avgWin).replace('+','')+" / "+fmtMoney(avgLoss), cls:'',
       bar: `<div class="kpi-dual-bar"><div style="width:${winBarPct}%;background:${cssVar('--win')};"></div><div style="width:${100-winBarPct}%;background:${cssVar('--loss')};"></div></div>`},
     {label:"Current streak", value: streakType ? `${streak} ${streakType}${streak>1?'s':''}` : "—", cls: streakType==='win'?'pos':(streakType==='loss'?'neg':''),
       bar: streakIcons},
+    {label:"Total trades", value: t.length, cls:'',
+      bar: t.length ? `<div style="margin-top:8px;font-size:11px;color:var(--muted);">${wins.length} win${wins.length!==1?'s':''} · ${losses.length} loss${losses.length!==1?'es':''}</div>` : ''},
     {label:"Fees paid", value: "$"+fmtNum(feesTotal,2), cls:'',
       bar: `<div class="kpi-bar"><div class="kpi-bar-fill" style="width:${feesShare}%;background:${cssVar('--warn')};"></div></div><div style="margin-top:6px;font-size:10.5px;color:var(--muted);">${fmtNum(feesShare,1)}% of gross win</div>`}
   ];
