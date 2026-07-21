@@ -1133,6 +1133,23 @@ function renderCalendar(){
   let bestDay = null, bestPnl = -Infinity;
   Object.entries(byDay).forEach(([d,v]) => { if(v.pnl > bestPnl){ bestPnl = v.pnl; bestDay = d; } });
 
+  const summaryEl = document.getElementById('calTotalSummary');
+  if(summaryEl){
+    const dayEntries = Object.values(byDay);
+    if(!dayEntries.length){
+      summaryEl.innerHTML = '';
+    }else{
+      const profitDays = dayEntries.filter(v => v.pnl >= 0).length;
+      const lossDays = dayEntries.length - profitDays;
+      const winDayPct = Math.round(profitDays / dayEntries.length * 100);
+      summaryEl.innerHTML = `
+        <span class="pos">${profitDays} profit</span>
+        <span class="neg">${lossDays} loss</span>
+        <span>${winDayPct}% win days</span>
+      `;
+    }
+  }
+
   const firstDow = new Date(y, m, 1).getDay();
   const daysInMonth = new Date(y, m+1, 0).getDate();
 
@@ -5593,13 +5610,15 @@ function getFilteredJournalRows(){
     }
   });
 
-  // sort by No. (ascending); rows without a number fall to the end
+  // sort by Close Date (most recent first) — matches the same field the
+  // Calendar, Reports, and Discipline Radar all already use as the
+  // "when did this happen" anchor; rows without a close_date fall to the end.
   return [...rows].sort((a,b) => {
-    const an = parseFloat(a.no), bn = parseFloat(b.no);
-    const aValid = !isNaN(an), bValid = !isNaN(bn);
-    if(aValid && bValid) return an - bn;
-    if(aValid) return -1;
-    if(bValid) return 1;
+    const ad = a.close_date ? new Date(a.close_date).getTime() : null;
+    const bd = b.close_date ? new Date(b.close_date).getTime() : null;
+    if(ad !== null && bd !== null) return bd - ad;
+    if(ad !== null) return -1;
+    if(bd !== null) return 1;
     return 0;
   });
 }

@@ -296,6 +296,8 @@
   .kpi .label{font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:8px;}
   .kpi .value{font-family:'IBM Plex Mono',monospace;font-size:21px;font-weight:600;}
   .pos{color:var(--win);} .neg{color:var(--loss);}
+  .cal-total-summary{display:flex;gap:14px;font-size:12px;font-weight:600;color:var(--muted);margin:-6px 0 10px;}
+  .cal-total-summary .pos, .cal-total-summary .neg{font-weight:700;}
   .tc-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:2px;vertical-align:1px;}
   .tc-dot.win{background:var(--win);} .tc-dot.loss{background:var(--loss);} .tc-dot.be{background:var(--muted);}
   .kpi-bar{height:5px;border-radius:3px;background:var(--rule);margin-top:10px;overflow:hidden;}
