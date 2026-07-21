@@ -1120,9 +1120,11 @@ function renderCalendar(){
   document.getElementById('calLabel').textContent = calMonth.toLocaleDateString('en-US',{month:'long', year:'numeric'});
 
   const byDay = {};
+  const monthTrades = [];
   FILTERED.forEach(t => {
     if(!t.close_date) return;
     if(t.close_date.getFullYear() !== y || t.close_date.getMonth() !== m) return;
+    monthTrades.push(t);
     const key = t.close_date.getDate();
     if(!byDay[key]) byDay[key] = {pnl:0, count:0, trades:[]};
     byDay[key].pnl += t.profit_loss || 0;
@@ -1133,21 +1135,24 @@ function renderCalendar(){
   let bestDay = null, bestPnl = -Infinity;
   Object.entries(byDay).forEach(([d,v]) => { if(v.pnl > bestPnl){ bestPnl = v.pnl; bestDay = d; } });
 
+  // Trade-level counts (not day-level) — matches how Win Rate elsewhere
+  // counts wins/losses, so "9 profit" here means 9 winning TRADES, not
+  // 9 net-positive days (a day with 3 trades only ever counted as one
+  // day before, which didn't match the per-week trade totals).
   const summaryEl = document.getElementById('calTotalSummary');
   if(summaryEl){
-    const dayEntries = Object.values(byDay);
-    if(!dayEntries.length){
+    if(!monthTrades.length){
       summaryEl.innerHTML = '';
     }else{
-      const profitDays = dayEntries.filter(v => v.pnl >= 0).length;
-      const lossDays = dayEntries.length - profitDays;
-      const winDayPct = Math.round(profitDays / dayEntries.length * 100);
-      const monthPnl = dayEntries.reduce((s,v) => s + v.pnl, 0);
+      const winTrades = monthTrades.filter(t => (t.win_loss||'').toLowerCase() === 'win').length;
+      const lossTrades = monthTrades.filter(t => (t.win_loss||'').toLowerCase() === 'loss').length;
+      const winPct = Math.round(winTrades / monthTrades.length * 100);
+      const monthPnl = monthTrades.reduce((s,t) => s + (t.profit_loss||0), 0);
       summaryEl.innerHTML = `
         <span class="${monthPnl>=0?'pos':'neg'}">${fmtMoney(monthPnl)}</span>
-        <span class="pos">${profitDays} profit</span>
-        <span class="neg">${lossDays} loss</span>
-        <span>${winDayPct}% win days</span>
+        <span class="pos">${winTrades} profit</span>
+        <span class="neg">${lossTrades} loss</span>
+        <span>${winPct}% win rate</span>
       `;
     }
   }
