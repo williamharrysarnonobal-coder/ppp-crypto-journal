@@ -1142,7 +1142,9 @@ function renderCalendar(){
       const profitDays = dayEntries.filter(v => v.pnl >= 0).length;
       const lossDays = dayEntries.length - profitDays;
       const winDayPct = Math.round(profitDays / dayEntries.length * 100);
+      const monthPnl = dayEntries.reduce((s,v) => s + v.pnl, 0);
       summaryEl.innerHTML = `
+        <span class="${monthPnl>=0?'pos':'neg'}">${fmtMoney(monthPnl)}</span>
         <span class="pos">${profitDays} profit</span>
         <span class="neg">${lossDays} loss</span>
         <span>${winDayPct}% win days</span>
