@@ -1178,6 +1178,20 @@
   .fin-balances-hidden .fin-balance{
     filter:blur(6px);user-select:none;
   }
+  /* TEMPORARY (while sharing this login) — blurs the ENTIRE content of
+     Dashboard/Transactions/Recurring, not just individually-tagged
+     .fin-balance amounts, since dates/categories/descriptions in those
+     areas sit right next to real numbers. Broader and blunter on purpose;
+     remove this block once the temporary share with vinch is over. */
+  body.fin-balances-hidden #finDashKpis,
+  body.fin-balances-hidden #finDashGrid,
+  body.fin-balances-hidden #finDashOtherCurrencies,
+  body.fin-balances-hidden #finDashDetailBody,
+  body.fin-balances-hidden #finTxWrap,
+  body.fin-balances-hidden #finInstWrap,
+  body.fin-balances-hidden #finSubWrap{
+    filter:blur(6px);user-select:none;pointer-events:none;
+  }
 
   /* Finance: sub-accounts nested inside a parent Debit card */
   .fin-subacct-list{margin-top:10px;padding-top:10px;border-top:1px dashed var(--rule);display:flex;flex-direction:column;gap:6px;}
