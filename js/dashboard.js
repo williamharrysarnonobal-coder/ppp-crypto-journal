@@ -4773,11 +4773,25 @@ async function deleteFinanceBudget(id){
   }
 }
 
-/* ---- Finance: hide balances (privacy toggle, per-device) ---- */
-let FIN_BALANCES_HIDDEN = false;
-try{ FIN_BALANCES_HIDDEN = localStorage.getItem('ledger-fin-hide-balances') === '1'; }catch(e){}
+/* ---- Finance: hide balances (privacy toggle, per-device) ----
+   TEMPORARY: defaults to HIDDEN on any device/browser that hasn't
+   explicitly toggled it before (localStorage empty), instead of shown —
+   so sharing this login on someone else's device doesn't expose amounts
+   by default. Revert the default back to false once the temporary share
+   with vinch is over (a device that already saved a preference is
+   unaffected either way). */
+let FIN_BALANCES_HIDDEN = true;
+try{
+  const savedHideBalances = localStorage.getItem('ledger-fin-hide-balances');
+  if(savedHideBalances !== null) FIN_BALANCES_HIDDEN = savedHideBalances === '1';
+}catch(e){}
 
 function toggleFinBalances(){
+  // TEMPORARY: no-op while sharing this login — balances stay forced
+  // hidden with no way to reveal them, regardless of what's clicked.
+  // Restore the two lines below (and remove this early return) once the
+  // temporary share with vinch is over.
+  return;
   FIN_BALANCES_HIDDEN = !FIN_BALANCES_HIDDEN;
   try{ localStorage.setItem('ledger-fin-hide-balances', FIN_BALANCES_HIDDEN ? '1' : '0'); }catch(e){}
   applyFinBalanceVisibility();
