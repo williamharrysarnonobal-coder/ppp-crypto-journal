@@ -3321,7 +3321,10 @@ function openFinAccountDetailsModal(accountId, backToId){
   // toggle here would just be a dead button on a Credit card.
   const hideBalBtn = document.getElementById('finAccDetailsHideBalBtn');
   if(hideBalBtn){
-    hideBalBtn.style.display = a.account_class !== 'Credit' ? '' : 'none';
+    // TEMPORARY: forced hidden while sharing this login — no reveal option
+    // anywhere. Restore the line below (account_class check) once the
+    // temporary share with vinch is over.
+    hideBalBtn.style.display = 'none';
     hideBalBtn.textContent = FIN_BALANCES_HIDDEN ? 'Show Balances' : 'Hide Balances';
   }
 

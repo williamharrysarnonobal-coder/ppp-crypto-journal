@@ -1189,7 +1189,8 @@
   body.fin-balances-hidden #finDashDetailBody,
   body.fin-balances-hidden #finTxWrap,
   body.fin-balances-hidden #finInstWrap,
-  body.fin-balances-hidden #finSubWrap{
+  body.fin-balances-hidden #finSubWrap,
+  body.fin-balances-hidden #finAccDetailsBody{
     filter:blur(6px);user-select:none;pointer-events:none;
   }
 
