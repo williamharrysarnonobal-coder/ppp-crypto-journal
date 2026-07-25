@@ -3227,6 +3227,7 @@ function _finAccountHistoryRows(accountId){
       if(t.account_id === accountId){ amt = -(Number(t.amount) || 0); label = `Transfer to ${_finAccountName(t.to_account_id)}`; }
       else { amt = Number(t.amount) || 0; label = `Transfer from ${_finAccountName(t.account_id)}`; }
     }
+    else if(t.tx_type === 'Correction'){ amt = Number(t.amount) || 0; label = t.description || 'Balance Correction'; }
     const balanceAfter = running;
     if(showRunning) running = Number((running - amt).toFixed(2));
     return { tx_date: t.tx_date, label, amt, balanceAfter, showRunning };
@@ -3671,10 +3672,10 @@ async function saveFinAccount(){
           },
           body: JSON.stringify({
             tx_date: new Date().toISOString().slice(0,10),
-            tx_type: delta > 0 ? 'Income' : 'Expense',
-            amount: Math.abs(delta),
+            tx_type: 'Correction',
+            amount: delta,
             account_id: editingFinAccountId,
-            category: 'Balance Correction',
+            category: null,
             description: `Manual balance correction (was ${finMoney(oldBalance, payload.currency)}, set to ${finMoney(payload.current_balance, payload.currency)})`
           })
         });
@@ -3880,11 +3881,15 @@ function renderFinanceTransactions(){
     }else if(t.tx_type === 'Expense'){
       amountHtml = `<span style="color:var(--loss);font-weight:600;">−${finMoney(t.amount, cur)}</span>`;
       accountHtml = escapeHtml(_finAccountName(t.account_id));
+    }else if(t.tx_type === 'Correction'){
+      const amt = Number(t.amount) || 0;
+      amountHtml = `<span style="color:var(--muted);font-weight:600;">${amt >= 0 ? '+' : '−'}${finMoney(Math.abs(amt), cur)}</span>`;
+      accountHtml = escapeHtml(_finAccountName(t.account_id));
     }else{
       amountHtml = `<span style="font-weight:600;">${finMoney(t.amount, cur)}</span>`;
       accountHtml = `${escapeHtml(_finAccountName(t.account_id))} → ${escapeHtml(_finAccountName(t.to_account_id))}`;
     }
-    const typePill = t.tx_type === 'Income' ? 'pill-green' : (t.tx_type === 'Expense' ? 'pill-red' : 'pill-blue');
+    const typePill = t.tx_type === 'Income' ? 'pill-green' : (t.tx_type === 'Expense' ? 'pill-red' : (t.tx_type === 'Correction' ? 'pill-muted' : 'pill-blue'));
     // Only Credit accounts have a "bill" to settle — Debit spending is
     // immediate real cash, there's nothing to mark as paid.
     const statusHtml = acc && acc.account_class === 'Credit'
@@ -3910,7 +3915,7 @@ function renderFinanceTransactions(){
         <td data-label="Description">${escapeHtml(t.description || '—')}</td>
         <td data-label="Status">${statusHtml}</td>
         <td class="fin-tx-td-actions" style="text-align:right;white-space:nowrap;">
-          <button class="drawer-secondary-btn" style="padding:4px 10px;font-size:11px;" onclick="openFinTxModal({editId:${t.id}})">Edit</button>
+          ${t.tx_type !== 'Correction' ? `<button class="drawer-secondary-btn" style="padding:4px 10px;font-size:11px;" onclick="openFinTxModal({editId:${t.id}})">Edit</button>` : ''}
           <button class="drawer-danger-btn" style="padding:4px 10px;font-size:11px;margin-left:4px;" onclick="deleteFinTx(${t.id})">${deleteIconSVG()}</button>
         </td>
       </tr>

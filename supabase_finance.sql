@@ -36,7 +36,7 @@ create table if not exists finance_transactions (
   id bigint generated always as identity primary key,
   user_id uuid not null references auth.users(id) default auth.uid(),
   tx_date date not null default current_date,
-  tx_type text not null check (tx_type in ('Income','Expense','Transfer')),
+  tx_type text not null check (tx_type in ('Income','Expense','Transfer','Correction')),
   amount numeric not null,
   account_id bigint references finance_accounts(id) on delete set null,
   to_account_id bigint references finance_accounts(id) on delete set null,
