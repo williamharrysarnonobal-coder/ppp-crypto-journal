@@ -10362,7 +10362,12 @@ const CONFLUENCE_SETUPS = {
   },
 };
 
-let confluenceSetupId = null;
+// Confluence can be filled in on a Pending Setup (before it's ever
+// journaled) or added/edited later directly on an already-journaled trade
+// (old trades from before this feature existed have no confluence yet) —
+// one target object instead of two parallel id variables keeps save/close
+// from needing to guess which flow opened the modal.
+let confluenceTarget = null;  // { type:'setup', id } | { type:'trade', positionId }
 let confluenceAnswers = {};   // { itemIndex: 'yes' | 'almost' | 'no' }
 let confluenceChartPattern = null;
 
@@ -10394,7 +10399,26 @@ function _renderConfluencePatternOptions(selected){
 function openConfluenceModal(id){
   const s = SAVED_SETUPS.find(x => x.id === id);
   if(!s) return;
-  confluenceSetupId = id;
+  confluenceTarget = { type:'setup', id };
+  _openConfluenceModalWith(s);
+}
+
+// Reached from the Trade View modal — lets confluence be filled in (or
+// corrected) on a trade that's already journaled, including ones logged
+// before this feature existed.
+function openConfluenceModalForTrade(positionId){
+  const row = RAW_TRADES.find(r => r.position_id === positionId);
+  if(!row) return;
+  confluenceTarget = { type:'trade', positionId };
+  _openConfluenceModalWith(row);
+}
+
+function openConfluenceModalFromTradeView(){
+  const row = tradeViewList[tradeViewIndex];
+  if(row) openConfluenceModalForTrade(row.position_id);
+}
+
+function _openConfluenceModalWith(s){
   confluenceAnswers = (s.confluence_answers && typeof s.confluence_answers === 'object') ? {...s.confluence_answers} : {};
   confluenceChartPattern = s.chart_pattern || null;
 
@@ -10408,7 +10432,7 @@ function openConfluenceModal(id){
 
 function closeConfluenceModal(){
   document.getElementById('confluenceModal').classList.remove('open');
-  confluenceSetupId = null;
+  confluenceTarget = null;
 }
 
 function onConfluenceTradeTypeChange(){
@@ -10495,30 +10519,48 @@ function selectConfluenceChartPattern(p){
 }
 
 async function saveConfluenceModal(){
-  if(!confluenceSetupId) return;
+  if(!confluenceTarget) return;
   const tradeType = document.getElementById('confluenceTradeType').value || null;
   const patternType = document.getElementById('confluencePatternType').value || null;
+  const payload = {
+    trade_type: tradeType,
+    pattern_type: patternType,
+    confluence_answers: confluenceAnswers,
+    chart_pattern: confluenceChartPattern
+  };
 
   try{
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/position_setups?id=eq.${confluenceSetupId}`, {
-      method: 'PATCH',
-      headers: {
-        "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}`,
-        "Content-Type": "application/json", "Prefer": "return=representation"
-      },
-      body: JSON.stringify({
-        trade_type: tradeType,
-        pattern_type: patternType,
-        confluence_answers: confluenceAnswers,
-        chart_pattern: confluenceChartPattern
-      })
-    });
-    if(!res.ok) throw new Error(await res.text());
-    const updated = await res.json();
-    const idx = SAVED_SETUPS.findIndex(s => s.id === confluenceSetupId);
-    if(idx !== -1 && updated[0]) SAVED_SETUPS[idx] = updated[0];
+    if(confluenceTarget.type === 'setup'){
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/position_setups?id=eq.${confluenceTarget.id}`, {
+        method: 'PATCH',
+        headers: {
+          "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}`,
+          "Content-Type": "application/json", "Prefer": "return=representation"
+        },
+        body: JSON.stringify(payload)
+      });
+      if(!res.ok) throw new Error(await res.text());
+      const updated = await res.json();
+      const idx = SAVED_SETUPS.findIndex(s => s.id === confluenceTarget.id);
+      if(idx !== -1 && updated[0]) SAVED_SETUPS[idx] = updated[0];
+      renderSavedSetups();
+    }else{
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/${TABLE_NAME}?position_id=eq.${encodeURIComponent(confluenceTarget.positionId)}`, {
+        method: 'PATCH',
+        headers: {
+          "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}`,
+          "Content-Type": "application/json", "Prefer": "return=representation"
+        },
+        body: JSON.stringify(payload)
+      });
+      if(!res.ok) throw new Error(await res.text());
+      const updated = await res.json();
+      const idx = RAW_TRADES.findIndex(r => r.position_id === confluenceTarget.positionId);
+      if(idx !== -1 && updated[0]) RAW_TRADES[idx] = updated[0];
+      renderJournalTable();
+      if(document.getElementById('tradeViewModal').classList.contains('open')) renderTradeViewModal();
+    }
     closeConfluenceModal();
-    renderSavedSetups();
     showToast('Confluence saved');
   }catch(e){
     console.error("Couldn't save confluence:", e);
