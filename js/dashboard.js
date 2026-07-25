@@ -307,6 +307,24 @@ function applyUIPrefsFromProfile(){
   if(changedKeys.includes('finance_options')) _finApplyRecommendedTaxonomy();
 }
 
+async function changeAccountPassword(){
+  const statusEl = document.getElementById('changePasswordStatus');
+  const newPw = document.getElementById('changePasswordNew').value;
+  const confirmPw = document.getElementById('changePasswordConfirm').value;
+  const setStatus = (msg, ok) => { if(statusEl){ statusEl.textContent = msg; statusEl.style.color = ok ? 'var(--win)' : 'var(--loss)'; } };
+
+  if(newPw.length < 6){ setStatus('Password must be at least 6 characters.', false); return; }
+  if(newPw !== confirmPw){ setStatus('Passwords do not match.', false); return; }
+
+  setStatus('Updating…', true);
+  const { error } = await sb.auth.updateUser({ password: newPw });
+  if(error){ setStatus(error.message || 'Failed to update password.', false); return; }
+
+  document.getElementById('changePasswordNew').value = '';
+  document.getElementById('changePasswordConfirm').value = '';
+  setStatus('Password updated.', true);
+}
+
 function renderSettingsPage(){
   const currentThemeMode = document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
   const themeGrid = document.getElementById('themeOptionGrid');
@@ -3321,10 +3339,7 @@ function openFinAccountDetailsModal(accountId, backToId){
   // toggle here would just be a dead button on a Credit card.
   const hideBalBtn = document.getElementById('finAccDetailsHideBalBtn');
   if(hideBalBtn){
-    // TEMPORARY: forced hidden while sharing this login — no reveal option
-    // anywhere. Restore the line below (account_class check) once the
-    // temporary share with vinch is over.
-    hideBalBtn.style.display = 'none';
+    hideBalBtn.style.display = a.account_class !== 'Credit' ? '' : 'none';
     hideBalBtn.textContent = FIN_BALANCES_HIDDEN ? 'Show Balances' : 'Hide Balances';
   }
 
@@ -4783,18 +4798,13 @@ async function deleteFinanceBudget(id){
    by default. Revert the default back to false once the temporary share
    with vinch is over (a device that already saved a preference is
    unaffected either way). */
-let FIN_BALANCES_HIDDEN = true;
+let FIN_BALANCES_HIDDEN = false;
 try{
   const savedHideBalances = localStorage.getItem('ledger-fin-hide-balances');
   if(savedHideBalances !== null) FIN_BALANCES_HIDDEN = savedHideBalances === '1';
 }catch(e){}
 
 function toggleFinBalances(){
-  // TEMPORARY: no-op while sharing this login — balances stay forced
-  // hidden with no way to reveal them, regardless of what's clicked.
-  // Restore the two lines below (and remove this early return) once the
-  // temporary share with vinch is over.
-  return;
   FIN_BALANCES_HIDDEN = !FIN_BALANCES_HIDDEN;
   try{ localStorage.setItem('ledger-fin-hide-balances', FIN_BALANCES_HIDDEN ? '1' : '0'); }catch(e){}
   applyFinBalanceVisibility();

@@ -17,7 +17,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<link rel="stylesheet" href="css/style.css?v=151">
+<link rel="stylesheet" href="css/style.css?v=152">
 </head>
 <body>
 
@@ -578,6 +578,23 @@
     </header>
 
     <div class="panel" style="margin-bottom:20px;max-width:560px;">
+      <h2>Account</h2>
+      <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:14px;">Change the password used to log in.</div>
+      <div class="field-row">
+        <label>New Password</label>
+        <input type="password" id="changePasswordNew" placeholder="At least 6 characters" autocomplete="new-password">
+      </div>
+      <div class="field-row">
+        <label>Confirm New Password</label>
+        <input type="password" id="changePasswordConfirm" placeholder="Re-type new password" autocomplete="new-password" onkeydown="if(event.key==='Enter'){ event.preventDefault(); changeAccountPassword(); }">
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;margin-top:10px;">
+        <button class="poscalc-accent-btn" onclick="changeAccountPassword()">Update Password</button>
+        <span id="changePasswordStatus" style="font-size:11.5px;"></span>
+      </div>
+    </div>
+
+    <div class="panel" style="margin-bottom:20px;max-width:560px;">
       <h2>Theme</h2>
       <div class="settings-option-grid" id="themeOptionGrid"></div>
     </div>
@@ -832,7 +849,7 @@
 
         <div class="subnav-panel" id="financePanel-accounts">
           <div class="panel">
-            <h2 style="display:flex;align-items:center;justify-content:space-between;gap:10px;">Accounts <span style="display:flex;gap:8px;"><button class="poscalc-accent-btn" id="finHideBalBtn" onclick="toggleFinBalances()" style="display:none;">Hide Balances</button><button class="poscalc-accent-btn" onclick="openFinAccountModal()">+ Add Account</button></span></h2>
+            <h2 style="display:flex;align-items:center;justify-content:space-between;gap:10px;">Accounts <span style="display:flex;gap:8px;"><button class="poscalc-accent-btn" id="finHideBalBtn" onclick="toggleFinBalances()">Hide Balances</button><button class="poscalc-accent-btn" onclick="openFinAccountModal()">+ Add Account</button></span></h2>
             <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">Where your money lives — banks, e-wallets, cash, crypto.</div>
             <div class="empty-state" id="finAccountsEmpty" style="display:none;">No accounts yet — click "+ Add Account" to add your first one.</div>
             <div id="finAccountsSections"></div>
@@ -1714,6 +1731,6 @@
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=1"></script>
-<script src="js/dashboard.js?v=188"></script>
+<script src="js/dashboard.js?v=189"></script>
 </body>
 </html>
