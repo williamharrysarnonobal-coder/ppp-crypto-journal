@@ -3675,7 +3675,7 @@ async function saveFinAccount(){
             tx_type: 'Correction',
             amount: delta,
             account_id: editingFinAccountId,
-            category: null,
+            category: 'Balance Correction',
             description: `Manual balance correction (was ${finMoney(oldBalance, payload.currency)}, set to ${finMoney(payload.current_balance, payload.currency)})`
           })
         });
