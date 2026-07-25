@@ -6861,7 +6861,17 @@ async function saveDrawer(){
       const maxNo = RAW_TRADES.reduce((m,r) => { const n = parseFloat(r.no); return !isNaN(n) && n>m ? n : m; }, 0);
       patch.no = patch.no || (maxNo + 1);
       patch.position_id = 'WEB-' + Date.now().toString(36).toUpperCase();
-      if(drawerJournalSetupId) patch.linked_setup_id = drawerJournalSetupId;
+      if(drawerJournalSetupId){
+        patch.linked_setup_id = drawerJournalSetupId;
+        // confluence_answers/chart_pattern aren't rendered drawer fields —
+        // they were filled in earlier on the Setup itself (Confluence
+        // button), so carry them over here rather than losing them.
+        const linkedSetup = SAVED_SETUPS.find(s => s.id === drawerJournalSetupId);
+        if(linkedSetup){
+          if(linkedSetup.confluence_answers) patch.confluence_answers = linkedSetup.confluence_answers;
+          if(linkedSetup.chart_pattern) patch.chart_pattern = linkedSetup.chart_pattern;
+        }
+      }
 
       const res = await fetch(`${SUPABASE_URL}/rest/v1/${TABLE_NAME}`, {
         method: 'POST',
@@ -10236,6 +10246,212 @@ function setupStatusPillClass(status){
   return 'pill-muted';
 }
 
+/* ---- Confluence checklist (Pending Setups > "Confluence" button) ----
+   Keyed by "TradeType|Pattern Type" — most Pattern Types imply a single
+   direction (HL=Long, LH=Short) but "30 mins Invalidation Play" is shared
+   by both, with a genuinely different checklist per direction (divergence
+   flips), so the full key is always Trade Type + Pattern Type together. */
+const CONFLUENCE_SETUPS = {
+  'Long|5 mins HL': {
+    items: [
+      {tag:'MACD · 1H', text:'Is 1H MACD in Bull Territory (Green Histogram)?'},
+      {tag:'MACD · 15M', text:'Is 15M MACD in Bull Territory (Green Histogram)?'},
+      {tag:'Execution', text:'Did price hit Support or the .382 Fib on the 1min BB50?', exec:true},
+      {tag:'Execution', text:'Did MACD cross the zero line upward at the same time?', exec:true},
+    ],
+    patterns: ['Double Bottom', 'Triple Bottom', 'Inverse H&S']
+  },
+  'Short|5 mins LH': {
+    items: [
+      {tag:'MACD · 1H', text:'Is 1H MACD in Bear Territory (Red Histogram)?'},
+      {tag:'MACD · 15M', text:'Is 15M MACD in Bear Territory (Red Histogram)?'},
+      {tag:'Execution', text:'Did price hit Resistance or the .382 Fib on the 1min BB50?', exec:true},
+      {tag:'Execution', text:'Did MACD cross the zero line downward at the same time?', exec:true},
+    ],
+    patterns: ['Double Top', 'Triple Top', 'H&S']
+  },
+  'Long|15 mins HL': {
+    items: [
+      {tag:'MACD · 1H', text:'Is 1H MACD in Bull Territory (Green Histogram)?'},
+      {tag:'MACD · 30M', text:'Is 30M MACD far from the zero line?'},
+      {tag:'BB50 · 2H', text:'Is 2H BB50 far from price, or before your TP area?'},
+      {tag:'Execution', text:'Did price hit Support or the .382 Fib on the 5min/3min BB50?', exec:true},
+      {tag:'Execution', text:'Did MACD cross the zero line upward at the same time?', exec:true},
+    ],
+    patterns: ['Double Bottom', 'Triple Bottom', 'Inverse H&S']
+  },
+  'Short|15 mins LH': {
+    items: [
+      {tag:'MACD · 1H', text:'Is 1H MACD in Bear Territory (Red Histogram)?'},
+      {tag:'MACD · 30M', text:'Is 30M MACD far from the zero line?'},
+      {tag:'BB50 · 2H', text:'Is 2H BB50 far from price, or before your TP area?'},
+      {tag:'Execution', text:'Did price hit Resistance or the .382 Fib on the 5min/3min BB50?', exec:true},
+      {tag:'Execution', text:'Did MACD cross the zero line downward at the same time?', exec:true},
+    ],
+    patterns: ['Double Top', 'Triple Top', 'H&S']
+  },
+  'Long|30 mins Invalidation Play': {
+    items: [
+      {tag:'Divergence · 1H', text:'Is there Righthand divergence? (price falling, but MACD rising)'},
+      {tag:'MACD · 1H', text:'Is 1H MACD in Bear Territory with a Green Histogram (weakening)?'},
+      {tag:'BB50 · 1H', text:'Is 1H BB50 far from price, for your TP area (upper or lower band)?'},
+      {tag:'Execution', text:'Did price hit Support or the .382 Fib on the 5min/3min BB50?', exec:true},
+      {tag:'Execution', text:'Did MACD cross the zero line upward at the same time?', exec:true},
+    ],
+    patterns: ['Double Top', 'Triple Top', 'H&S']
+  },
+  'Short|30 mins Invalidation Play': {
+    items: [
+      {tag:'Divergence · 1H', text:'Is there Lefthand divergence? (price rising, but MACD falling)'},
+      {tag:'MACD · 1H', text:'Is 1H MACD in Bull Territory with a Red Histogram (weakening)?'},
+      {tag:'BB50 · 1H', text:'Is 1H BB50 far from price, for your TP area (upper or lower band)?'},
+      {tag:'Execution', text:'Did price hit Resistance or the .382 Fib on the 5min/3min BB50?', exec:true},
+      {tag:'Execution', text:'Did MACD cross the zero line downward at the same time?', exec:true},
+    ],
+    patterns: ['Double Bottom', 'Triple Bottom', 'Inverse H&S']
+  },
+};
+
+let confluenceSetupId = null;
+let confluenceAnswers = {};   // { itemIndex: 'yes' | 'almost' | 'no' }
+let confluenceChartPattern = null;
+
+function _confluenceKey(){
+  const tt = document.getElementById('confluenceTradeType')?.value;
+  const pt = document.getElementById('confluencePatternType')?.value;
+  return (tt && pt) ? `${tt}|${pt}` : null;
+}
+
+function openConfluenceModal(id){
+  const s = SAVED_SETUPS.find(x => x.id === id);
+  if(!s) return;
+  confluenceSetupId = id;
+  confluenceAnswers = (s.confluence_answers && typeof s.confluence_answers === 'object') ? {...s.confluence_answers} : {};
+  confluenceChartPattern = s.chart_pattern || null;
+
+  document.getElementById('confluenceTradeType').innerHTML =
+    '<option value="">— choose —</option>' + FIELD_OPTIONS.trade_type.map(o => `<option value="${o}" ${s.trade_type===o?'selected':''}>${o}</option>`).join('');
+  document.getElementById('confluencePatternType').innerHTML =
+    '<option value="">— choose —</option>' + FIELD_OPTIONS.pattern_type.map(o => `<option value="${o}" ${s.pattern_type===o?'selected':''}>${o}</option>`).join('');
+
+  renderConfluenceChecklist();
+  document.getElementById('confluenceModal').classList.add('open');
+}
+
+function closeConfluenceModal(){
+  document.getElementById('confluenceModal').classList.remove('open');
+  confluenceSetupId = null;
+}
+
+function onConfluenceTypeChange(){
+  // Switching Trade Type/Pattern Type mid-fill would silently keep stale
+  // answers from a different checklist shape — start clean instead.
+  confluenceAnswers = {};
+  confluenceChartPattern = null;
+  renderConfluenceChecklist();
+}
+
+function renderConfluenceChecklist(){
+  const body = document.getElementById('confluenceBody');
+  const key = _confluenceKey();
+  if(!key){
+    body.innerHTML = '<div class="empty-state">Pumili muna ng Trade Type at Pattern Type.</div>';
+    return;
+  }
+  const cfg = CONFLUENCE_SETUPS[key];
+  if(!cfg){
+    body.innerHTML = '<div class="empty-state">Wala pang confluence checklist na naka-configure para dito.</div>';
+    return;
+  }
+
+  const answeredValues = Object.values(confluenceAnswers);
+  const total = cfg.items.length + 1;
+  const yesCount = answeredValues.filter(v => v === 'yes').length;
+  const almostCount = answeredValues.filter(v => v === 'almost').length;
+  const done = yesCount + (almostCount * 0.5) + (confluenceChartPattern ? 1 : 0);
+  const unanswered = cfg.items.length - answeredValues.length;
+
+  const itemsHtml = cfg.items.map((it, i) => {
+    const ans = confluenceAnswers[i];
+    return `
+      <div class="cfl-yn-item ${it.exec?'cfl-execution':''} ${!ans?'cfl-unanswered':''}">
+        <span class="cfl-yn-label"><span class="cfl-yn-tag">${it.tag}</span>${it.text}</span>
+        <span class="cfl-yn-buttons">
+          <button type="button" class="cfl-yn-btn cfl-yes ${ans==='yes'?'active':''}" onclick="setConfluenceAnswer(${i},'yes')">Yes</button>
+          ${it.exec ? `<button type="button" class="cfl-yn-btn cfl-almost ${ans==='almost'?'active':''}" onclick="setConfluenceAnswer(${i},'almost')">Almost</button>` : ''}
+          <button type="button" class="cfl-yn-btn cfl-no ${ans==='no'?'active':''}" onclick="setConfluenceAnswer(${i},'no')">No</button>
+        </span>
+      </div>
+    `;
+  }).join('');
+
+  const chipsHtml = ['None', ...cfg.patterns].map(p => {
+    const isActive = (p === 'None' && !confluenceChartPattern) || p === confluenceChartPattern;
+    return `<span class="cfl-pattern-chip ${p==='None'?'cfl-none':''} ${isActive?'active':''}" onclick="selectConfluenceChartPattern('${p.replace(/'/g,"\\'")}')">${p}</span>`;
+  }).join('');
+
+  body.innerHTML = `
+    <div class="cfl-checklist-head">
+      <div class="cfl-checklist-title">Confluence Checklist</div>
+      <div class="cfl-progress-chip">
+        <span class="cfl-progress-track"><span class="cfl-progress-fill" style="width:${total?(done/total*100):0}%;"></span></span>
+        <span class="num">${Number(done.toFixed(1))}/${total}</span>
+      </div>
+    </div>
+    ${unanswered > 0 ? `<div class="cfl-unanswered-note">${unanswered} question${unanswered===1?'':'s'} not yet answered</div>` : ''}
+    <div class="cfl-checklist-card">${itemsHtml}</div>
+    <div class="cfl-pattern-picker">
+      <div class="cfl-pattern-picker-head">
+        <span class="cfl-pattern-picker-title">Chart Pattern (optional)</span>
+      </div>
+      <div class="cfl-pattern-chips">${chipsHtml}</div>
+    </div>
+  `;
+}
+
+function setConfluenceAnswer(i, val){
+  confluenceAnswers[i] = (confluenceAnswers[i] === val) ? undefined : val;
+  if(confluenceAnswers[i] === undefined) delete confluenceAnswers[i];
+  renderConfluenceChecklist();
+}
+
+function selectConfluenceChartPattern(p){
+  confluenceChartPattern = (p === 'None') ? null : p;
+  renderConfluenceChecklist();
+}
+
+async function saveConfluenceModal(){
+  if(!confluenceSetupId) return;
+  const tradeType = document.getElementById('confluenceTradeType').value || null;
+  const patternType = document.getElementById('confluencePatternType').value || null;
+
+  try{
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/position_setups?id=eq.${confluenceSetupId}`, {
+      method: 'PATCH',
+      headers: {
+        "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}`,
+        "Content-Type": "application/json", "Prefer": "return=representation"
+      },
+      body: JSON.stringify({
+        trade_type: tradeType,
+        pattern_type: patternType,
+        confluence_answers: confluenceAnswers,
+        chart_pattern: confluenceChartPattern
+      })
+    });
+    if(!res.ok) throw new Error(await res.text());
+    const updated = await res.json();
+    const idx = SAVED_SETUPS.findIndex(s => s.id === confluenceSetupId);
+    if(idx !== -1 && updated[0]) SAVED_SETUPS[idx] = updated[0];
+    closeConfluenceModal();
+    renderSavedSetups();
+    showToast('Confluence saved');
+  }catch(e){
+    console.error("Couldn't save confluence:", e);
+    await customAlert("Couldn't save — make sure you've run supabase_confluence.sql in Supabase.");
+  }
+}
+
 function setupRowHTML(s){
   const margin = Number(s.margin);
   const slPct = s.stop_loss_pct != null ? Number(s.stop_loss_pct) : null;
@@ -10261,7 +10477,8 @@ function setupRowHTML(s){
     <td>$${Number(s.position_size).toLocaleString(undefined,{maximumFractionDigits:2})}</td>
     <td>${updateCount}</td>
     <td><span class="pill ${statusPillClass}">${escapeHtml(status)}</span></td>
-    <td>
+    <td style="white-space:nowrap;">
+      <button class="drawer-secondary-btn" onclick="event.stopPropagation(); openConfluenceModal(${s.id})">${s.confluence_answers ? 'Edit Confluence' : 'Confluence'}</button>
       ${status !== 'Journaled'
         ? `<button class="poscalc-accent-btn" onclick="event.stopPropagation(); journalFromSetup(${s.id})">Journal</button>`
         : `<button class="poscalc-accent-btn" onclick="event.stopPropagation(); setSetupStatus(${s.id}, 'Pending')">Revert to Pending</button>`}
@@ -10619,7 +10836,9 @@ function journalFromSetup(id){
     position_size: s.position_size != null ? Number(s.position_size) : undefined,
     symbol: s.symbol || undefined,
     notes: notesText || undefined,
-    rr: rr
+    rr: rr,
+    trade_type: s.trade_type || undefined,
+    pattern_type: s.pattern_type || undefined
   };
   pendingJournalSetupId = id;
   openEasyAddModal();
