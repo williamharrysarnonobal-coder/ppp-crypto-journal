@@ -3361,7 +3361,9 @@ function openFinAccountDetailsModal(accountId, backToId){
               <tr>
                 <td>${escapeHtml(a.account_name)} <span style="color:var(--muted);">(own)</span></td>
                 <td class="fin-balance">${finMoney(a.current_balance, a.currency)}</td>
-                <td></td>
+                <td style="text-align:right;white-space:nowrap;">
+                  <button class="fin-subacct-edit" title="Edit" onclick="openFinAccountModal(${a.id})">✎</button>
+                </td>
               </tr>
               ${subAccounts.map(s => `
                 <tr style="cursor:pointer;" title="View history" onclick="openFinAccountDetailsModal(${s.id}, ${a.id})">
@@ -3587,6 +3589,11 @@ async function saveFinAccount(){
   if(!name){ errEl.textContent = 'Please give this account a name.'; return; }
 
   const cls = document.getElementById('finAccClass').value;
+  // Captured before any edit — the only way to know a manual balance
+  // rewrite happened at all, since PATCHing current_balance directly
+  // otherwise leaves no trace of what it used to be.
+  const editingAccBefore = editingFinAccountId ? FIN_ACCOUNTS.find(x => x.id === editingFinAccountId) : null;
+  const oldBalance = editingAccBefore ? (Number(editingAccBefore.current_balance) || 0) : null;
   // Last-4-digits only, on purpose — enough for transaction matching, and
   // nothing usable leaks if the data ever does.
   const cardDigits = document.getElementById('finAccCardNumber').value.replace(/\D/g,'').slice(-4);
@@ -3648,8 +3655,37 @@ async function saveFinAccount(){
       body: JSON.stringify(payload)
     });
     if(!res.ok) throw new Error(await res.text());
+
+    // Log a manual balance rewrite as a normal transaction row — same table,
+    // same running-balance math the Full History ledger already knows how
+    // to reconstruct — so a jump like this always has a visible "was X, now
+    // Y" trail instead of silently vanishing into an untracked overwrite.
+    if(oldBalance !== null && cls !== 'Credit' && payload.current_balance !== oldBalance){
+      const delta = payload.current_balance - oldBalance;
+      try{
+        await fetch(`${SUPABASE_URL}/rest/v1/finance_transactions`, {
+          method: 'POST',
+          headers: {
+            "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}`,
+            "Content-Type": "application/json", "Prefer": "return=minimal"
+          },
+          body: JSON.stringify({
+            tx_date: new Date().toISOString().slice(0,10),
+            tx_type: delta > 0 ? 'Income' : 'Expense',
+            amount: Math.abs(delta),
+            account_id: editingFinAccountId,
+            category: 'Balance Correction',
+            description: `Manual balance correction (was ${finMoney(oldBalance, payload.currency)}, set to ${finMoney(payload.current_balance, payload.currency)})`
+          })
+        });
+      }catch(e){
+        console.error("Couldn't log balance correction:", e);
+      }
+    }
+
     closeFinAccountModal();
     await loadFinanceAccounts();
+    await loadFinanceTransactions();
     showToast(editingFinAccountId ? 'Account updated' : 'Account added');
   }catch(e){
     console.error("Couldn't save finance account:", e);
@@ -4495,9 +4531,18 @@ async function deleteFinTx(id){
   try{
     const res = await fetch(`${SUPABASE_URL}/rest/v1/finance_transactions?id=eq.${id}`, {
       method: 'DELETE',
-      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}` }
+      headers: {
+        "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}`,
+        "Prefer": "return=representation"
+      }
     });
     if(!res.ok) throw new Error(await res.text());
+    // Postgrest returns 200/204 even when RLS silently matched zero rows —
+    // return=representation + checking the body is the only way to tell a
+    // real delete from a no-op that would otherwise still reverse the
+    // balance and hide the row locally while it's still in the database.
+    const deletedRows = await res.json().catch(() => []);
+    if(!deletedRows.length) throw new Error("Nothing was deleted — the transaction may already be gone or you don't have permission.");
 
     // Reverse the balance effect this transaction had when it was added.
     const amount = Number(t.amount) || 0;
@@ -4515,7 +4560,7 @@ async function deleteFinTx(id){
     showToast('Transaction deleted');
   }catch(e){
     console.error("Couldn't delete transaction:", e);
-    await customAlert("Couldn't delete this transaction — please try again.");
+    await customAlert("Couldn't delete this transaction — please try again. " + (e.message || ''));
   }
 }
 
@@ -4537,11 +4582,22 @@ async function deleteAllFilteredFinTx(){
     const ids = rows.map(r => r.id);
     const res = await fetch(`${SUPABASE_URL}/rest/v1/finance_transactions?id=in.(${ids.join(',')})`, {
       method: 'DELETE',
-      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}` }
+      headers: {
+        "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}`,
+        "Prefer": "return=representation"
+      }
     });
     if(!res.ok) throw new Error(await res.text());
+    // Only reverse balances / drop locally for rows Postgrest actually
+    // deleted — RLS can silently match zero rows on a DELETE (still 200/204),
+    // which would otherwise adjust balances and hide rows that are still in
+    // the database.
+    const deletedRows = await res.json().catch(() => []);
+    const deletedIdSet = new Set(deletedRows.map(r => r.id));
+    if(!deletedIdSet.size) throw new Error("Nothing was deleted — the transactions may already be gone or you don't have permission.");
 
     for(const t of rows){
+      if(!deletedIdSet.has(t.id)) continue;
       const amount = Number(t.amount) || 0;
       if(t.tx_type === 'Income') await _adjustFinAccountBalance(t.account_id, -amount);
       if(t.tx_type === 'Expense') await _adjustFinAccountBalance(t.account_id, amount);
@@ -4551,12 +4607,15 @@ async function deleteAllFilteredFinTx(){
       }
     }
 
-    const idSet = new Set(ids);
-    FIN_TXNS = FIN_TXNS.filter(x => !idSet.has(x.id));
+    FIN_TXNS = FIN_TXNS.filter(x => !deletedIdSet.has(x.id));
     ids.forEach(id => FIN_TX_SELECTED.delete(id));
     renderFinanceTransactions();
     renderFinanceAccounts();
-    showToast(`${rows.length} transaction${rows.length===1?'':'s'} deleted`);
+    if(deletedIdSet.size < ids.length){
+      await customAlert(`Deleted ${deletedIdSet.size} of ${ids.length} — the rest could not be removed.`);
+    }else{
+      showToast(`${deletedIdSet.size} transaction${deletedIdSet.size===1?'':'s'} deleted`);
+    }
   }catch(e){
     console.error("Couldn't bulk-delete transactions:", e);
     await customAlert("Couldn't delete these transactions — please try again.");
