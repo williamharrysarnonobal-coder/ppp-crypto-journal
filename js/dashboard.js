@@ -10316,9 +10316,24 @@ let confluenceSetupId = null;
 let confluenceAnswers = {};   // { itemIndex: 'yes' | 'almost' | 'no' }
 let confluenceChartPattern = null;
 
-function _confluenceKey(){
-  const tt = document.getElementById('confluenceTradeType')?.value;
+// Most Pattern Types already say their direction (HL=Long, LH=Short) — only
+// "30 mins Invalidation Play" is shared by both, so that's the only case
+// that still needs the user to pick Trade Type by hand.
+function _inferTradeTypeFromPattern(pt){
+  if(!pt || pt === '30 mins Invalidation Play') return null;
+  if(pt.includes('LH')) return 'Short';
+  if(pt.includes('HL')) return 'Long';
+  return null;
+}
+
+function _confluenceEffectiveTradeType(){
   const pt = document.getElementById('confluencePatternType')?.value;
+  return _inferTradeTypeFromPattern(pt) || document.getElementById('confluenceTradeType')?.value || null;
+}
+
+function _confluenceKey(){
+  const pt = document.getElementById('confluencePatternType')?.value;
+  const tt = _confluenceEffectiveTradeType();
   return (tt && pt) ? `${tt}|${pt}` : null;
 }
 
@@ -10334,6 +10349,7 @@ function openConfluenceModal(id){
   document.getElementById('confluencePatternType').innerHTML =
     '<option value="">— choose —</option>' + FIELD_OPTIONS.pattern_type.map(o => `<option value="${o}" ${s.pattern_type===o?'selected':''}>${o}</option>`).join('');
 
+  document.getElementById('confluenceTradeTypeRow').style.display = (s.pattern_type === '30 mins Invalidation Play') ? '' : 'none';
   renderConfluenceChecklist();
   document.getElementById('confluenceModal').classList.add('open');
 }
@@ -10341,6 +10357,12 @@ function openConfluenceModal(id){
 function closeConfluenceModal(){
   document.getElementById('confluenceModal').classList.remove('open');
   confluenceSetupId = null;
+}
+
+function onConfluencePatternChange(){
+  const pt = document.getElementById('confluencePatternType').value;
+  document.getElementById('confluenceTradeTypeRow').style.display = (pt === '30 mins Invalidation Play') ? '' : 'none';
+  onConfluenceTypeChange();
 }
 
 function onConfluenceTypeChange(){
@@ -10355,12 +10377,12 @@ function renderConfluenceChecklist(){
   const body = document.getElementById('confluenceBody');
   const key = _confluenceKey();
   if(!key){
-    body.innerHTML = '<div class="empty-state">Pumili muna ng Trade Type at Pattern Type.</div>';
+    body.innerHTML = '<div class="empty-state">Pick a Pattern Type (and Trade Type, if it appears) first.</div>';
     return;
   }
   const cfg = CONFLUENCE_SETUPS[key];
   if(!cfg){
-    body.innerHTML = '<div class="empty-state">Wala pang confluence checklist na naka-configure para dito.</div>';
+    body.innerHTML = '<div class="empty-state">No confluence checklist configured for this combination yet.</div>';
     return;
   }
 
@@ -10422,7 +10444,7 @@ function selectConfluenceChartPattern(p){
 
 async function saveConfluenceModal(){
   if(!confluenceSetupId) return;
-  const tradeType = document.getElementById('confluenceTradeType').value || null;
+  const tradeType = _confluenceEffectiveTradeType();
   const patternType = document.getElementById('confluencePatternType').value || null;
 
   try{
