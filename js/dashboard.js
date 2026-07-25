@@ -6627,6 +6627,87 @@ function openTradeViewModal(positionId){
   document.getElementById('tradeViewModal').classList.add('open');
 }
 
+// Grouped instead of one flat list — same DRAWER_FIELDS (still respects
+// Configuration > Trade Form Fields show/hide), just organized so related
+// numbers sit together instead of appearing in whatever order they happen
+// to be configured in.
+const TRADE_VIEW_GROUPS = [
+  { title: 'Overview', keys: ['symbol','open_date','close_date','duration','objective'] },
+  { title: 'Result', keys: ['win_loss','profit_loss','pnl_percent','rr','fee','entry_price','close_price','position_size'] },
+  { title: 'Setup & Strategy', keys: ['trade_type','trade_setup','pattern_type','execution_tf','aof_phase'] },
+  { title: 'Discipline', keys: ['rules_followed','unfollowed_rules','exit_type','post_be_result'] },
+  { title: 'Account', keys: ['account','account_type','session','day_of_week'] },
+  { title: 'Notes & Links', keys: ['notes','link','trade_summary'] },
+];
+const TRADE_VIEW_WIDE_FIELDS = new Set(['notes','trade_summary','unfollowed_rules']);
+
+function _renderTradeViewFieldRow(f, row){
+  const spanCls = TRADE_VIEW_WIDE_FIELDS.has(f.key) ? ' span-2' : '';
+  if(f.key === 'objective' || f.key === 'duration'){
+    const computed = f.key === 'objective' ? computeObjective(row) : computeDuration(row);
+    return `<div class="field-row${spanCls}"><label>${f.label}</label><div class="field-static">${computed || '—'}</div></div>`;
+  }
+  if(f.key === 'trade_summary'){
+    return `<div class="field-row${spanCls}">
+      <div style="display:flex;align-items:center;justify-content:space-between;">
+        <label style="margin-bottom:0;">${f.label}</label>
+        <button class="poscalc-copy-btn" title="Copy Trade Summary" onclick="copyTradeSummaryToClipboard(this)" data-summary="${escapeHtml(computeTradeSummaryPlain(row))}">${copyIconSVG()}</button>
+      </div>
+      <div class="field-static">${computeTradeSummary(row)}</div>
+    </div>`;
+  }
+  if(f.key === 'notes'){
+    // The "Add Note" popup (openTradeNoteModalFromTradeView) saves into
+    // notes_log, a separate timestamped-entries array — merge it in here
+    // so a note you just added actually shows up in this view instead of
+    // only being visible inside that popup.
+    const plainHtml = row.notes ? `<div style="white-space:pre-wrap;margin-bottom:10px;">${escapeHtml(row.notes)}</div>` : '';
+    const log = Array.isArray(row.notes_log) ? row.notes_log : [];
+    const logHtml = log.map(entry => `
+      <div style="margin-bottom:10px;">
+        <div style="font-size:11px;color:var(--muted);font-family:'IBM Plex Mono',monospace;">${new Date(entry.ts).toLocaleString(undefined,{dateStyle:'medium',timeStyle:'short'})}</div>
+        <div style="white-space:pre-wrap;">${escapeHtml(entry.text)}</div>
+      </div>
+    `).join('');
+    const combined = plainHtml + logHtml;
+    return `<div class="field-row${spanCls}"><label>${f.label}</label><div class="field-static">${combined || '—'}</div></div>`;
+  }
+  if(f.key === 'open_date' || f.key === 'close_date'){
+    const raw = row[f.key];
+    const display = raw ? new Date(raw).toLocaleString(undefined,{dateStyle:'medium', timeStyle:'short'}) : '—';
+    return `<div class="field-row${spanCls}"><label>${f.label}</label><div class="field-static">${display}</div></div>`;
+  }
+  const display = _journalCellValue(row, f.key);
+  const colored = _journalColoredCell(f.key, row, escapeHtml(String(display)));
+  const valueHtml = colored || escapeHtml(String(display));
+  return `<div class="field-row${spanCls}"><label>${f.label}</label><div class="field-static">${valueHtml}</div></div>`;
+}
+
+// Confluence answers/chart pattern were filled in on the Setup before this
+// trade was ever journaled (Calculator > Pending Setups > Confluence) — the
+// question TEXT lives in CONFLUENCE_SETUPS, keyed the same way the modal
+// looked it up, so it has to be re-looked-up here rather than stored twice.
+function _renderTradeViewConfluenceGroup(row){
+  const hasAnswers = row.confluence_answers && typeof row.confluence_answers === 'object' && Object.keys(row.confluence_answers).length;
+  if(!hasAnswers && !row.chart_pattern) return '';
+
+  const cfg = CONFLUENCE_SETUPS[`${row.trade_type}|${row.pattern_type}`];
+  const answerLabel = { yes:'Yes', almost:'Almost', no:'No' };
+  const answerColor = { yes:'var(--win)', almost:'var(--accent)', no:'var(--loss)' };
+
+  const rows = cfg ? Object.entries(row.confluence_answers || {}).map(([i, ans]) => {
+    const item = cfg.items[i];
+    if(!item) return '';
+    return `<div class="field-row"><label>${escapeHtml(item.text)}</label><div class="field-static" style="color:${answerColor[ans]||'var(--ink)'};">${answerLabel[ans]||ans}</div></div>`;
+  }).join('') : '';
+
+  const patternRow = row.chart_pattern
+    ? `<div class="field-row"><label>Chart Pattern</label><div class="field-static">${escapeHtml(row.chart_pattern)}</div></div>`
+    : '';
+
+  return `<div class="field-row span-2 trade-view-group-title">Confluence</div>${rows}${patternRow}`;
+}
+
 function renderTradeViewModal(){
   const row = tradeViewList[tradeViewIndex];
   if(!row) return;
@@ -6634,48 +6715,17 @@ function renderTradeViewModal(){
   document.getElementById('tradeViewTitle').textContent = (row.symbol || 'Trade') + (row.no ? ` · #${row.no}` : '');
   document.getElementById('tradeViewSetupNotesBtn').style.display = row.linked_setup_id ? 'flex' : 'none';
 
-  const wideFields = new Set(['notes','trade_summary','unfollowed_rules']);
-  document.getElementById('tradeViewBody').innerHTML = DRAWER_FIELDS.map(f => {
-    const spanCls = wideFields.has(f.key) ? ' span-2' : '';
-    if(f.key === 'objective' || f.key === 'duration'){
-      const computed = f.key === 'objective' ? computeObjective(row) : computeDuration(row);
-      return `<div class="field-row${spanCls}"><label>${f.label}</label><div class="field-static">${computed || '—'}</div></div>`;
-    }
-    if(f.key === 'trade_summary'){
-      return `<div class="field-row${spanCls}">
-        <div style="display:flex;align-items:center;justify-content:space-between;">
-          <label style="margin-bottom:0;">${f.label}</label>
-          <button class="poscalc-copy-btn" title="Copy Trade Summary" onclick="copyTradeSummaryToClipboard(this)" data-summary="${escapeHtml(computeTradeSummaryPlain(row))}">${copyIconSVG()}</button>
-        </div>
-        <div class="field-static">${computeTradeSummary(row)}</div>
-      </div>`;
-    }
-    if(f.key === 'notes'){
-      // The "Add Note" popup (openTradeNoteModalFromTradeView) saves into
-      // notes_log, a separate timestamped-entries array — merge it in here
-      // so a note you just added actually shows up in this view instead of
-      // only being visible inside that popup.
-      const plainHtml = row.notes ? `<div style="white-space:pre-wrap;margin-bottom:10px;">${escapeHtml(row.notes)}</div>` : '';
-      const log = Array.isArray(row.notes_log) ? row.notes_log : [];
-      const logHtml = log.map(entry => `
-        <div style="margin-bottom:10px;">
-          <div style="font-size:11px;color:var(--muted);font-family:'IBM Plex Mono',monospace;">${new Date(entry.ts).toLocaleString(undefined,{dateStyle:'medium',timeStyle:'short'})}</div>
-          <div style="white-space:pre-wrap;">${escapeHtml(entry.text)}</div>
-        </div>
-      `).join('');
-      const combined = plainHtml + logHtml;
-      return `<div class="field-row${spanCls}"><label>${f.label}</label><div class="field-static">${combined || '—'}</div></div>`;
-    }
-    if(f.key === 'open_date' || f.key === 'close_date'){
-      const raw = row[f.key];
-      const display = raw ? new Date(raw).toLocaleString(undefined,{dateStyle:'medium', timeStyle:'short'}) : '—';
-      return `<div class="field-row${spanCls}"><label>${f.label}</label><div class="field-static">${display}</div></div>`;
-    }
-    const display = _journalCellValue(row, f.key);
-    const colored = _journalColoredCell(f.key, row, escapeHtml(String(display)));
-    const valueHtml = colored || escapeHtml(String(display));
-    return `<div class="field-row${spanCls}"><label>${f.label}</label><div class="field-static">${valueHtml}</div></div>`;
+  const fieldByKey = {};
+  DRAWER_FIELDS.forEach(f => { fieldByKey[f.key] = f; });
+
+  const groupsHtml = TRADE_VIEW_GROUPS.map(g => {
+    const fields = g.keys.map(k => fieldByKey[k]).filter(Boolean);
+    if(!fields.length) return '';
+    return `<div class="field-row span-2 trade-view-group-title">${g.title}</div>` +
+      fields.map(f => _renderTradeViewFieldRow(f, row)).join('');
   }).join('');
+
+  document.getElementById('tradeViewBody').innerHTML = groupsHtml + _renderTradeViewConfluenceGroup(row);
 
   document.getElementById('tradeViewPrevBtn').disabled = tradeViewIndex <= 0;
   document.getElementById('tradeViewNextBtn').disabled = tradeViewIndex < 0 || tradeViewIndex >= tradeViewList.length - 1;
@@ -10316,25 +10366,29 @@ let confluenceSetupId = null;
 let confluenceAnswers = {};   // { itemIndex: 'yes' | 'almost' | 'no' }
 let confluenceChartPattern = null;
 
-// Most Pattern Types already say their direction (HL=Long, LH=Short) — only
-// "30 mins Invalidation Play" is shared by both, so that's the only case
-// that still needs the user to pick Trade Type by hand.
-function _inferTradeTypeFromPattern(pt){
-  if(!pt || pt === '30 mins Invalidation Play') return null;
-  if(pt.includes('LH')) return 'Short';
-  if(pt.includes('HL')) return 'Long';
-  return null;
-}
-
-function _confluenceEffectiveTradeType(){
-  const pt = document.getElementById('confluencePatternType')?.value;
-  return _inferTradeTypeFromPattern(pt) || document.getElementById('confluenceTradeType')?.value || null;
+// Trade Type narrows which Pattern Type options make sense — Long only
+// ever trades HL patterns (plus the shared Invalidation Play), Short only
+// LH ones (plus the same shared one) — filtering the dropdown down makes
+// the right option faster to find instead of scrolling all 9.
+function _patternTypesForTradeType(tt){
+  if(tt === 'Long') return FIELD_OPTIONS.pattern_type.filter(p => p.includes('HL') || p === '30 mins Invalidation Play');
+  if(tt === 'Short') return FIELD_OPTIONS.pattern_type.filter(p => p.includes('LH') || p === '30 mins Invalidation Play');
+  return FIELD_OPTIONS.pattern_type;
 }
 
 function _confluenceKey(){
+  const tt = document.getElementById('confluenceTradeType')?.value;
   const pt = document.getElementById('confluencePatternType')?.value;
-  const tt = _confluenceEffectiveTradeType();
   return (tt && pt) ? `${tt}|${pt}` : null;
+}
+
+function _renderConfluencePatternOptions(selected){
+  const tt = document.getElementById('confluenceTradeType').value;
+  const allowed = _patternTypesForTradeType(tt);
+  const sel = document.getElementById('confluencePatternType');
+  sel.innerHTML = '<option value="">— choose —</option>' +
+    allowed.map(o => `<option value="${o}" ${selected===o?'selected':''}>${o}</option>`).join('');
+  if(selected && !allowed.includes(selected)) sel.value = '';
 }
 
 function openConfluenceModal(id){
@@ -10346,10 +10400,8 @@ function openConfluenceModal(id){
 
   document.getElementById('confluenceTradeType').innerHTML =
     '<option value="">— choose —</option>' + FIELD_OPTIONS.trade_type.map(o => `<option value="${o}" ${s.trade_type===o?'selected':''}>${o}</option>`).join('');
-  document.getElementById('confluencePatternType').innerHTML =
-    '<option value="">— choose —</option>' + FIELD_OPTIONS.pattern_type.map(o => `<option value="${o}" ${s.pattern_type===o?'selected':''}>${o}</option>`).join('');
+  _renderConfluencePatternOptions(s.pattern_type);
 
-  document.getElementById('confluenceTradeTypeRow').style.display = (s.pattern_type === '30 mins Invalidation Play') ? '' : 'none';
   renderConfluenceChecklist();
   document.getElementById('confluenceModal').classList.add('open');
 }
@@ -10359,9 +10411,9 @@ function closeConfluenceModal(){
   confluenceSetupId = null;
 }
 
-function onConfluencePatternChange(){
-  const pt = document.getElementById('confluencePatternType').value;
-  document.getElementById('confluenceTradeTypeRow').style.display = (pt === '30 mins Invalidation Play') ? '' : 'none';
+function onConfluenceTradeTypeChange(){
+  const currentPattern = document.getElementById('confluencePatternType').value;
+  _renderConfluencePatternOptions(currentPattern);
   onConfluenceTypeChange();
 }
 
@@ -10444,7 +10496,7 @@ function selectConfluenceChartPattern(p){
 
 async function saveConfluenceModal(){
   if(!confluenceSetupId) return;
-  const tradeType = _confluenceEffectiveTradeType();
+  const tradeType = document.getElementById('confluenceTradeType').value || null;
   const patternType = document.getElementById('confluencePatternType').value || null;
 
   try{
@@ -10500,9 +10552,9 @@ function setupRowHTML(s){
     <td>${updateCount}</td>
     <td><span class="pill ${statusPillClass}">${escapeHtml(status)}</span></td>
     <td style="white-space:nowrap;">
-      <button class="drawer-secondary-btn" onclick="event.stopPropagation(); openConfluenceModal(${s.id})">${s.confluence_answers ? 'Edit Confluence' : 'Confluence'}</button>
+      <button class="poscalc-accent-btn" onclick="event.stopPropagation(); openConfluenceModal(${s.id})">${s.pattern_type ? 'Edit Confluence' : 'Confluence'}</button>
       ${status !== 'Journaled'
-        ? `<button class="poscalc-accent-btn" onclick="event.stopPropagation(); journalFromSetup(${s.id})">Journal</button>`
+        ? `<button class="poscalc-accent-btn" ${!s.pattern_type ? 'disabled title="Fill in Confluence first"' : ''} onclick="event.stopPropagation(); journalFromSetup(${s.id})">Journal</button>`
         : `<button class="poscalc-accent-btn" onclick="event.stopPropagation(); setSetupStatus(${s.id}, 'Pending')">Revert to Pending</button>`}
       <button class="drawer-danger-btn" onclick="event.stopPropagation(); deleteSavedSetup(${s.id})">Delete</button>
     </td>

@@ -17,7 +17,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<link rel="stylesheet" href="css/style.css?v=153">
+<link rel="stylesheet" href="css/style.css?v=154">
 </head>
 <body>
 
@@ -185,9 +185,7 @@
       <select id="filterSession" onchange="renderJournalTable()"><option value="all">Session: All</option></select>
       <select id="filterAccount" onchange="renderJournalTable()"><option value="all">Account: All</option></select>
       <select id="filterDay" onchange="renderJournalTable()"><option value="all">Day: All</option></select>
-      <button class="poscalc-accent-btn" style="padding:8px 14px;" onclick="clearJournalFilters()">Clear filters</button>
-      <button class="poscalc-accent-btn" style="margin-left:auto;" onclick="openEasyAddModal()">Easy Add</button>
-      <button class="ai-btn" style="padding:8px 14px;" onclick="openDrawer('create')">+ Add Trade</button>
+      <button class="poscalc-accent-btn" style="padding:8px 14px;margin-left:auto;" onclick="clearJournalFilters()">Clear filters</button>
     </div>
     <div class="journal-wrap">
       <table class="journal" id="journalTable"></table>
@@ -1349,12 +1347,12 @@
     <h3>Confluence</h3>
     <div class="modal-sub">Why and how you entered — fill this in before you Journal this setup.</div>
     <div class="field-row" style="margin-top:14px;flex-shrink:0;">
-      <label>Pattern Type</label>
-      <select id="confluencePatternType" onchange="onConfluencePatternChange()"></select>
-    </div>
-    <div class="field-row" id="confluenceTradeTypeRow" style="display:none;flex-shrink:0;">
       <label>Trade Type</label>
-      <select id="confluenceTradeType" onchange="onConfluenceTypeChange()"></select>
+      <select id="confluenceTradeType" onchange="onConfluenceTradeTypeChange()"></select>
+    </div>
+    <div class="field-row" style="flex-shrink:0;">
+      <label>Pattern Type</label>
+      <select id="confluencePatternType" onchange="onConfluenceTypeChange()"></select>
     </div>
     <div id="confluenceBody" style="flex-shrink:0;"></div>
     <button class="ai-btn" style="margin-top:6px;width:100%;flex-shrink:0;" onclick="saveConfluenceModal()">Save Confluence</button>
@@ -1750,6 +1748,6 @@
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=1"></script>
-<script src="js/dashboard.js?v=196"></script>
+<script src="js/dashboard.js?v=198"></script>
 </body>
 </html>
