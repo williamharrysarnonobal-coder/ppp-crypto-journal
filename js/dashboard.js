@@ -6631,14 +6631,16 @@ function openTradeViewModal(positionId){
 // Configuration > Trade Form Fields show/hide), just organized so related
 // numbers sit together instead of appearing in whatever order they happen
 // to be configured in.
+// Notes & Links renders last of all — after Confluence, not before it —
+// so it's excluded here and appended separately in both render functions.
 const JOURNAL_FIELD_GROUPS = [
   { title: 'Overview', keys: ['symbol','open_date','close_date','duration','objective'] },
   { title: 'Result', keys: ['win_loss','profit_loss','pnl_percent','rr','fee','entry_price','close_price','position_size'] },
   { title: 'Setup & Strategy', keys: ['trade_type','trade_setup','pattern_type','execution_tf','aof_phase'] },
   { title: 'Discipline', keys: ['rules_followed','unfollowed_rules','exit_type','post_be_result'] },
   { title: 'Account', keys: ['account','account_type','session','day_of_week'] },
-  { title: 'Notes & Links', keys: ['notes','link','trade_summary'] },
 ];
+const NOTES_LINKS_GROUP = { title: 'Notes & Links', keys: ['notes','link','trade_summary'] };
 const TRADE_VIEW_WIDE_FIELDS = new Set(['notes','trade_summary','unfollowed_rules']);
 
 function _renderTradeViewFieldRow(f, row){
@@ -6718,14 +6720,15 @@ function renderTradeViewModal(){
   const fieldByKey = {};
   DRAWER_FIELDS.forEach(f => { fieldByKey[f.key] = f; });
 
-  const groupsHtml = JOURNAL_FIELD_GROUPS.map(g => {
+  const renderGroup = g => {
     const fields = g.keys.map(k => fieldByKey[k]).filter(Boolean);
     if(!fields.length) return '';
     return `<div class="field-row span-2 field-group-title">${g.title}</div>` +
       fields.map(f => _renderTradeViewFieldRow(f, row)).join('');
-  }).join('');
+  };
+  const groupsHtml = JOURNAL_FIELD_GROUPS.map(renderGroup).join('');
 
-  document.getElementById('tradeViewBody').innerHTML = groupsHtml + _renderTradeViewConfluenceGroup(row);
+  document.getElementById('tradeViewBody').innerHTML = groupsHtml + _renderTradeViewConfluenceGroup(row) + renderGroup(NOTES_LINKS_GROUP);
 
   document.getElementById('tradeViewPrevBtn').disabled = tradeViewIndex <= 0;
   document.getElementById('tradeViewNextBtn').disabled = tradeViewIndex < 0 || tradeViewIndex >= tradeViewList.length - 1;
@@ -6864,12 +6867,13 @@ function renderDrawerFields(){
   const fieldByKey = {};
   DRAWER_FIELDS.forEach(f => { fieldByKey[f.key] = f; });
 
-  body.innerHTML = JOURNAL_FIELD_GROUPS.map(g => {
+  const renderGroup = g => {
     const fields = g.keys.map(k => fieldByKey[k]).filter(Boolean);
     if(!fields.length) return '';
     return `<div class="field-group-title">${g.title}</div>` +
       fields.map(f => _renderDrawerFieldRow(f, mode, row)).join('');
-  }).join('');
+  };
+  body.innerHTML = JOURNAL_FIELD_GROUPS.map(renderGroup).join('') + renderGroup(NOTES_LINKS_GROUP);
 
   // Prefilled values (Easy Add / Journal from a saved setup) set the
   // select's initial value directly, which doesn't fire "change" — so the
@@ -10317,59 +10321,59 @@ function setupStatusPillClass(status){
 const CONFLUENCE_SETUPS = {
   'Long|5 mins HL': {
     items: [
-      {tag:'MACD · 1H', text:'Is 1H MACD in Bull Territory (Green Histogram)?'},
-      {tag:'MACD · 15M', text:'Is 15M MACD in Bull Territory (Green Histogram)?'},
-      {tag:'Execution', text:'Did price hit Support or the .382 Fib on the 1min BB50?', exec:true},
-      {tag:'Execution', text:'Did MACD cross the zero line upward at the same time?', exec:true},
+      {tag:'MACD · 1H', text:'1H MACD in Bull Territory (Green Histogram)?'},
+      {tag:'MACD · 15M', text:'15M MACD in Bull Territory (Green Histogram)?'},
+      {tag:'Execution · 1min BB50', text:'Did BB50 and the .382 Fib align at your entry level?', exec:true},
+      {tag:'Execution', text:'Did MACD cross the zero line upward when your order triggered?', exec:true},
     ],
     patterns: ['Double Bottom', 'Triple Bottom', 'Inverse H&S']
   },
   'Short|5 mins LH': {
     items: [
-      {tag:'MACD · 1H', text:'Is 1H MACD in Bear Territory (Red Histogram)?'},
-      {tag:'MACD · 15M', text:'Is 15M MACD in Bear Territory (Red Histogram)?'},
-      {tag:'Execution', text:'Did price hit Resistance or the .382 Fib on the 1min BB50?', exec:true},
-      {tag:'Execution', text:'Did MACD cross the zero line downward at the same time?', exec:true},
+      {tag:'MACD · 1H', text:'1H MACD in Bear Territory (Red Histogram)?'},
+      {tag:'MACD · 15M', text:'15M MACD in Bear Territory (Red Histogram)?'},
+      {tag:'Execution · 1min BB50', text:'Did BB50 and the .382 Fib align at your entry level?', exec:true},
+      {tag:'Execution', text:'Did MACD cross the zero line downward when your order triggered?', exec:true},
     ],
     patterns: ['Double Top', 'Triple Top', 'H&S']
   },
   'Long|15 mins HL': {
     items: [
-      {tag:'MACD · 1H', text:'Is 1H MACD in Bull Territory (Green Histogram)?'},
-      {tag:'MACD · 30M', text:'Is 30M MACD far from the zero line?'},
-      {tag:'BB50 · 2H', text:'Is 2H BB50 far from price, or before your TP area?'},
-      {tag:'Execution', text:'Did price hit Support or the .382 Fib on the 5min/3min BB50?', exec:true},
-      {tag:'Execution', text:'Did MACD cross the zero line upward at the same time?', exec:true},
+      {tag:'MACD · 1H', text:'1H MACD in Bull Territory (Green Histogram)?'},
+      {tag:'MACD · 30M', text:'30M MACD far from the zero line?'},
+      {tag:'BB50 · 2H', text:'2H BB50 far from price, or before your TP area?'},
+      {tag:'Execution · 5min/3min BB50', text:'Did BB50 and the .382 Fib align at your entry level?', exec:true},
+      {tag:'Execution', text:'Did MACD cross the zero line upward when your order triggered?', exec:true},
     ],
     patterns: ['Double Bottom', 'Triple Bottom', 'Inverse H&S']
   },
   'Short|15 mins LH': {
     items: [
-      {tag:'MACD · 1H', text:'Is 1H MACD in Bear Territory (Red Histogram)?'},
-      {tag:'MACD · 30M', text:'Is 30M MACD far from the zero line?'},
-      {tag:'BB50 · 2H', text:'Is 2H BB50 far from price, or before your TP area?'},
-      {tag:'Execution', text:'Did price hit Resistance or the .382 Fib on the 5min/3min BB50?', exec:true},
-      {tag:'Execution', text:'Did MACD cross the zero line downward at the same time?', exec:true},
+      {tag:'MACD · 1H', text:'1H MACD in Bear Territory (Red Histogram)?'},
+      {tag:'MACD · 30M', text:'30M MACD far from the zero line?'},
+      {tag:'BB50 · 2H', text:'2H BB50 far from price, or before your TP area?'},
+      {tag:'Execution · 5min/3min BB50', text:'Did BB50 and the .382 Fib align at your entry level?', exec:true},
+      {tag:'Execution', text:'Did MACD cross the zero line downward when your order triggered?', exec:true},
     ],
     patterns: ['Double Top', 'Triple Top', 'H&S']
   },
   'Long|30 mins Invalidation Play': {
     items: [
-      {tag:'Divergence · 1H', text:'Is there Righthand divergence? (price falling, but MACD rising)'},
-      {tag:'MACD · 1H', text:'Is 1H MACD in Bear Territory with a Green Histogram (weakening)?'},
-      {tag:'BB50 · 1H', text:'Is 1H BB50 far from price, for your TP area (upper or lower band)?'},
-      {tag:'Execution', text:'Did price hit Support or the .382 Fib on the 5min/3min BB50?', exec:true},
-      {tag:'Execution', text:'Did MACD cross the zero line upward at the same time?', exec:true},
+      {tag:'Divergence · 1H', text:'Righthand divergence? (price falling, but MACD rising)'},
+      {tag:'MACD · 1H', text:'1H MACD in Bear Territory with a Green Histogram (weakening)?'},
+      {tag:'BB50 · 1H', text:'1H BB50 far from price, for your TP area (upper or lower band)?'},
+      {tag:'Execution · 5min/3min BB50', text:'Did BB50 and the .382 Fib align at your entry level?', exec:true},
+      {tag:'Execution', text:'Did MACD cross the zero line upward when your order triggered?', exec:true},
     ],
     patterns: ['Double Top', 'Triple Top', 'H&S']
   },
   'Short|30 mins Invalidation Play': {
     items: [
-      {tag:'Divergence · 1H', text:'Is there Lefthand divergence? (price rising, but MACD falling)'},
-      {tag:'MACD · 1H', text:'Is 1H MACD in Bull Territory with a Red Histogram (weakening)?'},
-      {tag:'BB50 · 1H', text:'Is 1H BB50 far from price, for your TP area (upper or lower band)?'},
-      {tag:'Execution', text:'Did price hit Resistance or the .382 Fib on the 5min/3min BB50?', exec:true},
-      {tag:'Execution', text:'Did MACD cross the zero line downward at the same time?', exec:true},
+      {tag:'Divergence · 1H', text:'Lefthand divergence? (price rising, but MACD falling)'},
+      {tag:'MACD · 1H', text:'1H MACD in Bull Territory with a Red Histogram (weakening)?'},
+      {tag:'BB50 · 1H', text:'1H BB50 far from price, for your TP area (upper or lower band)?'},
+      {tag:'Execution · 5min/3min BB50', text:'Did BB50 and the .382 Fib align at your entry level?', exec:true},
+      {tag:'Execution', text:'Did MACD cross the zero line downward when your order triggered?', exec:true},
     ],
     patterns: ['Double Bottom', 'Triple Bottom', 'Inverse H&S']
   },
