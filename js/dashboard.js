@@ -6631,15 +6631,19 @@ function openTradeViewModal(positionId){
 // Configuration > Trade Form Fields show/hide), just organized so related
 // numbers sit together instead of appearing in whatever order they happen
 // to be configured in.
-// Notes & Links renders last of all — after Confluence, not before it —
-// so it's excluded here and appended separately in both render functions.
+// Fixed order: Overview, Result, Account, Setup & Strategy, [Confluence
+// inserted here], Discipline, Notes & Links. Confluence and Notes & Links
+// aren't in this array — they're rendered separately, spliced in at the
+// right point by both render functions below (JOURNAL_FIELD_GROUPS_PRE_CONFLUENCE
+// vs the rest).
 const JOURNAL_FIELD_GROUPS = [
   { title: 'Overview', keys: ['symbol','open_date','close_date','duration','objective'] },
   { title: 'Result', keys: ['win_loss','profit_loss','pnl_percent','rr','fee','entry_price','close_price','position_size'] },
+  { title: 'Account', keys: ['account','account_type','session','day_of_week'] },
   { title: 'Setup & Strategy', keys: ['trade_type','trade_setup','pattern_type','execution_tf','aof_phase'] },
   { title: 'Discipline', keys: ['rules_followed','unfollowed_rules','exit_type','post_be_result'] },
-  { title: 'Account', keys: ['account','account_type','session','day_of_week'] },
 ];
+const JOURNAL_FIELD_GROUPS_PRE_CONFLUENCE_COUNT = 4; // Overview, Result, Account, Setup & Strategy
 const NOTES_LINKS_GROUP = { title: 'Notes & Links', keys: ['notes','link','trade_summary'] };
 const TRADE_VIEW_WIDE_FIELDS = new Set(['notes','trade_summary','unfollowed_rules']);
 
@@ -6726,9 +6730,10 @@ function renderTradeViewModal(){
     return `<div class="field-row span-2 field-group-title">${g.title}</div>` +
       fields.map(f => _renderTradeViewFieldRow(f, row)).join('');
   };
-  const groupsHtml = JOURNAL_FIELD_GROUPS.map(renderGroup).join('');
+  const preHtml = JOURNAL_FIELD_GROUPS.slice(0, JOURNAL_FIELD_GROUPS_PRE_CONFLUENCE_COUNT).map(renderGroup).join('');
+  const postHtml = JOURNAL_FIELD_GROUPS.slice(JOURNAL_FIELD_GROUPS_PRE_CONFLUENCE_COUNT).map(renderGroup).join('');
 
-  document.getElementById('tradeViewBody').innerHTML = groupsHtml + _renderTradeViewConfluenceGroup(row) + renderGroup(NOTES_LINKS_GROUP);
+  document.getElementById('tradeViewBody').innerHTML = preHtml + _renderTradeViewConfluenceGroup(row) + postHtml + renderGroup(NOTES_LINKS_GROUP);
 
   document.getElementById('tradeViewPrevBtn').disabled = tradeViewIndex <= 0;
   document.getElementById('tradeViewNextBtn').disabled = tradeViewIndex < 0 || tradeViewIndex >= tradeViewList.length - 1;
