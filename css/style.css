@@ -957,17 +957,21 @@
   .trade-view-grid .field-row{margin-bottom:0;padding:9px 0;border-bottom:1px solid var(--rule);}
   .trade-view-grid .field-row .field-static{padding:0;word-break:break-word;}
   .trade-view-grid .field-row.span-2{grid-column:1 / -1;}
-  .trade-view-grid .trade-view-group-title{
+  /* Section header for grouped field lists — shared by the read-only Trade
+     View grid (2 columns, needs span-2) and the single-column drawer edit
+     form (no grid, span-2 is just inert there). */
+  .field-group-title{
     display:flex;align-items:center;gap:9px;
     font-size:11.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;
     color:var(--accent);border-bottom:none;padding:0;margin:26px 0 10px;
   }
-  .trade-view-grid .trade-view-group-title:first-child{margin-top:0;}
-  .trade-view-grid .trade-view-group-title::before{
+  .field-group-title:first-child{margin-top:0;}
+  .field-group-title::before{
     content:'';width:16px;height:2px;flex-shrink:0;background:var(--accent);border-radius:2px;
   }
-  .trade-view-grid .trade-view-group-title::after{
-    content:'';flex:1;height:1px;background:var(--rule);
+  .field-group-title::after{
+    content:'';flex:1;height:2px;
+    background:linear-gradient(to right, color-mix(in srgb, var(--accent) 55%, transparent), transparent);
   }
   .field-row input, .field-row select, .field-row textarea{
     width:100%;padding:8px 10px;background:var(--surface-2);border:1px solid var(--rule);

@@ -6631,7 +6631,7 @@ function openTradeViewModal(positionId){
 // Configuration > Trade Form Fields show/hide), just organized so related
 // numbers sit together instead of appearing in whatever order they happen
 // to be configured in.
-const TRADE_VIEW_GROUPS = [
+const JOURNAL_FIELD_GROUPS = [
   { title: 'Overview', keys: ['symbol','open_date','close_date','duration','objective'] },
   { title: 'Result', keys: ['win_loss','profit_loss','pnl_percent','rr','fee','entry_price','close_price','position_size'] },
   { title: 'Setup & Strategy', keys: ['trade_type','trade_setup','pattern_type','execution_tf','aof_phase'] },
@@ -6705,7 +6705,7 @@ function _renderTradeViewConfluenceGroup(row){
     ? `<div class="field-row"><label>Chart Pattern</label><div class="field-static">${escapeHtml(row.chart_pattern)}</div></div>`
     : '';
 
-  return `<div class="field-row span-2 trade-view-group-title">Confluence</div>${rows}${patternRow}`;
+  return `<div class="field-row span-2 field-group-title">Confluence</div>${rows}${patternRow}`;
 }
 
 function renderTradeViewModal(){
@@ -6718,10 +6718,10 @@ function renderTradeViewModal(){
   const fieldByKey = {};
   DRAWER_FIELDS.forEach(f => { fieldByKey[f.key] = f; });
 
-  const groupsHtml = TRADE_VIEW_GROUPS.map(g => {
+  const groupsHtml = JOURNAL_FIELD_GROUPS.map(g => {
     const fields = g.keys.map(k => fieldByKey[k]).filter(Boolean);
     if(!fields.length) return '';
-    return `<div class="field-row span-2 trade-view-group-title">${g.title}</div>` +
+    return `<div class="field-row span-2 field-group-title">${g.title}</div>` +
       fields.map(f => _renderTradeViewFieldRow(f, row)).join('');
   }).join('');
 
@@ -6781,6 +6781,68 @@ function enterEditMode(){
   renderDrawerFields();
 }
 
+function _renderDrawerFieldRow(f, mode, row){
+  if(f.key === 'objective' || f.key === 'duration'){
+    const computed = f.key === 'objective' ? computeObjective(row) : computeDuration(row);
+    return `<div class="field-row"><label>${f.label}</label><div class="field-static">${computed || '—'}</div></div>`;
+  }
+  if(f.key === 'trade_summary'){
+    return `<div class="field-row">
+      <div style="display:flex;align-items:center;justify-content:space-between;">
+        <label style="margin-bottom:0;">${f.label}</label>
+        <button class="poscalc-copy-btn" title="Copy Trade Summary" onclick="copyTradeSummaryToClipboard(this)" data-summary="${escapeHtml(computeTradeSummaryPlain(row))}">${copyIconSVG()}</button>
+      </div>
+      <div class="field-static">${computeTradeSummary(row)}</div>
+    </div>`;
+  }
+
+  const showWidget = mode === 'create' || f.editable || drawerEditing;
+  let raw = row[f.key];
+  if(!raw && f.key === 'session') raw = computeSession(row) || '';
+  if(!raw && f.key === 'day_of_week') raw = computeDayOfWeek(row) || '';
+
+  if(!showWidget){
+    const display = (raw === null || raw === undefined || raw === '') ? '—' : String(raw);
+    return `<div class="field-row"><label>${f.label}</label><div class="field-static">${display}</div></div>`;
+  }
+
+  // In create mode, flag still-empty fields red so nothing gets missed
+  // after Easy Add prefills only some of them.
+  const isEmpty = raw === undefined || raw === null || raw === '';
+  const rowCls = (mode === 'create' && isEmpty) ? 'field-row needs-input' : 'field-row';
+
+  if(f.widget === 'select'){
+    let selectOptions = f.options;
+    if(f.key === 'pattern_type' && row.trade_setup && TRADE_SETUP_PATTERN_MAP[row.trade_setup]){
+      selectOptions = TRADE_SETUP_PATTERN_MAP[row.trade_setup];
+    }
+    const opts = selectOptions.map(o => `<option value="${o}" ${raw===o?'selected':''}>${o}</option>`).join('');
+    const onchange = f.key === 'account' ? ` onchange="syncAccountTypeFromAccount(this.value)"`
+      : f.key === 'trade_setup' ? ` onchange="syncPatternTypeFromSetup(this.value)"`
+      : f.key === 'pattern_type' ? ` onchange="syncExecutionFromPattern(this.value)"`
+      : f.key === 'win_loss' ? ` onchange="syncPostBEFromWinLoss(this.value)"`
+      : '';
+    return `<div class="${rowCls}"><label>${f.label}</label><select data-field="${f.key}"${onchange}><option value="">—</option>${opts}</select></div>`;
+  }
+  if(f.widget === 'checklist'){
+    const selected = (raw || '').split(/[,;]/).map(s=>s.trim()).filter(Boolean);
+    const boxes = f.options.map(o => `
+      <label><input type="checkbox" data-checklist="${f.key}" value="${o}" ${selected.includes(o)?'checked':''}> ${o}</label>
+    `).join('');
+    return `<div class="${rowCls}"><label>${f.label}</label><div class="checklist-box">${boxes}</div></div>`;
+  }
+  if(f.widget === 'date'){
+    return `<div class="${rowCls}"><label>${f.label}</label><input type="datetime-local" data-field="${f.key}" value="${_toISODateInput(raw)}"></div>`;
+  }
+  if(f.widget === 'number'){
+    return `<div class="${rowCls}"><label>${f.label}</label><input type="number" step="any" data-field="${f.key}" value="${raw!==undefined&&raw!==null?raw:''}"></div>`;
+  }
+  if(f.widget === 'textarea'){
+    return `<div class="${rowCls}"><label>${f.label}</label><textarea data-field="${f.key}">${raw||''}</textarea></div>`;
+  }
+  return `<div class="${rowCls}"><label>${f.label}</label><input type="text" data-field="${f.key}" value="${raw!==undefined&&raw!==null?raw:''}"></div>`;
+}
+
 function renderDrawerFields(){
   const mode = drawerMode;
   const row = drawerRowData;
@@ -6791,71 +6853,22 @@ function renderDrawerFields(){
   document.getElementById('drawerDeleteBtn').style.display = mode === 'view' ? 'inline-block' : 'none';
   document.getElementById('drawerEditBtn').style.display = (mode === 'view' && !drawerEditing) ? 'inline-block' : 'none';
   document.getElementById('drawerSetupNotesBtn').style.display = (mode === 'view' && row.linked_setup_id) ? 'inline-block' : 'none';
+  // Confluence only makes sense once a trade already exists — for a brand
+  // new trade it should already have come in from the Setup stage instead.
+  document.getElementById('drawerConfluenceBtn').style.display = mode === 'view' ? 'inline-block' : 'none';
   document.getElementById('drawerSaveBtn').style.display = (mode === 'create' || drawerEditing) ? 'inline-block' : 'none';
   document.getElementById('drawerSaveBtn').textContent = mode === 'create' ? 'Add trade' : 'Save changes';
   document.getElementById('drawerError').textContent = '';
 
   const body = document.getElementById('drawerBody');
-  body.innerHTML = DRAWER_FIELDS.map(f => {
-    if(f.key === 'objective' || f.key === 'duration'){
-      const computed = f.key === 'objective' ? computeObjective(row) : computeDuration(row);
-      return `<div class="field-row"><label>${f.label}</label><div class="field-static">${computed || '—'}</div></div>`;
-    }
-    if(f.key === 'trade_summary'){
-      return `<div class="field-row">
-        <div style="display:flex;align-items:center;justify-content:space-between;">
-          <label style="margin-bottom:0;">${f.label}</label>
-          <button class="poscalc-copy-btn" title="Copy Trade Summary" onclick="copyTradeSummaryToClipboard(this)" data-summary="${escapeHtml(computeTradeSummaryPlain(row))}">${copyIconSVG()}</button>
-        </div>
-        <div class="field-static">${computeTradeSummary(row)}</div>
-      </div>`;
-    }
+  const fieldByKey = {};
+  DRAWER_FIELDS.forEach(f => { fieldByKey[f.key] = f; });
 
-    const showWidget = mode === 'create' || f.editable || drawerEditing;
-    let raw = row[f.key];
-    if(!raw && f.key === 'session') raw = computeSession(row) || '';
-    if(!raw && f.key === 'day_of_week') raw = computeDayOfWeek(row) || '';
-
-    if(!showWidget){
-      const display = (raw === null || raw === undefined || raw === '') ? '—' : String(raw);
-      return `<div class="field-row"><label>${f.label}</label><div class="field-static">${display}</div></div>`;
-    }
-
-    // In create mode, flag still-empty fields red so nothing gets missed
-    // after Easy Add prefills only some of them.
-    const isEmpty = raw === undefined || raw === null || raw === '';
-    const rowCls = (mode === 'create' && isEmpty) ? 'field-row needs-input' : 'field-row';
-
-    if(f.widget === 'select'){
-      let selectOptions = f.options;
-      if(f.key === 'pattern_type' && row.trade_setup && TRADE_SETUP_PATTERN_MAP[row.trade_setup]){
-        selectOptions = TRADE_SETUP_PATTERN_MAP[row.trade_setup];
-      }
-      const opts = selectOptions.map(o => `<option value="${o}" ${raw===o?'selected':''}>${o}</option>`).join('');
-      const onchange = f.key === 'account' ? ` onchange="syncAccountTypeFromAccount(this.value)"`
-        : f.key === 'trade_setup' ? ` onchange="syncPatternTypeFromSetup(this.value)"`
-        : f.key === 'pattern_type' ? ` onchange="syncExecutionFromPattern(this.value)"`
-        : f.key === 'win_loss' ? ` onchange="syncPostBEFromWinLoss(this.value)"`
-        : '';
-      return `<div class="${rowCls}"><label>${f.label}</label><select data-field="${f.key}"${onchange}><option value="">—</option>${opts}</select></div>`;
-    }
-    if(f.widget === 'checklist'){
-      const selected = (raw || '').split(/[,;]/).map(s=>s.trim()).filter(Boolean);
-      const boxes = f.options.map(o => `
-        <label><input type="checkbox" data-checklist="${f.key}" value="${o}" ${selected.includes(o)?'checked':''}> ${o}</label>
-      `).join('');
-      return `<div class="${rowCls}"><label>${f.label}</label><div class="checklist-box">${boxes}</div></div>`;
-    }
-    if(f.widget === 'date'){
-      return `<div class="${rowCls}"><label>${f.label}</label><input type="datetime-local" data-field="${f.key}" value="${_toISODateInput(raw)}"></div>`;
-    }
-    if(f.widget === 'number'){
-      return `<div class="${rowCls}"><label>${f.label}</label><input type="number" step="any" data-field="${f.key}" value="${raw!==undefined&&raw!==null?raw:''}"></div>`;
-    }
-    if(f.widget === 'textarea'){
-      return `<div class="${rowCls}"><label>${f.label}</label><textarea data-field="${f.key}">${raw||''}</textarea></div>`;
-    }
-    return `<div class="${rowCls}"><label>${f.label}</label><input type="text" data-field="${f.key}" value="${raw!==undefined&&raw!==null?raw:''}"></div>`;
+  body.innerHTML = JOURNAL_FIELD_GROUPS.map(g => {
+    const fields = g.keys.map(k => fieldByKey[k]).filter(Boolean);
+    if(!fields.length) return '';
+    return `<div class="field-group-title">${g.title}</div>` +
+      fields.map(f => _renderDrawerFieldRow(f, mode, row)).join('');
   }).join('');
 
   // Prefilled values (Easy Add / Journal from a saved setup) set the
