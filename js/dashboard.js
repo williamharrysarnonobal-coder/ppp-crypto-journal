@@ -11228,6 +11228,21 @@ function switchNoteTagFilter(tag){
   renderNoteList();
 }
 
+// Pinned above real notes, always visible regardless of search/tag filter —
+// a live confluence-checklist reference, not an actual notebook_entries row
+// (nothing about it is saved).
+function _breadButterListItemHtml(){
+  return `
+    <div class="note-item ${viewingNoteId==='breadbutter'?'selected':''}" onclick="openBreadButterChecklist()">
+      <div class="note-item-top">
+        <span class="note-item-title">🍞 Bread &amp; Butter Setup</span>
+      </div>
+      <div class="note-item-snippet">Live confluence checklist reference</div>
+      <span class="pill pill-muted">Checklist</span>
+    </div>
+  `;
+}
+
 function renderNoteList(){
   const wrap = document.getElementById('noteListItems');
   if(!wrap) return;
@@ -11238,11 +11253,11 @@ function renderNoteList(){
   if(search) list = list.filter(n => (n.title||'').toLowerCase().includes(search) || (n.body||'').toLowerCase().includes(search));
 
   if(!list.length){
-    wrap.innerHTML = `<div class="empty-state">No notes yet — click "+ New Note" to start writing.</div>`;
+    wrap.innerHTML = _breadButterListItemHtml() + `<div class="empty-state">No notes yet — click "+ New Note" to start writing.</div>`;
     return;
   }
 
-  wrap.innerHTML = list.map(n => {
+  wrap.innerHTML = _breadButterListItemHtml() + list.map(n => {
     const dateLabel = n.updated_at ? new Date(n.updated_at).toLocaleDateString('en-US',{month:'short',day:'numeric'}) : '';
     const snippet = (n.body || '').replace(/\s+/g,' ').trim();
     const tagClass = NOTE_TAG_PILL_CLASS[n.tag] || 'pill-muted';
@@ -11330,6 +11345,7 @@ function selectNote(id){
   viewingNoteId = id;
 
   document.getElementById('noteDetailEmpty').style.display = 'none';
+  document.getElementById('noteDetailChecklistWrap').style.display = 'none';
   document.getElementById('noteDetailWrap').style.display = 'block';
   document.getElementById('noteDetailTitle').textContent = n.title || 'Untitled';
   const tagEl = document.getElementById('noteDetailTag');
@@ -11345,6 +11361,121 @@ function selectNote(id){
 
 function editSelectedNote(){
   if(viewingNoteId) openNoteModal(viewingNoteId);
+}
+
+/* ---- Notebook > "Bread & Butter Setup" — live confluence checklist
+   reference, pinned above real notes. Pure scratch tool: pick Trade Type +
+   Pattern Type, tick through the same checklist used on a real Setup, get
+   a fast read on whether the trade you're looking at qualifies. Nothing
+   here is saved anywhere — its own state, kept separate from
+   confluenceTarget/confluenceAnswers (the Setup/trade-linked version). */
+let bbAnswers = {};
+let bbChartPattern = null;
+
+function openBreadButterChecklist(){
+  viewingNoteId = 'breadbutter';
+  document.getElementById('noteDetailEmpty').style.display = 'none';
+  document.getElementById('noteDetailWrap').style.display = 'none';
+  document.getElementById('noteDetailChecklistWrap').style.display = 'block';
+
+  document.getElementById('bbTradeType').innerHTML =
+    '<option value="">— choose —</option>' + FIELD_OPTIONS.trade_type.map(o => `<option value="${o}">${o}</option>`).join('');
+  _renderBbPatternOptions();
+  bbAnswers = {};
+  bbChartPattern = null;
+  renderBbChecklist();
+  renderNoteList();
+}
+
+function _renderBbPatternOptions(){
+  const tt = document.getElementById('bbTradeType').value;
+  const allowed = _patternTypesForTradeType(tt);
+  const sel = document.getElementById('bbPatternType');
+  const current = sel.value;
+  sel.innerHTML = '<option value="">— choose —</option>' + allowed.map(o => `<option value="${o}">${o}</option>`).join('');
+  if(current && allowed.includes(current)) sel.value = current;
+}
+
+function onBbTradeTypeChange(){
+  _renderBbPatternOptions();
+  onBbTypeChange();
+}
+
+function onBbTypeChange(){
+  bbAnswers = {};
+  bbChartPattern = null;
+  renderBbChecklist();
+}
+
+function setBbAnswer(i, val){
+  bbAnswers[i] = (bbAnswers[i] === val) ? undefined : val;
+  if(bbAnswers[i] === undefined) delete bbAnswers[i];
+  renderBbChecklist();
+}
+
+function selectBbChartPattern(p){
+  bbChartPattern = (p === 'None') ? null : p;
+  renderBbChecklist();
+}
+
+function renderBbChecklist(){
+  const body = document.getElementById('bbChecklistBody');
+  const tt = document.getElementById('bbTradeType').value;
+  const pt = document.getElementById('bbPatternType').value;
+  const key = (tt && pt) ? `${tt}|${pt}` : null;
+  if(!key){
+    body.innerHTML = '<div class="empty-state">Pick a Trade Type and Pattern Type first.</div>';
+    return;
+  }
+  const cfg = CONFLUENCE_SETUPS[key];
+  if(!cfg){
+    body.innerHTML = '<div class="empty-state">No confluence checklist configured for this combination yet.</div>';
+    return;
+  }
+
+  const answeredValues = Object.values(bbAnswers);
+  const total = cfg.items.length + 1;
+  const yesCount = answeredValues.filter(v => v === 'yes').length;
+  const almostCount = answeredValues.filter(v => v === 'almost').length;
+  const done = yesCount + (almostCount * 0.5) + (bbChartPattern ? 1 : 0);
+  const unanswered = cfg.items.length - answeredValues.length;
+
+  const itemsHtml = cfg.items.map((it, i) => {
+    const ans = bbAnswers[i];
+    return `
+      <div class="cfl-yn-item ${it.exec?'cfl-execution':''} ${!ans?'cfl-unanswered':''}">
+        <span class="cfl-yn-label"><span class="cfl-yn-tag">${it.tag}</span>${it.text}</span>
+        <span class="cfl-yn-buttons">
+          <button type="button" class="cfl-yn-btn cfl-yes ${ans==='yes'?'active':''}" onclick="setBbAnswer(${i},'yes')">Yes</button>
+          ${it.exec ? `<button type="button" class="cfl-yn-btn cfl-almost ${ans==='almost'?'active':''}" onclick="setBbAnswer(${i},'almost')">Almost</button>` : ''}
+          <button type="button" class="cfl-yn-btn cfl-no ${ans==='no'?'active':''}" onclick="setBbAnswer(${i},'no')">No</button>
+        </span>
+      </div>
+    `;
+  }).join('');
+
+  const chipsHtml = ['None', ...cfg.patterns].map(p => {
+    const isActive = (p === 'None' && !bbChartPattern) || p === bbChartPattern;
+    return `<span class="cfl-pattern-chip ${p==='None'?'cfl-none':''} ${isActive?'active':''}" onclick="selectBbChartPattern('${p.replace(/'/g,"\\'")}')">${p}</span>`;
+  }).join('');
+
+  body.innerHTML = `
+    <div class="cfl-checklist-head">
+      <div class="cfl-checklist-title">Confluence Checklist</div>
+      <div class="cfl-progress-chip">
+        <span class="cfl-progress-track"><span class="cfl-progress-fill" style="width:${total?(done/total*100):0}%;"></span></span>
+        <span class="num">${Number(done.toFixed(1))}/${total}</span>
+      </div>
+    </div>
+    ${unanswered > 0 ? `<div class="cfl-unanswered-note">${unanswered} question${unanswered===1?'':'s'} not yet answered</div>` : ''}
+    <div class="cfl-checklist-card">${itemsHtml}</div>
+    <div class="cfl-pattern-picker">
+      <div class="cfl-pattern-picker-head">
+        <span class="cfl-pattern-picker-title">Chart Pattern (optional)</span>
+      </div>
+      <div class="cfl-pattern-chips">${chipsHtml}</div>
+    </div>
+  `;
 }
 
 async function deleteSelectedNote(){

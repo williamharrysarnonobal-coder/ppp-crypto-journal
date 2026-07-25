@@ -224,6 +224,19 @@
           <div class="note-detail-date" id="noteDetailDate">—</div>
           <div class="note-detail-text" id="noteDetailText"></div>
         </div>
+        <div id="noteDetailChecklistWrap" style="display:none;">
+          <h3 style="margin:0 0 4px;">🍞 Bread &amp; Butter Setup</h3>
+          <div class="note-detail-date">Live reference only — nothing here gets saved.</div>
+          <div class="field-row" style="margin-top:14px;">
+            <label>Trade Type</label>
+            <select id="bbTradeType" onchange="onBbTradeTypeChange()"></select>
+          </div>
+          <div class="field-row">
+            <label>Pattern Type</label>
+            <select id="bbPatternType" onchange="onBbTypeChange()"></select>
+          </div>
+          <div id="bbChecklistBody"></div>
+        </div>
       </div>
     </div>
   </div>
@@ -1750,6 +1763,6 @@
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=1"></script>
-<script src="js/dashboard.js?v=204"></script>
+<script src="js/dashboard.js?v=205"></script>
 </body>
 </html>
