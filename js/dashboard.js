@@ -1023,6 +1023,16 @@ function applyFilters(){
   document.getElementById('aiOutput').style.display = 'none';
 }
 
+// profit_loss is stored GROSS (matches the broker's raw "Realized P&L",
+// fee not yet subtracted) — anywhere "how much did I actually make" is
+// shown as a total/average/chart value, use this instead of raw
+// profit_loss so fees are always accounted for. Per-row Profit/Loss table
+// cells intentionally still show the raw gross field (labeled as such,
+// with Fee as its own separate column) — this is only for aggregates.
+function netPnl(t){
+  return (Number(t?.profit_loss) || 0) - (Number(t?.fee) || 0);
+}
+
 function fmtMoney(n){
   const sign = n < 0 ? "-" : "+";
   return sign + "$" + Math.abs(n).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -1068,15 +1078,20 @@ function renderKPIs(){
   const t = FILTERED;
   const wins = t.filter(x => x.win_loss.toLowerCase() === 'win');
   const losses = t.filter(x => x.win_loss.toLowerCase() === 'loss');
-  const totalPnl = t.reduce((s,x) => s + (x.profit_loss||0), 0);
+  const totalPnl = t.reduce((s,x) => s + netPnl(x), 0);
   const winRate = t.length ? (wins.length / t.length * 100) : 0;
+  // Gross (fee not yet subtracted) — kept specifically for the "Fees paid
+  // as % of gross win" KPI below, which needs the pre-fee number to mean
+  // anything. Profit Factor / Avg Win / Avg Loss use the net (real) figures
+  // instead, so they reflect what you actually made or lost.
   const grossWin = wins.reduce((s,x)=> s + Math.max(x.profit_loss,0), 0);
-  const grossLoss = Math.abs(losses.reduce((s,x)=> s + Math.min(x.profit_loss,0), 0));
-  const profitFactor = grossLoss > 0 ? (grossWin / grossLoss) : (grossWin > 0 ? Infinity : 0);
+  const netWin = wins.reduce((s,x)=> s + Math.max(netPnl(x),0), 0);
+  const netLoss = Math.abs(losses.reduce((s,x)=> s + Math.min(netPnl(x),0), 0));
+  const profitFactor = netLoss > 0 ? (netWin / netLoss) : (netWin > 0 ? Infinity : 0);
   const rrVals = t.map(x=>x.rr).filter(x => x !== null && !isNaN(x));
   const avgRR = rrVals.length ? rrVals.reduce((a,b)=>a+b,0)/rrVals.length : null;
-  const avgWin = wins.length ? grossWin/wins.length : 0;
-  const avgLoss = losses.length ? (losses.reduce((s,x)=>s+x.profit_loss,0)/losses.length) : 0;
+  const avgWin = wins.length ? netWin/wins.length : 0;
+  const avgLoss = losses.length ? (losses.reduce((s,x)=>s+netPnl(x),0)/losses.length) : 0;
 
   // current streak (most recent trades first)
   const sorted = [...t].filter(x=>x.close_date).sort((a,b)=> b.close_date - a.close_date);
@@ -1101,7 +1116,7 @@ function renderKPIs(){
   // cumulative P/L trend (for the Total PnL sparkline) — last 30 closed trades in view
   const sortedByDate = [...t].filter(x=>x.close_date).sort((a,b)=> a.close_date - b.close_date);
   let cum = 0;
-  const pnlTrend = sortedByDate.map(x => (cum += x.profit_loss || 0)).slice(-30);
+  const pnlTrend = sortedByDate.map(x => (cum += netPnl(x))).slice(-30);
 
   const kpis = [
     {label:"Total PnL", value: fmtMoney(totalPnl), cls: totalPnl>=0?'pos':'neg',
@@ -1145,7 +1160,7 @@ function renderCalendar(){
     monthTrades.push(t);
     const key = t.close_date.getDate();
     if(!byDay[key]) byDay[key] = {pnl:0, count:0, trades:[]};
-    byDay[key].pnl += t.profit_loss || 0;
+    byDay[key].pnl += netPnl(t);
     byDay[key].count += 1;
     byDay[key].trades.push(t);
   });
@@ -1165,7 +1180,7 @@ function renderCalendar(){
       const winTrades = monthTrades.filter(t => (t.win_loss||'').toLowerCase() === 'win').length;
       const lossTrades = monthTrades.filter(t => (t.win_loss||'').toLowerCase() === 'loss').length;
       const winPct = Math.round(winTrades / monthTrades.length * 100);
-      const monthPnl = monthTrades.reduce((s,t) => s + (t.profit_loss||0), 0);
+      const monthPnl = monthTrades.reduce((s,t) => s + netPnl(t), 0);
       summaryEl.innerHTML = `
         <span class="${monthPnl>=0?'pos':'neg'}">${fmtMoney(monthPnl)}</span>
         <span class="pos">${winTrades} profit</span>
@@ -1233,7 +1248,7 @@ function renderEquityCurve(){
   let cum = 0;
   const labels = [], values = [];
   sorted.forEach(t => {
-    cum += t.profit_loss || 0;
+    cum += netPnl(t);
     labels.push(t.close_date.toLocaleDateString('en-US',{month:'short', day:'numeric'}));
     values.push(cum);
   });
@@ -1552,7 +1567,7 @@ function renderDayOfWeekChart(){
   FILTERED.forEach(t => {
     const raw = (t.day_of_week || '').trim();
     const match = order.find(d => d.toLowerCase() === raw.toLowerCase());
-    if(match){ sums[match].pnl += t.profit_loss || 0; sums[match].count += 1; }
+    if(match){ sums[match].pnl += netPnl(t); sums[match].count += 1; }
   });
 
   const labels = order.map(d => d.slice(0,3));
@@ -1659,7 +1674,7 @@ function renderTradeCards(trades){
       <div class="trade-card">
         <div class="tc-top">
           <span class="tc-symbol"><span class="tc-dot ${dotCls}"></span>${t.symbol} <span style="color:var(--muted);font-weight:400;">${t.trade_type}</span></span>
-          <span class="tc-pnl ${t.profit_loss>=0?'pos':'neg'}">${fmtMoney(t.profit_loss)}</span>
+          <span class="tc-pnl ${netPnl(t)>=0?'pos':'neg'}">${fmtMoney(netPnl(t))}</span>
         </div>
         <div class="tc-meta">
           <span>${dateStr}</span>
@@ -1682,7 +1697,7 @@ function showDayTrades(y, m, d){
   const dateLabel = new Date(y, m, d).toLocaleDateString('en-US',{weekday:'long', month:'long', day:'numeric', year:'numeric'});
 
   document.getElementById('modalTitle').textContent = dateLabel;
-  const pnl = trades.reduce((s,t)=>s+t.profit_loss,0);
+  const pnl = trades.reduce((s,t)=>s+netPnl(t),0);
   document.getElementById('modalSub').textContent = `${trades.length} trade${trades.length===1?'':'s'} · ${fmtMoney(pnl)}`;
   document.getElementById('modalBody').innerHTML = renderTradeCards(trades);
   document.getElementById('tradeModal').classList.add('open');
@@ -1704,7 +1719,7 @@ function showWeekTrades(weekIdx){
 
 function showCategoryTrades(field, key){
   const trades = FILTERED.filter(t => (t[field] || 'Unspecified').toString().toLowerCase() === key.toLowerCase());
-  const pnl = trades.reduce((s,t)=>s+t.profit_loss,0);
+  const pnl = trades.reduce((s,t)=>s+netPnl(t),0);
 
   document.getElementById('modalTitle').textContent = key;
   document.getElementById('modalSub').textContent = `${trades.length} trade${trades.length===1?'':'s'} · ${fmtMoney(pnl)}`;
@@ -1716,7 +1731,7 @@ function showDisciplineTrades(kind){
   const trades = kind === 'followed'
     ? FILTERED.filter(t => t.unfollowed_rules.trim().toLowerCase() === 'rules followed')
     : FILTERED.filter(t => t.unfollowed_rules.trim() !== '' && t.unfollowed_rules.trim().toLowerCase() !== 'rules followed');
-  const pnl = trades.reduce((s,t)=>s+t.profit_loss,0);
+  const pnl = trades.reduce((s,t)=>s+netPnl(t),0);
 
   document.getElementById('modalTitle').textContent = kind === 'followed' ? 'Rules followed' : 'Rules broken';
   document.getElementById('modalSub').textContent = `${trades.length} trade${trades.length===1?'':'s'} · ${fmtMoney(pnl)}`;
@@ -1751,8 +1766,8 @@ function renderBreakdown(){
   if(activeTab === 'discipline'){
     const followed = FILTERED.filter(t => t.unfollowed_rules.trim().toLowerCase() === 'rules followed');
     const broken = FILTERED.filter(t => t.unfollowed_rules.trim() !== '' && t.unfollowed_rules.trim().toLowerCase() !== 'rules followed');
-    const brokenPnl = broken.reduce((s,x)=>s+x.profit_loss,0);
-    const followedPnl = followed.reduce((s,x)=>s+x.profit_loss,0);
+    const brokenPnl = broken.reduce((s,x)=>s+netPnl(x),0);
+    const followedPnl = followed.reduce((s,x)=>s+netPnl(x),0);
 
     // tally common broken-rule phrases (excludes the "Rules Followed" marker itself)
     const tally = {};
@@ -1800,7 +1815,7 @@ function renderBreakdown(){
   });
 
   const rows = Object.entries(groups).map(([key, trades]) => {
-    const pnl = trades.reduce((s,x)=>s+x.profit_loss,0);
+    const pnl = trades.reduce((s,x)=>s+netPnl(x),0);
     const wins = trades.filter(t=>t.win_loss.toLowerCase()==='win').length;
     const winRate = trades.length ? (wins/trades.length*100) : 0;
     const rrVals = trades.map(t=>t.rr).filter(v=>v!==null && !isNaN(v));
@@ -7088,7 +7103,7 @@ function buildSummaryForAI(){
   const t = FILTERED;
   const wins = t.filter(x=>x.win_loss.toLowerCase()==='win');
   const losses = t.filter(x=>x.win_loss.toLowerCase()==='loss');
-  const totalPnl = t.reduce((s,x)=>s+x.profit_loss,0);
+  const totalPnl = t.reduce((s,x)=>s+netPnl(x),0);
 
   function groupSummary(field){
     const groups = {};
@@ -7096,7 +7111,7 @@ function buildSummaryForAI(){
       const key = tr[field] || 'Unspecified';
       if(!groups[key]) groups[key] = {count:0, pnl:0, wins:0};
       groups[key].count++;
-      groups[key].pnl += tr.profit_loss;
+      groups[key].pnl += netPnl(tr);
       if(tr.win_loss.toLowerCase()==='win') groups[key].wins++;
     });
     return Object.entries(groups).map(([k,v]) => ({name:k, trades:v.count, pnl: +v.pnl.toFixed(2), win_rate: +(v.wins/v.count*100).toFixed(1)}));
@@ -7114,7 +7129,7 @@ function buildSummaryForAI(){
     by_emotion: groupSummary('emotion'),
     by_day_of_week: groupSummary('day_of_week'),
     trades_with_broken_rules: broken.length,
-    broken_rules_pnl: +broken.reduce((s,x)=>s+x.profit_loss,0).toFixed(2)
+    broken_rules_pnl: +broken.reduce((s,x)=>s+netPnl(x),0).toFixed(2)
   };
 }
 
@@ -8783,7 +8798,7 @@ function computeChallenges(trades, achRows){
   const byWeek = {};
   closed.forEach(t => {
     const key = getWeekKey(t.close_date);
-    byWeek[key] = (byWeek[key] || 0) + (t.profit_loss || 0);
+    byWeek[key] = (byWeek[key] || 0) + netPnl(t);
   });
   const weekKeys = Object.keys(byWeek).sort();
   let weekStreak = 0, maxWeekStreak = 0;
@@ -8800,8 +8815,8 @@ function computeChallenges(trades, achRows){
 
   // 5. Efficient Edge — profit factor over the last 100 trades, leveled up
   const last100 = recentFirst.slice(0, 100);
-  const gw = last100.filter(t => t.profit_loss > 0).reduce((s,t) => s + t.profit_loss, 0);
-  const gl = Math.abs(last100.filter(t => t.profit_loss < 0).reduce((s,t) => s + t.profit_loss, 0));
+  const gw = last100.reduce((s,t) => s + Math.max(netPnl(t),0), 0);
+  const gl = Math.abs(last100.reduce((s,t) => s + Math.min(netPnl(t),0), 0));
   const pf = gl > 0 ? gw / gl : (gw > 0 ? Infinity : 0);
   const pfDisplay = last100.length >= 100 ? Math.min(pf === Infinity ? 2 : pf, 2) : 0;
   const c5 = {
@@ -8816,8 +8831,8 @@ function computeChallenges(trades, achRows){
   const last20 = recentFirst.slice(0, 20);
   const prev20 = recentFirst.slice(20, 40);
   const avgLoss = arr => {
-    const losses = arr.filter(t => t.profit_loss < 0);
-    return losses.length ? losses.reduce((s,t) => s + t.profit_loss, 0) / losses.length : 0;
+    const losses = arr.filter(t => netPnl(t) < 0);
+    return losses.length ? losses.reduce((s,t) => s + netPnl(t), 0) / losses.length : 0;
   };
   const recentAvgLoss = avgLoss(last20), prevAvgLoss = avgLoss(prev20);
   const improvementPct = prev20.length > 0 && prevAvgLoss !== 0
@@ -8834,7 +8849,7 @@ function computeChallenges(trades, achRows){
   // 7. Drawdown Guard — tighter max-drawdown control over time
   let peak = 0, maxDD = 0, cum = 0;
   closed.forEach(t => {
-    cum += t.profit_loss || 0;
+    cum += netPnl(t);
     peak = Math.max(peak, cum);
     const dd = peak > 0 ? (peak - cum) / peak * 100 : 0;
     maxDD = Math.max(maxDD, dd);
@@ -8972,7 +8987,7 @@ function computeChallenges(trades, achRows){
   const monthTotals = {};
   closed.forEach(t => {
     const key = `${t.close_date.getFullYear()}-${t.close_date.getMonth()}`;
-    monthTotals[key] = (monthTotals[key] || 0) + (t.profit_loss || 0);
+    monthTotals[key] = (monthTotals[key] || 0) + netPnl(t);
   });
   const thisMonthKey = `${now.getFullYear()}-${now.getMonth()}`;
   const greenMonthCount = Object.keys(monthTotals).filter(k => k !== thisMonthKey && monthTotals[k] > 0).length;
@@ -9804,7 +9819,7 @@ function computeAccountStats(acc){
   const today = new Date(); today.setHours(0,0,0,0);
   const todaysPL = trades
     .filter(t => { const d = new Date(t.close_date); d.setHours(0,0,0,0); return d.getTime() === today.getTime(); })
-    .reduce((s,t) => s + (t.profit_loss || 0), 0);
+    .reduce((s,t) => s + netPnl(t), 0);
   const dailyLossUsed = todaysPL < 0 ? Math.abs(todaysPL) : 0;
   const dailyLossLimit = accountSize * (Number(acc.max_daily_loss_pct) || 0) / 100;
   const dayStartBalance = currentBalance - todaysPL;
@@ -9826,7 +9841,7 @@ function computeAccountStats(acc){
   const dayPL = {};
   phaseTrades.forEach(t => {
     const key = new Date(t.close_date).toDateString();
-    dayPL[key] = (dayPL[key] || 0) + (t.profit_loss || 0);
+    dayPL[key] = (dayPL[key] || 0) + netPnl(t);
   });
   // Upscale only counts a day toward the minimum trading days rule if it
   // cleared at least $50 profit — a day that's merely break-even/slightly
@@ -9836,7 +9851,7 @@ function computeAccountStats(acc){
 
   const sortedTrades = [...phaseTrades].sort((a,b) => a.close_date - b.close_date);
   let cum = 0;
-  const series = sortedTrades.map(t => { cum += (t.profit_loss || 0); return { date: t.close_date, cum }; });
+  const series = sortedTrades.map(t => { cum += netPnl(t); return { date: t.close_date, cum }; });
   const totalEarn = acc.phase_start_balance != null ? (currentBalance - Number(acc.phase_start_balance)) : cum;
   const targetEarn = accountSize * (Number(acc.profit_target_pct) || 0) / 100;
 
@@ -11752,14 +11767,14 @@ function _reportTradingStats(start, end){
   const trades = ALL_TRADES.filter(t => t.close_date && t.close_date >= start && t.close_date <= end);
   const total = trades.length;
   const wins = trades.filter(t => (t.profit_loss||0) > 0).length;
-  const totalPnl = trades.reduce((s,t) => s + (t.profit_loss||0), 0);
+  const totalPnl = trades.reduce((s,t) => s + netPnl(t), 0);
   const winRate = total ? Math.round(wins/total*100) : 0;
   const rrVals = trades.map(t => t.rr).filter(v => v !== null && !isNaN(v));
   const avgRR = rrVals.length ? (rrVals.reduce((s,v)=>s+v,0)/rrVals.length) : null;
   let bestTrade = null, worstTrade = null;
   trades.forEach(t => {
-    if(!bestTrade || (t.profit_loss||0) > (bestTrade.profit_loss||0)) bestTrade = t;
-    if(!worstTrade || (t.profit_loss||0) < (worstTrade.profit_loss||0)) worstTrade = t;
+    if(!bestTrade || netPnl(t) > netPnl(bestTrade)) bestTrade = t;
+    if(!worstTrade || netPnl(t) < netPnl(worstTrade)) worstTrade = t;
   });
   return { total, wins, totalPnl, winRate, avgRR, bestTrade, worstTrade, trades };
 }
@@ -11791,7 +11806,7 @@ function _reportMoodPnlBreakdown(tradingStats, moodStats){
   moodStats.entries.forEach(e => {
     const dayTrades = tradingStats.trades.filter(t => t.close_date && _reportDateISO(t.close_date) === e.entry_date);
     if(!dayTrades.length) return;
-    const dayPnl = dayTrades.reduce((s,t) => s + (t.profit_loss||0), 0);
+    const dayPnl = dayTrades.reduce((s,t) => s + netPnl(t), 0);
     if(!byMood[e.mood]) byMood[e.mood] = { sum: 0, days: 0 };
     byMood[e.mood].sum += dayPnl;
     byMood[e.mood].days += 1;
@@ -11838,8 +11853,8 @@ function renderReportPreview(){
           <div class="kpi"><div class="label">Avg R:R</div><div class="value">${trading.avgRR!=null ? trading.avgRR.toFixed(2) : '—'}</div></div>
         </div>
         <div style="margin-top:14px;font-size:12.5px;color:var(--muted);">
-          Best trade: <span class="pos" style="font-weight:600;">${trading.bestTrade ? fmtMoney(trading.bestTrade.profit_loss) : '—'}</span> (${escapeHtml(trading.bestTrade?.symbol || '—')})
-          &nbsp;·&nbsp; Worst trade: <span class="neg" style="font-weight:600;">${trading.worstTrade ? fmtMoney(trading.worstTrade.profit_loss) : '—'}</span> (${escapeHtml(trading.worstTrade?.symbol || '—')})
+          Best trade: <span class="pos" style="font-weight:600;">${trading.bestTrade ? fmtMoney(netPnl(trading.bestTrade)) : '—'}</span> (${escapeHtml(trading.bestTrade?.symbol || '—')})
+          &nbsp;·&nbsp; Worst trade: <span class="neg" style="font-weight:600;">${trading.worstTrade ? fmtMoney(netPnl(trading.worstTrade)) : '—'}</span> (${escapeHtml(trading.worstTrade?.symbol || '—')})
         </div>
       ` : `<div class="report-empty">No trades in this period.</div>`}
     </div>
@@ -11970,7 +11985,7 @@ function downloadReportPDF(){
       { label: 'Total P&L', value: fmtMoney(trading.totalPnl), color: trading.totalPnl >= 0 ? WIN : LOSS },
       { label: 'Avg R:R', value: trading.avgRR != null ? trading.avgRR.toFixed(2) : '—' }
     ]);
-    noteLine(`Best trade: ${trading.bestTrade ? fmtMoney(trading.bestTrade.profit_loss) : '—'} (${trading.bestTrade?.symbol || '—'})   ·   Worst trade: ${trading.worstTrade ? fmtMoney(trading.worstTrade.profit_loss) : '—'} (${trading.worstTrade?.symbol || '—'})`);
+    noteLine(`Best trade: ${trading.bestTrade ? fmtMoney(netPnl(trading.bestTrade)) : '—'} (${trading.bestTrade?.symbol || '—'})   ·   Worst trade: ${trading.worstTrade ? fmtMoney(netPnl(trading.worstTrade)) : '—'} (${trading.worstTrade?.symbol || '—'})`);
   }else{
     emptyLine('No trades in this period.');
   }
