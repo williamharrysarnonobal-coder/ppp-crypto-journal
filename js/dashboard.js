@@ -6722,7 +6722,12 @@ function _renderTradeViewConfluenceGroup(row){
     // "Sequence"-style items (select) store the literal chosen option
     // (e.g. "3rd") as the answer, not a yes/retest/almost/no value.
     const display = item.select ? escapeHtml(ans) : (answerLabel[ans] || ans);
-    const color = item.select ? 'var(--ink)' : (answerColor[ans] || 'var(--ink)');
+    // Left/Right Hand Present are inverted on purpose (No is the good
+    // outcome there) — flip which color "yes"/"no" map to for those items.
+    const invertedColor = { yes:'var(--loss)', no:'var(--win)', retest:answerColor.retest, almost:answerColor.almost };
+    // Sequence picks (1st..5th) get the same tiered tint as the live chip
+    // picker instead of plain white — position in the list drives the color.
+    const color = item.select ? _sequenceTint(item.select.indexOf(ans)) : ((item.invert ? invertedColor : answerColor)[ans] || 'var(--ink)');
     return `<div class="field-row"><label>${escapeHtml(item.text)}</label><div class="field-static" style="color:${color};">${display}</div></div>`;
   }).join('') : '';
 
@@ -6730,7 +6735,17 @@ function _renderTradeViewConfluenceGroup(row){
     ? `<div class="field-row"><label>Chart Pattern</label><div class="field-static">${escapeHtml(row.chart_pattern)}</div></div>`
     : '';
 
-  return `<div class="field-row span-2 field-group-title">Confluence</div>${rows}${patternRow}`;
+  // Same scoring as the live checklist's progress chip (Yes/Retest = full
+  // credit, Almost = half, No = none) — here it reads as how strong this
+  // trade's confluence actually was, not just how many questions got answered.
+  const scoreBadge = cfg ? (() => {
+    const { total, done } = _confluenceProgress(cfg.items, row.confluence_answers || {}, !!row.chart_pattern);
+    const pct = total ? done / total : 0;
+    const color = pct >= 0.8 ? 'var(--win)' : (pct >= 0.5 ? 'var(--accent)' : 'var(--loss)');
+    return `<span style="font-size:11px;font-weight:700;letter-spacing:0;text-transform:none;color:${color};font-variant-numeric:tabular-nums;">${Number(done.toFixed(1))}/${total}</span>`;
+  })() : '';
+
+  return `<div class="field-row span-2 field-group-title">Confluence${scoreBadge}</div>${rows}${patternRow}`;
 }
 
 function renderTradeViewModal(){
@@ -9708,12 +9723,58 @@ async function loadAccounts(){
     console.error("Couldn't load trading accounts:", e);
     TRADING_ACCOUNTS = [];
   }
+  await _autoDetectAccountStatus();
   await _autoAdvanceAccountPhases();
   syncAccountFieldOptions();
   renderAccountsList();
 }
 
 const ACCOUNT_PHASE_STAGES = ['Evaluation Phase 1','Evaluation Phase 2','Funded'];
+
+// Upscale Trade's official challenge rules (from their pricing/conditions
+// page) — picking Prop Firm + Challenge Type in Add/Edit Account auto-fills
+// all of these instead of retyping the same percentages per account.
+// null means "doesn't apply to this challenge" (Accelerated has only one
+// evaluation phase, Turbo skips evaluation entirely — "stages" reflects
+// that directly, so the Progress stepper only shows what's real for it).
+// minDailyProfitPct is only confirmed for Basic (reverse-engineered from
+// real account screenshots, 0.5% of size) — left null for Accelerated/
+// Turbo until confirmed.
+const PROP_FIRM_PRESETS = {
+  'Upscale Trade': {
+    'Basic': {
+      stages: ['Evaluation Phase 1','Evaluation Phase 2','Funded'],
+      maxDailyLossPct: 5, maxTotalDrawdownPct: 10,
+      phase1TargetPct: 5, phase2TargetPct: 8,
+      minTradingDays: 5, minDailyProfitPct: 0.5, maxLeverage: 5,
+      sizes: [5000,10000,25000,50000,100000,200000]
+    },
+    'Accelerated': {
+      stages: ['Evaluation Phase 1','Funded'],
+      maxDailyLossPct: 3, maxTotalDrawdownPct: 6,
+      phase1TargetPct: 10, phase2TargetPct: null,
+      minTradingDays: 3, minDailyProfitPct: null, maxLeverage: 5,
+      sizes: [5000,10000,25000,50000,100000,200000]
+    },
+    'Turbo': {
+      stages: ['Funded'],
+      maxDailyLossPct: null, maxTotalDrawdownPct: 6,
+      phase1TargetPct: null, phase2TargetPct: null,
+      minTradingDays: 5, minDailyProfitPct: null, maxLeverage: 2,
+      sizes: [5000,10000,25000]
+    }
+  }
+};
+
+function _accountPreset(acc){
+  return PROP_FIRM_PRESETS[acc?.prop_firm]?.[acc?.challenge_type] || null;
+}
+
+// Falls back to the classic 3-stage model for accounts with no matching
+// preset (custom rules, or a different prop firm than the ones above).
+function _accountPhaseStages(acc){
+  return _accountPreset(acc)?.stages || ACCOUNT_PHASE_STAGES;
+}
 
 // Once an account's Total Earn meets its Profit Target, move it to the next
 // phase automatically (matches how the real prop firm confirms passing) —
@@ -9723,17 +9784,32 @@ const ACCOUNT_PHASE_STAGES = ['Evaluation Phase 1','Evaluation Phase 2','Funded'
 async function _autoAdvanceAccountPhases(){
   for(const acc of TRADING_ACCOUNTS){
     if(acc.account_type === 'Exchange') continue;
-    const stageIdx = ACCOUNT_PHASE_STAGES.indexOf(acc.phase);
-    if(stageIdx < 0 || stageIdx >= ACCOUNT_PHASE_STAGES.length - 1) continue;
+    const stages = _accountPhaseStages(acc);
+    const stageIdx = stages.indexOf(acc.phase);
+    if(stageIdx < 0 || stageIdx >= stages.length - 1) continue;
 
     const s = computeAccountStats(acc);
     if(!(s.targetEarn > 0 && s.totalEarn >= s.targetEarn)) continue;
 
-    const nextPhase = ACCOUNT_PHASE_STAGES[stageIdx + 1];
+    const nextPhase = stages[stageIdx + 1];
+    // Each phase can have its own Profit Target (Basic: 5% then 8%) — pull
+    // the new phase's number from the matched preset, if there is one, so
+    // this doesn't silently keep the OLD phase's target after advancing.
+    const preset = _accountPreset(acc);
+    let nextTargetPct = acc.profit_target_pct;
+    if(preset){
+      nextTargetPct = nextPhase === 'Evaluation Phase 2' ? preset.phase2TargetPct
+        : nextPhase === 'Evaluation Phase 1' ? preset.phase1TargetPct
+        : null; // Funded has no percentage target
+    }
     const patch = {
       phase: nextPhase,
       phase_start_date: new Date().toISOString().slice(0,10),
-      phase_start_balance: s.currentBalance
+      phase_start_balance: s.currentBalance,
+      profit_target_pct: nextTargetPct,
+      // Reaching Funded means every evaluation phase got passed — flip Status
+      // automatically instead of leaving it on a manual dropdown.
+      status: nextPhase === 'Funded' ? 'Passed' : acc.status
     };
     try{
       const res = await fetch(`${SUPABASE_URL}/rest/v1/trading_accounts?id=eq.${acc.id}`, {
@@ -9750,6 +9826,39 @@ async function _autoAdvanceAccountPhases(){
       showToast(`🎉 ${acc.account_name} advanced to ${nextPhase}!`);
     }catch(e){
       console.error("Couldn't auto-advance account phase:", e);
+    }
+  }
+}
+
+// Auto-fails an account the moment its own rules are breached (Max Daily
+// Loss for any single day, or Max Total Drawdown on current balance) — a
+// breach is permanent in a real challenge, so this never runs on an account
+// already marked Failed/Passed, and never reverts one back to Ongoing.
+async function _autoDetectAccountStatus(){
+  for(const acc of TRADING_ACCOUNTS){
+    if(acc.account_type === 'Exchange') continue;
+    if(acc.status === 'Failed' || acc.status === 'Passed') continue;
+
+    const s = computeAccountStats(acc);
+    const dailyBreach = s.dailyLossLimit > 0 && Object.values(s.dayPL || {}).some(v => v <= -s.dailyLossLimit);
+    const drawdownBreach = s.drawdownFloor > 0 && s.currentBalance <= s.drawdownFloor;
+    if(!dailyBreach && !drawdownBreach) continue;
+
+    try{
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/trading_accounts?id=eq.${acc.id}`, {
+        method: 'PATCH',
+        headers: {
+          "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}`,
+          "Content-Type": "application/json", "Prefer": "return=representation"
+        },
+        body: JSON.stringify({ status: 'Failed' })
+      });
+      if(!res.ok) throw new Error(await res.text());
+      const updated = await res.json();
+      Object.assign(acc, updated[0] || { status: 'Failed' });
+      showToast(`⚠️ ${acc.account_name} marked Failed — ${dailyBreach ? 'Max Daily Loss' : 'Max Total Drawdown'} breached.`);
+    }catch(e){
+      console.error("Couldn't auto-fail account:", e);
     }
   }
 }
@@ -9903,7 +10012,12 @@ function computeAccountStats(acc){
     dayPL[key] = (dayPL[key] || 0) + netPnl(t);
   });
   const profitableDaysCount = Object.values(dayPL).filter(v => v >= dailyProfitTarget).length;
-  const profitableDaysTarget = Number(acc.min_trading_days) || null;
+  // Fall back to the matched preset's Minimum Trading Days, and failing that
+  // (older accounts predate the Challenge Type field, so nothing actually
+  // matches a preset) to Basic's own number — same reasoning as the 0.5%
+  // Min Daily Profit default above, so "X of Y" still shows without forcing
+  // a re-save just to pick Challenge Type again.
+  const profitableDaysTarget = Number(acc.min_trading_days) || _accountPreset(acc)?.minTradingDays || (acc.account_type !== 'Exchange' ? 5 : null);
 
   const sortedTrades = [...phaseTrades].sort((a,b) => a.close_date - b.close_date);
   let cum = 0;
@@ -9920,7 +10034,7 @@ function computeAccountStats(acc){
   return {
     accountSize, currentBalance, todaysPL, dailyLossUsed, dailyLossLimit, dayStartBalance, dailyStopBalance,
     drawdownFloor, profitGoal, balanceRangeFraction, profitableDaysCount, profitableDaysTarget,
-    dailyProfitUsed, dailyProfitTarget, msUntilReset,
+    dailyProfitUsed, dailyProfitTarget, msUntilReset, dayPL,
     series, totalEarn, targetEarn
   };
 }
@@ -9944,7 +10058,11 @@ function openAccountDetail(id){
   const s = computeAccountStats(a);
 
   document.getElementById('accDetailName').textContent = a.account_name;
-  const startLabel = a.start_date ? `· start ${new Date(a.start_date + 'T00:00:00').toLocaleDateString(undefined,{day:'numeric',month:'short'})}` : '';
+  // Show when the CURRENT phase began, not the account's original signup
+  // date — that's what resets Total Earn/Profitable Days, so it's the date
+  // that actually matters once an account has advanced past Phase 1.
+  const phaseStartVal = a.phase_start_date || a.start_date;
+  const startLabel = phaseStartVal ? `· ${a.phase || 'phase'} started ${new Date(phaseStartVal + 'T00:00:00').toLocaleDateString(undefined,{day:'numeric',month:'short'})}` : '';
   const statusLabel = a.status && a.status !== 'Ongoing' ? ` · ${a.status}` : '';
   document.getElementById('accDetailSub').textContent = `${a.prop_firm || ''} ${startLabel}${statusLabel}`.trim();
 
@@ -9954,7 +10072,7 @@ function openAccountDetail(id){
   badgeEl.style.background = a.status === 'Passed' ? 'color-mix(in srgb, var(--win) 16%, transparent)'
     : (a.status === 'Failed' ? 'color-mix(in srgb, var(--loss) 16%, transparent)' : 'color-mix(in srgb, var(--accent) 16%, transparent)');
 
-  const stages = ACCOUNT_PHASE_STAGES;
+  const stages = _accountPhaseStages(a);
   const stageIdx = stages.indexOf(a.phase);
   document.getElementById('accDetailStepper').innerHTML = stages.map((label,i) => {
     const cls = stageIdx < 0 ? '' : (i < stageIdx ? 'done' : (i === stageIdx ? 'current' : ''));
@@ -10042,6 +10160,15 @@ function closeAccountDetail(){
 function phaseTargetFor(label, size, acc){
   const l = (label || '').trim();
   if(l !== 'Evaluation Phase 1' && l !== 'Evaluation Phase 2') return null;
+  // A preset-matched account knows each phase's OWN target (Basic: 5% then
+  // 8%) — without this, hovering an already-passed Phase 1 step would show
+  // Phase 2's target instead, since profit_target_pct only ever holds
+  // whichever phase is current.
+  const preset = _accountPreset(acc);
+  if(preset){
+    const pct = l === 'Evaluation Phase 1' ? preset.phase1TargetPct : preset.phase2TargetPct;
+    return (pct != null) ? size * pct / 100 : null;
+  }
   return size * (Number(acc?.profit_target_pct) || 0) / 100;
 }
 
@@ -10056,6 +10183,14 @@ function phaseStepTooltip(acc, s, stageIdx, i, label){
     if(i < stageIdx) return 'Funded';
     if(i === stageIdx) return `Funded — $${(s.totalEarn||0).toLocaleString(undefined,{maximumFractionDigits:2})} earned`;
     return 'Not yet funded';
+  }
+
+  // Without a matched preset (Prop Firm + Challenge Type), we only know the
+  // CURRENT phase's profit_target_pct — for an already-passed phase there's
+  // no way to recover its own historical target, so don't guess a number
+  // that actually belongs to a different phase. Just confirm it cleared.
+  if(!_accountPreset(acc) && i < stageIdx){
+    return 'Target reached';
   }
 
   const target = phaseTargetFor(label, size, acc);
@@ -10166,6 +10301,7 @@ function accountCardHTML(a){
       if(a.profit_target_pct != null) rules.push(`<span class="pill pill-green">Target ${a.profit_target_pct}%</span>`);
       if(a.min_trading_days != null) rules.push(`<span class="pill pill-blue">Min ${a.min_trading_days} days</span>`);
       if(a.consistency_rule_pct != null) rules.push(`<span class="pill pill-orange">Consistency ${a.consistency_rule_pct}%</span>`);
+      if(a.max_leverage != null) rules.push(`<span class="pill pill-blue">Max Leverage x${a.max_leverage}</span>`);
     }
 
     let balanceHTML = '';
@@ -10187,7 +10323,10 @@ function accountCardHTML(a){
       balanceHTML += `<div class="account-card-balance">$${Number(a.current_balance).toLocaleString()}</div>`;
     }
 
-    const startLabel = a.start_date ? `· start ${new Date(a.start_date + 'T00:00:00').toLocaleDateString(undefined,{day:'numeric',month:'short'})}` : '';
+    // Same reasoning as the Account Detail header — show when the CURRENT
+    // phase began, not the account's original signup date, once it's advanced.
+    const phaseStartVal = a.phase_start_date || a.start_date;
+    const startLabel = phaseStartVal ? `· start ${new Date(phaseStartVal + 'T00:00:00').toLocaleDateString(undefined,{day:'numeric',month:'short'})}` : '';
     const metaLabel = isExchange
       ? `${escapeHtml(a.exchange_name || 'Exchange')} ${startLabel}`
       : `${escapeHtml(a.prop_firm || '—')} ${a.account_size ? `· $${Number(a.account_size).toLocaleString()}` : ''} ${a.phase ? `· ${escapeHtml(a.phase)}` : ''} ${startLabel}`;
@@ -10198,10 +10337,15 @@ function accountCardHTML(a){
 
     const riskBase = a.account_size ? Number(a.account_size) : (a.current_balance != null ? Number(a.current_balance) : null);
     const tradeCount = ALL_TRADES.filter(t => t.account === a.account_name).length;
+    // Per-account Risk % if set, otherwise fall back to the Profile-wide
+    // default (My Trading Rules > Risk Per Trade) — was hardcoded to 0.3%
+    // for every account regardless of what either of those actually said.
+    const riskPct = a.risk_per_trade_pct != null ? Number(a.risk_per_trade_pct)
+      : (PROFILE_DATA?.risk_per_trade != null ? Number(PROFILE_DATA.risk_per_trade) : 0.3);
     const riskHTML = (riskBase != null || tradeCount > 0)
       ? `<div class="account-card-risk">
           <div>Total Trades: <span>${tradeCount}</span></div>
-          ${riskBase != null ? `<div>Risk Per Trade: <span>$${(riskBase * 0.003).toLocaleString(undefined,{maximumFractionDigits:2})}</span> <span class="account-risk-pct">(0.3%)</span></div>` : ''}
+          ${riskBase != null ? `<div>Risk Per Trade: <span>$${(riskBase * riskPct/100).toLocaleString(undefined,{maximumFractionDigits:2})}</span> <span class="account-risk-pct">(${riskPct}%)</span></div>` : ''}
         </div>`
       : '';
 
@@ -10461,7 +10605,7 @@ const CONFLUENCE_SETUPS = {
       {tag:'MACD · 30M', text:'30M MACD in Bull Territory (Green Histogram)?'},
       {tag:'MACD · 15M', text:'15M MACD in Bull Territory (Green Histogram)?'},
       {tag:'MACD · 3M', text:'Did 3min MACD Breakdown?'},
-      {tag:'Divergence', text:'Left Hand Present?'},
+      {tag:'Divergence', text:'Left Hand Present?', invert:true},
       {tag:'Sequence', text:'Which 5m HL is this?', select:['1st','2nd','3rd','4th','5th']},
       {tag:'Execution · 1min BB50', text:'Did BB50 and the .382 Fib or MOBV align at your entry level?', exec:true},
       {tag:'Execution', text:'Did MACD cross the zero line upward when your order triggered?', exec:true, retest:true},
@@ -10474,7 +10618,7 @@ const CONFLUENCE_SETUPS = {
       {tag:'MACD · 30M', text:'30M MACD in Bear Territory (Red Histogram)?'},
       {tag:'MACD · 15M', text:'15M MACD in Bear Territory (Red Histogram)?'},
       {tag:'MACD · 3M', text:'Did 3min MACD Breakout?'},
-      {tag:'Divergence', text:'Right Hand Present?'},
+      {tag:'Divergence', text:'Right Hand Present?', invert:true},
       {tag:'Sequence', text:'Which 5m LH is this?', select:['1st','2nd','3rd','4th','5th']},
       {tag:'Execution · 1min BB50', text:'Did BB50 and the .382 Fib or MOBV align at your entry level?', exec:true},
       {tag:'Execution', text:'Did MACD cross the zero line downward when your order triggered?', exec:true, retest:true},
@@ -10523,6 +10667,13 @@ const CONFLUENCE_SETUPS = {
   },
 };
 
+// Color tier for a "Sequence" pick (Which 5m HL/LH is this?) by its index in
+// the select list — 1st/2nd green, 3rd orange, 4th/5th red. Shared by the
+// live chip picker and the read-only Trade View display so both agree.
+function _sequenceTint(idx){
+  return idx <= 1 ? 'var(--win)' : (idx === 2 ? 'var(--warn)' : 'var(--loss)');
+}
+
 // Confluence can be filled in on a Pending Setup (before it's ever
 // journaled) or added/edited later directly on an already-journaled trade
 // (old trades from before this feature existed have no confluence yet) —
@@ -10534,12 +10685,19 @@ const CONFLUENCE_SETUPS = {
 // render identically in both places.
 function _renderConfluenceItemRow(it, i, ans, setAnswerFn){
   if(it.select){
+    // Later position in the sequence = more red (a 4th/5th HL/LH is further
+    // into an already-extended move than a 1st/2nd) — same tint used for
+    // both the chip's outline and its filled/active state.
+    const chips = it.select.map((opt, idx) => {
+      const tint = _sequenceTint(idx);
+      const isActive = ans === opt;
+      const style = isActive ? `border-color:${tint};background:${tint};color:#fff;` : `border-color:${tint};color:${tint};`;
+      return `<span class="cfl-pattern-chip ${isActive?'active':''}" style="${style}" onclick="${setAnswerFn}(${i},'${opt}')">${opt}</span>`;
+    }).join('');
     return `
       <div class="cfl-yn-item cfl-select-item ${!ans?'cfl-unanswered':''}">
         <span class="cfl-yn-label"><span class="cfl-yn-tag">${it.tag}</span>${it.text}</span>
-        <span class="cfl-select-chips">
-          ${it.select.map(opt => `<span class="cfl-pattern-chip ${ans===opt?'active':''}" onclick="${setAnswerFn}(${i},'${opt}')">${opt}</span>`).join('')}
-        </span>
+        <span class="cfl-select-chips">${chips}</span>
       </div>
     `;
   }
@@ -10547,10 +10705,10 @@ function _renderConfluenceItemRow(it, i, ans, setAnswerFn){
     <div class="cfl-yn-item ${it.exec?'cfl-execution':''} ${!ans?'cfl-unanswered':''}">
       <span class="cfl-yn-label"><span class="cfl-yn-tag">${it.tag}</span>${it.text}</span>
       <span class="cfl-yn-buttons">
-        <button type="button" class="cfl-yn-btn cfl-yes ${ans==='yes'?'active':''}" onclick="${setAnswerFn}(${i},'yes')">Yes</button>
+        <button type="button" class="cfl-yn-btn ${it.invert?'cfl-no':'cfl-yes'} ${ans==='yes'?'active':''}" onclick="${setAnswerFn}(${i},'yes')">Yes</button>
         ${it.retest ? `<button type="button" class="cfl-yn-btn cfl-retest ${ans==='retest'?'active':''}" onclick="${setAnswerFn}(${i},'retest')">Retest</button>` : ''}
         ${it.exec ? `<button type="button" class="cfl-yn-btn cfl-almost ${ans==='almost'?'active':''}" onclick="${setAnswerFn}(${i},'almost')">Almost</button>` : ''}
-        <button type="button" class="cfl-yn-btn cfl-no ${ans==='no'?'active':''}" onclick="${setAnswerFn}(${i},'no')">No</button>
+        <button type="button" class="cfl-yn-btn ${it.invert?'cfl-yes':'cfl-no'} ${ans==='no'?'active':''}" onclick="${setAnswerFn}(${i},'no')">No</button>
       </span>
     </div>
   `;
@@ -10559,6 +10717,9 @@ function _renderConfluenceItemRow(it, i, ans, setAnswerFn){
 // "Yes"/"Retest" both count as full confluence credit (a retest entry after
 // a real signal isn't a lesser entry, just a different timing), "Almost"
 // is half, a "Sequence"-style pick counts full just for being answered.
+// For an "invert" item (Left/Right Hand Present, where No is the good
+// outcome) the credit flips too — a green "No" is a hit, a red "Yes" is a
+// miss — otherwise a fully clean checklist would never actually show full marks.
 function _confluenceProgress(items, answers, chartPatternPresent){
   const answeredValues = Object.values(answers);
   let done = chartPatternPresent ? 1 : 0;
@@ -10566,6 +10727,11 @@ function _confluenceProgress(items, answers, chartPatternPresent){
     const ans = answers[i];
     if(ans === undefined) return;
     if(it.select){ done += 1; return; }
+    if(it.invert){
+      if(ans === 'no') done += 1;
+      else if(ans === 'almost') done += 0.5;
+      return;
+    }
     if(ans === 'yes' || ans === 'retest') done += 1;
     else if(ans === 'almost') done += 0.5;
   });
@@ -11215,40 +11381,225 @@ function imageIconSVG(){
 
 function openAccountModal(id){
   editingAccountId = id || null;
+  accPresetManualOverride = false;
   const a = id ? TRADING_ACCOUNTS.find(x => x.id === id) : null;
 
   document.getElementById('accountModalTitle').textContent = a ? 'Edit Account' : '+ Add Account';
   document.getElementById('accType').value = a ? (a.account_type || 'Prop Firm') : 'Prop Firm';
   document.getElementById('accName').value = a ? a.account_name : '';
-  document.getElementById('accPropFirm').value = a ? (a.prop_firm || '') : '';
+
+  const knownFirm = a && PROP_FIRM_PRESETS[a.prop_firm];
+  document.getElementById('accPropFirm').innerHTML =
+    Object.keys(PROP_FIRM_PRESETS).map(f => `<option value="${f}">${f}</option>`).join('') + '<option value="Other">Other</option>';
+  document.getElementById('accPropFirm').value = a ? (knownFirm ? a.prop_firm : 'Other') : Object.keys(PROP_FIRM_PRESETS)[0];
+  document.getElementById('accPropFirmOther').value = (a && !knownFirm) ? (a.prop_firm || '') : '';
+
   document.getElementById('accExchangeName').value = a ? (a.exchange_name || 'Binance') : 'Binance';
   document.getElementById('accSize').value = a && a.account_size != null ? a.account_size : '';
   document.getElementById('accBalance').value = a && a.current_balance != null ? a.current_balance : '';
+  document.getElementById('accRiskPerTrade').value = a && a.risk_per_trade_pct != null ? a.risk_per_trade_pct : '';
+  // Hidden — not user-editable, just tells the rule summary below which
+  // phase's target % to show. Phase itself only ever changes via auto-advance.
   document.getElementById('accPhase').value = a ? (a.phase || 'Evaluation Phase 1') : 'Evaluation Phase 1';
   document.getElementById('accStatus').value = a ? (a.status || 'Ongoing') : 'Ongoing';
-  document.getElementById('accStartDate').value = a && a.start_date ? a.start_date : '';
-  document.getElementById('accPhaseStartDate').value = a && a.phase_start_date ? a.phase_start_date : '';
-  document.getElementById('accPhaseStartBalance').value = a && a.phase_start_balance != null ? a.phase_start_balance : '';
+  // A brand new account is always "Ongoing" by definition — nobody adds an
+  // account that's already Passed/Failed on day one — so this only needs
+  // to be seen (and correctable) once you're editing a real one later.
+  document.getElementById('accStatusRow').style.display = a ? '' : 'none';
+  document.getElementById('accStatusReadoutRow').style.display = a ? '' : 'none';
+  if(a){
+    const statusVal = a.status || 'Ongoing';
+    const statusColor = statusVal === 'Passed' ? 'var(--win)' : (statusVal === 'Failed' ? 'var(--loss)' : 'var(--accent)');
+    const readoutEl = document.getElementById('accStatusReadout');
+    readoutEl.textContent = statusVal;
+    readoutEl.style.color = statusColor;
+  }
+  document.getElementById('accStartDate').value = a && a.start_date ? a.start_date : (a ? '' : new Date().toISOString().slice(0,10));
   document.getElementById('accMaxDailyLoss').value = a && a.max_daily_loss_pct != null ? a.max_daily_loss_pct : '';
   document.getElementById('accMaxDrawdown').value = a && a.max_total_drawdown_pct != null ? a.max_total_drawdown_pct : '';
   document.getElementById('accProfitTarget').value = a && a.profit_target_pct != null ? a.profit_target_pct : '';
   document.getElementById('accMinDays').value = a && a.min_trading_days != null ? a.min_trading_days : '';
   document.getElementById('accMinDailyProfit').value = a && a.min_daily_profit_pct != null ? a.min_daily_profit_pct : '';
   document.getElementById('accConsistency').value = a && a.consistency_rule_pct != null ? a.consistency_rule_pct : '';
+  document.getElementById('accMaxLeverage').value = a && a.max_leverage != null ? a.max_leverage : '';
   document.getElementById('accountError').textContent = '';
   document.getElementById('accountSaveBtn').textContent = a ? 'Save changes' : 'Save Account';
   document.getElementById('accountDeleteBtn').style.display = a ? 'inline-block' : 'none';
+
+  onAccPropFirmChange(a ? a.challenge_type : null);
   toggleAccountTypeFields();
+
+  // New account: the Prop Firm/Challenge Type/Size picker IS the task, so
+  // show it expanded with no toggle. Editing an existing account: everything
+  // but Balance/Status/Risk Per Trade is a rare correction, so start
+  // collapsed behind a toggle instead of showing 10+ fields by default.
+  document.getElementById('accFullDetailsToggle').style.display = a ? '' : 'none';
+  toggleAccFullDetails(!a);
+
   document.getElementById('accountModal').classList.add('open');
 }
 function closeAccountModal(){
   document.getElementById('accountModal').classList.remove('open');
 }
 
+function toggleAccFullDetails(forceOpen){
+  const wrap = document.getElementById('accFullDetailsFields');
+  const isOpen = forceOpen != null ? forceOpen : (wrap.style.display === 'none');
+  wrap.style.display = isOpen ? '' : 'none';
+  document.getElementById('accFullDetailsToggle').textContent = isOpen ? 'Hide full account details' : 'Edit full account details';
+}
+
 function toggleAccountTypeFields(){
   const isExchange = document.getElementById('accType').value === 'Exchange';
   document.getElementById('accPropFirmFields').style.display = isExchange ? 'none' : 'block';
+  document.getElementById('accPropFirmFields2').style.display = isExchange ? 'none' : 'block';
   document.getElementById('accExchangeFields').style.display = isExchange ? 'block' : 'none';
+
+  // Name/Start Date auto-fill from the challenge preset for a new Prop Firm
+  // account (nothing to derive them from otherwise) — but a new Exchange
+  // account has no preset at all, so those still need to be shown.
+  const hideForNewPropFirm = !editingAccountId && !isExchange;
+  document.getElementById('accNameRow').style.display = hideForNewPropFirm ? 'none' : '';
+  document.getElementById('accStartDateRow').style.display = hideForNewPropFirm ? 'none' : '';
+}
+
+// Re-filters Challenge Type to whichever preset firm is picked, and shows
+// the free-text name field only for "Other" (a firm we don't have rules
+// for). Pass the account's already-saved challenge_type (edit mode) so it
+// stays selected instead of resetting to the first option.
+function onAccPropFirmChange(preselectChallenge){
+  const firm = document.getElementById('accPropFirm').value;
+  const isOther = firm === 'Other';
+  document.getElementById('accPropFirmOtherRow').style.display = isOther ? '' : 'none';
+
+  const challengeRow = document.getElementById('accChallengeTypeRow');
+  const hintEl = document.getElementById('accPresetHint');
+  const preset = PROP_FIRM_PRESETS[firm];
+  if(preset){
+    challengeRow.style.display = '';
+    hintEl.style.display = '';
+    const types = Object.keys(preset);
+    // New account, nothing to preselect from saved data — default straight
+    // to the first challenge type instead of "— choose —", so the rule
+    // summary collapses immediately on open instead of waiting for a click.
+    const selected = preselectChallenge || (!editingAccountId ? types[0] : '');
+    document.getElementById('accChallengeType').innerHTML =
+      '<option value="">— choose —</option>' + types.map(t => `<option value="${t}" ${selected===t?'selected':''}>${t}</option>`).join('');
+  }else{
+    challengeRow.style.display = 'none';
+    hintEl.style.display = 'none';
+    document.getElementById('accChallengeType').innerHTML = '';
+  }
+  applyAccountPreset();
+}
+
+// Set once the user explicitly asks to override a matched preset's rules
+// by hand instead of accepting them — cleared every time the modal reopens.
+let accPresetManualOverride = false;
+
+function accEditRulesManually(){
+  accPresetManualOverride = true;
+  applyAccountPreset();
+}
+
+// Fills Max Daily Loss/Max Drawdown/Min Trading Days/Min Daily Profit/Max
+// Leverage from the matched preset, and Profit Target from whichever phase
+// is currently selected (Basic: 5% at Phase 1, 8% at Phase 2). The values
+// still land in the same hidden inputs saveAccount() already reads — a
+// matched preset just replaces the individual number fields with a
+// read-only summary instead of asking to retype 7 numbers Upscale already
+// fixes for every account of that challenge.
+// Selecting a preset replaces the free-typed Account Size with a dropdown
+// of that challenge's real size tiers — picking one just writes straight
+// into the hidden accSize input saveAccount() already reads.
+function onAccSizePresetChange(){
+  document.getElementById('accSize').value = document.getElementById('accSizePreset').value;
+  _applyAccountNameBalanceDefaults();
+}
+
+// Account Name and Current Balance are real per-instance facts (a label
+// you choose, your actual live balance) — can't be derived from the
+// challenge rules the way the percentages can. What CAN be automated: a
+// sensible starting guess for a brand new account, still yours to retype —
+// a fresh challenge's balance IS its size on day one, and a readable name
+// beats an empty field. Only fires while each is still blank, so it never
+// overwrites something you already typed or an account being edited.
+function _applyAccountNameBalanceDefaults(){
+  if(editingAccountId) return;
+  const firm = document.getElementById('accPropFirm').value;
+  const challenge = document.getElementById('accChallengeType').value;
+  const size = document.getElementById('accSize').value;
+  if(!size) return;
+
+  const nameEl = document.getElementById('accName');
+  if(!nameEl.value.trim()){
+    const sizeLabel = Number(size) >= 1000 ? `${Number(size)/1000}K` : size;
+    nameEl.value = challenge ? `${firm} ${challenge} ${sizeLabel}` : `${firm} ${sizeLabel}`;
+  }
+
+  const balEl = document.getElementById('accBalance');
+  if(!balEl.value.trim()) balEl.value = size;
+}
+
+function applyAccountPreset(){
+  const firm = document.getElementById('accPropFirm').value;
+  const challenge = document.getElementById('accChallengeType').value;
+  const preset = PROP_FIRM_PRESETS[firm]?.[challenge];
+  const manualEl = document.getElementById('accManualRuleFields');
+  const summaryEl = document.getElementById('accPresetSummary');
+  const sizePresetRow = document.getElementById('accSizePresetRow');
+  const sizeManualRow = document.getElementById('accSizeManualRow');
+
+  if(preset?.sizes){
+    const currentSize = document.getElementById('accSize').value;
+    document.getElementById('accSizePreset').innerHTML = preset.sizes
+      .map(sz => `<option value="${sz}" ${String(sz)===currentSize?'selected':''}>$${sz.toLocaleString()}</option>`).join('');
+    if(!preset.sizes.some(sz => String(sz) === currentSize)){
+      document.getElementById('accSize').value = preset.sizes[0];
+      document.getElementById('accSizePreset').value = preset.sizes[0];
+    }
+    sizePresetRow.style.display = '';
+    sizeManualRow.style.display = 'none';
+  }else{
+    sizePresetRow.style.display = 'none';
+    sizeManualRow.style.display = '';
+  }
+  _applyAccountNameBalanceDefaults();
+
+  if(!preset){
+    manualEl.style.display = '';
+    summaryEl.style.display = 'none';
+    return;
+  }
+
+  const setIf = (id, val) => { document.getElementById(id).value = (val != null) ? val : ''; };
+  setIf('accMaxDailyLoss', preset.maxDailyLossPct);
+  setIf('accMaxDrawdown', preset.maxTotalDrawdownPct);
+  setIf('accMinDays', preset.minTradingDays);
+  setIf('accMinDailyProfit', preset.minDailyProfitPct);
+  setIf('accMaxLeverage', preset.maxLeverage);
+
+  const phase = document.getElementById('accPhase').value;
+  const targetPct = phase === 'Evaluation Phase 2' ? preset.phase2TargetPct : preset.phase1TargetPct;
+  document.getElementById('accProfitTarget').value = targetPct != null ? targetPct : '';
+
+  if(accPresetManualOverride){
+    manualEl.style.display = '';
+    summaryEl.style.display = 'none';
+    return;
+  }
+
+  manualEl.style.display = 'none';
+  summaryEl.style.display = '';
+  const rows = [
+    preset.maxDailyLossPct != null ? `Daily Loss <strong>${preset.maxDailyLossPct}%</strong>` : null,
+    preset.maxTotalDrawdownPct != null ? `Max Drawdown <strong>${preset.maxTotalDrawdownPct}%</strong>` : null,
+    targetPct != null ? `Profit Target <strong>${targetPct}%</strong> (${phase})` : null,
+    preset.minTradingDays != null ? `Min Trading Days <strong>${preset.minTradingDays}</strong>` : null,
+    preset.minDailyProfitPct != null ? `Min Daily Profit <strong>${preset.minDailyProfitPct}%</strong>` : null,
+    preset.maxLeverage != null ? `Max Leverage <strong>x${preset.maxLeverage}</strong>` : null,
+  ].filter(Boolean).map(r => `<div>${r}</div>`).join('');
+  summaryEl.innerHTML = rows + `<div style="margin-top:6px;"><a href="#" onclick="event.preventDefault(); accEditRulesManually();" style="color:var(--accent);">Edit these manually instead</a></div>`;
 }
 
 function _numOrNull(id){
@@ -11269,6 +11620,9 @@ async function saveAccount(){
 
   const accountType = document.getElementById('accType').value;
   const isExchange = accountType === 'Exchange';
+  const propFirmSel = document.getElementById('accPropFirm').value;
+  const propFirmName = propFirmSel === 'Other' ? document.getElementById('accPropFirmOther').value.trim() : propFirmSel;
+  const challengeType = (!isExchange && PROP_FIRM_PRESETS[propFirmSel]) ? (document.getElementById('accChallengeType').value || null) : null;
 
   const payload = {
     account_type: accountType,
@@ -11276,11 +11630,11 @@ async function saveAccount(){
     account_size: isExchange ? null : _numOrNull('accSize'),
     current_balance: _numOrNull('accBalance'),
     start_date: document.getElementById('accStartDate').value || null,
-    prop_firm: isExchange ? null : (document.getElementById('accPropFirm').value.trim() || null),
+    risk_per_trade_pct: isExchange ? null : _numOrNull('accRiskPerTrade'),
+    prop_firm: isExchange ? null : (propFirmName || null),
+    challenge_type: isExchange ? null : challengeType,
+    max_leverage: isExchange ? null : _numOrNull('accMaxLeverage'),
     status: isExchange ? 'Ongoing' : document.getElementById('accStatus').value,
-    phase: isExchange ? null : document.getElementById('accPhase').value,
-    phase_start_date: isExchange ? null : (document.getElementById('accPhaseStartDate').value || null),
-    phase_start_balance: isExchange ? null : _numOrNull('accPhaseStartBalance'),
     max_daily_loss_pct: isExchange ? null : _numOrNull('accMaxDailyLoss'),
     max_total_drawdown_pct: isExchange ? null : _numOrNull('accMaxDrawdown'),
     profit_target_pct: isExchange ? null : _numOrNull('accProfitTarget'),
@@ -11289,6 +11643,15 @@ async function saveAccount(){
     consistency_rule_pct: isExchange ? null : _numOrNull('accConsistency'),
     exchange_name: isExchange ? document.getElementById('accExchangeName').value : null
   };
+
+  // Phase / Phase Start Date / Phase Start Balance have no visible control
+  // anymore — set once, on creation, then left alone. Editing an existing
+  // account never touches them here; only _autoAdvanceAccountPhases() does.
+  if(!isExchange && !editingAccountId){
+    payload.phase = 'Evaluation Phase 1';
+    payload.phase_start_date = payload.start_date;
+    payload.phase_start_balance = payload.current_balance;
+  }
 
   try{
     const res = editingAccountId
