@@ -9862,9 +9862,14 @@ function computeAccountStats(acc){
   const accountSize = Number(acc.account_size) || 0;
   const currentBalance = acc.current_balance != null ? Number(acc.current_balance) : accountSize;
 
-  const today = new Date(); today.setHours(0,0,0,0);
+  // UTC day boundary, not the browser's local time — Upscale's trading day
+  // resets at midnight UTC, and the countdown below assumes the same. Using
+  // local time here (as before) put trades in the wrong "day" bucket by
+  // however many hours the browser's timezone is offset from UTC.
+  const _dayKeyUTC = d => Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+  const todayUTCKey = _dayKeyUTC(new Date());
   const todaysPL = trades
-    .filter(t => { const d = new Date(t.close_date); d.setHours(0,0,0,0); return d.getTime() === today.getTime(); })
+    .filter(t => _dayKeyUTC(new Date(t.close_date)) === todayUTCKey)
     .reduce((s,t) => s + netPnl(t), 0);
   const dailyLossUsed = todaysPL < 0 ? Math.abs(todaysPL) : 0;
   const dailyLossLimit = accountSize * (Number(acc.max_daily_loss_pct) || 0) / 100;
@@ -9894,7 +9899,7 @@ function computeAccountStats(acc){
 
   const dayPL = {};
   phaseTrades.forEach(t => {
-    const key = new Date(t.close_date).toDateString();
+    const key = _dayKeyUTC(new Date(t.close_date));
     dayPL[key] = (dayPL[key] || 0) + netPnl(t);
   });
   const profitableDaysCount = Object.values(dayPL).filter(v => v >= dailyProfitTarget).length;
