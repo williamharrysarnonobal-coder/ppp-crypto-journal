@@ -6713,13 +6713,17 @@ function _renderTradeViewConfluenceGroup(row){
   if(!hasAnswers && !row.chart_pattern) return '';
 
   const cfg = CONFLUENCE_SETUPS[`${row.trade_type}|${row.pattern_type}`];
-  const answerLabel = { yes:'Yes', almost:'Almost', no:'No' };
-  const answerColor = { yes:'var(--win)', almost:'var(--accent)', no:'var(--loss)' };
+  const answerLabel = { yes:'Yes', retest:'Retest', almost:'Almost', no:'No' };
+  const answerColor = { yes:'var(--win)', retest:'var(--info)', almost:'var(--accent)', no:'var(--loss)' };
 
   const rows = cfg ? Object.entries(row.confluence_answers || {}).map(([i, ans]) => {
     const item = cfg.items[i];
     if(!item) return '';
-    return `<div class="field-row"><label>${escapeHtml(item.text)}</label><div class="field-static" style="color:${answerColor[ans]||'var(--ink)'};">${answerLabel[ans]||ans}</div></div>`;
+    // "Sequence"-style items (select) store the literal chosen option
+    // (e.g. "3rd") as the answer, not a yes/retest/almost/no value.
+    const display = item.select ? escapeHtml(ans) : (answerLabel[ans] || ans);
+    const color = item.select ? 'var(--ink)' : (answerColor[ans] || 'var(--ink)');
+    return `<div class="field-row"><label>${escapeHtml(item.text)}</label><div class="field-static" style="color:${color};">${display}</div></div>`;
   }).join('') : '';
 
   const patternRow = row.chart_pattern
@@ -10342,18 +10346,26 @@ const CONFLUENCE_SETUPS = {
   'Long|5 mins HL': {
     items: [
       {tag:'MACD · 1H', text:'1H MACD in Bull Territory (Green Histogram)?'},
+      {tag:'MACD · 30M', text:'30M MACD in Bull Territory (Green Histogram)?'},
       {tag:'MACD · 15M', text:'15M MACD in Bull Territory (Green Histogram)?'},
-      {tag:'Execution · 1min BB50', text:'Did BB50 and the .382 Fib align at your entry level?', exec:true},
-      {tag:'Execution', text:'Did MACD cross the zero line upward when your order triggered?', exec:true},
+      {tag:'MACD · 3M', text:'Did 3min MACD Breakdown?'},
+      {tag:'Divergence', text:'Left Hand Present?'},
+      {tag:'Sequence', text:'Which 5m HL is this?', select:['1st','2nd','3rd','4th','5th']},
+      {tag:'Execution · 1min BB50', text:'Did BB50 and the .382 Fib or MOBV align at your entry level?', exec:true},
+      {tag:'Execution', text:'Did MACD cross the zero line upward when your order triggered?', exec:true, retest:true},
     ],
     patterns: ['Double Bottom', 'Triple Bottom', 'Inverse H&S']
   },
   'Short|5 mins LH': {
     items: [
       {tag:'MACD · 1H', text:'1H MACD in Bear Territory (Red Histogram)?'},
+      {tag:'MACD · 30M', text:'30M MACD in Bear Territory (Red Histogram)?'},
       {tag:'MACD · 15M', text:'15M MACD in Bear Territory (Red Histogram)?'},
-      {tag:'Execution · 1min BB50', text:'Did BB50 and the .382 Fib align at your entry level?', exec:true},
-      {tag:'Execution', text:'Did MACD cross the zero line downward when your order triggered?', exec:true},
+      {tag:'MACD · 3M', text:'Did 3min MACD Breakout?'},
+      {tag:'Divergence', text:'Right Hand Present?'},
+      {tag:'Sequence', text:'Which 5m LH is this?', select:['1st','2nd','3rd','4th','5th']},
+      {tag:'Execution · 1min BB50', text:'Did BB50 and the .382 Fib or MOBV align at your entry level?', exec:true},
+      {tag:'Execution', text:'Did MACD cross the zero line downward when your order triggered?', exec:true, retest:true},
     ],
     patterns: ['Double Top', 'Triple Top', 'H&S']
   },
@@ -10362,7 +10374,7 @@ const CONFLUENCE_SETUPS = {
       {tag:'MACD · 1H', text:'1H MACD in Bull Territory (Green Histogram)?'},
       {tag:'MACD · 30M', text:'30M MACD far from the zero line?'},
       {tag:'BB50 · 2H', text:'2H BB50 far from price, or before your TP area?'},
-      {tag:'Execution · 5min/3min BB50', text:'Did BB50 and the .382 Fib align at your entry level?', exec:true},
+      {tag:'Execution · 5min/3min BB50', text:'Did BB50 and the .382 Fib or MOBV align at your entry level?', exec:true},
       {tag:'Execution', text:'Did MACD cross the zero line upward when your order triggered?', exec:true},
     ],
     patterns: ['Double Bottom', 'Triple Bottom', 'Inverse H&S']
@@ -10372,7 +10384,7 @@ const CONFLUENCE_SETUPS = {
       {tag:'MACD · 1H', text:'1H MACD in Bear Territory (Red Histogram)?'},
       {tag:'MACD · 30M', text:'30M MACD far from the zero line?'},
       {tag:'BB50 · 2H', text:'2H BB50 far from price, or before your TP area?'},
-      {tag:'Execution · 5min/3min BB50', text:'Did BB50 and the .382 Fib align at your entry level?', exec:true},
+      {tag:'Execution · 5min/3min BB50', text:'Did BB50 and the .382 Fib or MOBV align at your entry level?', exec:true},
       {tag:'Execution', text:'Did MACD cross the zero line downward when your order triggered?', exec:true},
     ],
     patterns: ['Double Top', 'Triple Top', 'H&S']
@@ -10382,7 +10394,7 @@ const CONFLUENCE_SETUPS = {
       {tag:'Divergence · 1H', text:'Righthand divergence? (price falling, but MACD rising)'},
       {tag:'MACD · 1H', text:'1H MACD in Bear Territory with a Green Histogram (weakening)?'},
       {tag:'BB50 · 1H', text:'1H BB50 far from price, for your TP area (upper or lower band)?'},
-      {tag:'Execution · 5min/3min BB50', text:'Did BB50 and the .382 Fib align at your entry level?', exec:true},
+      {tag:'Execution · 5min/3min BB50', text:'Did BB50 and the .382 Fib or MOBV align at your entry level?', exec:true},
       {tag:'Execution', text:'Did MACD cross the zero line upward when your order triggered?', exec:true},
     ],
     patterns: ['Double Top', 'Triple Top', 'H&S']
@@ -10392,7 +10404,7 @@ const CONFLUENCE_SETUPS = {
       {tag:'Divergence · 1H', text:'Lefthand divergence? (price rising, but MACD falling)'},
       {tag:'MACD · 1H', text:'1H MACD in Bull Territory with a Red Histogram (weakening)?'},
       {tag:'BB50 · 1H', text:'1H BB50 far from price, for your TP area (upper or lower band)?'},
-      {tag:'Execution · 5min/3min BB50', text:'Did BB50 and the .382 Fib align at your entry level?', exec:true},
+      {tag:'Execution · 5min/3min BB50', text:'Did BB50 and the .382 Fib or MOBV align at your entry level?', exec:true},
       {tag:'Execution', text:'Did MACD cross the zero line downward when your order triggered?', exec:true},
     ],
     patterns: ['Double Bottom', 'Triple Bottom', 'Inverse H&S']
@@ -10404,6 +10416,50 @@ const CONFLUENCE_SETUPS = {
 // (old trades from before this feature existed have no confluence yet) —
 // one target object instead of two parallel id variables keeps save/close
 // from needing to guess which flow opened the modal.
+// Shared by the real Confluence modal (setConfluenceAnswer) and the
+// Notebook "Bread & Butter" reference tool (setBbAnswer) — one row builder
+// so Yes/No/Retest/Almost items and multi-choice "Sequence" items (select)
+// render identically in both places.
+function _renderConfluenceItemRow(it, i, ans, setAnswerFn){
+  if(it.select){
+    return `
+      <div class="cfl-yn-item cfl-select-item ${!ans?'cfl-unanswered':''}">
+        <span class="cfl-yn-label"><span class="cfl-yn-tag">${it.tag}</span>${it.text}</span>
+        <span class="cfl-select-chips">
+          ${it.select.map(opt => `<span class="cfl-pattern-chip ${ans===opt?'active':''}" onclick="${setAnswerFn}(${i},'${opt}')">${opt}</span>`).join('')}
+        </span>
+      </div>
+    `;
+  }
+  return `
+    <div class="cfl-yn-item ${it.exec?'cfl-execution':''} ${!ans?'cfl-unanswered':''}">
+      <span class="cfl-yn-label"><span class="cfl-yn-tag">${it.tag}</span>${it.text}</span>
+      <span class="cfl-yn-buttons">
+        <button type="button" class="cfl-yn-btn cfl-yes ${ans==='yes'?'active':''}" onclick="${setAnswerFn}(${i},'yes')">Yes</button>
+        ${it.retest ? `<button type="button" class="cfl-yn-btn cfl-retest ${ans==='retest'?'active':''}" onclick="${setAnswerFn}(${i},'retest')">Retest</button>` : ''}
+        ${it.exec ? `<button type="button" class="cfl-yn-btn cfl-almost ${ans==='almost'?'active':''}" onclick="${setAnswerFn}(${i},'almost')">Almost</button>` : ''}
+        <button type="button" class="cfl-yn-btn cfl-no ${ans==='no'?'active':''}" onclick="${setAnswerFn}(${i},'no')">No</button>
+      </span>
+    </div>
+  `;
+}
+
+// "Yes"/"Retest" both count as full confluence credit (a retest entry after
+// a real signal isn't a lesser entry, just a different timing), "Almost"
+// is half, a "Sequence"-style pick counts full just for being answered.
+function _confluenceProgress(items, answers, chartPatternPresent){
+  const answeredValues = Object.values(answers);
+  let done = chartPatternPresent ? 1 : 0;
+  items.forEach((it, i) => {
+    const ans = answers[i];
+    if(ans === undefined) return;
+    if(it.select){ done += 1; return; }
+    if(ans === 'yes' || ans === 'retest') done += 1;
+    else if(ans === 'almost') done += 0.5;
+  });
+  return { total: items.length + 1, done, unanswered: items.length - answeredValues.length };
+}
+
 let confluenceTarget = null;  // { type:'setup', id } | { type:'trade', positionId }
 let confluenceAnswers = {};   // { itemIndex: 'yes' | 'almost' | 'no' }
 let confluenceChartPattern = null;
@@ -10499,26 +10555,11 @@ function renderConfluenceChecklist(){
     return;
   }
 
-  const answeredValues = Object.values(confluenceAnswers);
-  const total = cfg.items.length + 1;
-  const yesCount = answeredValues.filter(v => v === 'yes').length;
-  const almostCount = answeredValues.filter(v => v === 'almost').length;
-  const done = yesCount + (almostCount * 0.5) + (confluenceChartPattern ? 1 : 0);
-  const unanswered = cfg.items.length - answeredValues.length;
+  const { total, done, unanswered } = _confluenceProgress(cfg.items, confluenceAnswers, !!confluenceChartPattern);
 
-  const itemsHtml = cfg.items.map((it, i) => {
-    const ans = confluenceAnswers[i];
-    return `
-      <div class="cfl-yn-item ${it.exec?'cfl-execution':''} ${!ans?'cfl-unanswered':''}">
-        <span class="cfl-yn-label"><span class="cfl-yn-tag">${it.tag}</span>${it.text}</span>
-        <span class="cfl-yn-buttons">
-          <button type="button" class="cfl-yn-btn cfl-yes ${ans==='yes'?'active':''}" onclick="setConfluenceAnswer(${i},'yes')">Yes</button>
-          ${it.exec ? `<button type="button" class="cfl-yn-btn cfl-almost ${ans==='almost'?'active':''}" onclick="setConfluenceAnswer(${i},'almost')">Almost</button>` : ''}
-          <button type="button" class="cfl-yn-btn cfl-no ${ans==='no'?'active':''}" onclick="setConfluenceAnswer(${i},'no')">No</button>
-        </span>
-      </div>
-    `;
-  }).join('');
+  const itemsHtml = cfg.items.map((it, i) =>
+    _renderConfluenceItemRow(it, i, confluenceAnswers[i], 'setConfluenceAnswer')
+  ).join('');
 
   const chipsHtml = ['None', ...cfg.patterns].map(p => {
     const isActive = (p === 'None' && !confluenceChartPattern) || p === confluenceChartPattern;
@@ -11448,26 +11489,11 @@ function renderBbChecklist(){
     return;
   }
 
-  const answeredValues = Object.values(bbAnswers);
-  const total = cfg.items.length + 1;
-  const yesCount = answeredValues.filter(v => v === 'yes').length;
-  const almostCount = answeredValues.filter(v => v === 'almost').length;
-  const done = yesCount + (almostCount * 0.5) + (bbChartPattern ? 1 : 0);
-  const unanswered = cfg.items.length - answeredValues.length;
+  const { total, done, unanswered } = _confluenceProgress(cfg.items, bbAnswers, !!bbChartPattern);
 
-  const itemsHtml = cfg.items.map((it, i) => {
-    const ans = bbAnswers[i];
-    return `
-      <div class="cfl-yn-item ${it.exec?'cfl-execution':''} ${!ans?'cfl-unanswered':''}">
-        <span class="cfl-yn-label"><span class="cfl-yn-tag">${it.tag}</span>${it.text}</span>
-        <span class="cfl-yn-buttons">
-          <button type="button" class="cfl-yn-btn cfl-yes ${ans==='yes'?'active':''}" onclick="setBbAnswer(${i},'yes')">Yes</button>
-          ${it.exec ? `<button type="button" class="cfl-yn-btn cfl-almost ${ans==='almost'?'active':''}" onclick="setBbAnswer(${i},'almost')">Almost</button>` : ''}
-          <button type="button" class="cfl-yn-btn cfl-no ${ans==='no'?'active':''}" onclick="setBbAnswer(${i},'no')">No</button>
-        </span>
-      </div>
-    `;
-  }).join('');
+  const itemsHtml = cfg.items.map((it, i) =>
+    _renderConfluenceItemRow(it, i, bbAnswers[i], 'setBbAnswer')
+  ).join('');
 
   const chipsHtml = ['None', ...cfg.patterns].map(p => {
     const isActive = (p === 'None' && !bbChartPattern) || p === bbChartPattern;
