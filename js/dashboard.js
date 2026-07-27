@@ -9708,8 +9708,50 @@ async function loadAccounts(){
     console.error("Couldn't load trading accounts:", e);
     TRADING_ACCOUNTS = [];
   }
+  await _autoAdvanceAccountPhases();
   syncAccountFieldOptions();
   renderAccountsList();
+}
+
+const ACCOUNT_PHASE_STAGES = ['Evaluation Phase 1','Evaluation Phase 2','Funded'];
+
+// Once an account's Total Earn meets its Profit Target, move it to the next
+// phase automatically (matches how the real prop firm confirms passing) —
+// resets Phase Start Date/Balance so the new phase's tracking starts clean.
+// Safe to re-run on every load: right after advancing, totalEarn resets to
+// ~0 against the new phase, so the condition stops being true on its own.
+async function _autoAdvanceAccountPhases(){
+  for(const acc of TRADING_ACCOUNTS){
+    if(acc.account_type === 'Exchange') continue;
+    const stageIdx = ACCOUNT_PHASE_STAGES.indexOf(acc.phase);
+    if(stageIdx < 0 || stageIdx >= ACCOUNT_PHASE_STAGES.length - 1) continue;
+
+    const s = computeAccountStats(acc);
+    if(!(s.targetEarn > 0 && s.totalEarn >= s.targetEarn)) continue;
+
+    const nextPhase = ACCOUNT_PHASE_STAGES[stageIdx + 1];
+    const patch = {
+      phase: nextPhase,
+      phase_start_date: new Date().toISOString().slice(0,10),
+      phase_start_balance: s.currentBalance
+    };
+    try{
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/trading_accounts?id=eq.${acc.id}`, {
+        method: 'PATCH',
+        headers: {
+          "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}`,
+          "Content-Type": "application/json", "Prefer": "return=representation"
+        },
+        body: JSON.stringify(patch)
+      });
+      if(!res.ok) throw new Error(await res.text());
+      const updated = await res.json();
+      Object.assign(acc, updated[0] || patch);
+      showToast(`🎉 ${acc.account_name} advanced to ${nextPhase}!`);
+    }catch(e){
+      console.error("Couldn't auto-advance account phase:", e);
+    }
+  }
 }
 
 // Keeps the Journal's "Account" dropdown in sync with the real accounts from
@@ -9842,15 +9884,20 @@ function computeAccountStats(acc){
   const phaseStart = acc.phase_start_date ? new Date(acc.phase_start_date + 'T00:00:00') : null;
   const phaseTrades = phaseStart ? trades.filter(t => t.close_date >= phaseStart) : trades;
 
+  // A day only counts toward the minimum trading days rule if it clears
+  // this account's Min Daily Profit % — real accounts (Upscale) size this
+  // at 0.5% of account size, not a flat dollar amount, so it scales
+  // correctly across account sizes (defaults to 0.5% if not set).
+  const minDailyProfitPct = acc.min_daily_profit_pct != null ? Number(acc.min_daily_profit_pct) : 0.5;
+  const dailyProfitTarget = accountSize * minDailyProfitPct / 100;
+  const dailyProfitUsed = Math.max(0, todaysPL);
+
   const dayPL = {};
   phaseTrades.forEach(t => {
     const key = new Date(t.close_date).toDateString();
     dayPL[key] = (dayPL[key] || 0) + netPnl(t);
   });
-  // Upscale only counts a day toward the minimum trading days rule if it
-  // cleared at least $50 profit — a day that's merely break-even/slightly
-  // positive doesn't count.
-  const profitableDaysCount = Object.values(dayPL).filter(v => v >= 50).length;
+  const profitableDaysCount = Object.values(dayPL).filter(v => v >= dailyProfitTarget).length;
   const profitableDaysTarget = Number(acc.min_trading_days) || null;
 
   const sortedTrades = [...phaseTrades].sort((a,b) => a.close_date - b.close_date);
@@ -9859,14 +9906,32 @@ function computeAccountStats(acc){
   const totalEarn = acc.phase_start_balance != null ? (currentBalance - Number(acc.phase_start_balance)) : cum;
   const targetEarn = accountSize * (Number(acc.profit_target_pct) || 0) / 100;
 
+  // Trading day resets at midnight UTC (crypto market, 24/7) — ms left
+  // until then, for the Daily Profit countdown.
+  const nowUTC = new Date();
+  const nextResetUTC = new Date(Date.UTC(nowUTC.getUTCFullYear(), nowUTC.getUTCMonth(), nowUTC.getUTCDate() + 1));
+  const msUntilReset = nextResetUTC - nowUTC;
+
   return {
     accountSize, currentBalance, todaysPL, dailyLossUsed, dailyLossLimit, dayStartBalance, dailyStopBalance,
     drawdownFloor, profitGoal, balanceRangeFraction, profitableDaysCount, profitableDaysTarget,
+    dailyProfitUsed, dailyProfitTarget, msUntilReset,
     series, totalEarn, targetEarn
   };
 }
 
 let accountDetailChartRef = null;
+
+let accDetailCountdownTimer = null;
+
+function _fmtCountdown(ms){
+  if(ms <= 0) return '00:00:00';
+  const totalSec = Math.floor(ms / 1000);
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const sec = totalSec % 60;
+  return `${String(h).padStart(2,'0')}h ${String(m).padStart(2,'0')}m ${String(sec).padStart(2,'0')}s`;
+}
 
 function openAccountDetail(id){
   const a = TRADING_ACCOUNTS.find(x => x.id === id);
@@ -9878,7 +9943,13 @@ function openAccountDetail(id){
   const statusLabel = a.status && a.status !== 'Ongoing' ? ` · ${a.status}` : '';
   document.getElementById('accDetailSub').textContent = `${a.prop_firm || ''} ${startLabel}${statusLabel}`.trim();
 
-  const stages = ['Evaluation Phase 1','Evaluation Phase 2','Funded'];
+  const badgeEl = document.getElementById('accDetailBadge');
+  badgeEl.textContent = a.status === 'Passed' ? '✓' : (a.status === 'Failed' ? '✕' : '⬡');
+  badgeEl.style.color = a.status === 'Passed' ? 'var(--win)' : (a.status === 'Failed' ? 'var(--loss)' : 'var(--accent)');
+  badgeEl.style.background = a.status === 'Passed' ? 'color-mix(in srgb, var(--win) 16%, transparent)'
+    : (a.status === 'Failed' ? 'color-mix(in srgb, var(--loss) 16%, transparent)' : 'color-mix(in srgb, var(--accent) 16%, transparent)');
+
+  const stages = ACCOUNT_PHASE_STAGES;
   const stageIdx = stages.indexOf(a.phase);
   document.getElementById('accDetailStepper').innerHTML = stages.map((label,i) => {
     const cls = stageIdx < 0 ? '' : (i < stageIdx ? 'done' : (i === stageIdx ? 'current' : ''));
@@ -9886,9 +9957,19 @@ function openAccountDetail(id){
     return `<div class="acc-step ${cls}" data-tooltip="${tooltip}"><div class="acc-step-line"></div><div class="acc-step-circle">${i < stageIdx ? '✓' : i+1}</div><div class="acc-step-label">${label.replace('Evaluation ','')}</div></div>`;
   }).join('');
 
+  const captionEl = document.getElementById('accDetailProgressCaption');
+  if(stageIdx >= 0 && stageIdx < stages.length - 1){
+    const pct = Number(a.profit_target_pct) || 0;
+    captionEl.textContent = `${stages[stageIdx]} has started — earn ${pct}%`;
+  }else if(a.phase === 'Funded'){
+    captionEl.textContent = 'Funded — ongoing payouts from here.';
+  }else{
+    captionEl.textContent = '';
+  }
+
   if(s.dailyLossLimit > 0){
     document.getElementById('accDetailDailyLoss').textContent = `$${s.dailyLossUsed.toLocaleString(undefined,{maximumFractionDigits:2})} / $${s.dailyLossLimit.toLocaleString(undefined,{maximumFractionDigits:2})}`;
-    document.getElementById('accDetailDailyRange').innerHTML = `<span>start ${s.dayStartBalance.toLocaleString(undefined,{maximumFractionDigits:2})}</span><span>stop ${s.dailyStopBalance.toLocaleString(undefined,{maximumFractionDigits:2})}</span>`;
+    document.getElementById('accDetailDailyRange').innerHTML = `<span>🚀 start ${s.dayStartBalance.toLocaleString(undefined,{maximumFractionDigits:2})}</span><span>🔴 stop ${s.dailyStopBalance.toLocaleString(undefined,{maximumFractionDigits:2})}</span>`;
   }else{
     document.getElementById('accDetailDailyLoss').textContent = '—';
     document.getElementById('accDetailDailyRange').innerHTML = '';
@@ -9901,14 +9982,38 @@ function openAccountDetail(id){
   document.getElementById('accDetailBalance').textContent = `$${s.currentBalance.toLocaleString(undefined,{maximumFractionDigits:2})}`;
   document.getElementById('accDetailBalanceFill').style.width = `${(s.balanceRangeFraction*100).toFixed(1)}%`;
   document.getElementById('accDetailBalanceRange').innerHTML = s.profitGoal
-    ? `<span>stop ${s.drawdownFloor.toLocaleString(undefined,{maximumFractionDigits:0})}</span><span>goal ${s.profitGoal.toLocaleString(undefined,{maximumFractionDigits:0})}</span>`
+    ? `<span>🔴 stop ${s.drawdownFloor.toLocaleString(undefined,{maximumFractionDigits:0})}</span><span>🎯 goal ${s.profitGoal.toLocaleString(undefined,{maximumFractionDigits:0})}</span>`
     : '';
 
-  const phaseTarget = phaseTargetFor(a.phase, s.accountSize);
+  document.getElementById('accDetailDailyProfit').textContent = s.dailyProfitTarget > 0
+    ? `$${s.dailyProfitUsed.toLocaleString(undefined,{maximumFractionDigits:2})} / $${s.dailyProfitTarget.toLocaleString(undefined,{maximumFractionDigits:2})}`
+    : '—';
+
+  clearInterval(accDetailCountdownTimer);
+  if(s.dailyProfitTarget > 0){
+    const countdownEl = document.getElementById('accDetailDailyProfitCountdown');
+    let msLeft = s.msUntilReset;
+    const tick = () => {
+      countdownEl.innerHTML = `<span>⏱ time left ${_fmtCountdown(msLeft)}</span>`;
+      msLeft -= 1000;
+      if(msLeft < 0) clearInterval(accDetailCountdownTimer);
+    };
+    tick();
+    accDetailCountdownTimer = setInterval(tick, 1000);
+  }else{
+    document.getElementById('accDetailDailyProfitCountdown').innerHTML = '';
+  }
+
+  const phaseTarget = phaseTargetFor(a.phase, s.accountSize, a);
   const earnStr = `$${s.totalEarn.toLocaleString(undefined,{maximumFractionDigits:2})}`;
   document.getElementById('accDetailEarn').textContent = (phaseTarget !== null)
     ? `${earnStr} / $${phaseTarget.toLocaleString(undefined,{maximumFractionDigits:2})}`
     : earnStr;
+  const earnPctEl = document.getElementById('accDetailEarnPct');
+  const targetPct = Number(a.profit_target_pct) || 0;
+  earnPctEl.textContent = (targetPct > 0 && s.accountSize > 0)
+    ? `${(s.totalEarn / s.accountSize * 100).toFixed(2)} of ${targetPct}%`
+    : '';
 
   // Open the modal before creating the chart, and defer the chart itself to
   // the next animation frame — Chart.js measures the canvas at construction
@@ -9922,15 +10027,17 @@ function openAccountDetail(id){
 
 function closeAccountDetail(){
   document.getElementById('accountDetailModal').classList.remove('open');
+  clearInterval(accDetailCountdownTimer);
 }
 
-// Upscale's fixed 5%/8% profit targets per evaluation phase — null for
-// Funded (no fixed dollar target, it's ongoing payouts from there).
-function phaseTargetFor(label, size){
+// The account's own set Profit Target % (Edit Account) — the same number
+// used everywhere else (the account list card's progress bar) — not a
+// hardcoded per-phase assumption. Null for Funded (no fixed dollar target,
+// it's ongoing payouts from there).
+function phaseTargetFor(label, size, acc){
   const l = (label || '').trim();
-  if(l === 'Evaluation Phase 1') return size * 0.05;
-  if(l === 'Evaluation Phase 2') return size * 0.08;
-  return null;
+  if(l !== 'Evaluation Phase 1' && l !== 'Evaluation Phase 2') return null;
+  return size * (Number(acc?.profit_target_pct) || 0) / 100;
 }
 
 // Hover text for a Phase stepper step — shown as "$achieved / $target" so
@@ -9946,7 +10053,7 @@ function phaseStepTooltip(acc, s, stageIdx, i, label){
     return 'Not yet funded';
   }
 
-  const target = phaseTargetFor(label, size);
+  const target = phaseTargetFor(label, size, acc);
   const targetStr = `$${target.toLocaleString(undefined,{maximumFractionDigits:2})}`;
 
   if(i < stageIdx) return `${targetStr} / ${targetStr} — target reached`;
@@ -11121,6 +11228,7 @@ function openAccountModal(id){
   document.getElementById('accMaxDrawdown').value = a && a.max_total_drawdown_pct != null ? a.max_total_drawdown_pct : '';
   document.getElementById('accProfitTarget').value = a && a.profit_target_pct != null ? a.profit_target_pct : '';
   document.getElementById('accMinDays').value = a && a.min_trading_days != null ? a.min_trading_days : '';
+  document.getElementById('accMinDailyProfit').value = a && a.min_daily_profit_pct != null ? a.min_daily_profit_pct : '';
   document.getElementById('accConsistency').value = a && a.consistency_rule_pct != null ? a.consistency_rule_pct : '';
   document.getElementById('accountError').textContent = '';
   document.getElementById('accountSaveBtn').textContent = a ? 'Save changes' : 'Save Account';
@@ -11172,6 +11280,7 @@ async function saveAccount(){
     max_total_drawdown_pct: isExchange ? null : _numOrNull('accMaxDrawdown'),
     profit_target_pct: isExchange ? null : _numOrNull('accProfitTarget'),
     min_trading_days: isExchange ? null : (document.getElementById('accMinDays').value === '' ? null : parseInt(document.getElementById('accMinDays').value, 10)),
+    min_daily_profit_pct: isExchange ? null : _numOrNull('accMinDailyProfit'),
     consistency_rule_pct: isExchange ? null : _numOrNull('accConsistency'),
     exchange_name: isExchange ? document.getElementById('accExchangeName').value : null
   };

@@ -17,7 +17,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<link rel="stylesheet" href="css/style.css?v=158">
+<link rel="stylesheet" href="css/style.css?v=159">
 </head>
 <body>
 
@@ -1467,6 +1467,11 @@
         <input id="accMinDays" type="number" step="1" placeholder="e.g. 5">
       </div>
       <div class="field-row">
+        <label>Min Daily Profit (%)</label>
+        <input id="accMinDailyProfit" type="number" step="0.1" placeholder="e.g. 0.5">
+      </div>
+      <div class="sub" style="font-size:11px;color:var(--muted);margin:-4px 0 12px;">% of account size a day needs to clear to count toward Profitable Trading Days.</div>
+      <div class="field-row">
         <label>Consistency Rule (%)</label>
         <input id="accConsistency" type="number" step="0.1" placeholder="e.g. 30">
       </div>
@@ -1498,32 +1503,51 @@
 <div class="modal-overlay" id="accountDetailModal" onclick="if(event.target===this) closeAccountDetail()">
   <div class="modal-box" style="max-width:640px;position:relative;">
     <button class="modal-close" onclick="closeAccountDetail()">✕</button>
-    <h3 id="accDetailName" style="margin:0;">Account</h3>
-    <div class="sub" id="accDetailSub" style="margin-bottom:14px;"></div>
+    <div class="acc-detail-header">
+      <div>
+        <h3 id="accDetailName" style="margin:0;">Account</h3>
+        <div class="sub" id="accDetailSub" style="margin:2px 0 0;"></div>
+      </div>
+      <div class="acc-detail-badge" id="accDetailBadge">⬡</div>
+    </div>
 
-    <div class="acc-stepper" id="accDetailStepper"></div>
+    <div class="acc-stat-box">
+      <div class="acc-stat-label">Progress</div>
+      <div class="acc-stepper" id="accDetailStepper"></div>
+      <div class="acc-progress-caption" id="accDetailProgressCaption"></div>
+    </div>
 
-    <div class="acc-stat-grid">
+    <div class="acc-stat-grid-2">
+      <div class="acc-stat-box">
+        <div class="acc-stat-label">Trade Balance</div>
+        <div class="acc-stat-value" id="accDetailBalance">—</div>
+        <div class="account-progress-bar" style="margin-top:8px;"><div class="account-progress-fill" id="accDetailBalanceFill" style="width:0%;"></div></div>
+        <div class="acc-stat-range" id="accDetailBalanceRange"></div>
+      </div>
       <div class="acc-stat-box">
         <div class="acc-stat-label">Daily Drawdown</div>
         <div class="acc-stat-value" id="accDetailDailyLoss">—</div>
         <div class="acc-stat-range" id="accDetailDailyRange"></div>
       </div>
+    </div>
+
+    <div class="acc-stat-grid-2">
       <div class="acc-stat-box">
         <div class="acc-stat-label">Profitable Trading Days</div>
         <div class="acc-stat-value" id="accDetailProfitDays">—</div>
       </div>
+      <div class="acc-stat-box">
+        <div class="acc-stat-label">Daily Profit</div>
+        <div class="acc-stat-value" id="accDetailDailyProfit">—</div>
+        <div class="acc-stat-range" id="accDetailDailyProfitCountdown"></div>
+      </div>
     </div>
 
     <div class="acc-stat-box" style="margin-top:12px;">
-      <div class="acc-stat-label">Trade Balance</div>
-      <div class="acc-stat-value" id="accDetailBalance">—</div>
-      <div class="account-progress-bar" style="margin-top:8px;"><div class="account-progress-fill" id="accDetailBalanceFill" style="width:0%;"></div></div>
-      <div class="acc-stat-range" id="accDetailBalanceRange"></div>
-    </div>
-
-    <div class="acc-stat-box" style="margin-top:12px;">
-      <div class="acc-stat-label">Total Earn</div>
+      <div class="acc-stat-label-row">
+        <div class="acc-stat-label">Total Earn</div>
+        <div class="acc-stat-pct" id="accDetailEarnPct"></div>
+      </div>
       <div class="acc-stat-value" id="accDetailEarn">—</div>
       <div class="chart-fill" style="height:160px;margin-top:8px;"><canvas id="accDetailChart"></canvas></div>
     </div>
@@ -1763,6 +1787,6 @@
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=1"></script>
-<script src="js/dashboard.js?v=207"></script>
+<script src="js/dashboard.js?v=209"></script>
 </body>
 </html>
