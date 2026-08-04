@@ -2363,7 +2363,12 @@ function renderPosSizeCalculator(){
     : '—';
 
   const saved = _psRiskAmounts();
-  const accounts = TRADING_ACCOUNTS.filter(a => a.account_type !== 'Exchange');
+  // Biggest account first (50K, 10K, 5K) — that's the order they're thought
+  // about, rather than whatever order the accounts table happens to return.
+  const accounts = TRADING_ACCOUNTS
+    .filter(a => a.account_type !== 'Exchange')
+    .slice()
+    .sort((a, b) => Number(b.account_size || 0) - Number(a.account_size || 0));
   const body = document.getElementById('psAccountsBody');
 
   if(!accounts.length){
