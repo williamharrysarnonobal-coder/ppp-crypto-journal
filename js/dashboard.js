@@ -1897,7 +1897,7 @@ const FIELD_OPTIONS = {
   aof_phase: ['IC','EM','LM','Extended Movement','Invalidation','5 mins Scalping'],
   rules_followed: ['Yes','No'],
   account_type: ['Demo','Evaluation','Funded'],
-  exit_type: ['Manual Early TP - Valid','Manual Early TP - Invalid','Stop Profit','TP Hit','SL Hit','Cut Loss'],
+  exit_type: ['Manual Early TP - Valid','Manual Early TP - Invalid','Stop Profit','TP Hit','SL Hit','Cut Loss','BE Hit'],
   post_be_result: ['TP After BE','SL After BE','N/A'],
   account: ['10k','25k','50k','100k','200k','Demo'],
   session: ['Asia','London','London + NY Overlap','New York','Low Liquidity'],
@@ -2247,6 +2247,69 @@ function switchConfigTab(tab){
   activeConfigTab = tab;
   document.querySelectorAll('#view-config .subnav-item').forEach(el => el.classList.toggle('active', el.dataset.tab === tab));
   document.querySelectorAll('#view-config .subnav-panel').forEach(el => el.classList.toggle('active', el.id === 'configPanel-' + tab));
+}
+
+function switchCalcTab(tab){
+  document.querySelectorAll('#view-calculator .subnav-item').forEach(el => el.classList.toggle('active', el.dataset.tab === tab));
+  document.querySelectorAll('#view-calculator .subnav-panel').forEach(el => el.classList.toggle('active', el.id === 'calcPanel-' + tab));
+  if(tab === 'possize') renderPosSizeCalculator();
+}
+
+// Risk-based BTC position sizing across the three real accounts — separate
+// from the leverage/margin table above, which sizes off % of account balance
+// instead of a fixed $ risk amount per account.
+function renderPosSizeCalculator(){
+  const entry = parseFloat(document.getElementById('psEntry').value);
+  const tp = parseFloat(document.getElementById('psTP').value);
+  const sl = parseFloat(document.getElementById('psSL').value);
+
+  const errorEl = document.getElementById('psError');
+  const resultsEl = document.getElementById('psResults');
+
+  if(!Number.isFinite(entry) || !Number.isFinite(sl) || entry === sl){
+    errorEl.style.display = '';
+    resultsEl.style.display = 'none';
+    return;
+  }
+  errorEl.style.display = 'none';
+  resultsEl.style.display = '';
+
+  const riskPerUnit = Math.abs(entry - sl);
+  [['psRisk50k','psQty50k'], ['psRisk10k','psQty10k'], ['psRisk5k','psQty5k']].forEach(([riskId, qtyId]) => {
+    const riskAmount = parseFloat(document.getElementById(riskId).value) || 0;
+    document.getElementById(qtyId).textContent = (riskAmount / riskPerUnit).toFixed(4);
+  });
+
+  document.getElementById('psRR').textContent = Number.isFinite(tp)
+    ? `1 : ${(Math.abs(tp - entry) / riskPerUnit).toFixed(2)}`
+    : '—';
+}
+
+async function pasteIntoField(fieldId){
+  try{
+    const text = (await navigator.clipboard.readText()).trim();
+    const el = document.getElementById(fieldId);
+    el.value = text;
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  }catch(e){
+    showToast("Couldn't read clipboard — paste manually (Ctrl+V).");
+  }
+}
+
+function copyFieldValue(fieldId, btnEl){
+  _copyWithFeedback(document.getElementById(fieldId).value, btnEl);
+}
+function copyTextValue(elId, btnEl){
+  _copyWithFeedback(document.getElementById(elId).textContent, btnEl);
+}
+function _copyWithFeedback(text, btnEl){
+  if(!text || text === '—') return;
+  navigator.clipboard.writeText(text).then(() => {
+    const original = btnEl.textContent;
+    btnEl.textContent = 'Copied';
+    btnEl.disabled = true;
+    setTimeout(() => { btnEl.textContent = original; btnEl.disabled = false; }, 1000);
+  }).catch(() => showToast("Couldn't copy — copy manually."));
 }
 
 /* ---------------- Finance (personal money tracker) ---------------- */
@@ -5695,6 +5758,7 @@ function _journalColoredCell(key, row, plainVal){
   }
   if(key === 'exit_type'){
     if(lower === 'stop profit') return _box('box-be', v);
+    if(lower === 'be hit') return _box('box-be', v);
     if(lower === 'sl hit') return _box('box-loss', v);
     if(lower === 'tp hit') return _box('box-win', v);
     if(lower === 'cut loss') return _box('box-orange', v);
@@ -6862,7 +6926,7 @@ function _renderDrawerFieldRow(f, mode, row){
     const onchange = f.key === 'account' ? ` onchange="syncAccountTypeFromAccount(this.value)"`
       : f.key === 'trade_setup' ? ` onchange="syncPatternTypeFromSetup(this.value)"`
       : f.key === 'pattern_type' ? ` onchange="syncExecutionFromPattern(this.value)"`
-      : f.key === 'win_loss' ? ` onchange="syncPostBEFromWinLoss(this.value)"`
+      : f.key === 'win_loss' ? ` onchange="syncPostBEFromWinLoss(this.value); syncExitTypeFromWinLoss(this.value);"`
       : '';
     return `<div class="${rowCls}"><label>${f.label}</label><select data-field="${f.key}"${onchange}><option value="">—</option>${opts}</select></div>`;
   }
@@ -9946,20 +10010,49 @@ function syncPatternTypeFromSetup(setupValue){
 
 // "5 mins HL"/"5 mins LH" are always executed on the 1 min chart as a
 // scalp — locks in the Execution TF and AOF Phase that go with them.
+// "15 mins HL"/"15 mins LH" are always executed on the 5 min chart, and
+// "1 hour HL"/"1 hour LH" on the 15 min chart — same idea, one tier up each
+// time, no fixed AOF Phase for either of these.
 function syncExecutionFromPattern(patternValue){
-  if(patternValue !== '5 mins HL' && patternValue !== '5 mins LH') return;
   const tfSel = document.querySelector('#drawerBody [data-field="execution_tf"]');
-  if(tfSel){ tfSel.value = '1 min'; tfSel.dispatchEvent(new Event('change', { bubbles: true })); }
-  const aofSel = document.querySelector('#drawerBody [data-field="aof_phase"]');
-  if(aofSel){ aofSel.value = '5 mins Scalping'; aofSel.dispatchEvent(new Event('change', { bubbles: true })); }
+  if(patternValue === '5 mins HL' || patternValue === '5 mins LH'){
+    if(tfSel){ tfSel.value = '1 min'; tfSel.dispatchEvent(new Event('change', { bubbles: true })); }
+    const aofSel = document.querySelector('#drawerBody [data-field="aof_phase"]');
+    if(aofSel){ aofSel.value = '5 mins Scalping'; aofSel.dispatchEvent(new Event('change', { bubbles: true })); }
+  }else if(patternValue === '15 mins HL' || patternValue === '15 mins LH'){
+    if(tfSel){ tfSel.value = '5 min'; tfSel.dispatchEvent(new Event('change', { bubbles: true })); }
+  }else if(patternValue === '1 hour HL' || patternValue === '1 hour LH'){
+    if(tfSel){ tfSel.value = '15 min'; tfSel.dispatchEvent(new Event('change', { bubbles: true })); }
+  }
 }
 
 // Post-BE Result only means something when the trade actually reached
-// breakeven — anything else (Win/Loss/Liquidated) defaults to N/A.
+// breakeven — anything else (Win/Loss/Liquidated) defaults to N/A. Breakeven
+// itself needs a REAL answer (TP After BE / SL After BE), so instead of
+// leaving it blank and easy to forget, clear any stale "N/A" and flag the
+// row red until it's actually answered — same red flag Create mode already
+// uses for empty fields, just triggered here so it also works while editing.
 function syncPostBEFromWinLoss(winLossValue){
-  if(winLossValue === 'Breakeven') return;
   const sel = document.querySelector('#drawerBody [data-field="post_be_result"]');
-  if(sel){ sel.value = 'N/A'; sel.dispatchEvent(new Event('change', { bubbles: true })); }
+  if(!sel) return;
+  if(winLossValue !== 'Breakeven'){
+    sel.value = 'N/A';
+    sel.dispatchEvent(new Event('change', { bubbles: true }));
+    return;
+  }
+  if(sel.value === 'N/A') sel.value = '';
+  const row = sel.closest('.field-row');
+  if(row) row.classList.toggle('needs-input', sel.value.trim() === '');
+}
+
+// Breakeven trades exit via a BE stop — pre-select "BE Hit" as Exit Type the
+// moment Win/Loss is set to Breakeven, so it doesn't sit on whatever was
+// picked before the correction. Only fires on this live change, never on
+// initial render, so it can't silently rewrite an already-saved trade.
+function syncExitTypeFromWinLoss(winLossValue){
+  if(winLossValue !== 'Breakeven') return;
+  const sel = document.querySelector('#drawerBody [data-field="exit_type"]');
+  if(sel){ sel.value = 'BE Hit'; sel.dispatchEvent(new Event('change', { bubbles: true })); }
 }
 
 // Derives all the compliance/progress numbers for one account from the real
