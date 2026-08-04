@@ -17,7 +17,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<link rel="stylesheet" href="css/style.css?v=159">
+<link rel="stylesheet" href="css/style.css?v=161">
 </head>
 <body>
 
@@ -455,162 +455,99 @@
       </div>
     </header>
 
-    <nav class="subnav-list alerts-tab-nav">
-      <div class="subnav-item active" data-tab="leverage" onclick="switchCalcTab('leverage')">Leverage Table</div>
-      <div class="subnav-item" data-tab="possize" onclick="switchCalcTab('possize')">Position Size Calculator</div>
-    </nav>
+    <div class="panel">
+      <h2 style="display:flex;align-items:center;justify-content:space-between;">
+        <span>Position Size Calculator</span>
+        <span>
+          <button class="poscalc-accent-btn" onclick="saveCalculatorDraft()">Save</button>
+          <button class="drawer-danger-btn" onclick="clearCalculatorDraft()">Clear</button>
+        </span>
+      </h2>
+      <div class="sub" style="margin-bottom:16px;">Risk-based position sizing across your accounts — enter the prices, everything else is worked out for you.</div>
 
-    <div class="subnav-shell">
-      <div class="subnav-content">
-        <div class="subnav-panel active" id="calcPanel-leverage">
-          <div class="panel">
-            <h2 style="display:flex;align-items:center;justify-content:space-between;">
-              <span>Leverage &amp; Margin Breakdown</span>
-              <span>
-                <button class="poscalc-accent-btn" onclick="saveCalculatorDraft()">Save</button>
-                <button class="drawer-danger-btn" onclick="clearCalculatorDraft()">Clear</button>
-              </span>
-            </h2>
-            <div class="poscalc-layout">
-              <div class="poscalc-inputs">
-                <div class="field-row">
-                  <label>Account</label>
-                  <select id="calcAccount" onchange="renderPositionCalculator()"><option value="">Select account…</option></select>
-                </div>
-                <div class="field-row">
-                  <label>Risk Per Trade</label>
-                  <div class="field-static" id="calcRiskAmount">—</div>
-                </div>
-                <div class="field-row">
-                  <label>Position Size</label>
-                  <div class="field-static" id="calcPositionSize">—</div>
-                </div>
-                <div class="field-row">
-                  <label>Stop Loss Percentage</label>
-                  <input id="calcStopLossPct" type="number" step="0.0001" placeholder="e.g. 0.2186" oninput="renderPositionCalculator()">
-                </div>
-                <div class="field-row">
-                  <label>Take Profit Percentage</label>
-                  <input id="calcTakeProfitPct" type="number" step="0.0001" placeholder="e.g. 0.4379" oninput="renderPositionCalculator()">
-                </div>
-                <div class="field-row">
-                  <label>Stop Level</label>
-                  <input id="calcStopLevel" type="text" placeholder="e.g. 63040.2">
-                </div>
-                <div class="field-row">
-                  <label>Profit Level</label>
-                  <input id="calcProfitLevel" type="text" placeholder="e.g. 63455">
-                </div>
-              </div>
-              <div class="poscalc-table-wrap">
-                <div class="field-row">
-                  <label>Leverage Levels (comma-separated)</label>
-                  <input id="calcLeverageList" type="text" value="1,2,3,4,5" oninput="renderPositionCalculator()">
-                </div>
-                <table class="breakdown poscalc-table">
-                  <thead><tr><th>Leverage</th><th>Margin</th><th>Stop Loss %</th><th>Take Profit %</th><th>Profit</th><th>Loss</th><th></th></tr></thead>
-                  <tbody id="calcTableBody"></tbody>
-                </table>
-              </div>
-            </div>
+      <div class="field-row">
+        <label>Direction</label>
+        <select id="psDirection" onchange="renderPosSizeCalculator()">
+          <option value="Long">Long</option>
+          <option value="Short">Short</option>
+        </select>
+      </div>
+      <div class="field-row">
+        <label>Entry Price</label>
+        <div class="ps-input-row">
+          <input id="psEntry" type="text" inputmode="decimal" placeholder="e.g. 63040.20" oninput="renderPosSizeCalculator()" style="color:var(--accent);font-weight:600;">
+          <button type="button" class="poscalc-accent-btn" onclick="pasteIntoField('psEntry')">Paste</button>
+          <button type="button" class="poscalc-accent-btn" onclick="copyFieldValue('psEntry', this)">Copy</button>
+        </div>
+      </div>
+      <div class="field-row">
+        <label>TP Price</label>
+        <div class="ps-input-row">
+          <input id="psTP" type="text" inputmode="decimal" placeholder="e.g. 63455.00" oninput="renderPosSizeCalculator()" style="color:var(--win);font-weight:600;">
+          <button type="button" class="poscalc-accent-btn" onclick="pasteIntoField('psTP')">Paste</button>
+          <button type="button" class="poscalc-accent-btn" onclick="copyFieldValue('psTP', this)">Copy</button>
+        </div>
+      </div>
+      <div class="field-row">
+        <label>SL Price</label>
+        <div class="ps-input-row">
+          <input id="psSL" type="text" inputmode="decimal" placeholder="e.g. 62900.00" oninput="renderPosSizeCalculator()" style="color:var(--loss);font-weight:600;">
+          <button type="button" class="poscalc-accent-btn" onclick="pasteIntoField('psSL')">Paste</button>
+          <button type="button" class="poscalc-accent-btn" onclick="copyFieldValue('psSL', this)">Copy</button>
+        </div>
+      </div>
+
+      <div class="empty-state" id="psError" style="display:none;">Enter Entry and SL (they must be different) to see position sizes.</div>
+
+      <div id="psResults" style="display:none;">
+        <div class="ps-readout-strip">
+          <div>
+            <div class="ps-readout-label">Risk-Reward Ratio</div>
+            <div class="ps-readout-value" id="psRR">—</div>
           </div>
-
-          <div class="panel" style="margin-top:20px;">
-            <h2>Pending Setups</h2>
-            <div class="empty-state" id="pendingSetupsEmptyState" style="display:none;">No pending setups yet — use "Trade This Setup" above to save one.</div>
-            <div style="overflow-x:auto;">
-              <table class="breakdown poscalc-table" id="pendingSetupsTable" style="display:none;">
-                <thead><tr><th>Symbol</th><th>Date</th><th>Account</th><th>Leverage</th><th>Margin</th><th>Stop Loss %</th><th>Take Profit %</th><th>Profit</th><th>Loss</th><th>Risk Amount</th><th>Position Size</th><th>Update</th><th>Status</th><th></th></tr></thead>
-                <tbody id="pendingSetupsBody"></tbody>
-              </table>
-            </div>
+          <div>
+            <div class="ps-readout-label">Risk Per Unit</div>
+            <div class="ps-readout-value" id="psRiskPerUnit">—</div>
           </div>
-
-          <div class="panel" style="margin-top:20px;">
-            <h2>Journaled Setups</h2>
-            <div class="empty-state" id="journaledSetupsEmptyState" style="display:none;">No journaled setups yet — click "Journal" on a pending setup once its trade is logged.</div>
-            <div style="overflow-x:auto;">
-              <table class="breakdown poscalc-table" id="journaledSetupsTable" style="display:none;">
-                <thead><tr><th>Symbol</th><th>Date</th><th>Account</th><th>Leverage</th><th>Margin</th><th>Stop Loss %</th><th>Take Profit %</th><th>Profit</th><th>Loss</th><th>Risk Amount</th><th>Position Size</th><th>Update</th><th>Status</th><th></th></tr></thead>
-                <tbody id="journaledSetupsBody"></tbody>
-              </table>
-            </div>
+          <div>
+            <div class="ps-readout-label">Distance to SL</div>
+            <div class="ps-readout-value" id="psDistSL" style="color:var(--loss);">—</div>
+          </div>
+          <div>
+            <div class="ps-readout-label">Distance to TP</div>
+            <div class="ps-readout-value" id="psDistTP" style="color:var(--win);">—</div>
           </div>
         </div>
 
-        <div class="subnav-panel" id="calcPanel-possize">
-          <div class="panel">
-            <h2>Position Size Calculator</h2>
-            <div class="sub" style="margin-bottom:16px;">Risk-based BTC position sizing across your three accounts.</div>
-
-            <div class="field-row">
-              <label>Direction</label>
-              <select id="psDirection">
-                <option value="Long">Long</option>
-                <option value="Short">Short</option>
-              </select>
-            </div>
-            <div class="field-row">
-              <label>Entry Price</label>
-              <div style="display:flex;gap:8px;">
-                <input id="psEntry" type="text" inputmode="decimal" placeholder="e.g. 63040.20" oninput="renderPosSizeCalculator()" style="color:var(--accent);font-weight:600;">
-                <button type="button" class="poscalc-accent-btn" onclick="pasteIntoField('psEntry')">Paste</button>
-                <button type="button" class="poscalc-accent-btn" onclick="copyFieldValue('psEntry', this)">Copy</button>
-              </div>
-            </div>
-            <div class="field-row">
-              <label>TP Price</label>
-              <div style="display:flex;gap:8px;">
-                <input id="psTP" type="text" inputmode="decimal" placeholder="e.g. 63455.00" oninput="renderPosSizeCalculator()" style="color:var(--win);font-weight:600;">
-                <button type="button" class="poscalc-accent-btn" onclick="pasteIntoField('psTP')">Paste</button>
-                <button type="button" class="poscalc-accent-btn" onclick="copyFieldValue('psTP', this)">Copy</button>
-              </div>
-            </div>
-            <div class="field-row">
-              <label>SL Price</label>
-              <div style="display:flex;gap:8px;">
-                <input id="psSL" type="text" inputmode="decimal" placeholder="e.g. 62900.00" oninput="renderPosSizeCalculator()" style="color:var(--loss);font-weight:600;">
-                <button type="button" class="poscalc-accent-btn" onclick="pasteIntoField('psSL')">Paste</button>
-                <button type="button" class="poscalc-accent-btn" onclick="copyFieldValue('psSL', this)">Copy</button>
-              </div>
-            </div>
-
-            <div class="empty-state" id="psError" style="display:none;">Enter Entry and SL (they must be different) to see position sizes.</div>
-
-            <div id="psResults" style="display:none;">
-              <div class="field-row">
-                <label>Risk-Reward Ratio</label>
-                <div class="field-static" id="psRR">—</div>
-              </div>
-
-              <div style="overflow-x:auto;">
-                <table class="breakdown poscalc-table">
-                  <thead><tr><th>Account</th><th>Risk Amount ($)</th><th>Quantity (BTC)</th><th></th></tr></thead>
-                  <tbody>
-                    <tr>
-                      <td>50K</td>
-                      <td><input id="psRisk50k" type="number" step="0.01" value="230" oninput="renderPosSizeCalculator()"></td>
-                      <td id="psQty50k">—</td>
-                      <td><button type="button" class="poscalc-accent-btn" onclick="copyTextValue('psQty50k', this)">Copy</button></td>
-                    </tr>
-                    <tr>
-                      <td>10K</td>
-                      <td><input id="psRisk10k" type="number" step="0.01" value="40" oninput="renderPosSizeCalculator()"></td>
-                      <td id="psQty10k">—</td>
-                      <td><button type="button" class="poscalc-accent-btn" onclick="copyTextValue('psQty10k', this)">Copy</button></td>
-                    </tr>
-                    <tr>
-                      <td>5K</td>
-                      <td><input id="psRisk5k" type="number" step="0.01" value="20" oninput="renderPosSizeCalculator()"></td>
-                      <td id="psQty5k">—</td>
-                      <td><button type="button" class="poscalc-accent-btn" onclick="copyTextValue('psQty5k', this)">Copy</button></td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
+        <div style="overflow-x:auto;">
+          <table class="breakdown poscalc-table ps-account-table">
+            <thead><tr><th>Account</th><th>Risk Amount ($)</th><th>Quantity</th><th>Min Leverage</th><th>Margin</th><th></th></tr></thead>
+            <tbody id="psAccountsBody"></tbody>
+          </table>
         </div>
+        <div class="sub" style="font-size:11px;color:var(--muted);margin-top:10px;">Risk Amount is yours to set per account and is remembered on this device. Min Leverage is the lowest leverage whose margin still fits your available balance.</div>
+      </div>
+    </div>
+
+    <div class="panel" style="margin-top:20px;">
+      <h2>Pending Setups</h2>
+      <div class="empty-state" id="pendingSetupsEmptyState" style="display:none;">No pending setups yet — use "Trade This Setup" above to save one.</div>
+      <div style="overflow-x:auto;">
+        <table class="breakdown poscalc-table" id="pendingSetupsTable" style="display:none;">
+          <thead><tr><th>Symbol</th><th>Date</th><th>Account</th><th>Leverage</th><th>Margin</th><th>Stop Loss %</th><th>Take Profit %</th><th>Profit</th><th>Loss</th><th>Risk Amount</th><th>Position Size</th><th>Update</th><th>Status</th><th></th></tr></thead>
+          <tbody id="pendingSetupsBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="panel" style="margin-top:20px;">
+      <h2>Journaled Setups</h2>
+      <div class="empty-state" id="journaledSetupsEmptyState" style="display:none;">No journaled setups yet — click "Journal" on a pending setup once its trade is logged.</div>
+      <div style="overflow-x:auto;">
+        <table class="breakdown poscalc-table" id="journaledSetupsTable" style="display:none;">
+          <thead><tr><th>Symbol</th><th>Date</th><th>Account</th><th>Leverage</th><th>Margin</th><th>Stop Loss %</th><th>Take Profit %</th><th>Profit</th><th>Loss</th><th>Risk Amount</th><th>Position Size</th><th>Update</th><th>Status</th><th></th></tr></thead>
+          <tbody id="journaledSetupsBody"></tbody>
+        </table>
       </div>
     </div>
   </div>
@@ -1903,6 +1840,6 @@
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=1"></script>
-<script src="js/dashboard.js?v=226"></script>
+<script src="js/dashboard.js?v=227"></script>
 </body>
 </html>

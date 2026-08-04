@@ -495,7 +495,7 @@ function switchView(view){
   if(view === 'finance') renderFinance();
   if(view === 'profile') loadProfile();
   if(view === 'accounts') loadAccounts();
-  if(view === 'calculator'){ renderPositionCalculator(); loadSavedSetups(); }
+  if(view === 'calculator'){ refreshPosSizeCalculator(); loadSavedSetups(); }
   if(view === 'settings') renderSettingsPage();
   if(view === 'notebook') loadNotes();
   if(view === 'mood') loadMoodEntries();
@@ -2249,17 +2249,95 @@ function switchConfigTab(tab){
   document.querySelectorAll('#view-config .subnav-panel').forEach(el => el.classList.toggle('active', el.id === 'configPanel-' + tab));
 }
 
-function switchCalcTab(tab){
-  document.querySelectorAll('#view-calculator .subnav-item').forEach(el => el.classList.toggle('active', el.dataset.tab === tab));
-  document.querySelectorAll('#view-calculator .subnav-panel').forEach(el => el.classList.toggle('active', el.id === 'calcPanel-' + tab));
-  if(tab === 'possize') renderPosSizeCalculator();
+// Risk Amount is deliberately MANUAL per account (not derived from account
+// size x risk %) — kept per device so it survives a refresh. Keyed by
+// account id, seeded once from the account's own size the first time an
+// account is seen, then never overwritten again.
+function _psRiskAmounts(){
+  try{
+    const raw = localStorage.getItem('possize-risk-amounts');
+    return raw ? JSON.parse(raw) : {};
+  }catch(e){ return {}; }
+}
+function _psSetRiskAmount(accountId, value){
+  const all = _psRiskAmounts();
+  all[accountId] = value;
+  try{ localStorage.setItem('possize-risk-amounts', JSON.stringify(all)); }catch(e){}
+}
+// Updates only the row being typed in — re-rendering the whole tbody on
+// every keystroke would destroy and recreate the very input holding focus,
+// dropping the caret mid-number.
+function onPsRiskInput(accountId, value, inputEl){
+  _psSetRiskAmount(accountId, value);
+
+  const entry = parseFloat(document.getElementById('psEntry').value);
+  const sl = parseFloat(document.getElementById('psSL').value);
+  if(!Number.isFinite(entry) || !Number.isFinite(sl) || entry === sl) return;
+
+  const acc = TRADING_ACCOUNTS.find(a => String(a.id) === String(accountId));
+  const row = inputEl.closest('tr');
+  if(!acc || !row) return;
+
+  const cells = _psComputeRow(acc, parseFloat(value) || 0, entry, Math.abs(entry - sl));
+  const tds = row.querySelectorAll('td');
+  const qtyCell = row.querySelector('.ps-qty-cell');
+  qtyCell.textContent = cells.qtyText;
+  qtyCell.dataset.qty = cells.qtyData;
+  tds[3].innerHTML = cells.levHtml;
+  tds[4].textContent = cells.marginText;
+  row.querySelectorAll('td:last-child button').forEach((btn, i) => {
+    btn.disabled = i === 0 ? cells.qty == null : cells.minLev == null;
+  });
 }
 
-// Risk-based BTC position sizing across the three real accounts — separate
-// from the leverage/margin table above, which sizes off % of account balance
-// instead of a fixed $ risk amount per account.
+// One place that turns an account + risk amount into the three derived
+// cells, so the full render and the live per-row update can never drift.
+function _psComputeRow(acc, riskAmount, entry, riskPerUnit){
+  const qty = riskAmount > 0 ? riskAmount / riskPerUnit : null;
+  const notional = qty != null ? qty * entry : null;
+  const available = Number(acc.current_balance ?? acc.account_size ?? 0);
+  const minLev = notional != null ? _psMinLeverage(notional, available, acc.max_leverage) : null;
+  const margin = (minLev != null && notional != null) ? notional / minLev : null;
+  return {
+    qty, minLev, margin,
+    qtyText: qty != null ? qty.toFixed(4) : '—',
+    qtyData: qty != null ? qty.toFixed(4) : '',
+    levHtml: minLev != null
+      ? `<span class="ps-lev-badge">${minLev}x</span>`
+      : `<span style="color:var(--loss);font-size:11.5px;">Won't fit</span>`,
+    marginText: margin != null ? `$${margin.toLocaleString(undefined,{maximumFractionDigits:2})}` : '—'
+  };
+}
+
+// Seed value the very first time an account shows up here — 0.4% of size
+// lands on the numbers already in use (50K->200, 10K->40, 5K->20). Only a
+// starting point; whatever gets typed replaces it permanently.
+function _psSeedRisk(acc){
+  const size = Number(acc.account_size ?? acc.current_balance ?? 0);
+  return size > 0 ? Math.round(size * 0.004) : '';
+}
+
+// The lowest leverage whose required margin still fits the account's
+// available balance — same "use the least leverage necessary" rule the old
+// Leverage & Margin table highlighted as the recommended row, except it's
+// now computed per account instead of being a row you had to spot yourself.
+function _psMinLeverage(notional, availableBalance, maxLeverage){
+  const cap = Number(maxLeverage) > 0 ? Math.floor(Number(maxLeverage)) : 5;
+  if(!(notional > 0) || !(availableBalance > 0)) return null;
+  for(let lev = 1; lev <= cap; lev++){
+    if(notional / lev <= availableBalance) return lev;
+  }
+  return null; // doesn't fit even maxed out
+}
+
+// Risk-based position sizing across every real account at once: prices in,
+// quantity + recommended leverage + margin out. Replaced the old percentage-
+// driven Leverage & Margin Breakdown, which needed Stop Loss %/Take Profit %
+// typed by hand and only showed one account at a time.
 function renderPosSizeCalculator(){
-  const entry = parseFloat(document.getElementById('psEntry').value);
+  const entryEl = document.getElementById('psEntry');
+  if(!entryEl) return;
+  const entry = parseFloat(entryEl.value);
   const tp = parseFloat(document.getElementById('psTP').value);
   const sl = parseFloat(document.getElementById('psSL').value);
 
@@ -2275,14 +2353,47 @@ function renderPosSizeCalculator(){
   resultsEl.style.display = '';
 
   const riskPerUnit = Math.abs(entry - sl);
-  [['psRisk50k','psQty50k'], ['psRisk10k','psQty10k'], ['psRisk5k','psQty5k']].forEach(([riskId, qtyId]) => {
-    const riskAmount = parseFloat(document.getElementById(riskId).value) || 0;
-    document.getElementById(qtyId).textContent = (riskAmount / riskPerUnit).toFixed(4);
-  });
-
   document.getElementById('psRR').textContent = Number.isFinite(tp)
     ? `1 : ${(Math.abs(tp - entry) / riskPerUnit).toFixed(2)}`
     : '—';
+  document.getElementById('psRiskPerUnit').textContent = `$${riskPerUnit.toLocaleString(undefined,{maximumFractionDigits:2})}`;
+  document.getElementById('psDistSL').textContent = `${(riskPerUnit / entry * 100).toFixed(4)}%`;
+  document.getElementById('psDistTP').textContent = Number.isFinite(tp)
+    ? `${(Math.abs(tp - entry) / entry * 100).toFixed(4)}%`
+    : '—';
+
+  const saved = _psRiskAmounts();
+  const accounts = TRADING_ACCOUNTS.filter(a => a.account_type !== 'Exchange');
+  const body = document.getElementById('psAccountsBody');
+
+  if(!accounts.length){
+    body.innerHTML = `<tr><td colspan="6" style="color:var(--muted);">No prop firm accounts yet — add one in My Accounts first.</td></tr>`;
+    return;
+  }
+
+  body.innerHTML = accounts.map(acc => {
+    const riskRaw = saved[acc.id] != null ? saved[acc.id] : _psSeedRisk(acc);
+    const c = _psComputeRow(acc, parseFloat(riskRaw) || 0, entry, riskPerUnit);
+
+    return `<tr>
+      <td>${escapeHtml(acc.account_name)}</td>
+      <td><input class="ps-risk-input" type="number" step="0.01" value="${riskRaw}" oninput="onPsRiskInput('${acc.id}', this.value, this)"></td>
+      <td class="ps-qty-cell" data-qty="${c.qtyData}">${c.qtyText}</td>
+      <td>${c.levHtml}</td>
+      <td>${c.marginText}</td>
+      <td style="white-space:nowrap;">
+        <button type="button" class="poscalc-accent-btn" onclick="copyCellValue(this)" ${c.qty == null ? 'disabled' : ''}>Copy</button>
+        <button type="button" class="poscalc-accent-btn" onclick="tradeThisSetup('${acc.id}')" ${c.minLev == null ? 'disabled' : ''}>Trade This Setup</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+// Copies the Quantity cell in the same row as the button that was clicked —
+// avoids per-row element ids now that rows are generated per account.
+function copyCellValue(btnEl){
+  const qtyCell = btnEl.closest('tr')?.querySelector('.ps-qty-cell');
+  _copyWithFeedback(qtyCell?.dataset.qty || '', btnEl);
 }
 
 async function pasteIntoField(fieldId){
@@ -10362,7 +10473,7 @@ function renderAccountsList(){
   const emptyState = document.getElementById('accountsEmptyState');
   if(!propPanel || !exchPanel) return;
 
-  populateCalcAccountDropdown();
+  refreshPosSizeCalculator();
 
   if(!TRADING_ACCOUNTS.length){
     propPanel.style.display = 'none';
@@ -10459,8 +10570,8 @@ function accountCardHTML(a){
 
 // Manual "Save" draft — kept in localStorage (not the database) since it's
 // just scratch state while waiting for a price to confirm before actually
-// trading, so a page refresh doesn't wipe the Stop Loss %/Take Profit %/
-// leverage list/price levels you'd already typed in.
+// trading, so a page refresh doesn't wipe the prices you'd already typed in.
+// (Risk Amounts persist separately and always, see _psRiskAmounts.)
 let calcDraftLoaded = false;
 
 function loadCalculatorDraft(){
@@ -10475,12 +10586,10 @@ function loadCalculatorDraft(){
 
 function saveCalculatorDraft(){
   const draft = {
-    accountId: document.getElementById('calcAccount').value || null,
-    stopLossPct: document.getElementById('calcStopLossPct').value || null,
-    takeProfitPct: document.getElementById('calcTakeProfitPct').value || null,
-    leverageList: document.getElementById('calcLeverageList').value || null,
-    stopLevel: document.getElementById('calcStopLevel').value || null,
-    profitLevel: document.getElementById('calcProfitLevel').value || null
+    direction: document.getElementById('psDirection').value || null,
+    entry: document.getElementById('psEntry').value || null,
+    tp: document.getElementById('psTP').value || null,
+    sl: document.getElementById('psSL').value || null
   };
   try{
     localStorage.setItem('poscalc-draft', JSON.stringify(draft));
@@ -10492,123 +10601,33 @@ function saveCalculatorDraft(){
 
 function clearCalculatorDraft(){
   try{ localStorage.removeItem('poscalc-draft'); }catch(e){}
-  document.getElementById('calcAccount').value = '';
-  document.getElementById('calcStopLossPct').value = '';
-  document.getElementById('calcTakeProfitPct').value = '';
-  document.getElementById('calcLeverageList').value = '1,2,3,4,5';
-  document.getElementById('calcStopLevel').value = '';
-  document.getElementById('calcProfitLevel').value = '';
-  renderPositionCalculator();
+  document.getElementById('psDirection').value = 'Long';
+  document.getElementById('psEntry').value = '';
+  document.getElementById('psTP').value = '';
+  document.getElementById('psSL').value = '';
+  renderPosSizeCalculator();
   showToast('Calculator cleared');
 }
 
-function populateCalcAccountDropdown(){
-  const sel = document.getElementById('calcAccount');
-  if(!sel) return;
-  let prevValue = sel.value;
-
+// Restores a saved draft once per session, then renders — called whenever
+// the accounts list changes too, since the table's rows come from it.
+function refreshPosSizeCalculator(){
+  if(!document.getElementById('psEntry')) return;
   if(!calcDraftLoaded){
     calcDraftLoaded = true;
     const draft = loadCalculatorDraft();
     if(draft){
-      if(draft.accountId) prevValue = draft.accountId;
-      if(draft.stopLossPct != null) document.getElementById('calcStopLossPct').value = draft.stopLossPct;
-      if(draft.takeProfitPct != null) document.getElementById('calcTakeProfitPct').value = draft.takeProfitPct;
-      if(draft.leverageList) document.getElementById('calcLeverageList').value = draft.leverageList;
-      if(draft.stopLevel != null) document.getElementById('calcStopLevel').value = draft.stopLevel;
-      if(draft.profitLevel != null) document.getElementById('calcProfitLevel').value = draft.profitLevel;
+      if(draft.direction) document.getElementById('psDirection').value = draft.direction;
+      if(draft.entry != null) document.getElementById('psEntry').value = draft.entry;
+      if(draft.tp != null) document.getElementById('psTP').value = draft.tp;
+      if(draft.sl != null) document.getElementById('psSL').value = draft.sl;
     }
   }
-
-  sel.innerHTML = '<option value="">Select account…</option>' +
-    TRADING_ACCOUNTS.map(a => `<option value="${a.id}">${escapeHtml(a.account_name)}</option>`).join('');
-  if(TRADING_ACCOUNTS.some(a => String(a.id) === prevValue)) sel.value = prevValue;
-  renderPositionCalculator();
-}
-
-// Reads the calculator's current inputs and derives risk amount / position
-// size — shared by the table render and by "Trade This Setup" so both use
-// the exact same numbers.
-function getCalculatorState(){
-  const accSel = document.getElementById('calcAccount');
-  const account = accSel ? TRADING_ACCOUNTS.find(a => String(a.id) === accSel.value) : null;
-  const accountBase = account ? Number(account.account_size ?? account.current_balance ?? 0) : 0;
-  const riskPct = PROFILE_DATA?.risk_per_trade != null ? Number(PROFILE_DATA.risk_per_trade) : 0.3;
-  const riskAmount = accountBase * (riskPct / 100);
-  const slPct = parseFloat(document.getElementById('calcStopLossPct').value);
-  const tpPct = parseFloat(document.getElementById('calcTakeProfitPct').value);
-  const positionSize = (account && slPct > 0) ? riskAmount / (slPct / 100) : null;
-  return { account, riskPct, riskAmount, slPct, tpPct, positionSize };
-}
-
-function renderPositionCalculator(){
-  const riskAmountEl = document.getElementById('calcRiskAmount');
-  const positionSizeEl = document.getElementById('calcPositionSize');
-  const tableBody = document.getElementById('calcTableBody');
-  if(!riskAmountEl || !tableBody) return;
-
-  const { account, riskPct, riskAmount, slPct, tpPct, positionSize } = getCalculatorState();
-
-  riskAmountEl.textContent = account ? `$${riskAmount.toLocaleString(undefined,{maximumFractionDigits:2})} (${riskPct}%)` : '—';
-  positionSizeEl.textContent = positionSize != null ? `$${positionSize.toLocaleString(undefined,{maximumFractionDigits:2})}` : '—';
-
-  const leverages = (document.getElementById('calcLeverageList').value || '')
-    .split(',').map(v => parseFloat(v.trim())).filter(v => v > 0);
-
-  if(positionSize == null || !leverages.length){
-    tableBody.innerHTML = `<tr><td colspan="7" style="color:var(--muted);">Select an account and enter a Stop Loss % to see leverage breakdown.</td></tr>`;
-    return;
-  }
-
-  // "Best" = the lowest leverage whose required margin still fits inside the
-  // account's actual available balance — use the least leverage necessary
-  // instead of always maxing it out. Falls back to the cheapest-margin
-  // option if even the highest leverage doesn't fit.
-  const availableBalance = account ? Number(account.current_balance ?? account.account_size ?? 0) : 0;
-  const rows = leverages.map(lev => ({ lev, margin: positionSize / lev }));
-  const affordable = rows.filter(r => r.margin <= availableBalance);
-  const bestByMinLeverage = affordable.length
-    ? affordable.reduce((best, r) => r.lev < best.lev ? r : best, affordable[0]).lev
-    : rows.reduce((best, r) => r.margin < best.margin ? r : best, rows[0]).lev;
-
-  // Stop Loss % / Take Profit % are PRICE distances — they don't change with
-  // leverage (the stop price is the stop price no matter your margin), so
-  // every row repeats the same top-level %. Margin is what shrinks per
-  // leverage (Position Size / Leverage), and since Margin x Leverage always
-  // equals the fixed Position Size, the dollar Loss/Profit come out
-  // identical on every row too — that's the whole point of position sizing.
-  tableBody.innerHTML = leverages.map(lev => {
-    const margin = positionSize / lev;
-    const profit = (tpPct > 0 && slPct > 0) ? riskAmount * (tpPct / slPct) : null;
-    const loss = riskAmount;
-    const isBest = lev === bestByMinLeverage;
-    return `<tr class="${isBest ? 'poscalc-row-best' : ''}">
-      <td>${lev}x</td>
-      <td class="poscalc-margin-cell">${margin.toFixed(2)} <button class="poscalc-copy-btn" title="Copy margin" onclick="copyMarginToClipboard('${margin.toFixed(2)}', this)">${copyIconSVG()}</button></td>
-      <td>${slPct > 0 ? slPct.toFixed(4)+'%' : '—'}</td>
-      <td>${tpPct > 0 ? tpPct.toFixed(4)+'%' : '—'}</td>
-      <td>${profit != null ? '$'+profit.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</td>
-      <td>$${loss.toLocaleString(undefined,{maximumFractionDigits:2})}</td>
-      <td><button class="poscalc-accent-btn" onclick="tradeThisSetup(${lev})">Trade This Setup</button></td>
-    </tr>`;
-  }).join('');
+  renderPosSizeCalculator();
 }
 
 function copyIconSVG(){
   return `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`;
-}
-
-async function copyMarginToClipboard(value, btn){
-  try{
-    await navigator.clipboard.writeText(value);
-  }catch(e){
-    console.error("Couldn't copy to clipboard:", e);
-    return;
-  }
-  const original = btn.innerHTML;
-  btn.classList.add('copied');
-  btn.innerHTML = '✓';
-  setTimeout(() => { btn.classList.remove('copied'); btn.innerHTML = original; }, 1200);
 }
 
 async function copyTradeSummaryToClipboard(btn){
@@ -10624,23 +10643,43 @@ async function copyTradeSummaryToClipboard(btn){
   setTimeout(() => { btn.classList.remove('copied'); btn.innerHTML = original; }, 1200);
 }
 
-async function tradeThisSetup(lev){
-  const { account, riskAmount, slPct, tpPct, positionSize } = getCalculatorState();
-  if(!account || positionSize == null){
-    await customAlert('Select an account and a Stop Loss % first.');
+async function tradeThisSetup(accountId){
+  const entry = parseFloat(document.getElementById('psEntry').value);
+  const tp = parseFloat(document.getElementById('psTP').value);
+  const sl = parseFloat(document.getElementById('psSL').value);
+  const account = TRADING_ACCOUNTS.find(a => String(a.id) === String(accountId));
+
+  if(!account || !Number.isFinite(entry) || !Number.isFinite(sl) || entry === sl){
+    await customAlert('Enter Entry and SL prices first.');
     return;
   }
-  const margin = positionSize / lev;
+
+  const riskPerUnit = Math.abs(entry - sl);
+  const saved = _psRiskAmounts();
+  const riskRaw = saved[account.id] != null ? saved[account.id] : _psSeedRisk(account);
+  const riskAmount = parseFloat(riskRaw) || 0;
+  const c = _psComputeRow(account, riskAmount, entry, riskPerUnit);
+
+  if(c.minLev == null){
+    await customAlert("This position won't fit in that account's balance, even at max leverage.");
+    return;
+  }
+
+  // Stop Loss %/Take Profit % are price distances — derived from the prices
+  // now instead of typed by hand, so saved setups keep the same shape the
+  // Pending/Journaled tables already expect.
+  const slPct = riskPerUnit / entry * 100;
+  const tpPct = Number.isFinite(tp) ? Math.abs(tp - entry) / entry * 100 : null;
 
   const payload = {
     account_id: account.id,
     account_name: account.account_name,
-    leverage: lev,
-    margin: margin,
+    leverage: c.minLev,
+    margin: c.margin,
     stop_loss_pct: slPct,
-    take_profit_pct: (tpPct > 0 ? tpPct : null),
+    take_profit_pct: tpPct,
     risk_amount: riskAmount,
-    position_size: positionSize,
+    position_size: c.qty * entry,
     status: 'Pending'
   };
 

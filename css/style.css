@@ -1017,6 +1017,29 @@
   .poscalc-accent-btn:hover{background:color-mix(in srgb, var(--accent) 12%, transparent);}
   .poscalc-accent-btn:disabled{border-color:var(--rule);color:var(--muted);cursor:not-allowed;opacity:.6;}
   .poscalc-accent-btn:disabled:hover{background:none;}
+  .ps-input-row{display:flex;gap:8px;}
+  .ps-input-row input{flex:1;min-width:0;}
+  .ps-input-row .poscalc-accent-btn{flex-shrink:0;padding:9px 12px;}
+  .ps-risk-input{
+    width:90px;padding:7px 9px;background:var(--surface-2);border:1px solid var(--rule);
+    border-radius:6px;color:var(--ink);font-size:13px;font-family:'IBM Plex Mono',monospace;
+  }
+  /* Derived numbers sit in their own strip so they read as results rather
+     than more fields waiting to be filled in. */
+  .ps-readout-strip{
+    display:flex;flex-wrap:wrap;gap:26px;
+    background:var(--surface-2);border:1px solid var(--rule);border-radius:8px;
+    padding:13px 16px;margin:18px 0 20px;
+  }
+  .ps-readout-label{font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:3px;}
+  .ps-readout-value{font-size:16px;font-weight:600;font-family:'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums;}
+  .ps-lev-badge{
+    display:inline-block;padding:3px 10px;border-radius:20px;
+    border:1px solid var(--accent);background:color-mix(in srgb, var(--accent) 16%, transparent);
+    color:var(--accent);font-size:12px;font-weight:700;
+    font-family:'IBM Plex Mono',monospace;
+  }
+  .ps-account-table td{vertical-align:middle;}
   .poscalc-image-dropzone{
     min-height:64px;display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:8px;
     background:var(--surface-2);border:1px dashed var(--rule);border-radius:6px;
@@ -1437,5 +1460,14 @@
   body.mobile-mode .subnav-list{flex-direction:row !important;flex-wrap:wrap;gap:6px;width:100% !important;position:static !important;top:auto !important;}
   body.mobile-mode .subnav-item{flex:0 0 auto;padding:8px 12px;font-size:12.5px;}
   body.mobile-mode .setup-notes-shots{grid-template-columns:1fr !important;}
+  /* Position Size Calculator: input + Paste + Copy on one line is too tight
+     on a phone width — put the input on its own row, buttons split evenly
+     underneath it instead of squeezing all three into one line. */
+  body.mobile-mode .ps-input-row{flex-wrap:wrap;}
+  body.mobile-mode .ps-input-row input{flex:1 1 100%;}
+  body.mobile-mode .ps-input-row .poscalc-accent-btn{flex:1;}
+  body.mobile-mode .ps-risk-input{width:88px;}
+  body.mobile-mode .ps-readout-strip{gap:14px 22px;padding:12px 14px;}
+  body.mobile-mode .ps-readout-value{font-size:14.5px;}
   body.mobile-mode .config-add-row{flex-wrap:wrap;}
   body.mobile-mode .config-add-row input{min-width:0;}
