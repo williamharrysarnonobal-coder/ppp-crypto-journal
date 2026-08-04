@@ -874,6 +874,9 @@ function normalizeTrade(r){
     pattern_type: r.pattern_type || "Unspecified",
     execution_tf: r.execution_tf || "Unspecified",
     exit_type: r.exit_type || "",
+    post_be_result: r.post_be_result || "",
+    chart_pattern: r.chart_pattern || "",
+    confluence_answers: (r.confluence_answers && typeof r.confluence_answers === 'object') ? r.confluence_answers : null,
     session: r.session || computeSession(r) || "Unspecified",
     day_of_week: r.day_of_week || (r.close_date ? new Date(r.close_date).toLocaleDateString('en-US',{weekday:'long'}) : "Unspecified"),
     emotion: r.emotion || "Unspecified",
@@ -1020,6 +1023,8 @@ function applyFilters(){
   renderSessionFrequencyChart();
   renderBreakdownTabs();
   renderBreakdown();
+  renderConfluenceEdge();
+  renderBEProtection();
   document.getElementById('aiOutput').style.display = 'none';
 }
 
@@ -1853,6 +1858,217 @@ function renderBreakdown(){
   `;
 }
 
+/* ---------------- Confluence Edge + Breakeven Protection ---------------- */
+
+// Fraction of full confluence credit (0..1) for one journaled trade, using
+// the same scoring as the live checklist (_confluenceProgress) — null when
+// the trade has no answers or no matching checklist config.
+function _confluenceScoreFor(t){
+  if(!t.confluence_answers || !Object.keys(t.confluence_answers).length) return null;
+  const cfg = CONFLUENCE_SETUPS[`${t.trade_type}|${t.pattern_type}`];
+  if(!cfg) return null;
+  const { total, done } = _confluenceProgress(cfg.items, t.confluence_answers, !!t.chart_pattern);
+  return total ? done / total : null;
+}
+
+function _cfeStats(trades){
+  const wins = trades.filter(t => t.win_loss.toLowerCase() === 'win').length;
+  const pnl = trades.reduce((s,t) => s + netPnl(t), 0);
+  return {
+    count: trades.length,
+    winRate: trades.length ? wins / trades.length * 100 : null,
+    avgPnl: trades.length ? pnl / trades.length : null
+  };
+}
+
+function _cfeBarCell(winRate, color){
+  if(winRate === null) return '—';
+  return `<div class="cfe-bar-wrap">
+    <div class="cfe-bar-track"><div class="cfe-bar-fill" style="width:${winRate.toFixed(0)}%;background:${color};"></div></div>
+    <span style="color:${color};">${fmtNum(winRate,0)}%</span>
+  </div>`;
+}
+
+// Answers the question the checklist exists for: do high-confluence trades
+// actually win more? Groups the trades in view by score bucket, by 5m HL/LH
+// sequence position, and by entry trigger (zero-line cross vs retest).
+function renderConfluenceEdge(){
+  const body = document.getElementById('confluenceEdgeBody');
+  if(!body) return;
+
+  const scored = FILTERED
+    .map(t => ({ t, score: _confluenceScoreFor(t) }))
+    .filter(x => x.score !== null);
+
+  if(!scored.length){
+    body.innerHTML = `<div class="empty-state">No trades with confluence answers yet — fill in the Confluence checklist when journaling and this panel wakes up.</div>`;
+    return;
+  }
+
+  // --- score buckets ---
+  const buckets = [
+    { label: '80–100%', pill: 'pill-green', color: 'var(--win)',  match: s => s >= 0.8 },
+    { label: '50–80%',  pill: 'pill-orange', color: 'var(--warn)', match: s => s >= 0.5 && s < 0.8 },
+    { label: '0–50%',   pill: 'pill-red',  color: 'var(--loss)', match: s => s < 0.5 }
+  ].map(b => ({ ...b, stats: _cfeStats(scored.filter(x => b.match(x.score)).map(x => x.t)) }));
+
+  const bucketRows = buckets.map(b => `
+    <tr>
+      <td><span class="pill ${b.pill}">${b.label}</span></td>
+      <td>${b.stats.count}</td>
+      <td>${_cfeBarCell(b.stats.winRate, b.color)}</td>
+      <td class="${b.stats.avgPnl === null ? '' : (b.stats.avgPnl >= 0 ? 'pos' : 'neg')}">${b.stats.avgPnl === null ? '—' : fmtMoney(b.stats.avgPnl)}</td>
+    </tr>`).join('');
+
+  // --- sequence position (Which 5m HL/LH is this?) ---
+  const seqTally = {};
+  scored.forEach(({ t }) => {
+    const cfg = CONFLUENCE_SETUPS[`${t.trade_type}|${t.pattern_type}`];
+    const idx = cfg.items.findIndex(it => it.select);
+    if(idx < 0) return;
+    const ans = t.confluence_answers[idx];
+    if(!ans) return;
+    (seqTally[ans] = seqTally[ans] || []).push(t);
+  });
+  const seqOrder = ['1st','2nd','3rd','4th','5th'];
+  const seqRows = seqOrder.filter(o => seqTally[o]).map(o => {
+    const s = _cfeStats(seqTally[o]);
+    const tint = _sequenceTint(seqOrder.indexOf(o));
+    return `<tr>
+      <td><span style="color:${tint};font-weight:700;font-family:'IBM Plex Mono',monospace;">${o}</span></td>
+      <td>${s.count}</td>
+      <td>${_cfeBarCell(s.winRate, tint)}</td>
+      <td class="${s.avgPnl >= 0 ? 'pos' : 'neg'}">${fmtMoney(s.avgPnl)}</td>
+    </tr>`;
+  }).join('');
+
+  // --- entry trigger (the Execution retest-enabled item) ---
+  const trigTally = {};
+  scored.forEach(({ t }) => {
+    const cfg = CONFLUENCE_SETUPS[`${t.trade_type}|${t.pattern_type}`];
+    const idx = cfg.items.findIndex(it => it.retest);
+    if(idx < 0) return;
+    const ans = t.confluence_answers[idx];
+    if(!ans) return;
+    (trigTally[ans] = trigTally[ans] || []).push(t);
+  });
+  const trigMeta = {
+    yes:    { label: 'Zero-line Cross', color: 'var(--win)' },
+    retest: { label: 'Retest',          color: 'var(--info)' },
+    almost: { label: 'Almost',          color: 'var(--warn)' },
+    no:     { label: 'No',              color: 'var(--loss)' }
+  };
+  const trigRows = Object.keys(trigMeta).filter(k => trigTally[k]).map(k => {
+    const s = _cfeStats(trigTally[k]);
+    return `<tr>
+      <td style="color:${trigMeta[k].color};font-weight:600;">${trigMeta[k].label}</td>
+      <td>${s.count}</td>
+      <td>${_cfeBarCell(s.winRate, trigMeta[k].color)}</td>
+      <td class="${s.avgPnl >= 0 ? 'pos' : 'neg'}">${fmtMoney(s.avgPnl)}</td>
+    </tr>`;
+  }).join('');
+
+  // --- honest, sample-size-guarded insights ---
+  const insights = [];
+  const hi = buckets[0].stats, rest = _cfeStats(scored.filter(x => x.score < 0.8).map(x => x.t));
+  if(hi.count >= 5 && rest.count >= 5 && hi.winRate !== null && rest.winRate !== null){
+    if(hi.winRate >= rest.winRate + 15){
+      insights.push(`Your checklist is earning its keep — ${fmtNum(hi.winRate,0)}% win rate at 80%+ confluence vs ${fmtNum(rest.winRate,0)}% below it. Skipping low-confluence trades is free money.`);
+    }else if(rest.winRate >= hi.winRate + 15){
+      insights.push(`Unexpected: your sub-80% confluence trades are winning MORE (${fmtNum(rest.winRate,0)}% vs ${fmtNum(hi.winRate,0)}%). Worth reviewing whether some checklist items actually matter for your edge.`);
+    }
+  }
+  const lateSeq = [...(seqTally['4th']||[]), ...(seqTally['5th']||[])];
+  if(lateSeq.length >= 3){
+    const s = _cfeStats(lateSeq);
+    if(s.winRate !== null && s.winRate < 40) insights.push(`Late-sequence entries (4th/5th HL/LH) are underperforming at ${fmtNum(s.winRate,0)}% — the data agrees with your red color-coding. Consider skipping them.`);
+  }
+  if((trigTally.retest||[]).length >= 5 && (trigTally.yes||[]).length >= 5){
+    const r = _cfeStats(trigTally.retest), y = _cfeStats(trigTally.yes);
+    insights.push(r.winRate >= y.winRate
+      ? `Retest entries are holding up (${fmtNum(r.winRate,0)}% vs ${fmtNum(y.winRate,0)}% on the direct cross) — entering on the retest is a valid entry for you.`
+      : `Retest entries win less than the direct zero-line cross (${fmtNum(r.winRate,0)}% vs ${fmtNum(y.winRate,0)}%) — be pickier with retest entries.`);
+  }
+  if(!insights.length) insights.push(`Only ${scored.length} trade${scored.length===1?'':'s'} with confluence data so far — patterns here get trustworthy around 15–20 trades. Keep filling in the checklist.`);
+
+  body.innerHTML = `
+    <div class="cfe-grid">
+      <div>
+        <div class="cfe-subhead">By confluence score</div>
+        <table class="breakdown">
+          <tr><th>Score</th><th>Trades</th><th>Win rate</th><th>Avg Net P&amp;L</th></tr>
+          ${bucketRows}
+        </table>
+      </div>
+      <div>
+        <div class="cfe-subhead">By 5m HL/LH sequence</div>
+        ${seqRows ? `<table class="breakdown">
+          <tr><th>Sequence</th><th>Trades</th><th>Win rate</th><th>Avg Net P&amp;L</th></tr>
+          ${seqRows}
+        </table>` : `<div class="empty-state" style="padding:20px 0;">No sequence answers yet (5 mins HL/LH setups only).</div>`}
+      </div>
+    </div>
+    ${trigRows ? `
+      <div class="cfe-subhead">By entry trigger</div>
+      <table class="breakdown">
+        <tr><th>Trigger</th><th>Trades</th><th>Win rate</th><th>Avg Net P&amp;L</th></tr>
+        ${trigRows}
+      </table>` : ''}
+    ${insights.map(i => `<div class="cfe-insight">💡 ${i}</div>`).join('')}
+  `;
+}
+
+// Was moving the stop to breakeven worth it? Counts how BE trades resolved
+// and estimates the losses those BE stops prevented (based on this view's
+// own average losing trade).
+function renderBEProtection(){
+  const body = document.getElementById('beProtectionBody');
+  if(!body) return;
+
+  const tpAfter = FILTERED.filter(t => t.post_be_result === 'TP After BE');
+  const slAfter = FILTERED.filter(t => t.post_be_result === 'SL After BE');
+
+  if(!tpAfter.length && !slAfter.length){
+    body.innerHTML = `<div class="empty-state">No Post-BE Result data yet — this fills in once you journal trades that reached breakeven.</div>`;
+    return;
+  }
+
+  const losers = FILTERED.filter(t => t.win_loss.toLowerCase() === 'loss');
+  const avgLoss = losers.length ? Math.abs(losers.reduce((s,t) => s + netPnl(t), 0) / losers.length) : null;
+  const protectedEst = avgLoss !== null ? slAfter.length * avgLoss : null;
+
+  const insights = [];
+  const total = tpAfter.length + slAfter.length;
+  if(total >= 5){
+    insights.push(slAfter.length > tpAfter.length * 1.5
+      ? `More trades are dying at breakeven than reaching TP after it (${slAfter.length} vs ${tpAfter.length}) — you may be moving your stop to BE too early, cutting winners before they run.`
+      : `Healthy BE timing — ${tpAfter.length} of ${total} trades that reached breakeven went on to hit TP. Your BE stops are protecting capital without choking winners.`);
+  }else{
+    insights.push(`Only ${total} trade${total===1?'':'s'} with Post-BE data so far — this verdict gets reliable around 10+.`);
+  }
+
+  body.innerHTML = `
+    <div class="be-stat-grid">
+      <div class="be-stat">
+        <div class="be-stat-label">TP After BE</div>
+        <div class="be-stat-value" style="color:var(--win);">${tpAfter.length}</div>
+        <div class="be-stat-note">Kept running to TP after the stop moved to breakeven.</div>
+      </div>
+      <div class="be-stat">
+        <div class="be-stat-label">SL After BE</div>
+        <div class="be-stat-value" style="color:var(--info);">${slAfter.length}</div>
+        <div class="be-stat-note">Stopped out at breakeven — $0 instead of a full loss.</div>
+      </div>
+      <div class="be-stat">
+        <div class="be-stat-label">Est. Protected</div>
+        <div class="be-stat-value" style="color:var(--win);">${protectedEst === null ? '—' : '≈ $' + protectedEst.toLocaleString(undefined,{maximumFractionDigits:0})}</div>
+        <div class="be-stat-note">${protectedEst === null ? 'Needs at least one losing trade in view to estimate.' : `${slAfter.length} BE stop${slAfter.length===1?'':'s'} × your avg losing trade ($${avgLoss.toLocaleString(undefined,{maximumFractionDigits:0})}).`}</div>
+      </div>
+    </div>
+    ${insights.map(i => `<div class="cfe-insight">💡 ${i}</div>`).join('')}
+  `;
+}
+
 function renderBarChart(labels, values, colors, onClick){
   const canvas = document.getElementById('breakdownChart');
   const ctx = canvas.getContext('2d');
@@ -2309,11 +2525,15 @@ function _psComputeRow(acc, riskAmount, entry, riskPerUnit){
   };
 }
 
-// Seed value the very first time an account shows up here — 0.4% of size
-// lands on the numbers already in use (50K->200, 10K->40, 5K->20). Only a
-// starting point; whatever gets typed replaces it permanently.
+// Seed value the very first time an account shows up here — the amounts
+// already in use per account size. Anything not in this list falls back to
+// 0.4% of size. Only a starting point; whatever gets typed replaces it
+// permanently (see _psRiskAmounts).
+const PS_SEED_RISK_BY_SIZE = { 50000: 230, 10000: 40, 5000: 20 };
+
 function _psSeedRisk(acc){
   const size = Number(acc.account_size ?? acc.current_balance ?? 0);
+  if(PS_SEED_RISK_BY_SIZE[size] != null) return PS_SEED_RISK_BY_SIZE[size];
   return size > 0 ? Math.round(size * 0.004) : '';
 }
 

@@ -1,9 +1,9 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Tanaydana â€” Analytics</title>
+<title>Tanaydana — Analytics</title>
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="img/forgefolio-logo.png">
 <link rel="apple-touch-icon" href="img/forgefolio-logo.png">
@@ -17,7 +17,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<link rel="stylesheet" href="css/style.css?v=162">
+<link rel="stylesheet" href="css/style.css?v=163">
 </head>
 <body>
 
@@ -29,7 +29,7 @@
 <div id="pendingApprovalScreen" style="display:none;">
   <div class="auth-card">
     <h1 id="pendingScreenTitle">Waiting for approval</h1>
-    <p id="pendingScreenText">â€”</p>
+    <p id="pendingScreenText">—</p>
     <button onclick="confirmLogout()">Log out</button>
   </div>
 </div>
@@ -41,7 +41,7 @@
     <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
     <span class="nav-badge notif-bell-badge" id="notifBellBadge" style="display:none;"></span>
   </button>
-  <button class="notif-bell-btn mobile-menu-btn" id="mobileMenuBtn" onclick="toggleMobileMenu()" title="Menu">â˜°</button>
+  <button class="notif-bell-btn mobile-menu-btn" id="mobileMenuBtn" onclick="toggleMobileMenu()" title="Menu">☰</button>
   <div class="notif-center-panel" id="notifCenterPanel">
     <div class="notif-center-title">Notifications <button class="notif-clear-btn" onclick="clearAllNotifications()">Clear All</button></div>
     <div id="notifCenterBody"></div>
@@ -55,7 +55,7 @@
         <img src="img/Forgefolio-removebg-preview.png" alt="Tanaydana" class="brand-logo-img">
         <span class="brand-text">Tanaydana</span>
       </span>
-      <button class="toggle-btn" onclick="toggleSidebar()" title="Collapse menu">â˜°</button>
+      <button class="toggle-btn" onclick="toggleSidebar()" title="Collapse menu">☰</button>
     </div>
     <div class="nav-item active" data-view="profile" onclick="switchView('profile')"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg> <span class="nav-label">Profile</span><span class="nav-tooltip">Profile</span></div>
     <div class="nav-section-label">Trading</div>
@@ -87,7 +87,7 @@
   <header class="top">
     <div>
       <h1>Dashboard</h1>
-      <div class="sub" id="tradeCountLabel">â€”</div>
+      <div class="sub" id="tradeCountLabel">—</div>
     </div>
     <div class="filters">
       <select id="rangeFilter" onchange="applyFilters()">
@@ -108,9 +108,9 @@
     <div class="panel panel-fixed-h">
       <h2>Calendar
         <span class="nav">
-          <button onclick="shiftMonth(-1)">â€¹</button>
-          <span id="calLabel">â€”</span>
-          <button onclick="shiftMonth(1)">â€º</button>
+          <button onclick="shiftMonth(-1)">‹</button>
+          <span id="calLabel">—</span>
+          <button onclick="shiftMonth(1)">›</button>
         </span>
       </h2>
       <div class="cal-total-summary" id="calTotalSummary"></div>
@@ -149,13 +149,13 @@
         <div class="discipline-score-label">Discipline Score</div>
         <div class="discipline-score-tag" id="disciplineScoreTag"></div>
       </div>
-      <div class="discipline-score-value" id="disciplineScoreValue">â€”</div>
+      <div class="discipline-score-value" id="disciplineScoreValue">—</div>
     </div>
     <div class="discipline-score-bar"><div class="discipline-score-marker" id="disciplineScoreMarker"></div></div>
   </div>
 
   <div class="panel" style="margin-bottom:20px;">
-    <h2>Breakdown â€” where you're actually effective</h2>
+    <h2>Breakdown — where you're actually effective</h2>
     <div class="tabs" id="breakdownTabs"></div>
     <div class="row-2">
       <div><canvas id="breakdownChart" height="260"></canvas></div>
@@ -163,9 +163,21 @@
     </div>
   </div>
 
+  <div class="panel" style="margin-bottom:20px;">
+    <h2>Confluence Edge — does your checklist pay?</h2>
+    <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:14px;">Win rate and average net P&amp;L grouped by how complete your confluence was at entry.</div>
+    <div id="confluenceEdgeBody"></div>
+  </div>
+
+  <div class="panel" style="margin-bottom:20px;">
+    <h2>Breakeven Protection</h2>
+    <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:14px;">How trades resolved after your stop moved to breakeven — and whether you're moving it too early.</div>
+    <div id="beProtectionBody"></div>
+  </div>
+
   <div class="ai-panel">
-    <h2>âœ¦ AI Insights</h2>
-    <div class="sub">Generates a short read on your recent performance and one or two concrete adjustments to try â€” based only on the trades currently in view.</div>
+    <h2>✦ AI Insights</h2>
+    <div class="sub">Generates a short read on your recent performance and one or two concrete adjustments to try — based only on the trades currently in view.</div>
     <button class="ai-btn" id="aiBtn" onclick="generateInsights()">Generate insights</button>
     <div class="ai-output" id="aiOutput"></div>
   </div>
@@ -175,11 +187,11 @@
     <header class="top">
       <div>
         <h1>Trade Journals</h1>
-        <div class="sub" id="journalCountLabel">â€”</div>
+        <div class="sub" id="journalCountLabel">—</div>
       </div>
     </header>
     <div class="journal-toolbar">
-      <input id="journalSearch" placeholder="Search symbol, setup, position IDâ€¦" oninput="renderJournalTable()">
+      <input id="journalSearch" placeholder="Search symbol, setup, position ID…" oninput="renderJournalTable()">
       <select id="filterWinLoss" onchange="renderJournalTable()"><option value="all">Win/Loss: All</option></select>
       <select id="filterSetup" onchange="renderJournalTable()"><option value="all">Setup: All</option></select>
       <select id="filterSession" onchange="renderJournalTable()"><option value="all">Session: All</option></select>
@@ -196,7 +208,7 @@
     <header class="top">
       <div>
         <h1>Notebook</h1>
-        <div class="sub">Your trading thoughts, strategy notes, and reflections â€” kept separate from the structured Trade Journal.</div>
+        <div class="sub">Your trading thoughts, strategy notes, and reflections — kept separate from the structured Trade Journal.</div>
       </div>
       <div class="header-actions">
         <button class="ai-btn" onclick="openNoteModal()">+ New Note</button>
@@ -205,7 +217,7 @@
 
     <div class="notebook-layout">
       <div class="panel note-list-panel">
-        <input class="note-search" id="noteSearchInput" placeholder="Search notesâ€¦" oninput="renderNoteList()">
+        <input class="note-search" id="noteSearchInput" placeholder="Search notes…" oninput="renderNoteList()">
         <div class="tag-filter-row" id="noteTagFilterRow"></div>
         <div id="noteListItems"></div>
       </div>
@@ -214,19 +226,19 @@
         <div class="empty-state" id="noteDetailEmpty">Select a note to view it here.</div>
         <div id="noteDetailWrap" style="display:none;">
           <div class="note-detail-top">
-            <span class="pill" id="noteDetailTag">â€”</span>
+            <span class="pill" id="noteDetailTag">—</span>
             <div class="note-detail-actions">
               <button class="drawer-secondary-btn" onclick="editSelectedNote()"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px;"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>Edit</button>
               <button class="note-delete-btn" onclick="deleteSelectedNote()"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px;"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>Delete</button>
             </div>
           </div>
-          <h3 id="noteDetailTitle" style="margin:14px 0 4px;">â€”</h3>
-          <div class="note-detail-date" id="noteDetailDate">â€”</div>
+          <h3 id="noteDetailTitle" style="margin:14px 0 4px;">—</h3>
+          <div class="note-detail-date" id="noteDetailDate">—</div>
           <div class="note-detail-text" id="noteDetailText"></div>
         </div>
         <div id="noteDetailChecklistWrap" style="display:none;">
-          <h3 style="margin:0 0 4px;">ðŸž Bread &amp; Butter Setup</h3>
-          <div class="note-detail-date">Live reference only â€” nothing here gets saved.</div>
+          <h3 style="margin:0 0 4px;">🍞 Bread &amp; Butter Setup</h3>
+          <div class="note-detail-date">Live reference only — nothing here gets saved.</div>
           <div class="field-row" style="margin-top:14px;">
             <label>Trade Type</label>
             <select id="bbTradeType" onchange="onBbTradeTypeChange()"></select>
@@ -245,7 +257,7 @@
     <header class="top">
       <div>
         <h1>Diary</h1>
-        <div class="sub">A quick daily mood check-in â€” pick how you felt, jot down what happened.</div>
+        <div class="sub">A quick daily mood check-in — pick how you felt, jot down what happened.</div>
       </div>
       <div class="header-actions">
         <button class="ai-btn" onclick="openMoodModal(_moodTodayISO())">+ Log Today</button>
@@ -255,9 +267,9 @@
     <div class="panel">
       <h2>Mood Calendar
         <span class="nav">
-          <button onclick="shiftMoodMonth(-1)">â€¹</button>
-          <span id="moodCalLabel">â€”</span>
-          <button onclick="shiftMoodMonth(1)">â€º</button>
+          <button onclick="shiftMoodMonth(-1)">‹</button>
+          <span id="moodCalLabel">—</span>
+          <button onclick="shiftMoodMonth(1)">›</button>
         </span>
       </h2>
       <div class="cal-grid mood-cal-grid" id="moodCalGrid"></div>
@@ -268,7 +280,7 @@
     <header class="top">
       <div>
         <h1>Trade Alerts</h1>
-        <div class="sub" id="alertsCountLabel">â€”</div>
+        <div class="sub" id="alertsCountLabel">—</div>
         <div class="sub" id="alertsLastSync" style="font-size:11px;"></div>
       </div>
       <div class="header-actions">
@@ -314,9 +326,9 @@
               <option value="pct_desc">Sort: 24H % (High to Low)</option>
               <option value="macd_match_desc">Sort: MACD Match with BTC</option>
             </select>
-            <div class="sub" id="screenerCountLabel">â€”</div>
+            <div class="sub" id="screenerCountLabel">—</div>
           </div>
-          <div class="empty-state" id="screenerEmpty" style="display:none;">No screener data yet â€” the scanner script hasn't pushed any rows.</div>
+          <div class="empty-state" id="screenerEmpty" style="display:none;">No screener data yet — the scanner script hasn't pushed any rows.</div>
           <div class="journal-wrap" id="screenerWrap" style="display:none;">
             <table class="journal">
               <thead><tr>
@@ -353,7 +365,7 @@
       </div>
       <div class="profile-rank-badge" id="profileRankBadge" onclick="switchView('challenges')" title="View Challenges">
         <span class="profile-rank-icon" id="profileRankIcon"></span>
-        <span class="profile-rank-title" id="profileRankTitle">â€”</span>
+        <span class="profile-rank-title" id="profileRankTitle">—</span>
       </div>
     </div>
 
@@ -369,10 +381,10 @@
     <div class="row profile-layout" style="grid-template-columns:1fr 1fr;align-items:start;">
       <div class="panel">
         <h2>My Trading Rules</h2>
-        <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">Your personal checklist â€” a reminder every time you open your profile.</div>
+        <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">Your personal checklist — a reminder every time you open your profile.</div>
         <div id="profileRulesList"></div>
         <div class="config-add-row" id="profileRulesAddRow" style="display:none;">
-          <input id="newRuleInput" placeholder="New ruleâ€¦" onkeydown="if(event.key==='Enter'){ event.preventDefault(); addProfileRule(); }">
+          <input id="newRuleInput" placeholder="New rule…" onkeydown="if(event.key==='Enter'){ event.preventDefault(); addProfileRule(); }">
           <button class="ai-btn" style="padding:8px 14px;" onclick="addProfileRule()">Add</button>
         </div>
       </div>
@@ -381,7 +393,7 @@
         <h2>My Vision Board</h2>
         <div class="profile-inspo-wrap" id="profileInspoWrap">
           <div class="profile-inspo-placeholder" id="profileInspoPlaceholder">
-            <div>No inspiration image yet â€” add one from Edit mode.</div>
+            <div>No inspiration image yet — add one from Edit mode.</div>
           </div>
           <img id="profileInspoImg" style="display:none;">
           <div class="profile-inspo-edit-hint" id="profileInspoEditHint" style="display:none;" onclick="document.getElementById('profileInspoInput').click()">Click to change image</div>
@@ -396,7 +408,7 @@
     <header class="top">
       <div>
         <h1>Reports</h1>
-        <div class="sub">A combined recap of your trading, finances, and mood â€” export a clean PDF summary anytime.</div>
+        <div class="sub">A combined recap of your trading, finances, and mood — export a clean PDF summary anytime.</div>
       </div>
       <div class="header-actions">
         <button class="poscalc-accent-btn" onclick="downloadReportPDF()"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Download PDF</button>
@@ -428,13 +440,13 @@
     <header class="top">
       <div>
         <h1>My Accounts</h1>
-        <div class="sub">Your prop firm / trading accounts and their rules â€” used for account-compliance challenges.</div>
+        <div class="sub">Your prop firm / trading accounts and their rules — used for account-compliance challenges.</div>
       </div>
       <div class="header-actions">
         <button class="ai-btn" onclick="openAccountModal()">+ Add Account</button>
       </div>
     </header>
-    <div class="empty-state" id="accountsEmptyState" style="display:none;">No accounts yet â€” add your prop firm account and its rules.</div>
+    <div class="empty-state" id="accountsEmptyState" style="display:none;">No accounts yet — add your prop firm account and its rules.</div>
 
     <div class="panel" id="accountsPropFirmPanel" style="margin-bottom:20px;display:none;">
       <h2>Prop Firm Accounts</h2>
@@ -463,7 +475,7 @@
           <button class="drawer-danger-btn" onclick="clearCalculatorDraft()">Clear</button>
         </span>
       </h2>
-      <div class="sub" style="margin-bottom:16px;">Risk-based position sizing across your accounts â€” enter the prices, everything else is worked out for you.</div>
+      <div class="sub" style="margin-bottom:16px;">Risk-based position sizing across your accounts — enter the prices, everything else is worked out for you.</div>
 
       <div class="field-row">
         <label>Direction</label>
@@ -503,19 +515,19 @@
         <div class="ps-readout-strip">
           <div>
             <div class="ps-readout-label">Risk-Reward Ratio</div>
-            <div class="ps-readout-value" id="psRR">â€”</div>
+            <div class="ps-readout-value" id="psRR">—</div>
           </div>
           <div>
             <div class="ps-readout-label">Risk Per Unit</div>
-            <div class="ps-readout-value" id="psRiskPerUnit">â€”</div>
+            <div class="ps-readout-value" id="psRiskPerUnit">—</div>
           </div>
           <div>
             <div class="ps-readout-label">Distance to SL</div>
-            <div class="ps-readout-value" id="psDistSL" style="color:var(--loss);">â€”</div>
+            <div class="ps-readout-value" id="psDistSL" style="color:var(--loss);">—</div>
           </div>
           <div>
             <div class="ps-readout-label">Distance to TP</div>
-            <div class="ps-readout-value" id="psDistTP" style="color:var(--win);">â€”</div>
+            <div class="ps-readout-value" id="psDistTP" style="color:var(--win);">—</div>
           </div>
         </div>
 
@@ -531,7 +543,7 @@
 
     <div class="panel" style="margin-top:20px;">
       <h2>Pending Setups</h2>
-      <div class="empty-state" id="pendingSetupsEmptyState" style="display:none;">No pending setups yet â€” use "Trade This Setup" above to save one.</div>
+      <div class="empty-state" id="pendingSetupsEmptyState" style="display:none;">No pending setups yet — use "Trade This Setup" above to save one.</div>
       <div style="overflow-x:auto;">
         <table class="breakdown poscalc-table" id="pendingSetupsTable" style="display:none;">
           <thead><tr><th>Symbol</th><th>Date</th><th>Account</th><th>Leverage</th><th>Margin</th><th>Stop Loss %</th><th>Take Profit %</th><th>Profit</th><th>Loss</th><th>Risk Amount</th><th>Position Size</th><th>Update</th><th>Status</th><th></th></tr></thead>
@@ -542,7 +554,7 @@
 
     <div class="panel" style="margin-top:20px;">
       <h2>Journaled Setups</h2>
-      <div class="empty-state" id="journaledSetupsEmptyState" style="display:none;">No journaled setups yet â€” click "Journal" on a pending setup once its trade is logged.</div>
+      <div class="empty-state" id="journaledSetupsEmptyState" style="display:none;">No journaled setups yet — click "Journal" on a pending setup once its trade is logged.</div>
       <div style="overflow-x:auto;">
         <table class="breakdown poscalc-table" id="journaledSetupsTable" style="display:none;">
           <thead><tr><th>Symbol</th><th>Date</th><th>Account</th><th>Leverage</th><th>Margin</th><th>Stop Loss %</th><th>Take Profit %</th><th>Profit</th><th>Loss</th><th>Risk Amount</th><th>Position Size</th><th>Update</th><th>Status</th><th></th></tr></thead>
@@ -571,7 +583,7 @@
         <div class="subnav-panel active" id="configPanel-columns">
           <div class="panel">
             <h2>Trade Journal Columns</h2>
-            <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">Check to show a column. Drag a row (â ¿) to reorder.</div>
+            <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">Check to show a column. Drag a row (⠿) to reorder.</div>
             <div id="columnConfigList"></div>
             <button class="drawer-secondary-btn" style="margin-top:14px;" onclick="resetColumnConfig()">Reset to default</button>
           </div>
@@ -584,7 +596,7 @@
             <select id="optionsFieldPicker" onchange="renderOptionsListFor(this.value)"></select>
             <div id="optionsList" style="margin-top:14px;"></div>
             <div class="config-add-row">
-              <input id="newOptionInput" placeholder="New optionâ€¦" onkeydown="if(event.key==='Enter'){ event.preventDefault(); addOption(); }">
+              <input id="newOptionInput" placeholder="New option…" onkeydown="if(event.key==='Enter'){ event.preventDefault(); addOption(); }">
               <button class="ai-btn" style="padding:8px 14px;" onclick="addOption()">Add</button>
             </div>
           </div>
@@ -593,7 +605,7 @@
         <div class="subnav-panel" id="configPanel-formfields">
           <div class="panel">
             <h2>Trade Detail / Add Form Fields</h2>
-            <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">Controls both the trade detail view (click a row) and the "+ Add Trade" form. Check to show a field. Drag a row (â ¿) to reorder.</div>
+            <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">Controls both the trade detail view (click a row) and the "+ Add Trade" form. Check to show a field. Drag a row (⠿) to reorder.</div>
             <div id="formFieldConfigList"></div>
             <button class="drawer-secondary-btn" style="margin-top:14px;" onclick="resetFormFieldConfig()">Reset to default</button>
           </div>
@@ -634,7 +646,7 @@
 
     <div class="panel" style="margin-bottom:20px;max-width:560px;">
       <h2>Accent Color</h2>
-      <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:14px;">The highlight color used for buttons, active nav items, and chart lines â€” combines with whichever Theme you're using.</div>
+      <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:14px;">The highlight color used for buttons, active nav items, and chart lines — combines with whichever Theme you're using.</div>
       <div class="settings-option-grid" id="accentOptionGrid"></div>
     </div>
 
@@ -646,7 +658,7 @@
 
     <div class="panel" style="max-width:560px;">
       <h2>Layout</h2>
-      <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:14px;">Mobile Mode swaps the sidebar for a corner menu and centers everything in one column â€” made for phones.</div>
+      <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:14px;">Mobile Mode swaps the sidebar for a corner menu and centers everything in one column — made for phones.</div>
       <div class="settings-option-grid" id="mobileModeOptionGrid"></div>
     </div>
   </div>
@@ -672,7 +684,7 @@
     <div class="panel">
       <h2 style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
         <span>All users</span>
-        <input id="adminUserSearch" type="text" placeholder="Search by email, username, or nameâ€¦" oninput="filterAdminUserList()" style="max-width:260px;padding:8px 10px;background:var(--surface-2);border:1px solid var(--rule);border-radius:6px;color:var(--ink);font-size:13px;font-family:'IBM Plex Mono',monospace;">
+        <input id="adminUserSearch" type="text" placeholder="Search by email, username, or name…" oninput="filterAdminUserList()" style="max-width:260px;padding:8px 10px;background:var(--surface-2);border:1px solid var(--rule);border-radius:6px;color:var(--ink);font-size:13px;font-family:'IBM Plex Mono',monospace;">
       </h2>
       <div style="overflow-x:auto;">
         <table class="breakdown admin-user-table">
@@ -687,7 +699,7 @@
     <header class="top">
       <div>
         <h1>Achievements</h1>
-        <div class="sub" id="achievementsCountLabel">â€”</div>
+        <div class="sub" id="achievementsCountLabel">—</div>
       </div>
       <button class="ai-btn" onclick="openAchievementModal()">+ Add Achievement</button>
     </header>
@@ -703,7 +715,7 @@
     <header class="top">
       <div>
         <h1>Challenges</h1>
-        <div class="sub" id="challengesCountLabel">â€”</div>
+        <div class="sub" id="challengesCountLabel">—</div>
       </div>
       <div class="header-actions">
         <button class="poscalc-accent-btn" onclick="switchView('leaderboard')"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px;"><path d="M8 21h8"/><path d="M12 17v4"/><path d="M7 4h10v5a5 5 0 0 1-10 0V4Z"/><path d="M17 5h3a2 2 0 0 1-2 4h-1"/><path d="M7 5H4a2 2 0 0 0 2 4h1"/></svg>Leaderboard</button>
@@ -711,20 +723,20 @@
     </header>
 
     <div class="challenge-caution-banner">
-      These reflect your trading â€” they shouldn't decide it. If a challenge ever tempts you to force a trade, skip a valid setup, or hold back a good exit just to protect a number, ignore the challenge. Your trading plan comes first, always.
+      These reflect your trading — they shouldn't decide it. If a challenge ever tempts you to force a trade, skip a valid setup, or hold back a good exit just to protect a number, ignore the challenge. Your trading plan comes first, always.
     </div>
 
     <div class="panel challenge-rank-panel" style="margin-bottom:20px;">
-      <div class="challenge-rank-label" id="challengeRankLabel">â€”</div>
+      <div class="challenge-rank-label" id="challengeRankLabel">—</div>
       <div class="challenge-points-total" id="challengePointsTotal">0</div>
       <div class="challenge-points-caption">TOTAL POINTS</div>
       <div class="rank-ladder" id="rankLadder"></div>
-      <div class="challenge-points-away" id="challengePointsAway">â€”</div>
+      <div class="challenge-points-away" id="challengePointsAway">—</div>
     </div>
 
     <div class="panel" style="margin-bottom:20px;">
       <h2>On the Anvil</h2>
-      <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">Automatically tracked from your logged trades and achievements â€” nothing to mark manually.</div>
+      <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">Automatically tracked from your logged trades and achievements — nothing to mark manually.</div>
       <div class="tabs" id="challengeFilterTabs">
         <div class="tab active" data-f="all" onclick="switchChallengeFilter('all')">All</div>
         <div class="tab" data-f="achieved" onclick="switchChallengeFilter('achieved')">Achieved</div>
@@ -735,7 +747,7 @@
 
     <div class="panel">
       <h2>Still in the Furnace</h2>
-      <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">These need extra data before we can track them â€” this shows what's still missing.</div>
+      <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">These need extra data before we can track them — this shows what's still missing.</div>
       <div class="challenge-grid" id="challengesLockedGrid"></div>
     </div>
   </div>
@@ -747,7 +759,7 @@
         <div class="sub">Ranked by total challenge points, across every trader here.</div>
       </div>
       <div class="header-actions">
-        <button class="drawer-secondary-btn" onclick="switchView('challenges')">â€¹ Back to Challenges</button>
+        <button class="drawer-secondary-btn" onclick="switchView('challenges')">‹ Back to Challenges</button>
       </div>
     </header>
     <div class="panel">
@@ -759,7 +771,7 @@
     <header class="top">
       <div>
         <h1>Calendar</h1>
-        <div class="sub">Upcoming economic events â€” check impact before you trade around news.</div>
+        <div class="sub">Upcoming economic events — check impact before you trade around news.</div>
         <div class="sub" id="econLastSync" style="font-size:11px;"></div>
       </div>
       <div class="header-actions">
@@ -770,9 +782,9 @@
       <div class="panel econ-cal-list-panel">
         <h2>Calendar
           <span class="nav">
-            <button onclick="shiftEconCalMonth(-1)">â€¹</button>
-            <span id="econCalLabel">â€”</span>
-            <button onclick="shiftEconCalMonth(1)">â€º</button>
+            <button onclick="shiftEconCalMonth(-1)">‹</button>
+            <span id="econCalLabel">—</span>
+            <button onclick="shiftEconCalMonth(1)">›</button>
           </span>
         </h2>
         <div class="tag-filter-row" id="econImpactFilterRow"></div>
@@ -789,7 +801,7 @@
     <header class="top">
       <div>
         <h1>Finance</h1>
-        <div class="sub">Your personal money tracker â€” income, expenses, and where it all goes.</div>
+        <div class="sub">Your personal money tracker — income, expenses, and where it all goes.</div>
       </div>
     </header>
 
@@ -828,9 +840,9 @@
             <div class="panel fin-dash-list-panel">
               <h2>Calendar
                 <span class="nav">
-                  <button onclick="shiftFinDashMonth(-1)">â€¹</button>
-                  <span id="finDashLabel">â€”</span>
-                  <button onclick="shiftFinDashMonth(1)">â€º</button>
+                  <button onclick="shiftFinDashMonth(-1)">‹</button>
+                  <span id="finDashLabel">—</span>
+                  <button onclick="shiftFinDashMonth(1)">›</button>
                 </span>
               </h2>
               <div class="cal-grid" id="finDashGrid"></div>
@@ -856,7 +868,7 @@
           </div>
 
           <div class="panel" style="margin-bottom:20px;">
-            <h2>Equity curve â€” cumulative net (Income âˆ’ Expense)</h2>
+            <h2>Equity curve — cumulative net (Income − Expense)</h2>
             <div class="chart-fill" style="height:260px;"><canvas id="finDashEquityChart"></canvas></div>
             <div id="finDashEquityEmpty" class="empty-state" style="display:none;">No transactions in this period.</div>
           </div>
@@ -869,13 +881,13 @@
                 <div class="discipline-score-label">Discipline Score</div>
                 <div class="discipline-score-tag" id="finDashDisciplineTag"></div>
               </div>
-              <div class="discipline-score-value" id="finDashDisciplineValue">â€”</div>
+              <div class="discipline-score-value" id="finDashDisciplineValue">—</div>
             </div>
             <div class="discipline-score-bar"><div class="discipline-score-marker" id="finDashDisciplineMarker"></div></div>
           </div>
 
           <div class="panel panel-fixed-h-sm">
-            <h2>Income vs Expense â€” last 6 months</h2>
+            <h2>Income vs Expense — last 6 months</h2>
             <div class="chart-fill"><canvas id="finDashTrendChart"></canvas></div>
           </div>
         </div>
@@ -883,8 +895,8 @@
         <div class="subnav-panel" id="financePanel-accounts">
           <div class="panel">
             <h2 style="display:flex;align-items:center;justify-content:space-between;gap:10px;">Accounts <span style="display:flex;gap:8px;"><button class="poscalc-accent-btn" id="finHideBalBtn" onclick="toggleFinBalances()">Hide Balances</button><button class="poscalc-accent-btn" onclick="openFinAccountModal()">+ Add Account</button></span></h2>
-            <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">Where your money lives â€” banks, e-wallets, cash, crypto.</div>
-            <div class="empty-state" id="finAccountsEmpty" style="display:none;">No accounts yet â€” click "+ Add Account" to add your first one.</div>
+            <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">Where your money lives — banks, e-wallets, cash, crypto.</div>
+            <div class="empty-state" id="finAccountsEmpty" style="display:none;">No accounts yet — click "+ Add Account" to add your first one.</div>
             <div id="finAccountsSections"></div>
             <div class="sub" id="finAccountsTotals" style="font-size:12px;margin-top:14px;"></div>
           </div>
@@ -893,9 +905,9 @@
         <div class="subnav-panel" id="financePanel-transactions">
           <div class="panel">
             <h2 style="display:flex;align-items:center;justify-content:space-between;gap:10px;">Transactions <span style="display:flex;gap:8px;"><button class="poscalc-accent-btn" onclick="openFinTxEasyAddModal()">Easy Add</button><button class="poscalc-accent-btn" onclick="openFinTxModal({tx_type:'Transfer'})">Transfer</button><button class="poscalc-accent-btn" onclick="openFinTxModal()">+ Add Transaction</button></span></h2>
-            <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">Every peso in and out â€” income, expenses, and transfers between accounts. Balances update automatically.</div>
+            <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">Every peso in and out — income, expenses, and transfers between accounts. Balances update automatically.</div>
             <div class="fin-tx-filters" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px;">
-              <input type="text" id="finTxSearchFilter" placeholder="Search description, category, accountâ€¦" oninput="renderFinanceTransactions()" style="flex:1;min-width:180px;max-width:260px;">
+              <input type="text" id="finTxSearchFilter" placeholder="Search description, category, account…" oninput="renderFinanceTransactions()" style="flex:1;min-width:180px;max-width:260px;">
               <select id="finTxPeriodFilter" onchange="onFinTxPeriodFilterChange()" style="max-width:170px;">
                 <option value="all">All time</option>
                 <option value="this" selected>This Month</option>
@@ -924,7 +936,7 @@
               <button class="poscalc-accent-btn" onclick="openFinBulkCategoryModal()">Edit Category</button>
               <button class="drawer-secondary-btn" onclick="clearFinTxSelection()">Clear</button>
             </div>
-            <div class="empty-state" id="finTxEmpty" style="display:none;">No transactions yet â€” click "+ Add Transaction" to log your first one.</div>
+            <div class="empty-state" id="finTxEmpty" style="display:none;">No transactions yet — click "+ Add Transaction" to log your first one.</div>
             <div class="journal-wrap" id="finTxWrap" style="display:none;">
               <table class="journal">
                 <thead><tr><th><input type="checkbox" id="finTxSelectAll" onchange="toggleFinTxSelectAll(this.checked)"></th><th>Date</th><th>Type</th><th>Amount</th><th>Account</th><th>Category</th><th>Description</th><th>Status</th><th></th></tr></thead>
@@ -937,7 +949,7 @@
         <div class="subnav-panel" id="financePanel-recurring">
           <div class="panel" style="margin-bottom:20px;">
             <h2 style="display:flex;align-items:center;justify-content:space-between;gap:10px;">Installments <button class="poscalc-accent-btn" onclick="openFinRecModal('Installment')">+ Add Installment</button></h2>
-            <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">Credit card installments â€” gadgets, appliances, anything paid in fixed monthly parts.</div>
+            <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">Credit card installments — gadgets, appliances, anything paid in fixed monthly parts.</div>
             <div class="empty-state" id="finInstEmpty" style="display:none;">No installments yet.</div>
             <div class="journal-wrap" id="finInstWrap" style="display:none;">
               <table class="journal">
@@ -950,7 +962,7 @@
 
           <div class="panel">
             <h2 style="display:flex;align-items:center;justify-content:space-between;gap:10px;">Subscriptions <button class="poscalc-accent-btn" onclick="openFinRecModal('Subscription')">+ Add Subscription</button></h2>
-            <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">Recurring services â€” streaming, tools, memberships.</div>
+            <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">Recurring services — streaming, tools, memberships.</div>
             <div class="empty-state" id="finSubEmpty" style="display:none;">No subscriptions yet.</div>
             <div class="journal-wrap" id="finSubWrap" style="display:none;">
               <table class="journal">
@@ -965,22 +977,22 @@
         <div class="subnav-panel" id="financePanel-config">
           <div class="panel">
             <h2>Configuration</h2>
-            <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">Add or remove the choices for each Finance dropdown â€” account types, currencies, and income/expense categories.</div>
+            <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">Add or remove the choices for each Finance dropdown — account types, currencies, and income/expense categories.</div>
             <select id="finOptionsPicker" onchange="renderFinanceOptionsListFor(this.value)"></select>
             <div id="finOptionsList" style="margin-top:14px;"></div>
             <div class="config-add-row">
-              <input id="finNewOptionInput" placeholder="New optionâ€¦" onkeydown="if(event.key==='Enter') addFinanceOption()">
+              <input id="finNewOptionInput" placeholder="New option…" onkeydown="if(event.key==='Enter') addFinanceOption()">
               <button class="ai-btn" style="padding:8px 14px;" onclick="addFinanceOption()">Add</button>
             </div>
           </div>
 
           <div class="panel" style="margin-top:20px;">
             <h2 style="display:flex;align-items:center;justify-content:space-between;gap:10px;">Expense Subcategories <button class="poscalc-accent-btn" onclick="loadRecommendedFinanceTaxonomy()">Reset to Recommended Categories</button></h2>
-            <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">Optional finer breakdown under each expense category â€” so "Food &amp; Groceries" can split into Grocery, Restaurant, Coffee, etc.</div>
+            <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">Optional finer breakdown under each expense category — so "Food &amp; Groceries" can split into Grocery, Restaurant, Coffee, etc.</div>
             <select id="finSubcatPicker" onchange="renderFinanceSubcategoryListFor(this.value)"></select>
             <div id="finSubcatList" style="margin-top:14px;"></div>
             <div class="config-add-row">
-              <input id="finNewSubcatInput" placeholder="New subcategoryâ€¦" onkeydown="if(event.key==='Enter') addFinanceSubcategory()">
+              <input id="finNewSubcatInput" placeholder="New subcategory…" onkeydown="if(event.key==='Enter') addFinanceSubcategory()">
               <button class="ai-btn" style="padding:8px 14px;" onclick="addFinanceSubcategory()">Add</button>
             </div>
           </div>
@@ -989,7 +1001,7 @@
         <div class="subnav-panel" id="financePanel-budget">
           <div class="panel">
             <h2>Monthly Budgets</h2>
-            <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:14px;">Set a target per expense category, tracked against THIS calendar month's actual spending â€” resets automatically each month, no rollover.</div>
+            <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:14px;">Set a target per expense category, tracked against THIS calendar month's actual spending — resets automatically each month, no rollover.</div>
             <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;">
               <div class="field-row" style="flex:1;min-width:180px;margin-bottom:0;">
                 <label>Category</label>
@@ -1002,29 +1014,29 @@
               <button class="ai-btn" style="padding:9px 16px;flex-shrink:0;" onclick="saveFinanceBudget()">Save</button>
             </div>
             <div id="finBudgetError" class="auth-error"></div>
-            <div class="empty-state" id="finBudgetEmpty" style="display:none;margin-top:16px;">No budgets set yet â€” pick a category above and give it a monthly amount.</div>
+            <div class="empty-state" id="finBudgetEmpty" style="display:none;margin-top:16px;">No budgets set yet — pick a category above and give it a monthly amount.</div>
             <div id="finBudgetList" style="margin-top:18px;"></div>
           </div>
         </div>
 
         <div class="subnav-panel" id="financePanel-challenges">
-          <div class="sub" id="financeChallengesCountLabel" style="margin-bottom:10px;">â€”</div>
+          <div class="sub" id="financeChallengesCountLabel" style="margin-bottom:10px;">—</div>
 
           <div class="challenge-caution-banner">
-            These reflect your money habits â€” they shouldn't decide them. Breaking a No-Spend streak for a real emergency, or a real need, is always the right call. Ignore the challenge.
+            These reflect your money habits — they shouldn't decide them. Breaking a No-Spend streak for a real emergency, or a real need, is always the right call. Ignore the challenge.
           </div>
 
           <div class="panel challenge-rank-panel" style="margin-bottom:20px;">
-            <div class="challenge-rank-label" id="financeChallengeRankLabel">â€”</div>
+            <div class="challenge-rank-label" id="financeChallengeRankLabel">—</div>
             <div class="challenge-points-total" id="financeChallengePointsTotal">0</div>
             <div class="challenge-points-caption">TOTAL POINTS</div>
             <div class="rank-ladder" id="financeRankLadder"></div>
-            <div class="challenge-points-away" id="financeChallengePointsAway">â€”</div>
+            <div class="challenge-points-away" id="financeChallengePointsAway">—</div>
           </div>
 
           <div class="panel" style="margin-bottom:20px;">
-            <h2 style="display:flex;align-items:center;justify-content:space-between;gap:10px;">Finance Challenges <button class="poscalc-accent-btn" onclick="renderFinanceLeaderboard(); document.getElementById('financeLeaderboardPanel').scrollIntoView({behavior:'smooth'});">Leaderboard â†“</button></h2>
-            <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">Automatically tracked from your accounts, transactions, and recurring bills â€” nothing to mark manually.</div>
+            <h2 style="display:flex;align-items:center;justify-content:space-between;gap:10px;">Finance Challenges <button class="poscalc-accent-btn" onclick="renderFinanceLeaderboard(); document.getElementById('financeLeaderboardPanel').scrollIntoView({behavior:'smooth'});">Leaderboard ↓</button></h2>
+            <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">Automatically tracked from your accounts, transactions, and recurring bills — nothing to mark manually.</div>
             <div class="tabs" id="financeChallengeFilterTabs">
               <div class="tab active" data-f="all" onclick="switchFinanceChallengeFilter('all')">All</div>
               <div class="tab" data-f="achieved" onclick="switchFinanceChallengeFilter('achieved')">Achieved</div>
@@ -1035,7 +1047,7 @@
 
           <div class="panel" style="margin-bottom:20px;">
             <h2>Still Locked</h2>
-            <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">These need extra data before we can track them â€” this shows what's still missing.</div>
+            <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">These need extra data before we can track them — this shows what's still missing.</div>
             <div class="challenge-grid" id="financeChallengesLockedGrid"></div>
           </div>
 
@@ -1054,8 +1066,8 @@
 
 <div class="modal-overlay" id="tradeModal" onclick="if(event.target===this) closeModal()">
   <div class="modal-box" style="position:relative;">
-    <button class="modal-close" onclick="closeModal()">âœ•</button>
-    <h3 id="modalTitle">â€”</h3>
+    <button class="modal-close" onclick="closeModal()">✕</button>
+    <h3 id="modalTitle">—</h3>
     <div class="modal-sub" id="modalSub"></div>
     <div id="modalBody"></div>
   </div>
@@ -1063,14 +1075,14 @@
 
 <div class="modal-overlay" id="tradeViewModal" onclick="if(event.target===this) closeTradeViewModal()">
   <div class="modal-box" style="position:relative;max-width:min(90vw,640px);max-height:85vh;display:flex;flex-direction:column;">
-    <button class="modal-close" onclick="closeTradeViewModal()">âœ•</button>
-    <h3 id="tradeViewTitle" style="margin:0 36px 12px 0;flex-shrink:0;">â€”</h3>
+    <button class="modal-close" onclick="closeTradeViewModal()">✕</button>
+    <h3 id="tradeViewTitle" style="margin:0 36px 12px 0;flex-shrink:0;">—</h3>
     <div id="tradeViewBody" class="trade-view-grid" style="overflow-y:auto;flex:1;min-height:0;padding-right:4px;"></div>
 
     <div style="display:flex;justify-content:space-between;align-items:center;margin-top:14px;padding-top:14px;border-top:1px solid var(--rule);flex-shrink:0;">
       <div style="display:flex;gap:8px;">
-        <button class="drawer-secondary-btn" id="tradeViewPrevBtn" onclick="navigateTradeView(-1)">â€¹ Previous</button>
-        <button class="drawer-secondary-btn" id="tradeViewNextBtn" onclick="navigateTradeView(1)">Next â€º</button>
+        <button class="drawer-secondary-btn" id="tradeViewPrevBtn" onclick="navigateTradeView(-1)">‹ Previous</button>
+        <button class="drawer-secondary-btn" id="tradeViewNextBtn" onclick="navigateTradeView(1)">Next ›</button>
       </div>
       <div style="display:flex;gap:4px;">
         <button class="modal-icon-btn" onclick="openTradeNoteModalFromTradeView()" title="Add Note"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><line x1="12" y1="7" x2="12" y2="13"/><line x1="9" y1="10" x2="15" y2="10"/></svg></button>
@@ -1085,7 +1097,7 @@
 
 <div class="modal-overlay" id="easyAddModal" onclick="if(event.target===this) closeEasyAddModal()">
   <div class="modal-box" style="position:relative;">
-    <button class="modal-close" onclick="closeEasyAddModal()">âœ•</button>
+    <button class="modal-close" onclick="closeEasyAddModal()">✕</button>
     <h3>Easy Add</h3>
     <div class="modal-sub">Copy the position card from your exchange (select the text and copy) and paste it below.</div>
     <div class="field-row" style="margin-top:12px;">
@@ -1094,7 +1106,7 @@
         <option value="upscale">Upscale</option>
       </select>
     </div>
-    <textarea id="easyAddInput" placeholder="Paste hereâ€¦" style="width:100%;min-height:200px;margin-top:10px;padding:10px 12px;background:var(--surface-2);border:1px solid var(--rule);border-radius:6px;color:var(--ink);font-size:13px;font-family:'IBM Plex Mono',monospace;resize:vertical;"></textarea>
+    <textarea id="easyAddInput" placeholder="Paste here…" style="width:100%;min-height:200px;margin-top:10px;padding:10px 12px;background:var(--surface-2);border:1px solid var(--rule);border-radius:6px;color:var(--ink);font-size:13px;font-family:'IBM Plex Mono',monospace;resize:vertical;"></textarea>
     <div id="easyAddError" class="auth-error"></div>
     <button class="ai-btn" style="margin-top:14px;width:100%;" onclick="parseEasyAddText()">Proceed</button>
   </div>
@@ -1102,9 +1114,9 @@
 
 <div class="modal-overlay" id="finAccountDetailsModal" onclick="if(event.target===this) closeFinAccountDetailsModal()">
   <div class="modal-box" style="position:relative;max-width:460px;">
-    <button class="modal-close" onclick="closeFinAccountDetailsModal()">âœ•</button>
+    <button class="modal-close" onclick="closeFinAccountDetailsModal()">✕</button>
     <h3 style="display:flex;align-items:center;gap:8px;padding-right:28px;">
-      <button id="finAccDetailsBackBtn" onclick="finAccDetailsGoBack()" title="Back" style="display:none;background:none;border:none;color:var(--muted);cursor:pointer;font-size:18px;line-height:1;padding:0;flex-shrink:0;">â†</button>
+      <button id="finAccDetailsBackBtn" onclick="finAccDetailsGoBack()" title="Back" style="display:none;background:none;border:none;color:var(--muted);cursor:pointer;font-size:18px;line-height:1;padding:0;flex-shrink:0;">←</button>
       <span id="finAccDetailsTitle" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0;">Account</span>
       <button class="poscalc-accent-btn" id="finAccDetailsHideBalBtn" style="display:none;font-size:11px;padding:4px 9px;flex-shrink:0;" onclick="toggleFinBalances()">Hide Balances</button>
     </h3>
@@ -1114,14 +1126,14 @@
 
 <div class="modal-overlay" id="finAccountModal" onclick="if(event.target===this) closeFinAccountModal()">
   <div class="modal-box" style="position:relative;max-height:88vh;overflow-y:auto;">
-    <button class="modal-close" onclick="closeFinAccountModal()">âœ•</button>
+    <button class="modal-close" onclick="closeFinAccountModal()">✕</button>
     <h3 id="finAccountModalTitle">Add Account</h3>
-    <div class="sub" id="finSubAccountNotice" style="display:none;margin-top:8px;">Sub-account of <strong id="finSubAccountParentName"></strong> â€” same currency, no separate class or icon.</div>
+    <div class="sub" id="finSubAccountNotice" style="display:none;margin-top:8px;">Sub-account of <strong id="finSubAccountParentName"></strong> — same currency, no separate class or icon.</div>
     <div class="field-row fin-parent-only" style="margin-top:14px;">
       <label>Account Class</label>
       <select id="finAccClass" onchange="onFinAccClassChange()">
-        <option value="Debit">Debit â€” my own money (bank, e-wallet, cash)</option>
-        <option value="Credit">Credit â€” credit card / credit line</option>
+        <option value="Debit">Debit — my own money (bank, e-wallet, cash)</option>
+        <option value="Credit">Credit — credit card / credit line</option>
         <option value="BorrowLend" disabled>Borrow / Lend (coming soon)</option>
         <option value="Invest" disabled>Invest (coming soon)</option>
       </select>
@@ -1136,7 +1148,7 @@
       <input id="finAccName" placeholder="e.g. BPI, GCash, Cash on hand">
     </div>
     <div class="field-row">
-      <label>Card / Account Number â€” last 4 digits only</label>
+      <label>Card / Account Number — last 4 digits only</label>
       <input id="finAccCardNumber" maxlength="4" inputmode="numeric" placeholder="e.g. 5678">
     </div>
     <div class="field-row" id="finAccCurrencyRow">
@@ -1150,7 +1162,7 @@
     <div class="field-row fin-credit-row" style="display:none;">
       <label>Credit Limit</label>
       <input id="finAccLimit" type="number" step="any" placeholder="e.g. 50000">
-      <div class="sub" style="font-size:11px;margin-top:4px;">Owed and available credit are fully automatic â€” computed from your installments and card transactions.</div>
+      <div class="sub" style="font-size:11px;margin-top:4px;">Owed and available credit are fully automatic — computed from your installments and card transactions.</div>
     </div>
     <div class="field-row fin-credit-row" style="display:none;">
       <label>Billing Date (day of month)</label>
@@ -1171,13 +1183,13 @@
 
 <div class="modal-overlay" id="finTxEasyAddModal" onclick="if(event.target===this) closeFinTxEasyAddModal()">
   <div class="modal-box" style="position:relative;max-height:88vh;overflow-y:auto;">
-    <button class="modal-close" onclick="closeFinTxEasyAddModal()">âœ•</button>
+    <button class="modal-close" onclick="closeFinTxEasyAddModal()">✕</button>
     <h3>Easy Add</h3>
     <div class="field-row" style="margin-top:10px;">
       <label>Format</label>
       <select id="finTxEasyAddFormat" onchange="onFinTxEasyAddFormatChange()">
-        <option value="text">Text â€” single purchase alert</option>
-        <option value="statement">Statement â€” bulk paste from a card statement</option>
+        <option value="text">Text — single purchase alert</option>
+        <option value="statement">Statement — bulk paste from a card statement</option>
       </select>
     </div>
 
@@ -1203,7 +1215,7 @@
 
 <div class="modal-overlay" id="finCreditPaymentModal" onclick="if(event.target===this) closeFinCreditPaymentModal()">
   <div class="modal-box" style="position:relative;">
-    <button class="modal-close" onclick="closeFinCreditPaymentModal()">âœ•</button>
+    <button class="modal-close" onclick="closeFinCreditPaymentModal()">✕</button>
     <h3>Pay Bill</h3>
     <div class="modal-sub" id="finCreditPaymentInfo"></div>
     <div class="field-row" style="margin-top:12px;">
@@ -1217,7 +1229,7 @@
 
 <div class="modal-overlay" id="finBulkCategoryModal" onclick="if(event.target===this) closeFinBulkCategoryModal()">
   <div class="modal-box" style="position:relative;">
-    <button class="modal-close" onclick="closeFinBulkCategoryModal()">âœ•</button>
+    <button class="modal-close" onclick="closeFinBulkCategoryModal()">✕</button>
     <h3>Edit Category</h3>
     <div class="modal-sub" id="finBulkCategoryInfo"></div>
     <div class="field-row" style="margin-top:12px;">
@@ -1235,7 +1247,7 @@
 
 <div class="modal-overlay" id="finTxModal" onclick="if(event.target===this) closeFinTxModal()">
   <div class="modal-box" style="position:relative;">
-    <button class="modal-close" onclick="closeFinTxModal()">âœ•</button>
+    <button class="modal-close" onclick="closeFinTxModal()">✕</button>
     <h3 id="finTxModalTitle">Add Transaction</h3>
     <div class="field-row" style="margin-top:14px;">
       <label>Date</label>
@@ -1280,7 +1292,7 @@
 
 <div class="modal-overlay" id="finRecModal" onclick="if(event.target===this) closeFinRecModal()">
   <div class="modal-box" style="position:relative;">
-    <button class="modal-close" onclick="closeFinRecModal()">âœ•</button>
+    <button class="modal-close" onclick="closeFinRecModal()">✕</button>
     <h3 id="finRecModalTitle">Add Installment</h3>
     <div class="field-row" style="margin-top:14px;">
       <label id="finRecNameLabel">Name</label>
@@ -1305,12 +1317,12 @@
     </div>
     <div class="field-row fin-rec-inst" style="display:none;">
       <label>Monthly (computed)</label>
-      <div class="field-static" id="finRecMonthly">â€”</div>
+      <div class="field-static" id="finRecMonthly">—</div>
     </div>
     <div class="field-row fin-rec-inst" style="display:none;">
       <label>Payments Made So Far</label>
       <input id="finRecAlreadyPaid" type="number" min="0" step="1" placeholder="e.g. 8" oninput="updateFinRecMonthly()">
-      <div class="sub" style="font-size:11px;margin-top:4px;">Payments already made in real life (before or outside this tracker) â€” nothing gets charged for these. Use the "Mark as Paid" button for each one from here on.</div>
+      <div class="sub" style="font-size:11px;margin-top:4px;">Payments already made in real life (before or outside this tracker) — nothing gets charged for these. Use the "Mark as Paid" button for each one from here on.</div>
     </div>
     <div class="field-row fin-rec-sub" style="display:none;">
       <label>Price</label>
@@ -1339,9 +1351,9 @@
 
 <div class="modal-overlay" id="setupNotesModal" onclick="if(event.target===this) closeSetupNotesModal()">
   <div class="modal-box" style="position:relative;max-width:760px;width:92vw;max-height:92vh;display:flex;flex-direction:column;overflow-y:auto;">
-    <button class="modal-close" onclick="closeSetupNotesModal()">âœ•</button>
+    <button class="modal-close" onclick="closeSetupNotesModal()">✕</button>
     <h3>Setup Notes</h3>
-    <div class="modal-sub">Jot the symbol and log how the trade's going â€” every note gets its own timestamp.</div>
+    <div class="modal-sub">Jot the symbol and log how the trade's going — every note gets its own timestamp.</div>
     <div class="field-row" style="margin-top:14px;flex-shrink:0;">
       <label>Symbol</label>
       <input id="setupNotesSymbol" placeholder="e.g. BTC/USDT">
@@ -1379,9 +1391,9 @@
 
 <div class="modal-overlay" id="confluenceModal" onclick="if(event.target===this) closeConfluenceModal()">
   <div class="modal-box" style="position:relative;max-width:640px;width:92vw;max-height:92vh;display:flex;flex-direction:column;overflow-y:auto;">
-    <button class="modal-close" onclick="closeConfluenceModal()">âœ•</button>
+    <button class="modal-close" onclick="closeConfluenceModal()">✕</button>
     <h3>Confluence</h3>
-    <div class="modal-sub">Why and how you entered â€” fill this in before you Journal this setup.</div>
+    <div class="modal-sub">Why and how you entered — fill this in before you Journal this setup.</div>
     <div class="field-row" style="margin-top:14px;flex-shrink:0;">
       <label>Trade Type</label>
       <select id="confluenceTradeType" onchange="onConfluenceTradeTypeChange()"></select>
@@ -1397,16 +1409,16 @@
 
 <div class="modal-overlay" id="tradeNoteModal" onclick="if(event.target===this) closeTradeNoteModal()">
   <div class="modal-box" style="position:relative;max-width:560px;width:92vw;max-height:85vh;display:flex;flex-direction:column;overflow-y:auto;">
-    <button class="modal-close" onclick="closeTradeNoteModal()">âœ•</button>
+    <button class="modal-close" onclick="closeTradeNoteModal()">✕</button>
     <h3 id="tradeNoteModalTitle">Notes</h3>
-    <div class="modal-sub">Quick timestamped notes on this trade â€” no need to open Edit.</div>
+    <div class="modal-sub">Quick timestamped notes on this trade — no need to open Edit.</div>
     <div class="field-row" style="margin-top:14px;flex-shrink:0;">
       <label>Log</label>
       <div id="tradeNoteLog" style="min-height:100px;max-height:30vh;overflow-y:auto;background:var(--surface-2);border:1px solid var(--rule);border-radius:6px;padding:12px 14px;"></div>
     </div>
     <div class="field-row" style="flex-shrink:0;">
       <label>New Note</label>
-      <textarea id="tradeNoteNewEntry" placeholder="Type a quick noteâ€¦" style="width:100%;min-height:80px;padding:10px 12px;background:var(--surface-2);border:1px solid var(--rule);border-radius:6px;color:var(--ink);font-size:13px;font-family:var(--font-ui);resize:vertical;"></textarea>
+      <textarea id="tradeNoteNewEntry" placeholder="Type a quick note…" style="width:100%;min-height:80px;padding:10px 12px;background:var(--surface-2);border:1px solid var(--rule);border-radius:6px;color:var(--ink);font-size:13px;font-family:var(--font-ui);resize:vertical;"></textarea>
     </div>
     <div id="tradeNoteError" class="auth-error"></div>
     <button class="ai-btn" style="margin-top:6px;width:100%;flex-shrink:0;" onclick="saveTradeNote()">Add Note</button>
@@ -1415,7 +1427,7 @@
 
 <div class="modal-overlay" id="accountModal" onclick="if(event.target===this) closeAccountModal()">
   <div class="modal-box" style="position:relative;">
-    <button class="modal-close" onclick="closeAccountModal()">âœ•</button>
+    <button class="modal-close" onclick="closeAccountModal()">✕</button>
     <h3 id="accountModalTitle">+ Add Account</h3>
     <div class="field-row" style="margin-top:14px;">
       <label>Current Balance ($)</label>
@@ -1460,7 +1472,7 @@
           <label>Challenge Type</label>
           <select id="accChallengeType" onchange="applyAccountPreset()"></select>
         </div>
-        <div class="sub" id="accPresetHint" style="font-size:11px;color:var(--muted);margin:-4px 0 12px;display:none;">Auto-fills everything below from Upscale Trade's official numbers â€” still yours to edit.</div>
+        <div class="sub" id="accPresetHint" style="font-size:11px;color:var(--muted);margin:-4px 0 12px;display:none;">Auto-fills everything below from Upscale Trade's official numbers — still yours to edit.</div>
 
         <div class="field-row" id="accSizePresetRow" style="display:none;">
           <label>Account Size ($)</label>
@@ -1480,7 +1492,7 @@
       <div id="accPropFirmFields2">
         <!-- Phase / Phase Start Date / Phase Start Balance are fully automatic
              now (Phase auto-advances, the other two default to Start Date /
-             Current Balance) â€” no visible controls, just a hidden Phase value
+             Current Balance) — no visible controls, just a hidden Phase value
              so the rule summary below knows which phase's target % to show. -->
         <input type="hidden" id="accPhase" value="Evaluation Phase 1">
 
@@ -1492,7 +1504,7 @@
             <option value="Failed">Failed</option>
           </select>
         </div>
-        <div class="sub" style="font-size:11px;color:var(--muted);margin:-4px 0 12px;">Status normally updates on its own â€” Failed the moment a rule is breached, Passed once Funded is reached. Only change this by hand to correct a mistake.</div>
+        <div class="sub" style="font-size:11px;color:var(--muted);margin:-4px 0 12px;">Status normally updates on its own — Failed the moment a rule is breached, Passed once Funded is reached. Only change this by hand to correct a mistake.</div>
 
         <div id="accPresetSummary" style="display:none;background:var(--surface-2);border:1px solid var(--rule);border-radius:8px;padding:12px 14px;margin-bottom:14px;font-size:12.5px;color:var(--ink);line-height:1.9;"></div>
 
@@ -1541,7 +1553,7 @@
             <option value="Other">Other</option>
           </select>
         </div>
-        <div class="sub" style="font-size:11px;color:var(--muted);margin:-4px 0 12px;">Auto-import of trades via API isn't wired up yet â€” for now, add this account for tracking and keep logging trades in your Journal as usual.</div>
+        <div class="sub" style="font-size:11px;color:var(--muted);margin:-4px 0 12px;">Auto-import of trades via API isn't wired up yet — for now, add this account for tracking and keep logging trades in your Journal as usual.</div>
       </div>
     </div>
 
@@ -1555,13 +1567,13 @@
 
 <div class="modal-overlay" id="accountDetailModal" onclick="if(event.target===this) closeAccountDetail()">
   <div class="modal-box" style="max-width:640px;position:relative;">
-    <button class="modal-close" onclick="closeAccountDetail()">âœ•</button>
+    <button class="modal-close" onclick="closeAccountDetail()">✕</button>
     <div class="acc-detail-header">
       <div>
         <h3 id="accDetailName" style="margin:0;">Account</h3>
         <div class="sub" id="accDetailSub" style="margin:2px 0 0;"></div>
       </div>
-      <div class="acc-detail-badge" id="accDetailBadge">â¬¡</div>
+      <div class="acc-detail-badge" id="accDetailBadge">⬡</div>
     </div>
 
     <div class="acc-stat-box">
@@ -1573,13 +1585,13 @@
     <div class="acc-stat-grid-2">
       <div class="acc-stat-box">
         <div class="acc-stat-label">Trade Balance</div>
-        <div class="acc-stat-value" id="accDetailBalance">â€”</div>
+        <div class="acc-stat-value" id="accDetailBalance">—</div>
         <div class="account-progress-bar" style="margin-top:8px;"><div class="account-progress-fill" id="accDetailBalanceFill" style="width:0%;"></div></div>
         <div class="acc-stat-range" id="accDetailBalanceRange"></div>
       </div>
       <div class="acc-stat-box">
         <div class="acc-stat-label">Daily Drawdown</div>
-        <div class="acc-stat-value" id="accDetailDailyLoss">â€”</div>
+        <div class="acc-stat-value" id="accDetailDailyLoss">—</div>
         <div class="acc-stat-range" id="accDetailDailyRange"></div>
       </div>
     </div>
@@ -1587,11 +1599,11 @@
     <div class="acc-stat-grid-2">
       <div class="acc-stat-box">
         <div class="acc-stat-label">Profitable Trading Days</div>
-        <div class="acc-stat-value" id="accDetailProfitDays">â€”</div>
+        <div class="acc-stat-value" id="accDetailProfitDays">—</div>
       </div>
       <div class="acc-stat-box">
         <div class="acc-stat-label">Daily Profit</div>
-        <div class="acc-stat-value" id="accDetailDailyProfit">â€”</div>
+        <div class="acc-stat-value" id="accDetailDailyProfit">—</div>
         <div class="acc-stat-range" id="accDetailDailyProfitCountdown"></div>
       </div>
     </div>
@@ -1601,7 +1613,7 @@
         <div class="acc-stat-label">Total Earn</div>
         <div class="acc-stat-pct" id="accDetailEarnPct"></div>
       </div>
-      <div class="acc-stat-value" id="accDetailEarn">â€”</div>
+      <div class="acc-stat-value" id="accDetailEarn">—</div>
       <div class="chart-fill" style="height:160px;margin-top:8px;"><canvas id="accDetailChart"></canvas></div>
     </div>
   </div>
@@ -1609,11 +1621,11 @@
 
 <div class="modal-overlay" id="econEventModal" onclick="if(event.target===this) closeEconEventModal()">
   <div class="modal-box" style="position:relative;">
-    <button class="modal-close" onclick="closeEconEventModal()">âœ•</button>
-    <h3 id="econEventTitle" style="margin:0 36px 8px 0;">â€”</h3>
+    <button class="modal-close" onclick="closeEconEventModal()">✕</button>
+    <h3 id="econEventTitle" style="margin:0 36px 8px 0;">—</h3>
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;">
-      <span class="pill" id="econEventImpact">â€”</span>
-      <span style="font-size:11px;color:var(--muted);" id="econEventDate">â€”</span>
+      <span class="pill" id="econEventImpact">—</span>
+      <span style="font-size:11px;color:var(--muted);" id="econEventDate">—</span>
     </div>
     <div class="acc-stat-grid" id="econEventValues" style="margin-bottom:16px;"></div>
 
@@ -1629,8 +1641,8 @@
 
     <div style="display:flex;justify-content:space-between;align-items:center;margin-top:18px;padding-top:14px;border-top:1px solid var(--rule);">
       <div style="display:flex;gap:8px;">
-        <button class="drawer-secondary-btn" id="econEventPrevBtn" onclick="navigateEconEvent(-1)">â€¹ Previous</button>
-        <button class="drawer-secondary-btn" id="econEventNextBtn" onclick="navigateEconEvent(1)">Next â€º</button>
+        <button class="drawer-secondary-btn" id="econEventPrevBtn" onclick="navigateEconEvent(-1)">‹ Previous</button>
+        <button class="drawer-secondary-btn" id="econEventNextBtn" onclick="navigateEconEvent(1)">Next ›</button>
       </div>
       <button class="drawer-secondary-btn" id="econEventLangBtn" style="display:none;padding:6px 12px;font-size:12px;" onclick="toggleEconEventLang()">Translate</button>
     </div>
@@ -1639,11 +1651,11 @@
 
 <div class="modal-overlay" id="noteModal" onclick="if(event.target===this) closeNoteModal()">
   <div class="modal-box" style="position:relative;">
-    <button class="modal-close" onclick="closeNoteModal()">âœ•</button>
+    <button class="modal-close" onclick="closeNoteModal()">✕</button>
     <h3 id="noteModalTitle">+ New Note</h3>
     <div class="field-row" style="margin-top:14px;">
       <label>Title</label>
-      <input id="noteTitleInput" placeholder="Note titleâ€¦">
+      <input id="noteTitleInput" placeholder="Note title…">
     </div>
     <div class="field-row">
       <label>Tag</label>
@@ -1658,7 +1670,7 @@
     </div>
     <div class="field-row">
       <label>Body</label>
-      <textarea id="noteBodyInput" placeholder="Write your noteâ€¦" style="min-height:220px;"></textarea>
+      <textarea id="noteBodyInput" placeholder="Write your note…" style="min-height:220px;"></textarea>
     </div>
     <div id="noteModalError" class="auth-error"></div>
     <button class="ai-btn" id="noteSaveBtn" style="width:100%;" onclick="saveNote()">Save</button>
@@ -1668,7 +1680,7 @@
 
 <div class="modal-overlay" id="achievementModal" onclick="if(event.target===this) closeAchievementModal()">
   <div class="modal-box" style="position:relative;">
-    <button class="modal-close" onclick="closeAchievementModal()">âœ•</button>
+    <button class="modal-close" onclick="closeAchievementModal()">✕</button>
     <h3 id="achModalTitle">+ Add Achievement</h3>
     <div class="field-row" style="margin-top:14px;">
       <label>Category</label>
@@ -1683,11 +1695,11 @@
     </div>
     <div class="field-row">
       <label>Subject</label>
-      <input id="achSubject" placeholder="e.g. 1st Place â€” Weekly Scalping Tournament">
+      <input id="achSubject" placeholder="e.g. 1st Place — Weekly Scalping Tournament">
     </div>
     <div class="field-row">
       <label>Body</label>
-      <textarea id="achBody" placeholder="Notes / detailsâ€¦"></textarea>
+      <textarea id="achBody" placeholder="Notes / details…"></textarea>
     </div>
     <div class="field-row">
       <label>Image</label>
@@ -1701,9 +1713,9 @@
 
 <div class="modal-overlay" id="challengeDetailModal" onclick="if(event.target===this) closeChallengeDetail()">
   <div class="modal-box" style="position:relative;">
-    <button class="modal-close" onclick="closeChallengeDetail()">âœ•</button>
+    <button class="modal-close" onclick="closeChallengeDetail()">✕</button>
     <div class="challenge-badge" id="challengeDetailBadge" style="width:64px;height:64px;margin-bottom:16px;"></div>
-    <h3 id="challengeDetailTitle">â€”</h3>
+    <h3 id="challengeDetailTitle">—</h3>
     <div class="modal-sub" id="challengeDetailPoints"></div>
     <div style="margin-top:16px;font-size:13px;color:var(--ink);line-height:1.6;" id="challengeDetailHowTo"></div>
     <div id="challengeDetailProgressWrap" style="margin-top:18px;"></div>
@@ -1713,13 +1725,13 @@
 
 <div class="modal-overlay" id="achievementDetailModal" onclick="if(event.target===this) closeAchievementDetail()">
   <div class="modal-box" style="position:relative;max-width:min(90vw,640px);">
-    <button class="modal-close" onclick="closeAchievementDetail()">âœ•</button>
+    <button class="modal-close" onclick="closeAchievementDetail()">✕</button>
     <img id="achDetailImg" style="width:100%;height:auto;max-height:360px;object-fit:cover;border-radius:8px;display:block;margin:14px 0;cursor:zoom-in;" onclick="openLightbox(this.src)">
-    <h3 id="achDetailSubject" style="margin-bottom:8px;">â€”</h3>
+    <h3 id="achDetailSubject" style="margin-bottom:8px;">—</h3>
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
-      <span class="pill" id="achDetailCategory">â€”</span>
-      <span class="pill pill-orange" id="achDetailAmount" style="display:none;">â€”</span>
-      <span style="font-size:11px;color:var(--muted);" id="achDetailDate">â€”</span>
+      <span class="pill" id="achDetailCategory">—</span>
+      <span class="pill pill-orange" id="achDetailAmount" style="display:none;">—</span>
+      <span style="font-size:11px;color:var(--muted);" id="achDetailDate">—</span>
     </div>
     <div style="font-size:13px;color:var(--ink);white-space:pre-wrap;margin-bottom:20px;" id="achDetailBody"></div>
     <div style="display:flex;gap:10px;">
@@ -1731,7 +1743,7 @@
 
 <div class="modal-overlay" id="customAlertModal" onclick="if(event.target===this) resolveCustomAlert()">
   <div class="modal-box" style="position:relative;max-width:380px;">
-    <button class="modal-close" onclick="resolveCustomAlert()">âœ•</button>
+    <button class="modal-close" onclick="resolveCustomAlert()">✕</button>
     <h3 id="customAlertTitle" style="margin:0 24px 10px 0;">Heads up</h3>
     <p id="customAlertMessage" style="font-size:13.5px;color:var(--muted);line-height:1.6;margin:0 0 20px;white-space:pre-wrap;"></p>
     <button class="ai-btn" style="width:100%;" onclick="resolveCustomAlert()">OK</button>
@@ -1740,7 +1752,7 @@
 
 <div class="modal-overlay" id="notifDetailModal" onclick="if(event.target===this) closeNotifDetailModal()">
   <div class="modal-box" style="position:relative;max-width:400px;">
-    <button class="modal-close" onclick="closeNotifDetailModal()">âœ•</button>
+    <button class="modal-close" onclick="closeNotifDetailModal()">✕</button>
     <h3 id="notifDetailTitle" style="margin:0 24px 10px 0;"></h3>
     <div id="notifDetailBody" style="font-size:13.5px;color:var(--muted);line-height:1.6;margin:0 0 20px;"></div>
     <button class="ai-btn" style="width:100%;" id="notifDetailOkBtn" onclick="runNotifDetailOk()">OK</button>
@@ -1749,8 +1761,8 @@
 
 <div class="modal-overlay" id="moodModal" onclick="if(event.target===this) closeMoodModal()">
   <div class="modal-box" style="position:relative;">
-    <button class="modal-close" onclick="closeMoodModal()">âœ•</button>
-    <h3 id="moodModalTitle" style="padding-right:24px;">â€”</h3>
+    <button class="modal-close" onclick="closeMoodModal()">✕</button>
+    <h3 id="moodModalTitle" style="padding-right:24px;">—</h3>
 
     <div id="moodViewWrap" style="display:none;">
       <div class="mood-view-badge" id="moodViewBadge">
@@ -1780,7 +1792,7 @@
 
 <div class="modal-overlay" id="customConfirmModal" onclick="if(event.target===this) resolveCustomConfirm(false)">
   <div class="modal-box" style="position:relative;max-width:380px;">
-    <button class="modal-close" onclick="resolveCustomConfirm(false)">âœ•</button>
+    <button class="modal-close" onclick="resolveCustomConfirm(false)">✕</button>
     <h3 id="customConfirmTitle" style="margin:0 24px 10px 0;">Are you sure?</h3>
     <p id="customConfirmMessage" style="font-size:13.5px;color:var(--muted);line-height:1.6;margin:0 0 20px;"></p>
     <div style="display:flex;gap:10px;">
@@ -1792,9 +1804,9 @@
 
 <div class="modal-overlay" id="featureAccessModal" onclick="if(event.target===this) closeFeatureAccessModal()">
   <div class="modal-box" style="position:relative;max-width:400px;">
-    <button class="modal-close" onclick="closeFeatureAccessModal()">âœ•</button>
+    <button class="modal-close" onclick="closeFeatureAccessModal()">✕</button>
     <h3 style="margin:0 24px 10px 0;">Feature Access</h3>
-    <p style="font-size:13.5px;color:var(--muted);line-height:1.6;margin:0 0 16px;">Unchecked features stay visible in their sidebar but locked â€” clicking one shows a permission message instead of opening it.</p>
+    <p style="font-size:13.5px;color:var(--muted);line-height:1.6;margin:0 0 16px;">Unchecked features stay visible in their sidebar but locked — clicking one shows a permission message instead of opening it.</p>
     <div id="featureAccessList" class="checklist-box" style="max-height:none;"></div>
     <button class="ai-btn" style="margin-top:14px;width:100%;" onclick="saveFeatureAccess()">Save</button>
   </div>
@@ -1802,7 +1814,7 @@
 
 <div class="modal-overlay" id="logoutConfirmModal" onclick="if(event.target===this) closeLogoutConfirm()">
   <div class="modal-box" style="position:relative;max-width:380px;">
-    <button class="modal-close" onclick="closeLogoutConfirm()">âœ•</button>
+    <button class="modal-close" onclick="closeLogoutConfirm()">✕</button>
     <h3 style="margin:0 24px 10px 0;">Log out?</h3>
     <p style="font-size:13.5px;color:var(--muted);line-height:1.6;margin:0 0 20px;">You'll need to log back in to see your trades, accounts, and everything else.</p>
     <div style="display:flex;gap:10px;">
@@ -1814,7 +1826,7 @@
 
 <div class="modal-overlay" id="lightboxModal" onclick="if(event.target===this) closeLightbox()">
   <div class="modal-box" style="position:relative;max-width:min(90vw,900px);">
-    <button class="modal-close" onclick="closeLightbox()">âœ•</button>
+    <button class="modal-close" onclick="closeLightbox()">✕</button>
     <img id="lightboxImg" style="max-width:100%;max-height:85vh;width:auto;height:auto;border-radius:8px;display:block;margin:0 auto;">
   </div>
 </div>
@@ -1823,7 +1835,7 @@
 <div class="drawer" id="drawer">
   <div class="drawer-head">
     <h3 id="drawerTitle">Trade</h3>
-    <button class="modal-close" style="position:static;" onclick="closeDrawer()">âœ•</button>
+    <button class="modal-close" style="position:static;" onclick="closeDrawer()">✕</button>
   </div>
   <div id="drawerBody"></div>
   <div class="drawer-actions">
@@ -1840,6 +1852,6 @@
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=1"></script>
-<script src="js/dashboard.js?v=228"></script>
+<script src="js/dashboard.js?v=230"></script>
 </body>
 </html>
