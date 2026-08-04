@@ -546,7 +546,7 @@
       <div class="empty-state" id="pendingSetupsEmptyState" style="display:none;">No pending setups yet — use "Trade This Setup" above to save one.</div>
       <div style="overflow-x:auto;">
         <table class="breakdown poscalc-table" id="pendingSetupsTable" style="display:none;">
-          <thead><tr><th>Symbol</th><th>Date</th><th>Account</th><th>Leverage</th><th>Margin</th><th>Stop Loss %</th><th>Take Profit %</th><th>Profit</th><th>Loss</th><th>Risk Amount</th><th>Position Size</th><th>Update</th><th>Status</th><th></th></tr></thead>
+          <thead><tr><th>Symbol</th><th>Date</th><th>Account</th><th>Leverage</th><th>Risk Amount ($)</th><th>Quantity</th><th>Margin</th><th>Entry Price</th><th>TP Price</th><th>SL Price</th><th>Update</th><th>Status</th><th></th></tr></thead>
           <tbody id="pendingSetupsBody"></tbody>
         </table>
       </div>
@@ -557,7 +557,7 @@
       <div class="empty-state" id="journaledSetupsEmptyState" style="display:none;">No journaled setups yet — click "Journal" on a pending setup once its trade is logged.</div>
       <div style="overflow-x:auto;">
         <table class="breakdown poscalc-table" id="journaledSetupsTable" style="display:none;">
-          <thead><tr><th>Symbol</th><th>Date</th><th>Account</th><th>Leverage</th><th>Margin</th><th>Stop Loss %</th><th>Take Profit %</th><th>Profit</th><th>Loss</th><th>Risk Amount</th><th>Position Size</th><th>Update</th><th>Status</th><th></th></tr></thead>
+          <thead><tr><th>Symbol</th><th>Date</th><th>Account</th><th>Leverage</th><th>Risk Amount ($)</th><th>Quantity</th><th>Margin</th><th>Entry Price</th><th>TP Price</th><th>SL Price</th><th>Update</th><th>Status</th><th></th></tr></thead>
           <tbody id="journaledSetupsBody"></tbody>
         </table>
       </div>
@@ -1852,6 +1852,6 @@
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=1"></script>
-<script src="js/dashboard.js?v=230"></script>
+<script src="js/dashboard.js?v=231"></script>
 </body>
 </html>

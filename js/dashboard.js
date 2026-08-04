@@ -10905,6 +10905,10 @@ async function tradeThisSetup(accountId){
     take_profit_pct: tpPct,
     risk_amount: riskAmount,
     position_size: c.qty * entry,
+    entry_price: entry,
+    tp_price: Number.isFinite(tp) ? tp : null,
+    sl_price: sl,
+    quantity: c.qty,
     status: 'Pending'
   };
 
@@ -11283,11 +11287,10 @@ async function saveConfluenceModal(){
 
 function setupRowHTML(s){
   const margin = Number(s.margin);
-  const slPct = s.stop_loss_pct != null ? Number(s.stop_loss_pct) : null;
-  const tpPct = s.take_profit_pct != null ? Number(s.take_profit_pct) : null;
   const riskAmount = Number(s.risk_amount);
-  const profit = (tpPct != null && slPct) ? riskAmount * (tpPct / slPct) : null;
-  const loss = riskAmount;
+  // Prices/quantity only exist on setups saved after the calculator became
+  // price-driven — older rows (percentage era) simply show "—" for them.
+  const fmtPrice = v => v != null ? Number(v).toLocaleString(undefined,{maximumFractionDigits:8}) : '—';
   const updateCount = Array.isArray(s.notes_log) ? s.notes_log.length : 0;
   const status = s.status || 'Pending';
   const statusPillClass = setupStatusPillClass(status);
@@ -11297,13 +11300,12 @@ function setupRowHTML(s){
     <td>${new Date(s.created_at).toLocaleDateString(undefined,{day:'numeric',month:'short',year:'numeric'})}</td>
     <td>${escapeHtml(s.account_name || '—')}</td>
     <td>${s.leverage}x</td>
-    <td>${margin.toFixed(2)}</td>
-    <td>${slPct != null ? slPct.toFixed(4)+'%' : '—'}</td>
-    <td>${tpPct != null ? tpPct.toFixed(4)+'%' : '—'}</td>
-    <td>${profit != null ? '$'+profit.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</td>
-    <td>${loss != null ? '$'+loss.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</td>
     <td>$${riskAmount.toLocaleString(undefined,{maximumFractionDigits:2})}</td>
-    <td>$${Number(s.position_size).toLocaleString(undefined,{maximumFractionDigits:2})}</td>
+    <td>${s.quantity != null ? Number(s.quantity).toFixed(4) : '—'}</td>
+    <td>$${margin.toLocaleString(undefined,{maximumFractionDigits:2})}</td>
+    <td style="color:var(--accent);">${fmtPrice(s.entry_price)}</td>
+    <td style="color:var(--win);">${fmtPrice(s.tp_price)}</td>
+    <td style="color:var(--loss);">${fmtPrice(s.sl_price)}</td>
     <td>${updateCount}</td>
     <td><span class="pill ${statusPillClass}">${escapeHtml(status)}</span></td>
     <td style="white-space:nowrap;">
