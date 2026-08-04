@@ -869,6 +869,8 @@ function normalizeTrade(r){
     rr: r.rr != null ? parseFloat(r.rr) : null,
     entry_price: r.entry_price != null ? parseFloat(r.entry_price) : null,
     close_price: r.close_price != null ? parseFloat(r.close_price) : null,
+    tp_price: r.tp_price != null ? parseFloat(r.tp_price) : null,
+    sl_price: r.sl_price != null ? parseFloat(r.sl_price) : null,
     position_size: r.position_size != null ? parseFloat(r.position_size) : null,
     trade_setup: r.trade_setup || "Unspecified",
     pattern_type: r.pattern_type || "Unspecified",
@@ -2232,6 +2234,8 @@ const ALL_DRAWER_FIELDS = [
   {key:'rr', label:'RR', widget:'number', editable:false},
   {key:'entry_price', label:'Entry Price', widget:'number', editable:true},
   {key:'close_price', label:'Close Price', widget:'number', editable:true},
+  {key:'tp_price', label:'TP Price', widget:'number', editable:true},
+  {key:'sl_price', label:'SL Price', widget:'number', editable:true},
   {key:'position_size', label:'Position Size', widget:'number', editable:true},
   {key:'win_loss', label:'Win/Loss', widget:'select', editable:true, options:FIELD_OPTIONS.win_loss},
   {key:'trade_type', label:'Trade Type', widget:'select', editable:true, options:FIELD_OPTIONS.trade_type},
@@ -2328,6 +2332,8 @@ const ALL_JOURNAL_COLUMNS = [
   {key:'rr', label:'RR'},
   {key:'entry_price', label:'Entry Price'},
   {key:'close_price', label:'Close Price'},
+  {key:'tp_price', label:'TP Price'},
+  {key:'sl_price', label:'SL Price'},
   {key:'position_size', label:'Position Size'},
   {key:'rules_followed', label:'Rules Followed?'},
   {key:'unfollowed_rules', label:'Unfollowed Rules'},
@@ -6043,7 +6049,7 @@ function _journalCellValue(row, key){
     const num = parseFloat(v);
     return isNaN(num) ? v : '$' + Math.abs(num).toFixed(2);
   }
-  if(['pnl_percent','rr','entry_price','close_price'].includes(key)){
+  if(['pnl_percent','rr','entry_price','close_price','tp_price','sl_price'].includes(key)){
     const num = parseFloat(v);
     if(isNaN(num)) return v;
     if(key === 'pnl_percent') return num.toFixed(2) + '%';
@@ -7053,7 +7059,7 @@ function openTradeViewModal(positionId){
 // vs the rest).
 const JOURNAL_FIELD_GROUPS = [
   { title: 'Overview', keys: ['symbol','open_date','close_date','duration','objective'] },
-  { title: 'Result', keys: ['win_loss','profit_loss','pnl_percent','rr','fee','entry_price','close_price','position_size'] },
+  { title: 'Result', keys: ['win_loss','profit_loss','pnl_percent','rr','fee','entry_price','close_price','tp_price','sl_price','position_size'] },
   { title: 'Account', keys: ['account','account_type','session','day_of_week'] },
   { title: 'Setup & Strategy', keys: ['trade_type','trade_setup','pattern_type','execution_tf','aof_phase'] },
   { title: 'Discipline', keys: ['rules_followed','unfollowed_rules','exit_type','post_be_result'] },
@@ -11689,7 +11695,13 @@ function journalFromSetup(id){
     notes: notesText || undefined,
     rr: rr,
     trade_type: s.trade_type || undefined,
-    pattern_type: s.pattern_type || undefined
+    pattern_type: s.pattern_type || undefined,
+    // The PLANNED levels from the calculator — entry_price is left to the
+    // pasted card (the real fill can differ from the planned entry), but
+    // TP/SL are the plan by definition and have no "actual" counterpart
+    // beyond close_price.
+    tp_price: s.tp_price != null ? Number(s.tp_price) : undefined,
+    sl_price: s.sl_price != null ? Number(s.sl_price) : undefined
   };
   pendingJournalSetupId = id;
   openEasyAddModal();
