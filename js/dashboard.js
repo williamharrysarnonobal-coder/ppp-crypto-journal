@@ -2020,9 +2020,20 @@ function renderConfluenceEdge(){
   `;
 }
 
-// Was moving the stop to breakeven worth it? Counts how BE trades resolved
-// and estimates the losses those BE stops prevented (based on this view's
-// own average losing trade).
+// What a BE stop actually saved on one trade: the exact dollars the ORIGINAL
+// stop would have cost, |entry - sl| x quantity. Exact whenever the trade
+// carries all three (setups journaled after TP/SL prices were added do);
+// null otherwise, so the caller can fall back to an average and say so.
+function _beAvoidedLoss(t){
+  const entry = Number(t.entry_price), sl = Number(t.sl_price), qty = Number(t.position_size);
+  if(!Number.isFinite(entry) || !Number.isFinite(sl) || !Number.isFinite(qty)) return null;
+  if(!qty || entry === sl) return null;
+  return Math.abs(entry - sl) * qty;
+}
+
+// Was moving the stop to breakeven worth it? Pairs what the BE stops really
+// cost you (winners cut short) against what they really saved (full losses
+// avoided) — both in real dollars wherever the trade has entry/SL/quantity.
 function renderBEProtection(){
   const body = document.getElementById('beProtectionBody');
   if(!body) return;
@@ -2035,9 +2046,31 @@ function renderBEProtection(){
     return;
   }
 
+  // Real dollars captured on trades that survived BE and ran to TP.
+  const capturedTotal = tpAfter.reduce((s,t) => s + netPnl(t), 0);
+
+  // Exact avoided loss where the trade has the data; average-loss estimate
+  // only for the ones that don't (older trades, manual entries).
+  const exact = slAfter.map(t => ({ t, val: _beAvoidedLoss(t) }));
+  const exactVals = exact.filter(x => x.val !== null);
+  const missing = exact.length - exactVals.length;
+
   const losers = FILTERED.filter(t => t.win_loss.toLowerCase() === 'loss');
   const avgLoss = losers.length ? Math.abs(losers.reduce((s,t) => s + netPnl(t), 0) / losers.length) : null;
-  const protectedEst = avgLoss !== null ? slAfter.length * avgLoss : null;
+
+  const exactSum = exactVals.reduce((s,x) => s + x.val, 0);
+  const estPart = missing > 0 && avgLoss !== null ? missing * avgLoss : 0;
+  const canShowProtected = exactVals.length > 0 || (missing > 0 && avgLoss !== null);
+  const protectedTotal = exactSum + estPart;
+  const isApprox = missing > 0;
+
+  const protectedNote = !canShowProtected
+    ? 'Needs entry, SL and quantity on the trade (or one losing trade) to work out.'
+    : missing === 0
+      ? `Exact — the full loss your original stop would have taken on ${exactVals.length} trade${exactVals.length===1?'':'s'}.`
+      : exactVals.length === 0
+        ? `Estimated from your avg losing trade ($${avgLoss.toLocaleString(undefined,{maximumFractionDigits:0})}) — none of these trades have entry/SL/quantity yet.`
+        : `${exactVals.length} exact, ${missing} estimated from your avg losing trade ($${avgLoss.toLocaleString(undefined,{maximumFractionDigits:0})}).`;
 
   const insights = [];
   const total = tpAfter.length + slAfter.length;
@@ -2048,13 +2081,19 @@ function renderBEProtection(){
   }else{
     insights.push(`Only ${total} trade${total===1?'':'s'} with Post-BE data so far — this verdict gets reliable around 10+.`);
   }
+  if(canShowProtected && capturedTotal > 0){
+    insights.push(`Moving to breakeven has been net positive: ${fmtMoney(capturedTotal)} captured on winners that survived it, plus $${protectedTotal.toLocaleString(undefined,{maximumFractionDigits:0})} of losses avoided.`);
+  }
+  if(missing > 0){
+    insights.push(`${missing} of your BE-stopped trade${missing===1?' is':'s are'} missing entry/SL/quantity, so part of the protected figure is still an estimate. Trades journaled from a Pending Setup fill these in automatically.`);
+  }
 
   body.innerHTML = `
     <div class="be-stat-grid">
       <div class="be-stat">
         <div class="be-stat-label">TP After BE</div>
         <div class="be-stat-value" style="color:var(--win);">${tpAfter.length}</div>
-        <div class="be-stat-note">Kept running to TP after the stop moved to breakeven.</div>
+        <div class="be-stat-note">Ran on to TP after the stop moved to breakeven${capturedTotal !== 0 ? ` — <strong style="color:var(--win);">${fmtMoney(capturedTotal)}</strong> captured.` : '.'}</div>
       </div>
       <div class="be-stat">
         <div class="be-stat-label">SL After BE</div>
@@ -2062,9 +2101,9 @@ function renderBEProtection(){
         <div class="be-stat-note">Stopped out at breakeven — $0 instead of a full loss.</div>
       </div>
       <div class="be-stat">
-        <div class="be-stat-label">Est. Protected</div>
-        <div class="be-stat-value" style="color:var(--win);">${protectedEst === null ? '—' : '≈ $' + protectedEst.toLocaleString(undefined,{maximumFractionDigits:0})}</div>
-        <div class="be-stat-note">${protectedEst === null ? 'Needs at least one losing trade in view to estimate.' : `${slAfter.length} BE stop${slAfter.length===1?'':'s'} × your avg losing trade ($${avgLoss.toLocaleString(undefined,{maximumFractionDigits:0})}).`}</div>
+        <div class="be-stat-label">Loss Avoided</div>
+        <div class="be-stat-value" style="color:var(--win);">${!canShowProtected ? '—' : (isApprox ? '≈ ' : '') + '$' + protectedTotal.toLocaleString(undefined,{maximumFractionDigits:0})}</div>
+        <div class="be-stat-note">${protectedNote}</div>
       </div>
     </div>
     ${insights.map(i => `<div class="cfe-insight">💡 ${i}</div>`).join('')}
@@ -11690,7 +11729,10 @@ function journalFromSetup(id){
 
   pendingJournalPrefill = {
     account: s.account_name || undefined,
-    position_size: s.position_size != null ? Number(s.position_size) : undefined,
+    // The journal's position_size is a UNIT quantity (what the Upscale card's
+    // bare decimal is), while the setup's position_size is dollar notional —
+    // so carry the setup's quantity here, not its position_size.
+    position_size: s.quantity != null ? Number(s.quantity) : undefined,
     symbol: s.symbol || undefined,
     notes: notesText || undefined,
     rr: rr,
