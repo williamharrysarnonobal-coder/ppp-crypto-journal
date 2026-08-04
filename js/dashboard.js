@@ -10855,6 +10855,22 @@ function copyIconSVG(){
   return `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`;
 }
 
+// Icon-button copy with the ✓ swap feedback — used by the Entry/TP/SL price
+// cells in Pending/Journaled Setups (rows are clickable, so callers must
+// stopPropagation before this runs).
+async function copyPriceToClipboard(value, btn){
+  try{
+    await navigator.clipboard.writeText(value);
+  }catch(e){
+    console.error("Couldn't copy to clipboard:", e);
+    return;
+  }
+  const original = btn.innerHTML;
+  btn.classList.add('copied');
+  btn.innerHTML = '✓';
+  setTimeout(() => { btn.classList.remove('copied'); btn.innerHTML = original; }, 1200);
+}
+
 async function copyTradeSummaryToClipboard(btn){
   try{
     await navigator.clipboard.writeText(btn.dataset.summary || '');
@@ -11290,7 +11306,11 @@ function setupRowHTML(s){
   const riskAmount = Number(s.risk_amount);
   // Prices/quantity only exist on setups saved after the calculator became
   // price-driven — older rows (percentage era) simply show "—" for them.
-  const fmtPrice = v => v != null ? Number(v).toLocaleString(undefined,{maximumFractionDigits:8}) : '—';
+  // Copy sends the RAW number (no thousands separators) so it pastes
+  // cleanly into an exchange's order form.
+  const priceCell = (v, color) => v == null ? '—' : `
+    <span style="color:${color};">${Number(v).toLocaleString(undefined,{maximumFractionDigits:8})}</span>
+    <button class="poscalc-copy-btn" title="Copy price" onclick="event.stopPropagation(); copyPriceToClipboard('${Number(v)}', this)">${copyIconSVG()}</button>`;
   const updateCount = Array.isArray(s.notes_log) ? s.notes_log.length : 0;
   const status = s.status || 'Pending';
   const statusPillClass = setupStatusPillClass(status);
@@ -11303,9 +11323,9 @@ function setupRowHTML(s){
     <td>$${riskAmount.toLocaleString(undefined,{maximumFractionDigits:2})}</td>
     <td>${s.quantity != null ? Number(s.quantity).toFixed(4) : '—'}</td>
     <td>$${margin.toLocaleString(undefined,{maximumFractionDigits:2})}</td>
-    <td style="color:var(--accent);">${fmtPrice(s.entry_price)}</td>
-    <td style="color:var(--win);">${fmtPrice(s.tp_price)}</td>
-    <td style="color:var(--loss);">${fmtPrice(s.sl_price)}</td>
+    <td style="white-space:nowrap;">${priceCell(s.entry_price, 'var(--accent)')}</td>
+    <td style="white-space:nowrap;">${priceCell(s.tp_price, 'var(--win)')}</td>
+    <td style="white-space:nowrap;">${priceCell(s.sl_price, 'var(--loss)')}</td>
     <td>${updateCount}</td>
     <td><span class="pill ${statusPillClass}">${escapeHtml(status)}</span></td>
     <td style="white-space:nowrap;">
