@@ -2033,9 +2033,13 @@ function renderConfluenceEdge(){
 // Suspect rows are shown but excluded from the headline total, so one bad
 // row can't quietly inflate the number.
 function _beAvoidedLoss(t){
+  // Check for absent values BEFORE Number() — Number(null) is 0, and 0 is
+  // finite, so a trade with no SL price would otherwise be read as a stop
+  // at $0 (a 100% stop distance) and produce a huge fake "loss avoided".
+  if(t.entry_price == null || t.sl_price == null || t.position_size == null) return null;
   const entry = Number(t.entry_price), sl = Number(t.sl_price), qty = Number(t.position_size);
   if(!Number.isFinite(entry) || !Number.isFinite(sl) || !Number.isFinite(qty)) return null;
-  if(!qty || !entry || entry === sl) return null;
+  if(!qty || !entry || !sl || entry === sl) return null;
   const stopPct = Math.abs(entry - sl) / entry * 100;
   const notional = qty * entry;
   return {
