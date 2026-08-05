@@ -2024,11 +2024,26 @@ function renderConfluenceEdge(){
 // stop would have cost, |entry - sl| x quantity. Exact whenever the trade
 // carries all three (setups journaled after TP/SL prices were added do);
 // null otherwise, so the caller can fall back to an average and say so.
+// Returns { value, notional, stopPct, suspect } or null when the trade is
+// missing any of the three inputs. "suspect" marks arithmetic that came out
+// implausible — almost always bad source data rather than a real result:
+//   - a stop more than 25% away from entry (usually a placeholder SL), or
+//   - an implied notional above $5M (position_size holding dollar notional
+//     instead of a unit quantity, which older setup-journaled rows can).
+// Suspect rows are shown but excluded from the headline total, so one bad
+// row can't quietly inflate the number.
 function _beAvoidedLoss(t){
   const entry = Number(t.entry_price), sl = Number(t.sl_price), qty = Number(t.position_size);
   if(!Number.isFinite(entry) || !Number.isFinite(sl) || !Number.isFinite(qty)) return null;
-  if(!qty || entry === sl) return null;
-  return Math.abs(entry - sl) * qty;
+  if(!qty || !entry || entry === sl) return null;
+  const stopPct = Math.abs(entry - sl) / entry * 100;
+  const notional = qty * entry;
+  return {
+    value: Math.abs(entry - sl) * qty,
+    notional,
+    stopPct,
+    suspect: stopPct > 25 || notional > 5000000
+  };
 }
 
 // Was moving the stop to breakeven worth it? Pairs what the BE stops really
@@ -2049,28 +2064,40 @@ function renderBEProtection(){
   // Real dollars captured on trades that survived BE and ran to TP.
   const capturedTotal = tpAfter.reduce((s,t) => s + netPnl(t), 0);
 
-  // Exact avoided loss where the trade has the data; average-loss estimate
-  // only for the ones that don't (older trades, manual entries).
-  const exact = slAfter.map(t => ({ t, val: _beAvoidedLoss(t) }));
-  const exactVals = exact.filter(x => x.val !== null);
-  const missing = exact.length - exactVals.length;
+  // Measured only — no averages, no extrapolation. A trade contributes to
+  // Loss Avoided only if it carries real entry/SL/quantity AND those numbers
+  // come out plausible. Everything else is reported as "not counted", never
+  // filled in with a guess.
+  const rows = slAfter.map(t => ({ t, calc: _beAvoidedLoss(t) }));
+  const good = rows.filter(r => r.calc && !r.calc.suspect);
+  const suspect = rows.filter(r => r.calc && r.calc.suspect);
+  const missing = rows.filter(r => !r.calc).length;
+  const notCounted = missing + suspect.length;
 
-  const losers = FILTERED.filter(t => t.win_loss.toLowerCase() === 'loss');
-  const avgLoss = losers.length ? Math.abs(losers.reduce((s,t) => s + netPnl(t), 0) / losers.length) : null;
-
-  const exactSum = exactVals.reduce((s,x) => s + x.val, 0);
-  const estPart = missing > 0 && avgLoss !== null ? missing * avgLoss : 0;
-  const canShowProtected = exactVals.length > 0 || (missing > 0 && avgLoss !== null);
-  const protectedTotal = exactSum + estPart;
-  const isApprox = missing > 0;
+  const protectedTotal = good.reduce((s,r) => s + r.calc.value, 0);
+  const canShowProtected = good.length > 0;
 
   const protectedNote = !canShowProtected
-    ? 'Needs entry, SL and quantity on the trade (or one losing trade) to work out.'
-    : missing === 0
-      ? `Exact — the full loss your original stop would have taken on ${exactVals.length} trade${exactVals.length===1?'':'s'}.`
-      : exactVals.length === 0
-        ? `Estimated from your avg losing trade ($${avgLoss.toLocaleString(undefined,{maximumFractionDigits:0})}) — none of these trades have entry/SL/quantity yet.`
-        : `${exactVals.length} exact, ${missing} estimated from your avg losing trade ($${avgLoss.toLocaleString(undefined,{maximumFractionDigits:0})}).`;
+    ? `Not measurable yet — none of these ${slAfter.length} trade${slAfter.length===1?'':'s'} carry a usable entry, SL and quantity.`
+    : notCounted === 0
+      ? `Measured from all ${good.length} BE-stopped trade${good.length===1?'':'s'} — what your original stop would really have cost.`
+      : `Measured from ${good.length} of ${rows.length} BE-stopped trades. The other ${notCounted} ${notCounted===1?'is':'are'} not counted (see below).`;
+
+  // Per-trade working, so the headline number is never a black box.
+  const workingRows = rows.map(r => {
+    const sym = escapeHtml(r.t.symbol || '—');
+    const when = r.t.close_date ? r.t.close_date.toLocaleDateString(undefined,{day:'numeric',month:'short'}) : '—';
+    if(!r.calc) return `<tr><td>${sym}</td><td>${when}</td><td colspan="3" style="color:var(--muted);">missing entry / SL / quantity</td><td style="color:var(--muted);">not counted</td></tr>`;
+    const c = r.calc;
+    return `<tr>
+      <td>${sym}</td>
+      <td>${when}</td>
+      <td>${Number(r.t.entry_price).toLocaleString(undefined,{maximumFractionDigits:2})} → ${Number(r.t.sl_price).toLocaleString(undefined,{maximumFractionDigits:2})}</td>
+      <td>${fmtNum(c.stopPct,2)}%</td>
+      <td>${Number(r.t.position_size).toLocaleString(undefined,{maximumFractionDigits:6})}</td>
+      <td class="${c.suspect ? '' : 'pos'}" style="${c.suspect ? 'color:var(--loss);' : ''}">$${c.value.toLocaleString(undefined,{maximumFractionDigits:2})}${c.suspect ? ' ⚠' : ''}</td>
+    </tr>`;
+  }).join('');
 
   const insights = [];
   const total = tpAfter.length + slAfter.length;
@@ -2082,10 +2109,16 @@ function renderBEProtection(){
     insights.push(`Only ${total} trade${total===1?'':'s'} with Post-BE data so far — this verdict gets reliable around 10+.`);
   }
   if(canShowProtected && capturedTotal > 0){
-    insights.push(`Moving to breakeven has been net positive: ${fmtMoney(capturedTotal)} captured on winners that survived it, plus $${protectedTotal.toLocaleString(undefined,{maximumFractionDigits:0})} of losses avoided.`);
+    insights.push(`Moving to breakeven has been net positive: ${fmtMoney(capturedTotal)} captured on winners that survived it, plus $${protectedTotal.toLocaleString(undefined,{maximumFractionDigits:0})} of real losses avoided.`);
+  }
+  if(capturedTotal < 0){
+    insights.push(`Your "TP After BE" trades add up to ${fmtMoney(capturedTotal)} — negative, which shouldn't happen if they truly ran to take-profit. Check whether one of them is tagged "TP After BE" but actually closed at a loss.`);
+  }
+  if(suspect.length){
+    insights.push(`${suspect.length} BE-stopped trade${suspect.length===1?' has':'s have'} numbers that can't be right (stop more than 25% from entry, or a position size implying a multi-million-dollar notional) — flagged ⚠ below and excluded. Usually a placeholder SL, or a Position Size holding dollars instead of a unit quantity. Fix the trade and this figure corrects itself.`);
   }
   if(missing > 0){
-    insights.push(`${missing} of your BE-stopped trade${missing===1?' is':'s are'} missing entry/SL/quantity, so part of the protected figure is still an estimate. Trades journaled from a Pending Setup fill these in automatically.`);
+    insights.push(`${missing} BE-stopped trade${missing===1?' is':'s are'} missing entry/SL/quantity and ${missing===1?'is':'are'} excluded rather than guessed at. Trades journaled from a Pending Setup fill these in automatically.`);
   }
 
   body.innerHTML = `
@@ -2102,11 +2135,19 @@ function renderBEProtection(){
       </div>
       <div class="be-stat">
         <div class="be-stat-label">Loss Avoided</div>
-        <div class="be-stat-value" style="color:var(--win);">${!canShowProtected ? '—' : (isApprox ? '≈ ' : '') + '$' + protectedTotal.toLocaleString(undefined,{maximumFractionDigits:0})}</div>
+        <div class="be-stat-value" style="color:var(--win);">${!canShowProtected ? '—' : '$' + protectedTotal.toLocaleString(undefined,{maximumFractionDigits:0})}</div>
         <div class="be-stat-note">${protectedNote}</div>
       </div>
     </div>
     ${insights.map(i => `<div class="cfe-insight">💡 ${i}</div>`).join('')}
+    ${workingRows ? `
+      <div class="cfe-subhead">How that was worked out — per BE-stopped trade</div>
+      <div style="overflow-x:auto;">
+        <table class="breakdown">
+          <tr><th>Symbol</th><th>Closed</th><th>Entry → SL</th><th>Stop distance</th><th>Position size</th><th>Loss avoided</th></tr>
+          ${workingRows}
+        </table>
+      </div>` : ''}
   `;
 }
 
