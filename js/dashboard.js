@@ -2625,8 +2625,11 @@ function _psComputeRow(acc, riskAmount, entry, riskPerUnit){
     qty, minLev, margin,
     qtyText: qty != null ? qty.toFixed(4) : '—',
     qtyData: qty != null ? qty.toFixed(4) : '',
+    // Tinted per leverage level (1x green through 5x red) — the same scale
+    // used on the Pending Setups table, so a given leverage reads the same
+    // wherever it appears.
     levHtml: minLev != null
-      ? `<span class="ps-lev-badge">${minLev}x</span>`
+      ? `<span class="ps-lev-badge" style="color:${_leverageTint(minLev)};border-color:${_leverageTint(minLev)};background:color-mix(in srgb, ${_leverageTint(minLev)} 16%, transparent);">${minLev}x</span>`
       : `<span style="color:var(--loss);font-size:11.5px;">Won't fit</span>`,
     marginText: margin != null ? `$${margin.toLocaleString(undefined,{maximumFractionDigits:2})}` : '—'
   };
