@@ -2772,6 +2772,49 @@ const SALARY_DEFAULTS = {
 };
 
 let SALARY_SAVE_TIMER = null;
+// 'all' or a 'YYYY-MM' key — which period the Reality Check and the PDF cover.
+let SALARY_MONTH = 'all';
+
+// UTC month key, matching how _dayKeyUTC buckets days, so a trade never
+// lands in a different month here than it does in the day counts.
+function _salaryMonthKey(d){
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}`;
+}
+
+function _salaryMonthLabel(key){
+  const [y, m] = key.split('-').map(Number);
+  return new Date(Date.UTC(y, m-1, 1)).toLocaleDateString(undefined, { month:'long', year:'numeric', timeZone:'UTC' });
+}
+
+// Net P&L per UTC day, and the same days grouped by month — every downstream
+// figure on this page is derived from these two, so they can't disagree.
+function _salaryDayAndMonthBuckets(){
+  const dayKeys = {};
+  const monthOfDay = {};
+  ALL_TRADES.filter(t => t.close_date).forEach(t => {
+    const d = new Date(t.close_date);
+    const k = _dayKeyUTC(d);
+    dayKeys[k] = (dayKeys[k] || 0) + netPnl(t);
+    monthOfDay[k] = _salaryMonthKey(d);
+  });
+  return { dayKeys, monthOfDay };
+}
+
+function _salaryMonthsPresent(monthOfDay){
+  return [...new Set(Object.values(monthOfDay))].sort().reverse();
+}
+
+function onSalaryMonthChange(){
+  SALARY_MONTH = document.getElementById('salMonthFilter').value || 'all';
+  renderSalaryGoal();
+}
+
+function focusSalaryMonth(key){
+  SALARY_MONTH = key;
+  const sel = document.getElementById('salMonthFilter');
+  if(sel) sel.value = key;
+  renderSalaryGoal();
+}
 
 function _salaryFields(){
   return {
@@ -2923,14 +2966,23 @@ function renderSalaryGoal(){
     : 'Enter your monthly salary below to see the number.';
 
   // --- reality check against real trades (measured, never projected) ---
-  const closed = ALL_TRADES.filter(t => t.close_date);
-  const dayKeys = {};
-  closed.forEach(t => {
-    const k = _dayKeyUTC(new Date(t.close_date));
-    dayKeys[k] = (dayKeys[k] || 0) + netPnl(t);
-  });
-  const tradingDays = Object.keys(dayKeys).length;
-  const totalNet = Object.values(dayKeys).reduce((s,x) => s + x, 0);
+  const { dayKeys, monthOfDay } = _salaryDayAndMonthBuckets();
+  const months = _salaryMonthsPresent(monthOfDay);
+
+  // Keep the month picker in step with the data, preserving the selection.
+  const sel = document.getElementById('salMonthFilter');
+  if(sel){
+    if(SALARY_MONTH !== 'all' && !months.includes(SALARY_MONTH)) SALARY_MONTH = 'all';
+    sel.innerHTML = `<option value="all">All time</option>` +
+      months.map(m => `<option value="${m}">${_salaryMonthLabel(m)}</option>`).join('');
+    sel.value = SALARY_MONTH;
+  }
+
+  // The hero always shows the all-time average — it's the headline number,
+  // and it shouldn't swing around while you browse months.
+  const allDays = Object.keys(dayKeys);
+  const tradingDays = allDays.length;
+  const totalNet = allDays.reduce((s,k) => s + dayKeys[k], 0);
   const avgPerTradingDay = tradingDays ? totalNet / tradingDays : null;
 
   const heroActual = document.getElementById('salHeroActual');
@@ -2980,7 +3032,8 @@ function renderSalaryGoal(){
     </tr>`).join('');
 
   renderSalaryProfitNeeded(dailyUsd);
-  renderSalaryReality({ dailyUsd, monthlyAed, toUsd, avgPerTradingDay, tradingDays, dayKeys, days });
+  renderSalaryReality({ dailyUsd, monthlyUsd: ready ? toUsd(monthlyAed) : null, dayKeys, monthOfDay, days });
+  renderSalaryHistory({ dailyUsd, monthlyUsd: ready ? toUsd(monthlyAed) : null, dayKeys, monthOfDay, months });
 }
 
 // Uses the real prop-firm accounts rather than generic tiers, so the required
@@ -3029,61 +3082,331 @@ function renderSalaryProfitNeeded(dailyUsd){
   }).join('');
 }
 
+// Day keys belonging to the currently selected period.
+function _salaryPeriodDayKeys(dayKeys, monthOfDay){
+  const keys = Object.keys(dayKeys);
+  return SALARY_MONTH === 'all' ? keys : keys.filter(k => monthOfDay[k] === SALARY_MONTH);
+}
+
 // Everything here is measured from journaled trades. Where there isn't enough
 // data, it says so instead of extrapolating.
-function renderSalaryReality({ dailyUsd, monthlyAed, toUsd, avgPerTradingDay, tradingDays, dayKeys, days }){
+function renderSalaryReality({ dailyUsd, monthlyUsd, dayKeys, monthOfDay, days }){
   const body = document.getElementById('salRealityBody');
   if(!body) return;
 
+  const titleEl = document.getElementById('salRealityTitle');
+  const periodLabel = SALARY_MONTH === 'all' ? 'All time' : _salaryMonthLabel(SALARY_MONTH);
+  if(titleEl) titleEl.textContent = `Reality Check — ${periodLabel}`;
+
+  const keys = _salaryPeriodDayKeys(dayKeys, monthOfDay);
+  const tradingDays = keys.length;
+
   if(!tradingDays){
-    body.innerHTML = `<div class="empty-state">No closed trades yet — this section wakes up once you've journaled some.</div>`;
+    body.innerHTML = `<div class="empty-state">No closed trades in ${periodLabel.toLowerCase()} — pick another month, or journal some trades.</div>`;
     return;
   }
-  if(dailyUsd == null){
+  if(dailyUsd == null || monthlyUsd == null){
     body.innerHTML = `<div class="empty-state">Enter your monthly salary above to compare it against your real results.</div>`;
     return;
   }
 
-  // This month's actual trading P&L vs one month of salary.
-  const now = new Date();
-  const monthKeys = Object.keys(dayKeys).filter(k => {
-    const d = new Date(Number(k));
-    return d.getUTCFullYear() === now.getUTCFullYear() && d.getUTCMonth() === now.getUTCMonth();
-  });
-  const monthNet = monthKeys.reduce((s,k) => s + dayKeys[k], 0);
-  const monthlyUsd = toUsd(monthlyAed);
-  const monthPct = monthlyUsd > 0 ? Math.max(0, Math.min(100, monthNet / monthlyUsd * 100)) : 0;
-
-  // How many of your trading days actually cleared a day's salary.
-  const daysBeat = Object.values(dayKeys).filter(v => v >= dailyUsd).length;
-  const beatRate = tradingDays ? daysBeat / tradingDays * 100 : 0;
-
-  // At your real average, how many trading days to cover one month of salary?
+  const net = keys.reduce((s,k) => s + dayKeys[k], 0);
+  const avgPerTradingDay = net / tradingDays;
+  const daysBeat = keys.filter(k => dayKeys[k] >= dailyUsd).length;
+  const beatRate = daysBeat / tradingDays * 100;
+  const pctOfSalary = monthlyUsd > 0 ? Math.max(0, Math.min(100, net / monthlyUsd * 100)) : 0;
   const daysNeeded = (avgPerTradingDay > 0 && monthlyUsd > 0) ? monthlyUsd / avgPerTradingDay : null;
 
   const notes = [];
   if(daysNeeded !== null){
     notes.push(daysNeeded <= days
-      ? `At your current average of ${_salMoney(avgPerTradingDay,'USD')} per trading day, about ${fmtNum(daysNeeded,1)} trading days would cover a full month's salary — fewer than the ${fmtNum(days,2)} days the job takes.`
-      : `At your current average of ${_salMoney(avgPerTradingDay,'USD')} per trading day, it would take about ${fmtNum(daysNeeded,1)} trading days to cover a month's salary — more than the ${fmtNum(days,2)} days the job takes. The gap is the work.`);
-  }else if(avgPerTradingDay <= 0){
-    notes.push(`Your average trading day is currently ${_salMoney(avgPerTradingDay,'USD')}. Getting that above zero comes before comparing it to a salary.`);
+      ? `At ${_salMoney(avgPerTradingDay,'USD')} per trading day, about ${fmtNum(daysNeeded,1)} trading days would cover a full month's salary — fewer than the ${fmtNum(days,2)} days the job takes.`
+      : `At ${_salMoney(avgPerTradingDay,'USD')} per trading day, it would take about ${fmtNum(daysNeeded,1)} trading days to cover a month's salary — more than the ${fmtNum(days,2)} days the job takes. The gap is the work.`);
+  }else{
+    notes.push(`The average trading day in this period is ${_salMoney(avgPerTradingDay,'USD')}. Getting that above zero comes before comparing it to a salary.`);
   }
-  notes.push(`${daysBeat} of your ${tradingDays} trading days beat a full day's pay (${fmtNum(beatRate,0)}%). You don't need every day to clear it — you need the average to.`);
+  notes.push(`${daysBeat} of ${tradingDays} trading days beat a full day's pay (${fmtNum(beatRate,0)}%). You don't need every day to clear it — you need the average to.`);
 
   body.innerHTML = `
     <div class="sal-stat-grid" style="margin-bottom:16px;">
       ${_salStatCard('Avg / Trading Day', `<span style="color:${avgPerTradingDay>=0?'var(--win)':'var(--loss)'};">${_salMoney(avgPerTradingDay,'USD')}</span>`, `measured over ${tradingDays} trading day${tradingDays===1?'':'s'}`)}
-      ${_salStatCard('Days That Beat the Job', `${daysBeat} / ${tradingDays}`, `${fmtNum(beatRate,0)}% of your trading days`)}
+      ${_salStatCard('Days That Beat the Job', `${daysBeat} / ${tradingDays}`, `${fmtNum(beatRate,0)}% of trading days`)}
       ${_salStatCard('Trading Days to Cover a Month', daysNeeded !== null ? fmtNum(daysNeeded,1) : '—', daysNeeded !== null ? `vs ${fmtNum(days,2)} days at the job` : 'needs a positive average')}
     </div>
     <div class="sal-progress-label">
-      <span>This month's trading P&amp;L vs one month's salary</span>
-      <span style="color:${monthNet>=0?'var(--win)':'var(--loss)'};">${_salMoney(monthNet,'USD')} / ${_salMoney(monthlyUsd,'USD')}</span>
+      <span>${periodLabel} trading P&amp;L vs one month's salary</span>
+      <span style="color:${net>=0?'var(--win)':'var(--loss)'};">${_salMoney(net,'USD')} / ${_salMoney(monthlyUsd,'USD')}</span>
     </div>
-    <div class="sal-progress-track"><div class="sal-progress-fill" style="width:${monthPct.toFixed(1)}%;"></div></div>
+    <div class="sal-progress-track"><div class="sal-progress-fill" style="width:${pctOfSalary.toFixed(1)}%;"></div></div>
     ${notes.map(n => `<div class="cfe-insight">💡 ${n}</div>`).join('')}
   `;
+}
+
+// Per-month stats — shared by the history table and the PDF so the two can
+// never show different numbers for the same month.
+function _salaryMonthlyStats({ dailyUsd, monthlyUsd, dayKeys, monthOfDay, months }){
+  return months.map(m => {
+    const keys = Object.keys(dayKeys).filter(k => monthOfDay[k] === m);
+    const net = keys.reduce((s,k) => s + dayKeys[k], 0);
+    return {
+      key: m,
+      label: _salaryMonthLabel(m),
+      tradingDays: keys.length,
+      net,
+      daysBeat: dailyUsd != null ? keys.filter(k => dayKeys[k] >= dailyUsd).length : null,
+      pctOfSalary: (monthlyUsd > 0) ? net / monthlyUsd * 100 : null
+    };
+  });
+}
+
+function renderSalaryHistory({ dailyUsd, monthlyUsd, dayKeys, monthOfDay, months }){
+  const body = document.getElementById('salHistoryBody');
+  if(!body) return;
+
+  if(!months.length){
+    body.innerHTML = `<tr><td colspan="5" style="color:var(--muted);">No closed trades yet.</td></tr>`;
+    return;
+  }
+
+  const rows = _salaryMonthlyStats({ dailyUsd, monthlyUsd, dayKeys, monthOfDay, months });
+  body.innerHTML = rows.map(r => {
+    const pct = r.pctOfSalary;
+    const tone = pct == null ? 'var(--ink)' : (pct >= 100 ? 'var(--win)' : (pct >= 50 ? 'var(--warn)' : 'var(--loss)'));
+    const barPct = pct == null ? 0 : Math.max(0, Math.min(100, pct));
+    return `<tr onclick="focusSalaryMonth('${r.key}')" style="cursor:pointer;${r.key === SALARY_MONTH ? 'background:var(--surface-2);' : ''}">
+      <td style="font-family:'Public Sans',sans-serif;">${r.label}</td>
+      <td>${r.tradingDays}</td>
+      <td class="${r.net >= 0 ? 'pos' : 'neg'}">${_salMoney(r.net,'USD')}</td>
+      <td>
+        ${pct == null ? '—' : `<div class="cfe-bar-wrap">
+          <div class="cfe-bar-track"><div class="cfe-bar-fill" style="width:${barPct.toFixed(0)}%;background:${tone};"></div></div>
+          <span style="color:${tone};">${fmtNum(pct,0)}%</span>
+        </div>`}
+      </td>
+      <td>${r.daysBeat == null ? '—' : `${r.daysBeat} / ${r.tradingDays}`}</td>
+    </tr>`;
+  }).join('');
+}
+
+// Shareable one-pager of the salary comparison. Same light palette and
+// section idiom as downloadReportPDF() — a PDF is a white page, so it uses
+// the app's light-mode tokens rather than the dark UI's values.
+function downloadSalaryPDF(){
+  if(!window.jspdf){ showToast("PDF library didn't load — check your connection and try again."); return; }
+
+  const v = _salaryInputValues();
+  const monthlyAed = Number(v.monthly_salary);
+  if(!(monthlyAed > 0)){ showToast('Enter your monthly salary first.'); return; }
+
+  const aed = Number(v.aed_per_usd) > 0 ? Number(v.aed_per_usd) : SALARY_DEFAULTS.aed_per_usd;
+  const php = Number(v.php_per_usd) > 0 ? Number(v.php_per_usd) : SALARY_DEFAULTS.php_per_usd;
+  const days = Number(v.working_days) > 0 ? Number(v.working_days) : SALARY_DEFAULTS.working_days;
+  const hours = Number(v.hours_per_day) > 0 ? Number(v.hours_per_day) : SALARY_DEFAULTS.hours_per_day;
+
+  const dailyAed = monthlyAed / days;
+  const hourlyAed = dailyAed / hours;
+  const weeklyAed = dailyAed * 5;
+  const toUsd = a => a / aed;
+  const toPhp = a => (a / aed) * php;
+  const dailyUsd = toUsd(dailyAed);
+
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const margin = 44;
+  let y = 56;
+
+  const ACCENT = [214, 158, 46], INK = [28, 32, 39], MUTED = [107, 113, 120],
+        WIN = [22, 163, 74], LOSS = [229, 62, 62], WARN = [242, 153, 74],
+        RULE = [226, 221, 209], TINT = [247, 240, 220];
+
+  const money = (n, cur) => {
+    const sym = { USD: '$', AED: 'AED ', PHP: 'PHP ' }[cur] || '';
+    return sym + n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  };
+
+  function ensureSpace(needed){
+    if(y + needed > pageHeight - 50){ doc.addPage(); y = 56; }
+  }
+  function sectionTitle(text){
+    ensureSpace(40);
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.setTextColor(...ACCENT);
+    doc.text(text.toUpperCase(), margin, y);
+    y += 6;
+    doc.setDrawColor(...RULE); doc.setLineWidth(1);
+    doc.line(margin, y, pageWidth - margin, y);
+    y += 22;
+  }
+  function statRow(items){
+    ensureSpace(44);
+    const colWidth = (pageWidth - margin*2) / items.length;
+    items.forEach((item, i) => {
+      const x = margin + i*colWidth;
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(...MUTED);
+      doc.text(item.label.toUpperCase(), x, y);
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(14); doc.setTextColor(...(item.color || INK));
+      doc.text(item.value, x, y + 18);
+    });
+    y += 42;
+  }
+  function noteLine(text, color){
+    ensureSpace(20);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5); doc.setTextColor(...(color || MUTED));
+    doc.splitTextToSize(text, pageWidth - margin*2).forEach(line => {
+      ensureSpace(14);
+      doc.text(line, margin, y);
+      y += 13;
+    });
+    y += 12;
+  }
+  function tableRows(headers, rows, colColors){
+    ensureSpace(30);
+    const colWidth = (pageWidth - margin*2) / headers.length;
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); doc.setTextColor(...MUTED);
+    headers.forEach((h, i) => doc.text(h.toUpperCase(), margin + i*colWidth, y));
+    y += 6;
+    doc.setDrawColor(...RULE); doc.setLineWidth(0.7);
+    doc.line(margin, y, pageWidth - margin, y);
+    y += 16;
+    rows.forEach(r => {
+      ensureSpace(22);
+      r.forEach((cell, i) => {
+        doc.setFont('helvetica', i === 0 ? 'bold' : 'normal'); doc.setFontSize(10);
+        doc.setTextColor(...((colColors && colColors[i]) || INK));
+        doc.text(String(cell), margin + i*colWidth, y);
+      });
+      y += 20;
+    });
+    y += 10;
+  }
+
+  // --- header ---
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(20); doc.setTextColor(...INK);
+  doc.text('TANAYDANA', margin, y);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(11); doc.setTextColor(...MUTED);
+  const periodLabel = SALARY_MONTH === 'all' ? 'All time' : _salaryMonthLabel(SALARY_MONTH);
+  doc.text(`Salary vs Trading Goal  ·  ${periodLabel}`, margin, y + 16);
+  doc.setFontSize(10);
+  doc.text(`Generated ${new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}`, pageWidth - margin, y, { align: 'right' });
+  doc.text(`1 USD = ${aed} AED / ${php} PHP`, pageWidth - margin, y + 14, { align: 'right' });
+  y += 36;
+  doc.setDrawColor(...RULE); doc.setLineWidth(1.2);
+  doc.line(margin, y, pageWidth - margin, y);
+  y += 28;
+
+  // --- hero ---
+  ensureSpace(90);
+  doc.setFillColor(...TINT);
+  doc.roundedRect(margin, y - 8, pageWidth - margin*2, 76, 6, 6, 'F');
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(...ACCENT);
+  doc.text('THE NUMBER TO BEAT — ONE WORKING DAY', margin + 16, y + 12);
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(28); doc.setTextColor(...WIN);
+  doc.text(money(dailyUsd, 'USD'), margin + 16, y + 42);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(...MUTED);
+  doc.text(`${money(dailyAed, 'AED')}  ·  ${money(toPhp(dailyAed), 'PHP')}`, margin + 16, y + 60);
+  y += 92;
+
+  // --- salary breakdown ---
+  sectionTitle('Salary Breakdown');
+  statRow([
+    { label: 'Monthly', value: money(monthlyAed, 'AED') },
+    { label: 'Daily', value: money(dailyAed, 'AED') },
+    { label: 'Hourly', value: money(hourlyAed, 'AED') },
+    { label: 'Working Days', value: fmtNum(days, 2) }
+  ]);
+
+  // --- trading targets ---
+  sectionTitle('Trading Targets');
+  tableRows(
+    ['Period', 'AED', 'USD', 'PHP'],
+    [
+      ['1 Day', money(dailyAed,'AED'), money(dailyUsd,'USD'), money(toPhp(dailyAed),'PHP')],
+      ['1 Week (5 days)', money(weeklyAed,'AED'), money(toUsd(weeklyAed),'USD'), money(toPhp(weeklyAed),'PHP')],
+      ['1 Month', money(monthlyAed,'AED'), money(toUsd(monthlyAed),'USD'), money(toPhp(monthlyAed),'PHP')]
+    ],
+    [INK, INK, WIN, INK]
+  );
+
+  // --- time saved ---
+  sectionTitle('Time Saved for Family');
+  const perMonthHours = hours * days;
+  statRow([
+    { label: 'Per Day', value: `${fmtNum(hours,1)} h` },
+    { label: 'Per Week', value: `${fmtNum(hours*5,1)} h` },
+    { label: 'Per Month', value: `${fmtNum(perMonthHours,1)} h` },
+    { label: '≈ Free Days / Mo', value: fmtNum(perMonthHours/16, 1) }
+  ]);
+
+  // --- profit needed per account ---
+  const accounts = TRADING_ACCOUNTS
+    .filter(a => a.account_type !== 'Exchange' && Number(a.account_size) > 0)
+    .slice().sort((a,b) => Number(b.account_size) - Number(a.account_size));
+  if(accounts.length){
+    sectionTitle('Profit Needed Per Account');
+    tableRows(
+      ['Account', 'Size', 'Profit / Day', 'Return Required'],
+      accounts.map(a => {
+        const size = Number(a.account_size);
+        return [
+          a.account_name,
+          '$' + size.toLocaleString(),
+          money(dailyUsd, 'USD'),
+          fmtNum(dailyUsd / size * 100, 2) + '%'
+        ];
+      }),
+      [INK, INK, WIN, INK]
+    );
+  }
+
+  // --- reality check (measured only, for the selected period) ---
+  const { dayKeys, monthOfDay } = _salaryDayAndMonthBuckets();
+  const months = _salaryMonthsPresent(monthOfDay);
+  const monthlyUsd = toUsd(monthlyAed);
+  const periodKeys = _salaryPeriodDayKeys(dayKeys, monthOfDay);
+
+  if(periodKeys.length){
+    const net = periodKeys.reduce((s,k) => s + dayKeys[k], 0);
+    const avgPerDay = net / periodKeys.length;
+    const daysBeat = periodKeys.filter(k => dayKeys[k] >= dailyUsd).length;
+    const daysNeeded = avgPerDay > 0 ? monthlyUsd / avgPerDay : null;
+
+    sectionTitle(`Reality Check — ${periodLabel}`);
+    statRow([
+      { label: 'Net P&L', value: money(net, 'USD'), color: net >= 0 ? WIN : LOSS },
+      { label: 'Avg / Trading Day', value: money(avgPerDay, 'USD'), color: avgPerDay >= 0 ? WIN : LOSS },
+      { label: 'Days That Beat It', value: `${daysBeat} / ${periodKeys.length}` },
+      { label: 'Days to Cover a Month', value: daysNeeded !== null ? fmtNum(daysNeeded,1) : '—',
+        color: daysNeeded !== null && daysNeeded <= days ? WIN : WARN }
+    ]);
+    noteLine(`Measured from ${periodKeys.length} trading day${periodKeys.length===1?'':'s'} in your journal — not a projection.`);
+  }
+
+  // --- month by month ---
+  if(months.length){
+    sectionTitle('Month by Month');
+    const stats = _salaryMonthlyStats({ dailyUsd, monthlyUsd, dayKeys, monthOfDay, months });
+    tableRows(
+      ['Month', 'Trading Days', 'Net P&L', 'vs Salary', 'Days Beat'],
+      stats.map(r => [
+        r.label,
+        String(r.tradingDays),
+        money(r.net, 'USD'),
+        r.pctOfSalary == null ? '—' : fmtNum(r.pctOfSalary, 0) + '%',
+        r.daysBeat == null ? '—' : `${r.daysBeat} / ${r.tradingDays}`
+      ]),
+      [INK, INK, INK, INK, INK]
+    );
+  }
+
+  // --- disclaimer ---
+  ensureSpace(50);
+  doc.setDrawColor(...RULE); doc.setLineWidth(1);
+  doc.line(margin, y, pageWidth - margin, y);
+  y += 18;
+  noteLine('Trading income is not guaranteed. Focus on consistent execution and risk management — not on making your full salary every single day.');
+
+  doc.save(`Tanaydana-Salary-Goal-${new Date().toISOString().slice(0,10)}.pdf`);
 }
 
 /* ---------------- Finance (personal money tracker) ---------------- */

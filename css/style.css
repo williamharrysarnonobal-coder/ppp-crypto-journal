@@ -168,9 +168,14 @@
     transition:width .18s ease, padding .18s ease;
   }
   .sidebar.collapsed{width:60px;padding:22px 8px;}
+  /* flex-shrink:0 is load-bearing: the sidebar is a 100vh flex column, so
+     once the nav list is tall enough to overflow, flex squashes its
+     children — and .brand's overflow:hidden then clips the logo and name
+     instead of letting the sidebar scroll. */
   .sidebar .brand{
     font-family:var(--font-ui);font-size:15px;padding:0 2px 18px;border-bottom:1px solid var(--rule);
     margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;gap:8px;white-space:nowrap;overflow:hidden;
+    flex-shrink:0;
   }
   .sidebar .brand .brand-text{overflow:hidden;text-overflow:ellipsis;}
   .sidebar .brand .brand-logo-img{width:28px;height:28px;}
