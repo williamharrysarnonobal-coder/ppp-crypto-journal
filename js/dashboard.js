@@ -11258,6 +11258,22 @@ function loadCalculatorDraft(){
   }
 }
 
+let POSCALC_SAVE_TIMER = null;
+
+// Auto-saves as you type, like the Risk Amounts and the Salary page — a
+// manual Save button was the odd one out, and a half-typed setup lost to a
+// refresh is exactly what this draft exists to prevent.
+function onPosSizeInput(){
+  renderPosSizeCalculator();
+  const stateEl = document.getElementById('posCalcSaveState');
+  if(stateEl) stateEl.textContent = 'Saving…';
+  clearTimeout(POSCALC_SAVE_TIMER);
+  POSCALC_SAVE_TIMER = setTimeout(saveCalculatorDraft, 600);
+}
+
+// Device-local on purpose: this is scratch state while you wait for a price
+// to confirm. The cross-device artefact is the Pending Setup you create with
+// "Trade This Setup", which does live in the database.
 function saveCalculatorDraft(){
   const draft = {
     direction: document.getElementById('psDirection').value || null,
@@ -11265,11 +11281,16 @@ function saveCalculatorDraft(){
     tp: document.getElementById('psTP').value || null,
     sl: document.getElementById('psSL').value || null
   };
+  const stateEl = document.getElementById('posCalcSaveState');
   try{
     localStorage.setItem('poscalc-draft', JSON.stringify(draft));
-    showToast('Calculator draft saved');
+    if(stateEl){
+      stateEl.textContent = 'Saved';
+      setTimeout(() => { if(stateEl.textContent === 'Saved') stateEl.textContent = ''; }, 1800);
+    }
   }catch(e){
     console.error("Couldn't save calculator draft:", e);
+    if(stateEl) stateEl.textContent = "Couldn't save on this device";
   }
 }
 

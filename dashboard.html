@@ -471,8 +471,8 @@
     <div class="panel">
       <h2 style="display:flex;align-items:center;justify-content:space-between;">
         <span>Position Size Calculator</span>
-        <span>
-          <button class="poscalc-accent-btn" onclick="saveCalculatorDraft()">Save</button>
+        <span style="display:flex;align-items:center;gap:10px;">
+          <span id="posCalcSaveState" class="sal-save-state"></span>
           <button class="drawer-danger-btn" onclick="clearCalculatorDraft()">Clear</button>
         </span>
       </h2>
@@ -480,7 +480,7 @@
 
       <div class="field-row">
         <label>Direction</label>
-        <select id="psDirection" onchange="renderPosSizeCalculator()">
+        <select id="psDirection" onchange="onPosSizeInput()">
           <option value="Long">Long</option>
           <option value="Short">Short</option>
         </select>
@@ -488,7 +488,7 @@
       <div class="field-row">
         <label>Entry Price</label>
         <div class="ps-input-row">
-          <input id="psEntry" type="text" inputmode="decimal" placeholder="e.g. 63040.20" oninput="renderPosSizeCalculator()" style="color:var(--accent);font-weight:600;">
+          <input id="psEntry" type="text" inputmode="decimal" placeholder="e.g. 63040.20" oninput="onPosSizeInput()" style="color:var(--accent);font-weight:600;">
           <button type="button" class="poscalc-accent-btn" onclick="pasteIntoField('psEntry')">Paste</button>
           <button type="button" class="poscalc-accent-btn" onclick="copyFieldValue('psEntry', this)">Copy</button>
         </div>
@@ -496,7 +496,7 @@
       <div class="field-row">
         <label>TP Price</label>
         <div class="ps-input-row">
-          <input id="psTP" type="text" inputmode="decimal" placeholder="e.g. 63455.00" oninput="renderPosSizeCalculator()" style="color:var(--win);font-weight:600;">
+          <input id="psTP" type="text" inputmode="decimal" placeholder="e.g. 63455.00" oninput="onPosSizeInput()" style="color:var(--win);font-weight:600;">
           <button type="button" class="poscalc-accent-btn" onclick="pasteIntoField('psTP')">Paste</button>
           <button type="button" class="poscalc-accent-btn" onclick="copyFieldValue('psTP', this)">Copy</button>
         </div>
@@ -504,7 +504,7 @@
       <div class="field-row">
         <label>SL Price</label>
         <div class="ps-input-row">
-          <input id="psSL" type="text" inputmode="decimal" placeholder="e.g. 62900.00" oninput="renderPosSizeCalculator()" style="color:var(--loss);font-weight:600;">
+          <input id="psSL" type="text" inputmode="decimal" placeholder="e.g. 62900.00" oninput="onPosSizeInput()" style="color:var(--loss);font-weight:600;">
           <button type="button" class="poscalc-accent-btn" onclick="pasteIntoField('psSL')">Paste</button>
           <button type="button" class="poscalc-accent-btn" onclick="copyFieldValue('psSL', this)">Copy</button>
         </div>
@@ -1951,6 +1951,6 @@
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=1"></script>
-<script src="js/dashboard.js?v=244"></script>
+<script src="js/dashboard.js?v=245"></script>
 </body>
 </html>
