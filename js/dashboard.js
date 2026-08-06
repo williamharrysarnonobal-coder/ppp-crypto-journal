@@ -1886,7 +1886,7 @@ function _confluenceScoreFor(t){
   if(!t.confluence_answers || !Object.keys(t.confluence_answers).length) return null;
   const cfg = CONFLUENCE_SETUPS[`${t.trade_type}|${t.pattern_type}`];
   if(!cfg) return null;
-  const { total, done } = _confluenceProgress(cfg.items, t.confluence_answers);
+  const { total, done } = _confluenceProgress(cfg.items, t.confluence_answers, !!t.chart_pattern);
   return total ? done / total : null;
 }
 
@@ -7582,14 +7582,15 @@ function _renderTradeViewConfluenceGroup(row){
     return `<div class="field-row"><label>${escapeHtml(item.text)}</label><div class="field-static" style="color:${color};">${display}</div></div>`;
   }).join('') : '';
 
-  // Always shown (it's optional and unscored, but its absence is worth seeing).
-  const patternRow = `<div class="field-row"><label>Chart Pattern</label><div class="field-static"${row.chart_pattern ? '' : ' style="color:var(--muted);"'}>${row.chart_pattern ? escapeHtml(row.chart_pattern) : 'None'}</div></div>`;
+  // Chart Pattern is worth a point, so "None" is a miss, not a blank —
+  // coloured like any other unmet item rather than quietly greyed out.
+  const patternRow = `<div class="field-row"><label>Chart Pattern</label><div class="field-static" style="color:${row.chart_pattern ? 'var(--win)' : 'var(--loss)'};">${row.chart_pattern ? escapeHtml(row.chart_pattern) : 'None'}</div></div>`;
 
   // Same scoring as the live checklist's progress chip (Yes/Retest = full
   // credit, Almost = half, No = none) — here it reads as how strong this
   // trade's confluence actually was, not just how many questions got answered.
   const scoreBadge = cfg ? (() => {
-    const { total, done } = _confluenceProgress(cfg.items, row.confluence_answers || {});
+    const { total, done } = _confluenceProgress(cfg.items, row.confluence_answers || {}, !!row.chart_pattern);
     const pct = total ? done / total : 0;
     const color = pct >= 0.8 ? 'var(--win)' : (pct >= 0.5 ? 'var(--accent)' : 'var(--loss)');
     return `<span style="font-size:11px;font-weight:700;letter-spacing:0;text-transform:none;color:${color};font-variant-numeric:tabular-nums;">${Number(done.toFixed(1))}/${total}</span>`;
@@ -11542,12 +11543,12 @@ function _renderConfluenceItemRow(it, i, ans, setAnswerFn){
 // For an "invert" item (Left/Right Hand Present, where No is the good
 // outcome) the credit flips too — a green "No" is a hit, a red "Yes" is a
 // miss — otherwise a fully clean checklist would never actually show full marks.
-// Chart Pattern is deliberately NOT part of the score: the picker is labelled
-// "(optional)", so counting it in the denominator made a fully answered
-// checklist read as 5/6 and unreachable without picking one.
-function _confluenceProgress(items, answers){
+// Chart Pattern counts as one full point: an A+ setup has a recognisable
+// pattern behind it, so a checklist with every indicator answered but no
+// pattern should read 5/6, not 5/5 — the missing point is the signal.
+function _confluenceProgress(items, answers, chartPatternPresent){
   const answeredValues = Object.values(answers);
-  let done = 0;
+  let done = chartPatternPresent ? 1 : 0;
   items.forEach((it, i) => {
     const ans = answers[i];
     if(ans === undefined) return;
@@ -11560,7 +11561,7 @@ function _confluenceProgress(items, answers){
     if(ans === 'yes' || ans === 'retest') done += 1;
     else if(ans === 'almost') done += 0.5;
   });
-  return { total: items.length, done, unanswered: items.length - answeredValues.length };
+  return { total: items.length + 1, done, unanswered: items.length - answeredValues.length };
 }
 
 let confluenceTarget = null;  // { type:'setup', id } | { type:'trade', positionId }
@@ -11658,7 +11659,7 @@ function renderConfluenceChecklist(){
     return;
   }
 
-  const { total, done, unanswered } = _confluenceProgress(cfg.items, confluenceAnswers);
+  const { total, done, unanswered } = _confluenceProgress(cfg.items, confluenceAnswers, !!confluenceChartPattern);
 
   const itemsHtml = cfg.items.map((it, i) =>
     _renderConfluenceItemRow(it, i, confluenceAnswers[i], 'setConfluenceAnswer')
@@ -11681,7 +11682,7 @@ function renderConfluenceChecklist(){
     <div class="cfl-checklist-card">${itemsHtml}</div>
     <div class="cfl-pattern-picker">
       <div class="cfl-pattern-picker-head">
-        <span class="cfl-pattern-picker-title">Chart Pattern (optional)</span>
+        <span class="cfl-pattern-picker-title">Chart Pattern</span>
       </div>
       <div class="cfl-pattern-chips">${chipsHtml}</div>
     </div>
@@ -12802,7 +12803,7 @@ function renderBbChecklist(){
     return;
   }
 
-  const { total, done, unanswered } = _confluenceProgress(cfg.items, bbAnswers);
+  const { total, done, unanswered } = _confluenceProgress(cfg.items, bbAnswers, !!bbChartPattern);
 
   const itemsHtml = cfg.items.map((it, i) =>
     _renderConfluenceItemRow(it, i, bbAnswers[i], 'setBbAnswer')
@@ -12825,7 +12826,7 @@ function renderBbChecklist(){
     <div class="cfl-checklist-card">${itemsHtml}</div>
     <div class="cfl-pattern-picker">
       <div class="cfl-pattern-picker-head">
-        <span class="cfl-pattern-picker-title">Chart Pattern (optional)</span>
+        <span class="cfl-pattern-picker-title">Chart Pattern</span>
       </div>
       <div class="cfl-pattern-chips">${chipsHtml}</div>
     </div>
