@@ -494,7 +494,13 @@ function switchView(view){
   if(view === 'challenges') renderChallenges();
   if(view === 'leaderboard') renderLeaderboard();
   if(view === 'finance') renderFinance();
-  if(view === 'salary'){ fillSalaryInputs(); renderSalaryGoal(); }
+  if(view === 'salary'){
+    fillSalaryInputs();
+    renderSalaryGoal();
+    // Once a day at most, and never blocking the render above — a failed
+    // fetch just leaves the saved rates in place.
+    if(_fxIsStale()) fetchFxRates(false);
+  }
   if(view === 'profile') loadProfile();
   if(view === 'accounts') loadAccounts();
   if(view === 'calculator'){ refreshPosSizeCalculator(); loadSavedSetups(); }
@@ -1040,6 +1046,15 @@ function applyFilters(){
 // with Fee as its own separate column) — this is only for aggregates.
 function netPnl(t){
   return (Number(t?.profit_loss) || 0) - (Number(t?.fee) || 0);
+}
+
+// UTC day boundary, not the browser's local time — Upscale's trading day
+// resets at midnight UTC, and the account countdown assumes the same. Using
+// local time puts trades in the wrong "day" bucket by however many hours the
+// browser's timezone is offset from UTC. Shared by account stats and the
+// Salary Goal page so both bucket days identically.
+function _dayKeyUTC(d){
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
 }
 
 function fmtMoney(n){
@@ -2810,6 +2825,54 @@ async function saveSalarySettings(){
   }catch(e){
     console.error("Couldn't save salary settings:", e);
     if(stateEl) stateEl.textContent = "Couldn't save — run supabase_salary_goal.sql";
+  }
+}
+
+// Keyless, CORS-enabled FX source. A key-based provider is not an option
+// here: this is a static client-side app, so any key would be readable in
+// view-source. Rates update once daily upstream, which is the right cadence
+// for a salary comparison — this is not a trading price feed.
+const FX_API_URL = 'https://open.er-api.com/v6/latest/USD';
+
+function _fxIsStale(){
+  const ts = _salarySettings().fx_updated_at;
+  if(!ts) return true;
+  return (Date.now() - new Date(ts).getTime()) > 20 * 60 * 60 * 1000; // ~once a day
+}
+
+// manual=true when the user pressed Refresh: always fetches, and reports
+// failures out loud. Automatic calls stay quiet and keep the saved rates.
+async function fetchFxRates(manual){
+  const statusEl = document.getElementById('salFxStatus');
+  const btn = document.getElementById('salFxBtn');
+  if(!statusEl) return;
+
+  if(btn){ btn.disabled = true; btn.textContent = 'Refreshing…'; }
+  statusEl.textContent = 'Fetching today\'s rates…';
+
+  try{
+    const res = await fetch(FX_API_URL);
+    if(!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    const aed = Number(data?.rates?.AED);
+    const php = Number(data?.rates?.PHP);
+    if(!(aed > 0) || !(php > 0)) throw new Error('Rates missing from response');
+
+    document.getElementById('salAed').value = aed;
+    document.getElementById('salPhp').value = php;
+
+    const asOf = data.time_last_update_utc ? new Date(data.time_last_update_utc) : new Date();
+    statusEl.innerHTML = `Rates as of <strong>${asOf.toLocaleDateString(undefined,{day:'numeric',month:'short',year:'numeric'})}</strong> · 1 USD = ${aed} AED · ${php} PHP`;
+
+    renderSalaryGoal();
+    await persistProfile({ salary_settings: { ..._salaryInputValues(), fx_updated_at: new Date().toISOString() } });
+  }catch(e){
+    console.error("Couldn't fetch FX rates:", e);
+    statusEl.textContent = manual
+      ? "Couldn't reach the rate service — your saved rates are still being used. Try again, or type the rate manually."
+      : 'Using your saved rates (live refresh unavailable right now).';
+  }finally{
+    if(btn){ btn.disabled = false; btn.textContent = 'Refresh rates'; }
   }
 }
 
@@ -10772,11 +10835,6 @@ function computeAccountStats(acc){
   const accountSize = Number(acc.account_size) || 0;
   const currentBalance = acc.current_balance != null ? Number(acc.current_balance) : accountSize;
 
-  // UTC day boundary, not the browser's local time — Upscale's trading day
-  // resets at midnight UTC, and the countdown below assumes the same. Using
-  // local time here (as before) put trades in the wrong "day" bucket by
-  // however many hours the browser's timezone is offset from UTC.
-  const _dayKeyUTC = d => Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
   const todayUTCKey = _dayKeyUTC(new Date());
   const todaysPL = trades
     .filter(t => _dayKeyUTC(new Date(t.close_date)) === todayUTCKey)
