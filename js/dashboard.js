@@ -5433,8 +5433,8 @@ function renderFinanceTransactions(){
         <td data-label="Description">${escapeHtml(t.description || '—')}</td>
         <td data-label="Status">${statusHtml}</td>
         <td class="fin-tx-td-actions" style="text-align:right;white-space:nowrap;">
-          ${t.tx_type !== 'Correction' ? `<button class="drawer-secondary-btn" style="padding:4px 10px;font-size:11px;" onclick="openFinTxModal({editId:${t.id}})">Edit</button>` : ''}
-          ${t.tx_type !== 'Correction' ? `<button class="drawer-secondary-btn" style="padding:4px 10px;font-size:11px;margin-left:4px;" title="Duplicate this transaction with today's date" onclick="duplicateFinTx(${t.id})">Duplicate</button>` : ''}
+          ${t.tx_type !== 'Correction' ? `<button class="drawer-secondary-btn" style="padding:4px 10px;font-size:11px;border:1px solid var(--accent);color:var(--accent);" onclick="openFinTxModal({editId:${t.id}})">Edit</button>` : ''}
+          ${t.tx_type !== 'Correction' ? `<button class="drawer-secondary-btn" style="padding:4px 10px;font-size:11px;margin-left:4px;border:1px solid var(--info);color:var(--info);" title="Duplicate this transaction with today's date" onclick="duplicateFinTx(${t.id})">Duplicate</button>` : ''}
           <button class="drawer-danger-btn" style="padding:4px 10px;font-size:11px;margin-left:4px;" onclick="deleteFinTx(${t.id})">${deleteIconSVG()}</button>
         </td>
       </tr>
