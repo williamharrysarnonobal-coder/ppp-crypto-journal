@@ -1069,30 +1069,36 @@
   .sal-hero{
     background:linear-gradient(145deg, color-mix(in srgb, var(--accent) 12%, var(--surface)), var(--surface));
     border:1px solid color-mix(in srgb, var(--accent) 35%, var(--rule));
-    border-radius:14px;padding:30px 28px;margin-bottom:20px;
+    border-radius:14px;padding:22px 26px;margin-bottom:20px;
+  }
+  /* The page's whole premise, side by side: what the job pays against what
+     trading actually returns — so the hero fills its width instead of
+     stacking one number above a lot of empty space. */
+  .sal-hero-split{display:flex;align-items:center;gap:24px;}
+  .sal-hero-side{flex:1;min-width:0;}
+  .sal-hero-vs{
+    flex-shrink:0;font-size:12px;font-weight:700;letter-spacing:.12em;
+    text-transform:uppercase;color:var(--muted);
+    padding:0 4px;border-left:1px solid var(--rule);padding-left:24px;align-self:stretch;
+    display:flex;align-items:center;
   }
   .sal-hero-label{
-    font-size:11px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;
-    color:var(--accent);margin-bottom:10px;
+    font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;
+    color:var(--accent);margin-bottom:8px;
   }
+  .sal-hero-label-pl{color:var(--win);}
   .sal-hero-value{
-    font-size:52px;font-weight:800;line-height:1;color:var(--win);
+    font-size:38px;font-weight:800;line-height:1;color:var(--win);
     font-family:'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums;letter-spacing:-.02em;
   }
   .sal-hero-sub{
-    font-size:14px;color:var(--muted);margin-top:10px;
+    font-size:12.5px;color:var(--muted);margin-top:8px;
     font-family:'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums;
   }
-  .sal-hero-actual{
-    display:flex;flex-wrap:wrap;align-items:baseline;gap:10px;
-    margin-top:18px;padding-top:16px;border-top:1px solid var(--rule);
+  .sal-hero-verdict{
+    margin-top:16px;padding-top:14px;border-top:1px solid var(--rule);
+    font-size:12.5px;font-weight:600;
   }
-  .sal-hero-actual-label{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);}
-  .sal-hero-actual-value{
-    font-size:20px;font-weight:700;
-    font-family:'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums;
-  }
-  .sal-hero-actual-pct{font-size:12px;font-weight:600;}
 
   .sal-input-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:0 16px;}
   .sal-save-state{font-size:11px;font-weight:500;color:var(--muted);}
@@ -1584,9 +1590,16 @@
   body.mobile-mode .ps-lev-badge{padding:3px 8px;font-size:11px;}
   body.mobile-mode .cfe-grid{grid-template-columns:1fr;}
   body.mobile-mode .be-stat-grid{grid-template-columns:1fr;}
-  body.mobile-mode .sal-hero{padding:22px 18px;}
-  body.mobile-mode .sal-hero-value{font-size:38px;}
-  body.mobile-mode .sal-hero-sub{font-size:12.5px;}
+  body.mobile-mode .sal-hero{padding:18px 16px;}
+  body.mobile-mode .sal-hero-value{font-size:29px;}
+  body.mobile-mode .sal-hero-sub{font-size:11.5px;}
+  /* Side by side doesn't fit a phone — stack them, with the "vs" becoming a
+     horizontal divider between the two halves instead of a vertical one. */
+  body.mobile-mode .sal-hero-split{flex-direction:column;align-items:stretch;gap:14px;}
+  body.mobile-mode .sal-hero-vs{
+    border-left:none;border-top:1px solid var(--rule);
+    padding-left:0;padding-top:12px;align-self:flex-start;
+  }
   body.mobile-mode .sal-input-grid{grid-template-columns:1fr;}
   body.mobile-mode .sal-stat-grid{grid-template-columns:1fr 1fr;}
   body.mobile-mode .sal-stat{padding:12px 13px;}

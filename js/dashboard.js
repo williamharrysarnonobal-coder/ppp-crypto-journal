@@ -3006,11 +3006,11 @@ function renderSalaryGoal(){
 
   const dailyUsd = toUsd(dailyAed);
 
-  // --- hero ---
+  // --- hero: payslip on the left, P&L on the right ---
   hero.textContent = ready ? _salMoney(dailyUsd, 'USD') : '—';
   document.getElementById('salHeroAlt').textContent = ready
     ? `${_salMoney(dailyAed, 'AED')} · ${_salMoney(toPhp(dailyAed), 'PHP')}`
-    : 'Enter your monthly salary below to see the number.';
+    : 'Enter your monthly salary below.';
 
   // --- reality check against real trades (measured, never projected) ---
   const { dayKeys, monthOfDay } = _salaryDayAndMonthBuckets();
@@ -3073,15 +3073,30 @@ function renderSalaryGoal(){
   const totalNet = allDays.reduce((s,k) => s + dayKeys[k], 0);
   const avgPerTradingDay = tradingDays ? totalNet / tradingDays : null;
 
-  const heroActual = document.getElementById('salHeroActual');
+  const actualValEl = document.getElementById('salHeroActualValue');
+  const actualSubEl = document.getElementById('salHeroActualSub');
+  const verdictEl = document.getElementById('salHeroVerdict');
+  if(avgPerTradingDay !== null){
+    actualValEl.textContent = _salMoney(avgPerTradingDay, 'USD');
+    actualValEl.style.color = avgPerTradingDay >= 0 ? 'var(--win)' : 'var(--loss)';
+    actualSubEl.textContent = `measured over ${tradingDays} trading day${tradingDays===1?'':'s'}`;
+  }else{
+    actualValEl.textContent = '—';
+    actualValEl.style.color = 'var(--muted)';
+    actualSubEl.textContent = 'no closed trades yet';
+  }
+
   if(ready && avgPerTradingDay !== null){
     const pct = dailyUsd > 0 ? (avgPerTradingDay / dailyUsd * 100) : 0;
     const good = avgPerTradingDay >= dailyUsd;
-    heroActual.innerHTML = `<span class="sal-hero-actual-label">Your actual average per trading day</span>
-      <span class="sal-hero-actual-value" style="color:${avgPerTradingDay >= 0 ? 'var(--win)' : 'var(--loss)'};">${_salMoney(avgPerTradingDay, 'USD')}</span>
-      <span class="sal-hero-actual-pct" style="color:${good ? 'var(--win)' : 'var(--muted)'};">${good ? '✓ ahead of the job' : `${fmtNum(Math.max(0,pct),0)}% of the way there`}</span>`;
+    const gap = dailyUsd - avgPerTradingDay;
+    verdictEl.style.display = '';
+    verdictEl.style.color = good ? 'var(--win)' : 'var(--muted)';
+    verdictEl.textContent = good
+      ? `✓ Your average trading day is already ahead of a day at the job.`
+      : `${fmtNum(Math.max(0,pct),0)}% of the way there — ${_salMoney(gap,'USD')} a day short.`;
   }else{
-    heroActual.innerHTML = '';
+    verdictEl.style.display = 'none';
   }
 
   // --- breakdown ---
@@ -3177,7 +3192,11 @@ function renderSalaryExpenses({ dailyUsd, monthlyUsdVal, aed, php, days, avgPerT
       : `You're spending about ${fmtNum(vsSalary,0)}% of your salary, so covering expenses is at least as hard as replacing the payslip. Trimming spending moves this bar faster than trading does.`);
   }
   if(daysNeeded !== null){
-    notes.push(`At your current average of ${_salMoney(avgPerTradingDay,'USD')} per trading day, about ${fmtNum(daysNeeded,1)} trading days a month would cover your actual spending.`);
+    // Deliberately the ALL-TIME average, not the selected period's — this
+    // section is about a structural bar, so it shouldn't swing with whichever
+    // month is being viewed. Labelled as such so it can't be confused with
+    // the period figure in Reality Check below.
+    notes.push(`At your all-time average of ${_salMoney(avgPerTradingDay,'USD')} per trading day, about ${fmtNum(daysNeeded,1)} trading days a month would cover your actual spending.`);
   }
   notes.push(`Averaged over ${used.length} ${complete.length ? 'completed' : ''} month${used.length===1?'':'s'} of expenses${complete.length ? '' : ' (including this one, which is still in progress)'}.${unconverted ? ` ${unconverted} transaction${unconverted===1?'':'s'} skipped — account currency has no rate on this page.` : ''}`);
 
@@ -3390,19 +3409,22 @@ function renderSalaryTrend({ monthlyUsd, dayKeys, monthOfDay, months }){
     }
   });
 
-  // Best month, and whether the last two months moved up or down.
+  // Best month, and how the newest month compares with the one before it.
   const best = stats.reduce((b,s) => (b === null || s.net > b.net) ? s : b, null);
   const last = stats[stats.length-1], prev = stats[stats.length-2];
-  const delta = last.pctOfSalary - prev.pctOfSalary;
+  const rose = last.pctOfSalary >= prev.pctOfSalary;
   const monthsCleared = stats.filter(s => s.pctOfSalary >= 100).length;
 
   statsEl.innerHTML = [
     _salStatCard('Best Month',
       `<span style="color:${best.net>=0?'var(--win)':'var(--loss)'};">${_salMoney(best.net,'USD')}</span>`,
-      `${best.label} · ${fmtNum(best.pctOfSalary,0)}% of a month's salary`),
-    _salStatCard('Latest vs Previous',
-      `<span style="color:${delta>=0?'var(--win)':'var(--loss)'};">${delta>=0?'+':''}${fmtNum(delta,0)} pts</span>`,
-      `${prev.label} → ${last.label}`),
+      `${best.label} · covered ${fmtNum(best.pctOfSalary,0)}% of a month's salary`),
+    // The headline is the latest month's own coverage — a bare "-233 pts"
+    // reads like a score out of nowhere, so the comparison goes in the
+    // subtitle where it has something to be relative to.
+    _salStatCard('Latest Month',
+      `<span style="color:${last.pctOfSalary>=0?'var(--win)':'var(--loss)'};">${fmtNum(last.pctOfSalary,0)}%</span>`,
+      `${last.label} · ${rose ? 'up' : 'down'} from ${fmtNum(prev.pctOfSalary,0)}% in ${prev.label}`),
     _salStatCard('Months That Cleared It', `${monthsCleared} / ${stats.length}`,
       monthsCleared ? 'months trading covered a full salary' : 'no month has covered a full salary yet')
   ].join('');
