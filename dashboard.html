@@ -17,7 +17,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<link rel="stylesheet" href="css/style.css?v=168">
+<link rel="stylesheet" href="css/style.css?v=169">
 </head>
 <body>
 
@@ -229,7 +229,7 @@
           <div class="note-detail-top">
             <span class="pill" id="noteDetailTag">—</span>
             <div class="note-detail-actions">
-              <button class="drawer-secondary-btn" onclick="editSelectedNote()"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px;"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>Edit</button>
+              <button class="drawer-secondary-btn" title="Edit" style="padding:8px 10px;" onclick="editSelectedNote()"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>
               <button class="note-delete-btn" onclick="deleteSelectedNote()"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px;"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>Delete</button>
             </div>
           </div>
@@ -351,7 +351,7 @@
         <div class="sub">Your trading identity, rules, and inspiration.</div>
       </div>
       <div class="header-actions">
-        <button class="poscalc-accent-btn" id="profileEditBtn" onclick="enterProfileEditMode()"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg> Edit</button>
+        <button class="poscalc-accent-btn" id="profileEditBtn" title="Edit" style="padding:8px 12px;" onclick="enterProfileEditMode()"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>
         <button class="drawer-secondary-btn" id="profileCancelBtn" style="display:none;" onclick="cancelProfileEdit()">Cancel</button>
         <button class="ai-btn" id="profileSaveBtn" style="display:none;" onclick="saveProfile()">Save changes</button>
       </div>
@@ -478,6 +478,10 @@
       </h2>
       <div class="sub" style="margin-bottom:16px;">Risk-based position sizing across your accounts — enter the prices, everything else is worked out for you.</div>
 
+      <div class="field-row">
+        <label>Symbol</label>
+        <input id="psSymbol" type="text" placeholder="e.g. BTC/USD" oninput="onPosSizeInput()">
+      </div>
       <div class="field-row">
         <label>Direction</label>
         <select id="psDirection" onchange="onPosSizeInput()">
@@ -1894,7 +1898,7 @@
     </div>
     <div style="font-size:13px;color:var(--ink);white-space:pre-wrap;margin-bottom:20px;" id="achDetailBody"></div>
     <div style="display:flex;gap:10px;">
-      <button class="drawer-secondary-btn" style="flex:1;" id="achDetailEditBtn"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px;"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>Edit</button>
+      <button class="drawer-secondary-btn" title="Edit" style="padding:8px 12px;" id="achDetailEditBtn"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>
       <button class="drawer-danger-btn" style="flex:1;" id="achDetailDeleteBtn"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px;"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>Delete</button>
     </div>
   </div>
@@ -1998,7 +2002,7 @@
   </div>
   <div id="drawerBody"></div>
   <div class="drawer-actions">
-    <button class="drawer-secondary-btn" id="drawerEditBtn" onclick="enterEditMode()"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px;"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>Edit</button>
+    <button class="drawer-secondary-btn" id="drawerEditBtn" title="Edit" style="padding:9px 12px;" onclick="enterEditMode()"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>
     <button class="drawer-secondary-btn" id="drawerSetupNotesBtn" onclick="openLinkedSetupNotes()" style="display:none;">Setup Notes</button>
     <button class="drawer-secondary-btn" id="drawerConfluenceBtn" onclick="openConfluenceModalForTrade(drawerPositionId)" style="display:none;">Confluence</button>
     <button class="ai-btn" id="drawerSaveBtn" onclick="saveDrawer()">Save changes</button>
@@ -2011,6 +2015,6 @@
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=1"></script>
-<script src="js/dashboard.js?v=257"></script>
+<script src="js/dashboard.js?v=259"></script>
 </body>
 </html>

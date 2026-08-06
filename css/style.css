@@ -1403,6 +1403,10 @@
   .fin-payment-list{margin-top:10px;padding-top:10px;border-top:1px dashed var(--rule);display:flex;flex-direction:column;gap:8px;}
   .fin-payment-row{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;color:var(--ink);}
   .fin-payment-row span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .fin-rec-toggle{cursor:pointer;user-select:none;}
+  .fin-rec-toggle:hover{color:var(--accent);}
+  .fin-rec-caret{font-size:9px;color:var(--muted);margin-left:5px;}
+  .fin-rec-item{padding-left:14px;font-size:11.5px;color:var(--muted);}
 
   /* Finance: "View bill details" hint on the credit card face */
   .fin-view-bill-hint{font-size:11px;color:var(--accent);font-weight:600;margin-top:8px;}

@@ -4674,7 +4674,7 @@ function finAccountCardHTML(a){
       <div class="fin-acc-card-actions${!isCredit ? ' has-subadd' : ''}" onclick="event.stopPropagation();">
         ${!isCredit ? `<button class="fin-subacct-add" onclick="openFinSubAccountModal(${a.id})">+ Sub-account</button>` : ''}
         <div class="fin-acc-card-actions-btns">
-          <button class="drawer-secondary-btn" style="padding:4px 10px;font-size:11px;" onclick="openFinAccountModal(${a.id})">Edit</button>
+          <button class="drawer-secondary-btn" style="padding:4px 8px;font-size:11px;color:var(--ink);border-color:var(--accent);" title="Edit" onclick="openFinAccountModal(${a.id})">${editIconSVG()}</button>
           <button class="drawer-danger-btn" style="padding:4px 10px;font-size:11px;margin-left:0;" onclick="deleteFinAccount(${a.id})">${deleteIconSVG()}</button>
         </div>
       </div>
@@ -4927,9 +4927,27 @@ function openFinAccountDetailsModal(accountId, backToId){
   const hasBill = dueForThisAccount.length > 0 || prevTx > 0;
   const paidThisCycle = _finBillPaidCovers(a.last_bill_paid, prevMonth);
 
-  const billSection = (label, recurring, tx) => `
+  // "Recurring" is one number hiding several subscriptions and installments —
+  // make it expandable so the total can be checked against its parts without
+  // leaving for the Recurring tab. Each bill section gets its own toggle id
+  // since the same account renders two of them (this month and last).
+  const recurringItems = _finMonthlyRecurringItems(a.id);
+  const billSection = (label, recurring, tx, slug) => `
     <div class="fin-acc-details-heading">${label}</div>
-    <div class="fin-acc-details-row"><span>Recurring</span><span>${finMoney(recurring, a.currency)}</span></div>
+    <div class="fin-acc-details-row fin-rec-toggle" onclick="toggleFinRecurringList('${slug}')">
+      <span>Recurring
+        ${recurringItems.length ? `<span class="fin-rec-caret" id="finRecCaret-${slug}">▸</span><span style="color:var(--muted);font-size:11px;margin-left:4px;">${recurringItems.length} item${recurringItems.length===1?'':'s'}</span>` : ''}
+      </span>
+      <span>${finMoney(recurring, a.currency)}</span>
+    </div>
+    <div id="finRecList-${slug}" style="display:none;">
+      ${recurringItems.length ? recurringItems.map(x => `
+        <div class="fin-acc-details-row fin-rec-item">
+          <span>${escapeHtml(x.r.name || x.r.kind || 'Item')}${x.isInstallment ? `<span style="color:var(--muted);font-size:10.5px;margin-left:6px;">installment</span>` : ''}${!x.counted ? `<span style="color:var(--muted);font-size:10.5px;margin-left:6px;">${escapeHtml(x.r.cycle || '')} — not billed monthly</span>` : ''}</span>
+          <span${x.counted ? '' : ' style="color:var(--muted);"'}>${finMoney(x.amount, a.currency)}</span>
+        </div>
+      `).join('') : `<div class="fin-acc-details-row fin-rec-item"><span style="color:var(--muted);">No recurring items on this account.</span><span></span></div>`}
+    </div>
     <div class="fin-acc-details-row"><span>Transactions</span><span>${finMoney(tx, a.currency)}</span></div>
     <div class="fin-acc-details-row fin-acc-details-total"><span>Total</span><span>${finMoney(recurring + tx, a.currency)}</span></div>
   `;
@@ -4947,9 +4965,9 @@ function openFinAccountDetailsModal(accountId, backToId){
 
   document.getElementById('finAccDetailsBody').innerHTML = `
     <div class="fin-acc-details-summary">Owed <strong style="color:var(--loss);">${finMoney(finOwedFor(a), a.currency)}</strong> · Limit ${finMoney(a.credit_limit, a.currency)}</div>
-    <div class="fin-acc-details-section">${billSection('RUNNING BILL FOR ' + now.toLocaleDateString('en-US',{month:'long'}).toUpperCase(), monthlyRecurring, curTx)}</div>
+    <div class="fin-acc-details-section">${billSection('RUNNING BILL FOR ' + now.toLocaleDateString('en-US',{month:'long'}).toUpperCase(), monthlyRecurring, curTx, 'cur')}</div>
     <div class="fin-acc-details-section">
-      ${billSection('BILL FOR ' + prevMonth.toLocaleDateString('en-US',{month:'long'}).toUpperCase(), monthlyRecurring, prevTx)}
+      ${billSection('BILL FOR ' + prevMonth.toLocaleDateString('en-US',{month:'long'}).toUpperCase(), monthlyRecurring, prevTx, 'prev')}
       ${paymentHtml}
     </div>
     <div class="fin-acc-details-section">
@@ -5433,8 +5451,8 @@ function renderFinanceTransactions(){
         <td data-label="Description">${escapeHtml(t.description || '—')}</td>
         <td data-label="Status">${statusHtml}</td>
         <td class="fin-tx-td-actions" style="text-align:right;white-space:nowrap;">
-          ${t.tx_type !== 'Correction' ? `<button class="drawer-secondary-btn" style="padding:4px 8px;font-size:11px;color:var(--accent);border-color:var(--accent);" title="Edit this transaction" onclick="openFinTxModal({editId:${t.id}})">${editIconSVG()}</button>` : ''}
-          ${t.tx_type !== 'Correction' ? `<button class="drawer-secondary-btn" style="padding:4px 8px;font-size:11px;margin-left:4px;color:var(--accent);border-color:var(--accent);" title="Duplicate this transaction with today's date" onclick="duplicateFinTx(${t.id})">${duplicateIconSVG()}</button>` : ''}
+          ${t.tx_type !== 'Correction' ? `<button class="drawer-secondary-btn" style="padding:4px 8px;font-size:11px;color:var(--ink);border-color:var(--accent);" title="Edit this transaction" onclick="openFinTxModal({editId:${t.id}})">${editIconSVG()}</button>` : ''}
+          ${t.tx_type !== 'Correction' ? `<button class="drawer-secondary-btn" style="padding:4px 8px;font-size:11px;margin-left:4px;color:var(--ink);border-color:var(--accent);" title="Duplicate this transaction with today's date" onclick="duplicateFinTx(${t.id})">${duplicateIconSVG()}</button>` : ''}
           <button class="drawer-danger-btn" style="padding:4px 8px;font-size:11px;margin-left:4px;" onclick="deleteFinTx(${t.id})">${deleteIconSVG()}</button>
         </td>
       </tr>
@@ -6475,15 +6493,33 @@ function _finMonthTxTotal(accountId, monthDate){
 // This month's committed recurring dues on an account: each active
 // installment's monthly share, plus Monthly-cycle subscription prices.
 // (Quarterly/Yearly subs excluded — they're not part of EVERY month's bill.)
-function _finMonthlyRecurringTotal(accountId){
+// The individual items behind _finMonthlyRecurringTotal — same filter and
+// same per-item maths, so the expanded list can never add up to something
+// different from the total shown above it.
+function toggleFinRecurringList(slug){
+  const list = document.getElementById('finRecList-' + slug);
+  const caret = document.getElementById('finRecCaret-' + slug);
+  if(!list) return;
+  const open = list.style.display === 'none';
+  list.style.display = open ? 'block' : 'none';
+  if(caret) caret.textContent = open ? '▾' : '▸';
+}
+
+function _finMonthlyRecurringItems(accountId){
   return FIN_RECURRING
     .filter(r => r.account_id === accountId && !_finRecIsFullyPaid(r))
-    .reduce((s, r) => {
-      if(r.kind === 'Installment'){
-        return s + (Number(r.total_amount) || 0) / Math.max(1, Number(r.total_payments) || 1);
-      }
-      return (r.cycle || 'Monthly') === 'Monthly' ? s + (Number(r.price) || 0) : s;
-    }, 0);
+    .map(r => {
+      const isInstallment = r.kind === 'Installment';
+      const amount = isInstallment
+        ? (Number(r.total_amount) || 0) / Math.max(1, Number(r.total_payments) || 1)
+        : ((r.cycle || 'Monthly') === 'Monthly' ? (Number(r.price) || 0) : 0);
+      return { r, amount, isInstallment, counted: amount > 0 };
+    })
+    .sort((a,b) => b.amount - a.amount);
+}
+
+function _finMonthlyRecurringTotal(accountId){
+  return _finMonthlyRecurringItems(accountId).reduce((s, x) => s + x.amount, 0);
 }
 
 function _finBillPaidCovers(lastBillPaid, monthDate){
@@ -6880,7 +6916,7 @@ function renderFinanceRecurring(){
         <td style="white-space:nowrap;">${dueCell}</td>
         <td>${escapeHtml(r.notes || '—')}</td>
         <td style="text-align:right;white-space:nowrap;">
-          <button class="drawer-secondary-btn" style="padding:4px 10px;font-size:11px;" onclick="openFinRecModal('Installment', ${r.id})">Edit</button>
+          <button class="drawer-secondary-btn" style="padding:4px 8px;font-size:11px;color:var(--ink);border-color:var(--accent);" title="Edit" onclick="openFinRecModal('Installment', ${r.id})">${editIconSVG()}</button>
           <button class="drawer-danger-btn" style="padding:4px 10px;font-size:11px;margin-left:4px;" onclick="deleteFinRec(${r.id})">${deleteIconSVG()}</button>
         </td>
       </tr>
@@ -6922,7 +6958,7 @@ function renderFinanceRecurring(){
         ${r.notes ? `<div style="font-size:12px;color:var(--muted);margin-top:8px;font-style:italic;">${escapeHtml(r.notes)}</div>` : ''}
         <div class="fin-acc-card-actions">
           <div class="fin-acc-card-actions-btns">
-            <button class="drawer-secondary-btn" style="padding:4px 10px;font-size:11px;" onclick="openFinRecModal('Installment', ${r.id})">Edit</button>
+            <button class="drawer-secondary-btn" style="padding:4px 8px;font-size:11px;color:var(--ink);border-color:var(--accent);" title="Edit" onclick="openFinRecModal('Installment', ${r.id})">${editIconSVG()}</button>
             <button class="drawer-danger-btn" style="padding:4px 10px;font-size:11px;margin-left:0;" onclick="deleteFinRec(${r.id})">${deleteIconSVG()}</button>
           </div>
         </div>
@@ -6949,7 +6985,7 @@ function renderFinanceRecurring(){
         <td style="white-space:nowrap;">${dueCell}</td>
         <td>${escapeHtml(r.notes || '—')}</td>
         <td style="text-align:right;white-space:nowrap;">
-          <button class="drawer-secondary-btn" style="padding:4px 10px;font-size:11px;" onclick="openFinRecModal('Subscription', ${r.id})">Edit</button>
+          <button class="drawer-secondary-btn" style="padding:4px 8px;font-size:11px;color:var(--ink);border-color:var(--accent);" title="Edit" onclick="openFinRecModal('Subscription', ${r.id})">${editIconSVG()}</button>
           <button class="drawer-danger-btn" style="padding:4px 10px;font-size:11px;margin-left:4px;" onclick="deleteFinRec(${r.id})">${deleteIconSVG()}</button>
         </td>
       </tr>
@@ -6976,7 +7012,7 @@ function renderFinanceRecurring(){
         ${r.notes ? `<div style="font-size:12px;color:var(--muted);margin-top:8px;font-style:italic;">${escapeHtml(r.notes)}</div>` : ''}
         <div class="fin-acc-card-actions">
           <div class="fin-acc-card-actions-btns">
-            <button class="drawer-secondary-btn" style="padding:4px 10px;font-size:11px;" onclick="openFinRecModal('Subscription', ${r.id})">Edit</button>
+            <button class="drawer-secondary-btn" style="padding:4px 8px;font-size:11px;color:var(--ink);border-color:var(--accent);" title="Edit" onclick="openFinRecModal('Subscription', ${r.id})">${editIconSVG()}</button>
             <button class="drawer-danger-btn" style="padding:4px 10px;font-size:11px;margin-left:0;" onclick="deleteFinRec(${r.id})">${deleteIconSVG()}</button>
           </div>
         </div>
@@ -11965,6 +12001,7 @@ function onPosSizeInput(){
 // "Trade This Setup", which does live in the database.
 function saveCalculatorDraft(){
   const draft = {
+    symbol: document.getElementById('psSymbol').value || null,
     direction: document.getElementById('psDirection').value || null,
     entry: document.getElementById('psEntry').value || null,
     tp: document.getElementById('psTP').value || null,
@@ -11985,6 +12022,7 @@ function saveCalculatorDraft(){
 
 function clearCalculatorDraft(){
   try{ localStorage.removeItem('poscalc-draft'); }catch(e){}
+  document.getElementById('psSymbol').value = '';
   document.getElementById('psDirection').value = 'Long';
   document.getElementById('psEntry').value = '';
   document.getElementById('psTP').value = '';
@@ -12001,6 +12039,7 @@ function refreshPosSizeCalculator(){
     calcDraftLoaded = true;
     const draft = loadCalculatorDraft();
     if(draft){
+      if(draft.symbol) document.getElementById('psSymbol').value = draft.symbol;
       if(draft.direction) document.getElementById('psDirection').value = draft.direction;
       if(draft.entry != null) document.getElementById('psEntry').value = draft.entry;
       if(draft.tp != null) document.getElementById('psTP').value = draft.tp;
@@ -12072,6 +12111,7 @@ async function tradeThisSetup(accountId){
   const tpPct = Number.isFinite(tp) ? Math.abs(tp - entry) / entry * 100 : null;
 
   const payload = {
+    symbol: (document.getElementById('psSymbol').value || '').trim() || null,
     account_id: account.id,
     account_name: account.account_name,
     leverage: c.minLev,
