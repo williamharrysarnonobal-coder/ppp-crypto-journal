@@ -5434,6 +5434,7 @@ function renderFinanceTransactions(){
         <td data-label="Status">${statusHtml}</td>
         <td class="fin-tx-td-actions" style="text-align:right;white-space:nowrap;">
           ${t.tx_type !== 'Correction' ? `<button class="drawer-secondary-btn" style="padding:4px 10px;font-size:11px;" onclick="openFinTxModal({editId:${t.id}})">Edit</button>` : ''}
+          ${t.tx_type !== 'Correction' ? `<button class="drawer-secondary-btn" style="padding:4px 10px;font-size:11px;margin-left:4px;" title="Duplicate this transaction with today's date" onclick="duplicateFinTx(${t.id})">Duplicate</button>` : ''}
           <button class="drawer-danger-btn" style="padding:4px 10px;font-size:11px;margin-left:4px;" onclick="deleteFinTx(${t.id})">${deleteIconSVG()}</button>
         </td>
       </tr>
@@ -5562,6 +5563,26 @@ function _finAccountOptionsHtml(){
 
 let editingFinTxId = null;
 
+// Repeat of a transaction you've already logged — opens Add Transaction with
+// every field copied but the date reset to today, since a duplicate is
+// almost always the same purchase happening again rather than a second entry
+// on the original date. Nothing is saved until you press Save, so the amount
+// or date can still be adjusted first.
+function duplicateFinTx(id){
+  const t = FIN_TXNS.find(x => x.id === id);
+  if(!t) return;
+  openFinTxModal({
+    tx_type: t.tx_type,
+    amount: t.amount,
+    description: t.description,
+    accountId: t.account_id,
+    toAccountId: t.to_account_id,
+    category: t.category,
+    subcategory: t.subcategory,
+    date: new Date().toISOString().slice(0,10)
+  });
+}
+
 function openFinTxModal(prefill){
   if(!FIN_ACCOUNTS.length){
     customAlert('Add at least one account first (Finance > Accounts) — every transaction needs an account.');
@@ -5600,6 +5621,8 @@ function openFinTxModal(prefill){
     if(prefill.amount != null) document.getElementById('finTxAmount').value = prefill.amount;
     if(prefill.description) document.getElementById('finTxDesc').value = prefill.description;
     if(prefill.accountId) document.getElementById('finTxAccount').value = prefill.accountId;
+    if(prefill.toAccountId) document.getElementById('finTxToAccount').value = prefill.toAccountId;
+    if(prefill.date) document.getElementById('finTxDate').value = prefill.date;
     if(prefill.category){
       const catSel = document.getElementById('finTxCategory');
       if([...catSel.options].some(o => o.value === prefill.category)) catSel.value = prefill.category;
