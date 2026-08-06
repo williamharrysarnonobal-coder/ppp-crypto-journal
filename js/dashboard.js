@@ -5433,9 +5433,9 @@ function renderFinanceTransactions(){
         <td data-label="Description">${escapeHtml(t.description || '—')}</td>
         <td data-label="Status">${statusHtml}</td>
         <td class="fin-tx-td-actions" style="text-align:right;white-space:nowrap;">
-          ${t.tx_type !== 'Correction' ? `<button class="drawer-secondary-btn" style="padding:4px 10px;font-size:11px;border:1px solid var(--accent);color:var(--accent);" onclick="openFinTxModal({editId:${t.id}})">Edit</button>` : ''}
-          ${t.tx_type !== 'Correction' ? `<button class="drawer-secondary-btn" style="padding:4px 10px;font-size:11px;margin-left:4px;border:1px solid var(--info);color:var(--info);" title="Duplicate this transaction with today's date" onclick="duplicateFinTx(${t.id})">Duplicate</button>` : ''}
-          <button class="drawer-danger-btn" style="padding:4px 10px;font-size:11px;margin-left:4px;" onclick="deleteFinTx(${t.id})">${deleteIconSVG()}</button>
+          ${t.tx_type !== 'Correction' ? `<button class="drawer-secondary-btn" style="padding:4px 8px;font-size:11px;color:var(--accent);border-color:var(--accent);" title="Edit this transaction" onclick="openFinTxModal({editId:${t.id}})">${editIconSVG()}</button>` : ''}
+          ${t.tx_type !== 'Correction' ? `<button class="drawer-secondary-btn" style="padding:4px 8px;font-size:11px;margin-left:4px;color:var(--accent);border-color:var(--accent);" title="Duplicate this transaction with today's date" onclick="duplicateFinTx(${t.id})">${duplicateIconSVG()}</button>` : ''}
+          <button class="drawer-danger-btn" style="padding:4px 8px;font-size:11px;margin-left:4px;" onclick="deleteFinTx(${t.id})">${deleteIconSVG()}</button>
         </td>
       </tr>
     `;
@@ -13014,6 +13014,13 @@ function accountEditIconSVG(){
 
 function editIconSVG(){
   return `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px;"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>`;
+}
+
+// Icon-only row action in the Transactions table — the trash button was
+// already icon-only, so Duplicate matches it rather than sitting there as a
+// wide text button. (Edit reuses the existing editIconSVG above.)
+function duplicateIconSVG(){
+  return `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`;
 }
 
 function deleteIconSVG(){
