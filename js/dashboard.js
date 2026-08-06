@@ -2777,6 +2777,10 @@ let SALARY_SAVE_TIMER = null;
 // SALARY_MONTH is 'all' or a two-digit 'MM' WITHIN the selected year.
 let SALARY_YEAR = 'all';
 let SALARY_MONTH = 'all';
+// The year picker defaults to your most recent trading year the first time
+// the page renders, so the month picker is usable straight away instead of
+// sitting greyed out until you notice a year has to be chosen first.
+let SALARY_YEAR_AUTOSET = false;
 
 // True when a 'YYYY-MM' bucket belongs to the currently selected period.
 function _salaryInPeriod(monthKey){
@@ -2999,6 +3003,26 @@ function renderSalaryGoal(){
   // that actually contain closed trades ever appear.
   const years = [...new Set(months.map(m => m.split('-')[0]))].sort().reverse();
   if(SALARY_YEAR !== 'all' && !years.includes(SALARY_YEAR)){ SALARY_YEAR = 'all'; SALARY_MONTH = 'all'; }
+  // Open on the current month by default. Falls back gracefully when there
+  // are no trades in it yet: current year (all months), otherwise the newest
+  // year that does have trades. Runs once, so deliberately switching to
+  // "All years" afterwards sticks.
+  if(!SALARY_YEAR_AUTOSET && years.length){
+    SALARY_YEAR_AUTOSET = true;
+    const now = new Date();
+    const curYear = String(now.getUTCFullYear());
+    const curMonth = String(now.getUTCMonth() + 1).padStart(2, '0');
+    if(months.includes(`${curYear}-${curMonth}`)){
+      SALARY_YEAR = curYear;
+      SALARY_MONTH = curMonth;
+    }else if(years.includes(curYear)){
+      SALARY_YEAR = curYear;
+      SALARY_MONTH = 'all';
+    }else{
+      SALARY_YEAR = years[0];
+      SALARY_MONTH = 'all';
+    }
+  }
 
   const monthsInYear = SALARY_YEAR === 'all'
     ? []
@@ -3014,10 +3038,12 @@ function renderSalaryGoal(){
   const monthSel = document.getElementById('salMonthFilter');
   if(monthSel){
     // With no year picked there's nothing sensible to list, so the month
-    // picker is disabled rather than showing months from mixed years.
+    // picker is disabled — but it says why rather than sitting there as a
+    // dead "All months" that looks broken.
     monthSel.disabled = SALARY_YEAR === 'all';
+    monthSel.title = SALARY_YEAR === 'all' ? 'Choose a year first to filter by month' : '';
     monthSel.innerHTML = SALARY_YEAR === 'all'
-      ? `<option value="all">All months</option>`
+      ? `<option value="all">Pick a year first</option>`
       : `<option value="all">All months</option>` +
         monthsInYear.map(m => `<option value="${m}">${_salaryMonthLabel(`${SALARY_YEAR}-${m}`).replace(' ' + SALARY_YEAR, '')}</option>`).join('');
     monthSel.value = SALARY_MONTH;
