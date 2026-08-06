@@ -1886,7 +1886,7 @@ function _confluenceScoreFor(t){
   if(!t.confluence_answers || !Object.keys(t.confluence_answers).length) return null;
   const cfg = CONFLUENCE_SETUPS[`${t.trade_type}|${t.pattern_type}`];
   if(!cfg) return null;
-  const { total, done } = _confluenceProgress(cfg.items, t.confluence_answers, !!t.chart_pattern);
+  const { total, done } = _confluenceProgress(cfg.items, t.confluence_answers);
   return total ? done / total : null;
 }
 
@@ -7545,15 +7545,31 @@ function _renderTradeViewFieldRow(f, row){
 // looked it up, so it has to be re-looked-up here rather than stored twice.
 function _renderTradeViewConfluenceGroup(row){
   const hasAnswers = row.confluence_answers && typeof row.confluence_answers === 'object' && Object.keys(row.confluence_answers).length;
-  if(!hasAnswers && !row.chart_pattern) return '';
+  // Nothing saved yet: still show the heading with a prompt rather than
+  // silently dropping the whole section — an absent section reads as a bug,
+  // and there's no other hint that the ✓ button in the action bar adds one.
+  if(!hasAnswers && !row.chart_pattern){
+    return `<div class="field-row span-2 field-group-title">Confluence</div>
+      <div class="field-row span-2">
+        <div class="field-static" style="color:var(--muted);font-size:12px;">
+          Not filled in for this trade — use the ✓ button below to add it.
+        </div>
+      </div>`;
+  }
 
   const cfg = CONFLUENCE_SETUPS[`${row.trade_type}|${row.pattern_type}`];
   const answerLabel = { yes:'Yes', retest:'Retest', almost:'Almost', no:'No' };
   const answerColor = { yes:'var(--win)', retest:'var(--info)', almost:'var(--accent)', no:'var(--loss)' };
 
-  const rows = cfg ? Object.entries(row.confluence_answers || {}).map(([i, ans]) => {
-    const item = cfg.items[i];
-    if(!item) return '';
+  // Walk the CHECKLIST, not just the saved answers — an unanswered question
+  // still gets a row (as "Not answered") so you can see what was skipped
+  // instead of it silently vanishing from the list.
+  const answers = row.confluence_answers || {};
+  const rows = cfg ? cfg.items.map((item, i) => {
+    const ans = answers[i];
+    if(ans === undefined){
+      return `<div class="field-row"><label>${escapeHtml(item.text)}</label><div class="field-static" style="color:var(--muted);">Not answered</div></div>`;
+    }
     // "Sequence"-style items (select) store the literal chosen option
     // (e.g. "3rd") as the answer, not a yes/retest/almost/no value.
     const display = item.select ? escapeHtml(ans) : (answerLabel[ans] || ans);
@@ -7566,15 +7582,14 @@ function _renderTradeViewConfluenceGroup(row){
     return `<div class="field-row"><label>${escapeHtml(item.text)}</label><div class="field-static" style="color:${color};">${display}</div></div>`;
   }).join('') : '';
 
-  const patternRow = row.chart_pattern
-    ? `<div class="field-row"><label>Chart Pattern</label><div class="field-static">${escapeHtml(row.chart_pattern)}</div></div>`
-    : '';
+  // Always shown (it's optional and unscored, but its absence is worth seeing).
+  const patternRow = `<div class="field-row"><label>Chart Pattern</label><div class="field-static"${row.chart_pattern ? '' : ' style="color:var(--muted);"'}>${row.chart_pattern ? escapeHtml(row.chart_pattern) : 'None'}</div></div>`;
 
   // Same scoring as the live checklist's progress chip (Yes/Retest = full
   // credit, Almost = half, No = none) — here it reads as how strong this
   // trade's confluence actually was, not just how many questions got answered.
   const scoreBadge = cfg ? (() => {
-    const { total, done } = _confluenceProgress(cfg.items, row.confluence_answers || {}, !!row.chart_pattern);
+    const { total, done } = _confluenceProgress(cfg.items, row.confluence_answers || {});
     const pct = total ? done / total : 0;
     const color = pct >= 0.8 ? 'var(--win)' : (pct >= 0.5 ? 'var(--accent)' : 'var(--loss)');
     return `<span style="font-size:11px;font-weight:700;letter-spacing:0;text-transform:none;color:${color};font-variant-numeric:tabular-nums;">${Number(done.toFixed(1))}/${total}</span>`;
@@ -11527,9 +11542,12 @@ function _renderConfluenceItemRow(it, i, ans, setAnswerFn){
 // For an "invert" item (Left/Right Hand Present, where No is the good
 // outcome) the credit flips too — a green "No" is a hit, a red "Yes" is a
 // miss — otherwise a fully clean checklist would never actually show full marks.
-function _confluenceProgress(items, answers, chartPatternPresent){
+// Chart Pattern is deliberately NOT part of the score: the picker is labelled
+// "(optional)", so counting it in the denominator made a fully answered
+// checklist read as 5/6 and unreachable without picking one.
+function _confluenceProgress(items, answers){
   const answeredValues = Object.values(answers);
-  let done = chartPatternPresent ? 1 : 0;
+  let done = 0;
   items.forEach((it, i) => {
     const ans = answers[i];
     if(ans === undefined) return;
@@ -11542,7 +11560,7 @@ function _confluenceProgress(items, answers, chartPatternPresent){
     if(ans === 'yes' || ans === 'retest') done += 1;
     else if(ans === 'almost') done += 0.5;
   });
-  return { total: items.length + 1, done, unanswered: items.length - answeredValues.length };
+  return { total: items.length, done, unanswered: items.length - answeredValues.length };
 }
 
 let confluenceTarget = null;  // { type:'setup', id } | { type:'trade', positionId }
@@ -11640,7 +11658,7 @@ function renderConfluenceChecklist(){
     return;
   }
 
-  const { total, done, unanswered } = _confluenceProgress(cfg.items, confluenceAnswers, !!confluenceChartPattern);
+  const { total, done, unanswered } = _confluenceProgress(cfg.items, confluenceAnswers);
 
   const itemsHtml = cfg.items.map((it, i) =>
     _renderConfluenceItemRow(it, i, confluenceAnswers[i], 'setConfluenceAnswer')
@@ -12784,7 +12802,7 @@ function renderBbChecklist(){
     return;
   }
 
-  const { total, done, unanswered } = _confluenceProgress(cfg.items, bbAnswers, !!bbChartPattern);
+  const { total, done, unanswered } = _confluenceProgress(cfg.items, bbAnswers);
 
   const itemsHtml = cfg.items.map((it, i) =>
     _renderConfluenceItemRow(it, i, bbAnswers[i], 'setBbAnswer')
