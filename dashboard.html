@@ -578,6 +578,7 @@
         <div class="sub">What your day job pays per day — and what trading has to do to match it.</div>
       </div>
       <div class="filters">
+        <select id="salYearFilter" onchange="onSalaryYearChange()"></select>
         <select id="salMonthFilter" onchange="onSalaryMonthChange()"></select>
         <button class="poscalc-accent-btn" onclick="downloadSalaryPDF()"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Download PDF</button>
       </div>
@@ -1966,6 +1967,6 @@
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=1"></script>
-<script src="js/dashboard.js?v=246"></script>
+<script src="js/dashboard.js?v=247"></script>
 </body>
 </html>

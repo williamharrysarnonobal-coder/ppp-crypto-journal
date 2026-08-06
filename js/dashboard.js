@@ -2772,8 +2772,25 @@ const SALARY_DEFAULTS = {
 };
 
 let SALARY_SAVE_TIMER = null;
-// 'all' or a 'YYYY-MM' key — which period the Reality Check and the PDF cover.
+// Year and month are separate filters so the month list stays short once
+// there are several years of trades. SALARY_YEAR is 'all' or 'YYYY';
+// SALARY_MONTH is 'all' or a two-digit 'MM' WITHIN the selected year.
+let SALARY_YEAR = 'all';
 let SALARY_MONTH = 'all';
+
+// True when a 'YYYY-MM' bucket belongs to the currently selected period.
+function _salaryInPeriod(monthKey){
+  if(SALARY_YEAR === 'all') return true;
+  const [y, m] = monthKey.split('-');
+  if(y !== SALARY_YEAR) return false;
+  return SALARY_MONTH === 'all' || m === SALARY_MONTH;
+}
+
+function _salaryPeriodLabel(){
+  if(SALARY_YEAR === 'all') return 'All time';
+  if(SALARY_MONTH === 'all') return SALARY_YEAR;
+  return _salaryMonthLabel(`${SALARY_YEAR}-${SALARY_MONTH}`);
+}
 
 // UTC month key, matching how _dayKeyUTC buckets days, so a trade never
 // lands in a different month here than it does in the day counts.
@@ -2804,15 +2821,24 @@ function _salaryMonthsPresent(monthOfDay){
   return [...new Set(Object.values(monthOfDay))].sort().reverse();
 }
 
+function onSalaryYearChange(){
+  SALARY_YEAR = document.getElementById('salYearFilter').value || 'all';
+  // Whichever month was picked belonged to the previous year — start that
+  // year on "All months" rather than silently carrying it over.
+  SALARY_MONTH = 'all';
+  renderSalaryGoal();
+}
+
 function onSalaryMonthChange(){
   SALARY_MONTH = document.getElementById('salMonthFilter').value || 'all';
   renderSalaryGoal();
 }
 
+// Clicking a row in the Month by Month table jumps both filters to it.
 function focusSalaryMonth(key){
-  SALARY_MONTH = key;
-  const sel = document.getElementById('salMonthFilter');
-  if(sel) sel.value = key;
+  const [y, m] = key.split('-');
+  SALARY_YEAR = y;
+  SALARY_MONTH = m;
   renderSalaryGoal();
 }
 
@@ -2969,13 +2995,32 @@ function renderSalaryGoal(){
   const { dayKeys, monthOfDay } = _salaryDayAndMonthBuckets();
   const months = _salaryMonthsPresent(monthOfDay);
 
-  // Keep the month picker in step with the data, preserving the selection.
-  const sel = document.getElementById('salMonthFilter');
-  if(sel){
-    if(SALARY_MONTH !== 'all' && !months.includes(SALARY_MONTH)) SALARY_MONTH = 'all';
-    sel.innerHTML = `<option value="all">All time</option>` +
-      months.map(m => `<option value="${m}">${_salaryMonthLabel(m)}</option>`).join('');
-    sel.value = SALARY_MONTH;
+  // Both pickers are built from the journal itself — only years and months
+  // that actually contain closed trades ever appear.
+  const years = [...new Set(months.map(m => m.split('-')[0]))].sort().reverse();
+  if(SALARY_YEAR !== 'all' && !years.includes(SALARY_YEAR)){ SALARY_YEAR = 'all'; SALARY_MONTH = 'all'; }
+
+  const monthsInYear = SALARY_YEAR === 'all'
+    ? []
+    : months.filter(m => m.startsWith(SALARY_YEAR + '-')).map(m => m.split('-')[1]);
+  if(SALARY_MONTH !== 'all' && !monthsInYear.includes(SALARY_MONTH)) SALARY_MONTH = 'all';
+
+  const yearSel = document.getElementById('salYearFilter');
+  if(yearSel){
+    yearSel.innerHTML = `<option value="all">All years</option>` +
+      years.map(y => `<option value="${y}">${y}</option>`).join('');
+    yearSel.value = SALARY_YEAR;
+  }
+  const monthSel = document.getElementById('salMonthFilter');
+  if(monthSel){
+    // With no year picked there's nothing sensible to list, so the month
+    // picker is disabled rather than showing months from mixed years.
+    monthSel.disabled = SALARY_YEAR === 'all';
+    monthSel.innerHTML = SALARY_YEAR === 'all'
+      ? `<option value="all">All months</option>`
+      : `<option value="all">All months</option>` +
+        monthsInYear.map(m => `<option value="${m}">${_salaryMonthLabel(`${SALARY_YEAR}-${m}`).replace(' ' + SALARY_YEAR, '')}</option>`).join('');
+    monthSel.value = SALARY_MONTH;
   }
 
   // The hero always shows the all-time average — it's the headline number,
@@ -3082,10 +3127,9 @@ function renderSalaryProfitNeeded(dailyUsd){
   }).join('');
 }
 
-// Day keys belonging to the currently selected period.
+// Day keys belonging to the currently selected year/month period.
 function _salaryPeriodDayKeys(dayKeys, monthOfDay){
-  const keys = Object.keys(dayKeys);
-  return SALARY_MONTH === 'all' ? keys : keys.filter(k => monthOfDay[k] === SALARY_MONTH);
+  return Object.keys(dayKeys).filter(k => _salaryInPeriod(monthOfDay[k]));
 }
 
 // Everything here is measured from journaled trades. Where there isn't enough
@@ -3095,7 +3139,7 @@ function renderSalaryReality({ dailyUsd, monthlyUsd, dayKeys, monthOfDay, days }
   if(!body) return;
 
   const titleEl = document.getElementById('salRealityTitle');
-  const periodLabel = SALARY_MONTH === 'all' ? 'All time' : _salaryMonthLabel(SALARY_MONTH);
+  const periodLabel = _salaryPeriodLabel();
   if(titleEl) titleEl.textContent = `Reality Check — ${periodLabel}`;
 
   const keys = _salaryPeriodDayKeys(dayKeys, monthOfDay);
@@ -3168,12 +3212,21 @@ function renderSalaryHistory({ dailyUsd, monthlyUsd, dayKeys, monthOfDay, months
     return;
   }
 
-  const rows = _salaryMonthlyStats({ dailyUsd, monthlyUsd, dayKeys, monthOfDay, months });
+  // Narrowed to the selected year so this table doesn't sprawl either —
+  // month selection is ignored here, since the point is to compare months.
+  const listed = SALARY_YEAR === 'all' ? months : months.filter(m => m.startsWith(SALARY_YEAR + '-'));
+  if(!listed.length){
+    body.innerHTML = `<tr><td colspan="5" style="color:var(--muted);">No closed trades in ${SALARY_YEAR}.</td></tr>`;
+    return;
+  }
+
+  const selectedKey = (SALARY_YEAR !== 'all' && SALARY_MONTH !== 'all') ? `${SALARY_YEAR}-${SALARY_MONTH}` : null;
+  const rows = _salaryMonthlyStats({ dailyUsd, monthlyUsd, dayKeys, monthOfDay, months: listed });
   body.innerHTML = rows.map(r => {
     const pct = r.pctOfSalary;
     const tone = pct == null ? 'var(--ink)' : (pct >= 100 ? 'var(--win)' : (pct >= 50 ? 'var(--warn)' : 'var(--loss)'));
     const barPct = pct == null ? 0 : Math.max(0, Math.min(100, pct));
-    return `<tr onclick="focusSalaryMonth('${r.key}')" style="cursor:pointer;${r.key === SALARY_MONTH ? 'background:var(--surface-2);' : ''}">
+    return `<tr onclick="focusSalaryMonth('${r.key}')" style="cursor:pointer;${r.key === selectedKey ? 'background:var(--surface-2);' : ''}">
       <td style="font-family:'Public Sans',sans-serif;">${r.label}</td>
       <td>${r.tradingDays}</td>
       <td class="${r.net >= 0 ? 'pos' : 'neg'}">${_salMoney(r.net,'USD')}</td>
@@ -3285,7 +3338,7 @@ function downloadSalaryPDF(){
   doc.setFont('helvetica', 'bold'); doc.setFontSize(20); doc.setTextColor(...INK);
   doc.text('TANAYDANA', margin, y);
   doc.setFont('helvetica', 'normal'); doc.setFontSize(11); doc.setTextColor(...MUTED);
-  const periodLabel = SALARY_MONTH === 'all' ? 'All time' : _salaryMonthLabel(SALARY_MONTH);
+  const periodLabel = _salaryPeriodLabel();
   doc.text(`Salary vs Trading Goal  ·  ${periodLabel}`, margin, y + 16);
   doc.setFontSize(10);
   doc.text(`Generated ${new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}`, pageWidth - margin, y, { align: 'right' });
@@ -3382,10 +3435,11 @@ function downloadSalaryPDF(){
     noteLine(`Measured from ${periodKeys.length} trading day${periodKeys.length===1?'':'s'} in your journal — not a projection.`);
   }
 
-  // --- month by month ---
-  if(months.length){
-    sectionTitle('Month by Month');
-    const stats = _salaryMonthlyStats({ dailyUsd, monthlyUsd, dayKeys, monthOfDay, months });
+  // --- month by month (narrowed to the selected year, like the page) ---
+  const listedMonths = SALARY_YEAR === 'all' ? months : months.filter(m => m.startsWith(SALARY_YEAR + '-'));
+  if(listedMonths.length){
+    sectionTitle(SALARY_YEAR === 'all' ? 'Month by Month' : `Month by Month — ${SALARY_YEAR}`);
+    const stats = _salaryMonthlyStats({ dailyUsd, monthlyUsd, dayKeys, monthOfDay, months: listedMonths });
     tableRows(
       ['Month', 'Trading Days', 'Net P&L', 'vs Salary', 'Days Beat'],
       stats.map(r => [
