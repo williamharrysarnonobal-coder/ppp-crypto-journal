@@ -19,7 +19,7 @@ const GATEABLE_FEATURES = [
   { key: 'challenges', label: 'Challenges' },
   { key: 'news', label: 'Calendar' },
   { key: 'finance', label: 'Finance' },
-  { key: 'salary', label: 'Salary Goal' }
+  { key: 'salary', label: 'Payslip vs P&L' }
 ];
 let DISABLED_FEATURES = new Set();
 
@@ -500,6 +500,11 @@ function switchView(view){
     // Once a day at most, and never blocking the render above — a failed
     // fetch just leaves the saved rates in place.
     if(_fxIsStale()) fetchFxRates(false);
+    // Finance data is lazy-loaded by its own view, but the spending
+    // comparison needs it — fetch it here if this page was opened first.
+    if(!FIN_TXNS.length || !FIN_ACCOUNTS.length){
+      Promise.all([loadFinanceAccounts(), loadFinanceTransactions()]).then(renderSalaryGoal);
+    }
   }
   if(view === 'profile') loadProfile();
   if(view === 'accounts') loadAccounts();
@@ -2825,6 +2830,18 @@ function _salaryMonthsPresent(monthOfDay){
   return [...new Set(Object.values(monthOfDay))].sort().reverse();
 }
 
+let activeSalaryTab = 'target';
+
+function switchSalaryTab(tab){
+  activeSalaryTab = tab;
+  document.querySelectorAll('#view-salary .subnav-item').forEach(el => el.classList.toggle('active', el.dataset.tab === tab));
+  document.querySelectorAll('#view-salary .subnav-panel').forEach(el => el.classList.toggle('active', el.id === 'salaryPanel-' + tab));
+  // Chart.js measures the canvas when it's built, and a canvas inside a
+  // display:none panel measures as zero — so the trend chart has to be
+  // rebuilt once its panel is actually visible, on the next frame.
+  if(tab === 'reality') requestAnimationFrame(() => renderSalaryGoal());
+}
+
 function onSalaryYearChange(){
   SALARY_YEAR = document.getElementById('salYearFilter').value || 'all';
   // Whichever month was picked belonged to the previous year — start that
@@ -3102,9 +3119,76 @@ function renderSalaryGoal(){
       <td>${_salMoney(toPhp(p.aedVal), 'PHP')}</td>
     </tr>`).join('');
 
+  const monthlyUsdVal = ready ? toUsd(monthlyAed) : null;
   renderSalaryProfitNeeded(dailyUsd);
-  renderSalaryReality({ dailyUsd, monthlyUsd: ready ? toUsd(monthlyAed) : null, dayKeys, monthOfDay, days });
-  renderSalaryHistory({ dailyUsd, monthlyUsd: ready ? toUsd(monthlyAed) : null, dayKeys, monthOfDay, months });
+  renderSalaryExpenses({ dailyUsd, monthlyUsdVal, aed, php, days, avgPerTradingDay });
+  renderSalaryReality({ dailyUsd, monthlyUsd: monthlyUsdVal, dayKeys, monthOfDay, days, hours });
+  renderSalaryTrend({ monthlyUsd: monthlyUsdVal, dayKeys, monthOfDay, months });
+  renderSalaryHistory({ dailyUsd, monthlyUsd: monthlyUsdVal, dayKeys, monthOfDay, months });
+}
+
+// Your real spending is the bar that actually ends the job — usually lower
+// than the salary. Read straight from Finance, converted through the same
+// FX rates the rest of the page uses. Measured, never estimated: months with
+// no expense records are skipped rather than filled in.
+function renderSalaryExpenses({ dailyUsd, monthlyUsdVal, aed, php, days, avgPerTradingDay }){
+  const body = document.getElementById('salExpensesBody');
+  if(!body) return;
+
+  if(!FIN_TXNS.length){
+    body.innerHTML = `<div class="empty-state">No Finance transactions loaded yet — open Finance once and this fills in with your real spending.</div>`;
+    return;
+  }
+
+  // Group expenses by month, converting each to USD via its account currency.
+  const rate = { USD: 1, AED: aed, PHP: php };
+  const byMonth = {};
+  let unconverted = 0;
+  FIN_TXNS.forEach(t => {
+    if(t.tx_type !== 'Expense' || !t.tx_date) return;
+    const cur = _finTxCurrency(t);
+    const r = rate[cur];
+    if(!r){ unconverted++; return; }
+    const key = String(t.tx_date).slice(0,7); // YYYY-MM
+    byMonth[key] = (byMonth[key] || 0) + (Number(t.amount) || 0) / r;
+  });
+
+  const monthKeys = Object.keys(byMonth).sort();
+  if(!monthKeys.length){
+    body.innerHTML = `<div class="empty-state">No expenses recorded yet — log some in Finance and this shows what you'd really need to cover.</div>`;
+    return;
+  }
+
+  // Ignore the current month: it's still filling up, so including it would
+  // understate the real monthly figure.
+  const nowKey = new Date().toISOString().slice(0,7);
+  const complete = monthKeys.filter(k => k < nowKey);
+  const used = complete.length ? complete : monthKeys;
+  const avgMonthlyExpense = used.reduce((s,k) => s + byMonth[k], 0) / used.length;
+  const dailyExpense = avgMonthlyExpense / days;
+
+  const vsSalary = monthlyUsdVal > 0 ? avgMonthlyExpense / monthlyUsdVal * 100 : null;
+  const daysNeeded = avgPerTradingDay > 0 ? avgMonthlyExpense / avgPerTradingDay : null;
+
+  const notes = [];
+  if(vsSalary != null){
+    notes.push(vsSalary < 100
+      ? `You spend about ${fmtNum(vsSalary,0)}% of your salary, so the real bar is ${_salMoney(dailyExpense,'USD')} a day — not ${_salMoney(dailyUsd,'USD')}. That gap is your head start.`
+      : `You're spending about ${fmtNum(vsSalary,0)}% of your salary, so covering expenses is at least as hard as replacing the payslip. Trimming spending moves this bar faster than trading does.`);
+  }
+  if(daysNeeded !== null){
+    notes.push(`At your current average of ${_salMoney(avgPerTradingDay,'USD')} per trading day, about ${fmtNum(daysNeeded,1)} trading days a month would cover your actual spending.`);
+  }
+  notes.push(`Averaged over ${used.length} ${complete.length ? 'completed' : ''} month${used.length===1?'':'s'} of expenses${complete.length ? '' : ' (including this one, which is still in progress)'}.${unconverted ? ` ${unconverted} transaction${unconverted===1?'':'s'} skipped — account currency has no rate on this page.` : ''}`);
+
+  body.innerHTML = `
+    <div class="sal-stat-grid" style="margin-bottom:16px;">
+      ${_salStatCard('Avg Monthly Spending', `<span style="color:var(--warn);">${_salMoney(avgMonthlyExpense,'USD')}</span>`, 'your real cost of living')}
+      ${_salStatCard('Daily Bar to Clear', `<span style="color:var(--win);">${_salMoney(dailyExpense,'USD')}</span>`, `vs ${_salMoney(dailyUsd,'USD')} to match the payslip`)}
+      ${_salStatCard('Spending vs Salary', vsSalary == null ? '—' : `${fmtNum(vsSalary,0)}%`, vsSalary == null ? '' : (vsSalary < 100 ? 'you live below your income' : 'spending meets or exceeds income'))}
+    </div>
+    ${notes.map(n => `<div class="cfe-insight">💡 ${n}</div>`).join('')}
+  `;
 }
 
 // Uses the real prop-firm accounts rather than generic tiers, so the required
@@ -3160,7 +3244,7 @@ function _salaryPeriodDayKeys(dayKeys, monthOfDay){
 
 // Everything here is measured from journaled trades. Where there isn't enough
 // data, it says so instead of extrapolating.
-function renderSalaryReality({ dailyUsd, monthlyUsd, dayKeys, monthOfDay, days }){
+function renderSalaryReality({ dailyUsd, monthlyUsd, dayKeys, monthOfDay, days, hours }){
   const body = document.getElementById('salRealityBody');
   if(!body) return;
 
@@ -3197,6 +3281,20 @@ function renderSalaryReality({ dailyUsd, monthlyUsd, dayKeys, monthOfDay, days }
   }
   notes.push(`${daysBeat} of ${tradingDays} trading days beat a full day's pay (${fmtNum(beatRate,0)}%). You don't need every day to clear it — you need the average to.`);
 
+  // Time-in-market vs time-at-desk: how long your trades were actually open
+  // for each day's pay earned. Uses real open/close timestamps, so it's only
+  // shown when the period's trades carry both.
+  const periodSet = new Set(keys);
+  const timed = ALL_TRADES.filter(t => t.close_date && t.open_date && periodSet.has(_dayKeyUTC(new Date(t.close_date))));
+  if(timed.length && net > 0){
+    const hoursInMarket = timed.reduce((s,t) => s + (new Date(t.close_date) - new Date(t.open_date)) / 36e5, 0);
+    const daysOfPayEarned = net / dailyUsd;
+    if(hoursInMarket > 0 && daysOfPayEarned > 0){
+      const hrsPerDayOfPay = hoursInMarket / daysOfPayEarned;
+      notes.push(`Your trades were open ${fmtNum(hoursInMarket,1)} hours in this period and earned ${fmtNum(daysOfPayEarned,1)} days of pay — about ${fmtNum(hrsPerDayOfPay,1)} hours in the market per day of salary, against ${fmtNum(hours,1)} hours at the desk.`);
+    }
+  }
+
   body.innerHTML = `
     <div class="sal-stat-grid" style="margin-bottom:16px;">
       ${_salStatCard('Avg / Trading Day', `<span style="color:${avgPerTradingDay>=0?'var(--win)':'var(--loss)'};">${_salMoney(avgPerTradingDay,'USD')}</span>`, `measured over ${tradingDays} trading day${tradingDays===1?'':'s'}`)}
@@ -3227,6 +3325,87 @@ function _salaryMonthlyStats({ dailyUsd, monthlyUsd, dayKeys, monthOfDay, months
       pctOfSalary: (monthlyUsd > 0) ? net / monthlyUsd * 100 : null
     };
   });
+}
+
+let salTrendChartRef = null;
+
+// Oldest-to-newest line of "% of a month's salary covered", with the 100%
+// target drawn across it — the one view that answers "am I getting closer?".
+function renderSalaryTrend({ monthlyUsd, dayKeys, monthOfDay, months }){
+  const canvas = document.getElementById('salTrendChart');
+  const emptyEl = document.getElementById('salTrendEmpty');
+  const statsEl = document.getElementById('salTrendStats');
+  if(!canvas || !emptyEl || !statsEl) return;
+
+  const chronological = [...months].reverse();
+  const usable = monthlyUsd > 0 && chronological.length >= 2;
+
+  emptyEl.style.display = usable ? 'none' : 'block';
+  canvas.style.display = usable ? '' : 'none';
+  emptyEl.textContent = monthlyUsd > 0
+    ? 'Not enough months yet — this chart needs at least two months of closed trades.'
+    : 'Enter your monthly salary above to see the trajectory.';
+
+  if(salTrendChartRef){ salTrendChartRef.destroy(); salTrendChartRef = null; }
+  if(!usable){ statsEl.innerHTML = ''; return; }
+
+  const stats = _salaryMonthlyStats({ dailyUsd: null, monthlyUsd, dayKeys, monthOfDay, months: chronological });
+  const pcts = stats.map(s => s.pctOfSalary);
+
+  salTrendChartRef = new Chart(canvas.getContext('2d'), {
+    type: 'line',
+    data: {
+      labels: stats.map(s => s.label.replace(/ \d{4}$/, '')),
+      datasets: [
+        {
+          data: pcts,
+          borderColor: cssVar('--accent'),
+          backgroundColor: 'transparent',
+          pointBackgroundColor: pcts.map(p => p >= 100 ? cssVar('--win') : (p >= 0 ? cssVar('--accent') : cssVar('--loss'))),
+          pointRadius: 4,
+          borderWidth: 2,
+          tension: 0.25
+        },
+        {
+          label: 'Target',
+          data: pcts.map(() => 100),
+          borderColor: cssVar('--win'),
+          borderDash: [5, 5],
+          borderWidth: 1.5,
+          pointRadius: 0
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: c => c.datasetIndex === 1 ? 'Full salary' : `${fmtNum(c.parsed.y,0)}% of salary` } }
+      },
+      scales: {
+        y: { ticks: { color: cssVar('--muted'), callback: v => v + '%' }, grid: { color: cssVar('--rule') } },
+        x: { ticks: { color: cssVar('--muted') }, grid: { display: false } }
+      }
+    }
+  });
+
+  // Best month, and whether the last two months moved up or down.
+  const best = stats.reduce((b,s) => (b === null || s.net > b.net) ? s : b, null);
+  const last = stats[stats.length-1], prev = stats[stats.length-2];
+  const delta = last.pctOfSalary - prev.pctOfSalary;
+  const monthsCleared = stats.filter(s => s.pctOfSalary >= 100).length;
+
+  statsEl.innerHTML = [
+    _salStatCard('Best Month',
+      `<span style="color:${best.net>=0?'var(--win)':'var(--loss)'};">${_salMoney(best.net,'USD')}</span>`,
+      `${best.label} · ${fmtNum(best.pctOfSalary,0)}% of a month's salary`),
+    _salStatCard('Latest vs Previous',
+      `<span style="color:${delta>=0?'var(--win)':'var(--loss)'};">${delta>=0?'+':''}${fmtNum(delta,0)} pts</span>`,
+      `${prev.label} → ${last.label}`),
+    _salStatCard('Months That Cleared It', `${monthsCleared} / ${stats.length}`,
+      monthsCleared ? 'months trading covered a full salary' : 'no month has covered a full salary yet')
+  ].join('');
 }
 
 function renderSalaryHistory({ dailyUsd, monthlyUsd, dayKeys, monthOfDay, months }){
@@ -3459,6 +3638,32 @@ function downloadSalaryPDF(){
         color: daysNeeded !== null && daysNeeded <= days ? WIN : WARN }
     ]);
     noteLine(`Measured from ${periodKeys.length} trading day${periodKeys.length===1?'':'s'} in your journal — not a projection.`);
+  }
+
+  // --- what you actually need to cover (real expenses) ---
+  const rate = { USD: 1, AED: aed, PHP: php };
+  const expByMonth = {};
+  FIN_TXNS.forEach(t => {
+    if(t.tx_type !== 'Expense' || !t.tx_date) return;
+    const r = rate[_finTxCurrency(t)];
+    if(!r) return;
+    const k = String(t.tx_date).slice(0,7);
+    expByMonth[k] = (expByMonth[k] || 0) + (Number(t.amount) || 0) / r;
+  });
+  const expKeys = Object.keys(expByMonth).sort();
+  if(expKeys.length){
+    const nowKey = new Date().toISOString().slice(0,7);
+    const completeKeys = expKeys.filter(k => k < nowKey);
+    const usedKeys = completeKeys.length ? completeKeys : expKeys;
+    const avgExpense = usedKeys.reduce((s,k) => s + expByMonth[k], 0) / usedKeys.length;
+    sectionTitle('What You Actually Need to Cover');
+    statRow([
+      { label: 'Avg Monthly Spending', value: money(avgExpense, 'USD'), color: WARN },
+      { label: 'Daily Bar to Clear', value: money(avgExpense / days, 'USD'), color: WIN },
+      { label: 'vs Payslip Bar', value: money(dailyUsd, 'USD') },
+      { label: 'Spending vs Salary', value: monthlyUsd > 0 ? fmtNum(avgExpense / monthlyUsd * 100, 0) + '%' : '—' }
+    ]);
+    noteLine(`Averaged over ${usedKeys.length} month${usedKeys.length===1?'':'s'} of recorded expenses. Covering spending — not matching the payslip — is what actually ends the job.`);
   }
 
   // --- month by month (narrowed to the selected year, like the page) ---
