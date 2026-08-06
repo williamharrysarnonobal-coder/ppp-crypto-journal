@@ -1480,6 +1480,7 @@
   body.mobile-mode .fin-tx-filters #finTxRangeFilterRow{flex-direction:column;align-items:stretch;}
   body.mobile-mode .fin-tx-filters .drawer-danger-btn{margin-left:0 !important;width:100%;}
   body.mobile-mode #finTxBulkBar{flex-wrap:wrap;}
+  body.mobile-mode #setupBulkBar{flex-wrap:wrap;}
 
   /* Trade Alerts > Screener toolbar — same "stack full-width" treatment as
      the Finance filter rows above; .screener-search had a fixed 280px

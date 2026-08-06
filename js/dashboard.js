@@ -11600,6 +11600,20 @@ function openConfluenceModal(id){
   _openConfluenceModalWith(s);
 }
 
+// One checklist written to every ticked setup — for the same setup taken
+// across several accounts, where the confluence is identical by definition.
+function openConfluenceModalBulk(){
+  const ids = [...SELECTED_SETUP_IDS];
+  if(!ids.length) return;
+  const first = SAVED_SETUPS.find(x => x.id === ids[0]);
+  if(!first) return;
+  confluenceTarget = { type:'setup-bulk', ids };
+  // Seed from whichever already has a checklist, so re-opening a partly
+  // filled group doesn't start from blank.
+  const seed = SAVED_SETUPS.find(x => ids.includes(x.id) && x.pattern_type) || first;
+  _openConfluenceModalWith(seed);
+}
+
 // Reached from the Trade View modal — lets confluence be filled in (or
 // corrected) on a trade that's already journaled, including ones logged
 // before this feature existed.
@@ -11622,6 +11636,18 @@ function _openConfluenceModalWith(s){
   document.getElementById('confluenceTradeType').innerHTML =
     '<option value="">— choose —</option>' + FIELD_OPTIONS.trade_type.map(o => `<option value="${o}" ${s.trade_type===o?'selected':''}>${o}</option>`).join('');
   _renderConfluencePatternOptions(s.pattern_type);
+
+  const noteEl = document.getElementById('confluenceBulkNote');
+  if(noteEl){
+    const bulk = confluenceTarget && confluenceTarget.type === 'setup-bulk';
+    noteEl.style.display = bulk ? '' : 'none';
+    if(bulk){
+      const names = confluenceTarget.ids
+        .map(id => SAVED_SETUPS.find(x => x.id === id)?.account_name)
+        .filter(Boolean);
+      noteEl.textContent = `Applying to ${confluenceTarget.ids.length} setups: ${names.join(', ')}`;
+    }
+  }
 
   renderConfluenceChecklist();
   document.getElementById('confluenceModal').classList.add('open');
@@ -11712,6 +11738,29 @@ async function saveConfluenceModal(){
   };
 
   try{
+    if(confluenceTarget.type === 'setup-bulk'){
+      // PostgREST in.() so all the ticked setups are written in one request —
+      // no partial state if the connection drops halfway through.
+      const idList = confluenceTarget.ids.join(',');
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/position_setups?id=in.(${idList})`, {
+        method: 'PATCH',
+        headers: {
+          "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}`,
+          "Content-Type": "application/json", "Prefer": "return=representation"
+        },
+        body: JSON.stringify(payload)
+      });
+      if(!res.ok) throw new Error(await res.text());
+      const updated = await res.json();
+      updated.forEach(u => {
+        const idx = SAVED_SETUPS.findIndex(s => s.id === u.id);
+        if(idx !== -1) SAVED_SETUPS[idx] = u;
+      });
+      clearSetupSelection();
+      closeConfluenceModal();
+      showToast(`Confluence saved to ${updated.length} setup${updated.length===1?'':'s'}`);
+      return;
+    }
     if(confluenceTarget.type === 'setup'){
       const res = await fetch(`${SUPABASE_URL}/rest/v1/position_setups?id=eq.${confluenceTarget.id}`, {
         method: 'PATCH',
@@ -11750,32 +11799,73 @@ async function saveConfluenceModal(){
   }
 }
 
-function setupRowHTML(s){
-  const margin = Number(s.margin);
+// Same setup taken across several accounts shares one confluence — these
+// let you tick those rows and fill the checklist once instead of repeating
+// it per account.
+let SELECTED_SETUP_IDS = new Set();
+
+function toggleSetupSelect(id, checked){
+  if(checked) SELECTED_SETUP_IDS.add(id); else SELECTED_SETUP_IDS.delete(id);
+  renderSetupBulkBar();
+}
+
+function toggleAllSetupSelection(checked){
+  const pending = SAVED_SETUPS.filter(s => (s.status || 'Pending') !== 'Journaled');
+  SELECTED_SETUP_IDS = checked ? new Set(pending.map(s => s.id)) : new Set();
+  renderSavedSetups();
+}
+
+function clearSetupSelection(){
+  SELECTED_SETUP_IDS = new Set();
+  renderSavedSetups();
+}
+
+function renderSetupBulkBar(){
+  const bar = document.getElementById('setupBulkBar');
+  const count = document.getElementById('setupBulkCount');
+  if(!bar || !count) return;
+  const n = SELECTED_SETUP_IDS.size;
+  bar.style.display = n ? 'flex' : 'none';
+  count.textContent = `${n} setup${n===1?'':'s'} selected`;
+}
+
+// Leverage tint: the higher the leverage, the tighter the margin and the
+// less room the position has — green through red across 1x-5x, clamped
+// beyond that.
+function _leverageTint(lev){
+  const l = Number(lev);
+  if(!(l > 0)) return 'var(--ink)';
+  if(l <= 1) return 'var(--win)';
+  if(l <= 2) return 'color-mix(in srgb, var(--win) 60%, var(--warn))';
+  if(l <= 3) return 'var(--warn)';
+  if(l <= 4) return 'color-mix(in srgb, var(--loss) 60%, var(--warn))';
+  return 'var(--loss)';
+}
+
+function setupRowHTML(s, selectable){
   const riskAmount = Number(s.risk_amount);
   // Prices/quantity only exist on setups saved after the calculator became
   // price-driven — older rows (percentage era) simply show "—" for them.
-  // Copy sends the RAW number (no thousands separators) so it pastes
-  // cleanly into an exchange's order form.
+  // Shown and copied at 2 decimals: cent precision is all an order form
+  // needs, and Copy hands over the bare number (no thousands separators)
+  // so it pastes straight into the exchange.
   const priceCell = (v, color) => v == null ? '—' : `
-    <span style="color:${color};">${Number(v).toLocaleString(undefined,{maximumFractionDigits:8})}</span>
-    <button class="poscalc-copy-btn" title="Copy price" onclick="event.stopPropagation(); copyPriceToClipboard('${Number(v)}', this)">${copyIconSVG()}</button>`;
-  const updateCount = Array.isArray(s.notes_log) ? s.notes_log.length : 0;
+    <span style="color:${color};">${Number(v).toFixed(2)}</span>
+    <button class="poscalc-copy-btn" title="Copy price" onclick="event.stopPropagation(); copyPriceToClipboard('${Number(v).toFixed(2)}', this)">${copyIconSVG()}</button>`;
   const status = s.status || 'Pending';
   const statusPillClass = setupStatusPillClass(status);
   return `
   <tr onclick="openSetupNotesModal(${s.id})" style="cursor:pointer;">
+    ${selectable ? `<td onclick="event.stopPropagation();"><input type="checkbox" ${SELECTED_SETUP_IDS.has(s.id) ? 'checked' : ''} onclick="toggleSetupSelect(${s.id}, this.checked)"></td>` : ''}
     <td>${escapeHtml(s.symbol || '—')}</td>
     <td>${new Date(s.created_at).toLocaleDateString(undefined,{day:'numeric',month:'short',year:'numeric'})}</td>
     <td>${escapeHtml(s.account_name || '—')}</td>
-    <td>${s.leverage}x</td>
+    <td style="color:${_leverageTint(s.leverage)};font-weight:700;">${s.leverage}x</td>
     <td>$${riskAmount.toLocaleString(undefined,{maximumFractionDigits:2})}</td>
     <td>${s.quantity != null ? Number(s.quantity).toFixed(4) : '—'}</td>
-    <td>$${margin.toLocaleString(undefined,{maximumFractionDigits:2})}</td>
     <td style="white-space:nowrap;">${priceCell(s.entry_price, 'var(--accent)')}</td>
     <td style="white-space:nowrap;">${priceCell(s.tp_price, 'var(--win)')}</td>
     <td style="white-space:nowrap;">${priceCell(s.sl_price, 'var(--loss)')}</td>
-    <td>${updateCount}</td>
     <td><span class="pill ${statusPillClass}">${escapeHtml(status)}</span></td>
     <td style="white-space:nowrap;">
       <button class="poscalc-accent-btn" onclick="event.stopPropagation(); openConfluenceModal(${s.id})">${s.pattern_type ? 'Edit Confluence' : 'Confluence'}</button>
@@ -11800,19 +11890,28 @@ function renderSavedSetups(){
   const pending = SAVED_SETUPS.filter(s => (s.status || 'Pending') !== 'Journaled');
   const journaled = SAVED_SETUPS.filter(s => s.status === 'Journaled');
 
+  // Drop selections for setups that no longer exist (deleted or journaled)
+  // so the bulk bar can never act on a stale id.
+  const pendingIds = new Set(pending.map(s => s.id));
+  SELECTED_SETUP_IDS.forEach(id => { if(!pendingIds.has(id)) SELECTED_SETUP_IDS.delete(id); });
+
   if(pending.length){
     pendingEmptyState.style.display = 'none';
     pendingTable.style.display = '';
-    pendingBody.innerHTML = pending.map(setupRowHTML).join('');
+    pendingBody.innerHTML = pending.map(s => setupRowHTML(s, true)).join('');
   }else{
     pendingEmptyState.style.display = 'block';
     pendingTable.style.display = 'none';
   }
 
+  const selectAll = document.getElementById('setupSelectAll');
+  if(selectAll) selectAll.checked = pending.length > 0 && SELECTED_SETUP_IDS.size === pending.length;
+  renderSetupBulkBar();
+
   if(journaled.length){
     journaledEmptyState.style.display = 'none';
     journaledTable.style.display = '';
-    journaledBody.innerHTML = journaled.map(setupRowHTML).join('');
+    journaledBody.innerHTML = journaled.map(s => setupRowHTML(s, false)).join('');
   }else{
     journaledEmptyState.style.display = 'block';
     journaledTable.style.display = 'none';
