@@ -4712,8 +4712,39 @@ function _finAccountHistoryRows(accountId){
     else if(t.tx_type === 'Correction'){ amt = Number(t.amount) || 0; label = t.description || 'Balance Correction'; }
     const balanceAfter = running;
     if(showRunning) running = Number((running - amt).toFixed(2));
-    return { tx_date: t.tx_date, label, amt, balanceAfter, showRunning };
+    return { id: t.id, tx_date: t.tx_date, label, amt, balanceAfter, showRunning };
   });
+}
+
+// Plain tick-off boxes for reading a statement side by side with this list —
+// no bulk actions, nothing written to the database. Kept on this device so
+// closing the popup mid-check doesn't lose your place.
+function _finCheckedIds(){
+  try{
+    const raw = localStorage.getItem('fin-history-checked');
+    return new Set(raw ? JSON.parse(raw) : []);
+  }catch(e){ return new Set(); }
+}
+function _finSetChecked(set){
+  try{ localStorage.setItem('fin-history-checked', JSON.stringify([...set])); }catch(e){}
+}
+function toggleFinHistoryCheck(txId, checked, accountId){
+  const set = _finCheckedIds();
+  if(checked) set.add(txId); else set.delete(txId);
+  _finSetChecked(set);
+  _updateFinCheckedCount(accountId);
+}
+function clearFinHistoryChecks(accountId){
+  _finSetChecked(new Set());
+  renderFinAccountHistory(accountId);
+}
+function _updateFinCheckedCount(accountId){
+  const el = document.getElementById('finHistoryCheckedCount');
+  if(!el) return;
+  const rows = _finAccountHistoryRows(accountId).filter(_finAccHistoryPassesFilter);
+  const set = _finCheckedIds();
+  const n = rows.filter(r => set.has(r.id)).length;
+  el.textContent = n ? `${n} of ${rows.length} checked` : '';
 }
 
 // Same All time / This Month / Previous Month / Custom Range shape as the
@@ -4761,9 +4792,11 @@ function renderFinAccountHistory(accountId){
   const rows = allRows.filter(_finAccHistoryPassesFilter);
   if(!rows.length){ body.innerHTML = '<div class="empty-state">No transactions in this period.</div>'; return; }
 
+  const checked = _finCheckedIds();
   body.innerHTML = `<div style="max-height:280px;overflow-y:auto;">${rows.map(r => `
-    <div style="display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px solid var(--rule);font-size:12px;">
-      <div style="min-width:0;">
+    <div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--rule);font-size:12px;">
+      <input type="checkbox" ${checked.has(r.id) ? 'checked' : ''} onchange="toggleFinHistoryCheck(${r.id}, this.checked, ${accountId})" style="flex-shrink:0;cursor:pointer;">
+      <div style="min-width:0;flex:1;">
         <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(r.label)}</div>
         <div style="font-size:10px;color:var(--muted);margin-top:2px;">${new Date(r.tx_date+'T00:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</div>
       </div>
@@ -4773,6 +4806,7 @@ function renderFinAccountHistory(accountId){
       </div>
     </div>
   `).join('')}</div>`;
+  _updateFinCheckedCount(accountId);
 }
 
 // Filter controls + empty container reused by both the Debit and Credit
@@ -4791,6 +4825,8 @@ function _finAccHistoryFilterHtml(accountId){
         <span style="color:var(--muted);font-size:11px;">to</span>
         <input type="date" id="finAccHistoryTo" onchange="renderFinAccountHistory(${accountId})" style="font-size:11px;padding:4px 6px;">
       </div>
+      <span id="finHistoryCheckedCount" style="font-size:11px;color:var(--muted);margin-left:auto;"></span>
+      <button class="fin-subacct-edit" title="Clear all ticks" onclick="clearFinHistoryChecks(${accountId})">Clear ticks</button>
     </div>
     <div id="finAccHistoryBody"></div>
   `;
