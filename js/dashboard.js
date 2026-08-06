@@ -18,7 +18,8 @@ const GATEABLE_FEATURES = [
   { key: 'achievements', label: 'Achievements' },
   { key: 'challenges', label: 'Challenges' },
   { key: 'news', label: 'Calendar' },
-  { key: 'finance', label: 'Finance' }
+  { key: 'finance', label: 'Finance' },
+  { key: 'salary', label: 'Salary Goal' }
 ];
 let DISABLED_FEATURES = new Set();
 
@@ -493,6 +494,7 @@ function switchView(view){
   if(view === 'challenges') renderChallenges();
   if(view === 'leaderboard') renderLeaderboard();
   if(view === 'finance') renderFinance();
+  if(view === 'salary'){ fillSalaryInputs(); renderSalaryGoal(); }
   if(view === 'profile') loadProfile();
   if(view === 'accounts') loadAccounts();
   if(view === 'calculator'){ refreshPosSizeCalculator(); loadSavedSetups(); }
@@ -2736,6 +2738,286 @@ function _copyWithFeedback(text, btnEl){
     btnEl.disabled = true;
     setTimeout(() => { btnEl.textContent = original; btnEl.disabled = false; }, 1000);
   }).catch(() => showToast("Couldn't copy — copy manually."));
+}
+
+/* ---------------- Salary vs Trading Goal ---------------- */
+
+// AED is pegged to USD, so 3.6725 effectively never moves; PHP floats and is
+// meant to be updated by hand (no live FX call — this page must work offline
+// and never silently change your numbers between visits).
+const SALARY_DEFAULTS = {
+  monthly_salary: null,
+  working_days: 21.75,
+  hours_per_day: 8,
+  aed_per_usd: 3.6725,
+  php_per_usd: 60.93
+};
+
+let SALARY_SAVE_TIMER = null;
+
+function _salaryFields(){
+  return {
+    monthly_salary: 'salMonthly',
+    working_days: 'salWorkDays',
+    hours_per_day: 'salHours',
+    aed_per_usd: 'salAed',
+    php_per_usd: 'salPhp'
+  };
+}
+
+function _salarySettings(){
+  const saved = (PROFILE_DATA && PROFILE_DATA.salary_settings) || {};
+  return { ...SALARY_DEFAULTS, ...saved };
+}
+
+// Reads straight from the inputs so every keystroke recomputes, falling back
+// to the saved/default value only when a box is left empty.
+function _salaryInputValues(){
+  const s = _salarySettings();
+  const out = {};
+  Object.entries(_salaryFields()).forEach(([key, id]) => {
+    const el = document.getElementById(id);
+    const raw = el ? el.value : '';
+    const num = raw === '' ? null : parseFloat(raw);
+    out[key] = Number.isFinite(num) ? num : (raw === '' ? s[key] : null);
+  });
+  return out;
+}
+
+function fillSalaryInputs(){
+  const s = _salarySettings();
+  Object.entries(_salaryFields()).forEach(([key, id]) => {
+    const el = document.getElementById(id);
+    if(el) el.value = s[key] == null ? '' : s[key];
+  });
+}
+
+// Debounced so typing a 4-digit salary is one write, not four.
+function onSalaryInput(){
+  renderSalaryGoal();
+  const stateEl = document.getElementById('salSaveState');
+  if(stateEl) stateEl.textContent = 'Saving…';
+  clearTimeout(SALARY_SAVE_TIMER);
+  SALARY_SAVE_TIMER = setTimeout(saveSalarySettings, 700);
+}
+
+async function saveSalarySettings(){
+  const stateEl = document.getElementById('salSaveState');
+  try{
+    await persistProfile({ salary_settings: _salaryInputValues() });
+    if(stateEl) stateEl.textContent = 'Saved';
+    setTimeout(() => { if(stateEl && stateEl.textContent === 'Saved') stateEl.textContent = ''; }, 1800);
+  }catch(e){
+    console.error("Couldn't save salary settings:", e);
+    if(stateEl) stateEl.textContent = "Couldn't save — run supabase_salary_goal.sql";
+  }
+}
+
+function _salMoney(n, cur){
+  if(n == null || !Number.isFinite(n)) return '—';
+  const symbols = { USD: '$', AED: 'AED ', PHP: '₱' };
+  return (symbols[cur] || '') + n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function _salStatCard(label, primary, secondary){
+  return `<div class="sal-stat">
+    <div class="sal-stat-label">${label}</div>
+    <div class="sal-stat-value">${primary}</div>
+    ${secondary ? `<div class="sal-stat-sub">${secondary}</div>` : ''}
+  </div>`;
+}
+
+function renderSalaryGoal(){
+  const hero = document.getElementById('salHeroUSD');
+  if(!hero) return;
+
+  const v = _salaryInputValues();
+  const aed = Number(v.aed_per_usd) > 0 ? Number(v.aed_per_usd) : SALARY_DEFAULTS.aed_per_usd;
+  const php = Number(v.php_per_usd) > 0 ? Number(v.php_per_usd) : SALARY_DEFAULTS.php_per_usd;
+  const days = Number(v.working_days) > 0 ? Number(v.working_days) : SALARY_DEFAULTS.working_days;
+  const hours = Number(v.hours_per_day) > 0 ? Number(v.hours_per_day) : SALARY_DEFAULTS.hours_per_day;
+  const monthlyAed = Number(v.monthly_salary);
+
+  const ready = Number.isFinite(monthlyAed) && monthlyAed > 0;
+
+  // Everything is derived from AED (how the salary is actually paid), then
+  // converted — so USD/PHP can never drift from the AED figure.
+  const dailyAed = ready ? monthlyAed / days : null;
+  const hourlyAed = dailyAed != null ? dailyAed / hours : null;
+  const weeklyAed = dailyAed != null ? dailyAed * 5 : null;
+  const toUsd = a => a == null ? null : a / aed;
+  const toPhp = a => a == null ? null : (a / aed) * php;
+
+  const dailyUsd = toUsd(dailyAed);
+
+  // --- hero ---
+  hero.textContent = ready ? _salMoney(dailyUsd, 'USD') : '—';
+  document.getElementById('salHeroAlt').textContent = ready
+    ? `${_salMoney(dailyAed, 'AED')} · ${_salMoney(toPhp(dailyAed), 'PHP')}`
+    : 'Enter your monthly salary below to see the number.';
+
+  // --- reality check against real trades (measured, never projected) ---
+  const closed = ALL_TRADES.filter(t => t.close_date);
+  const dayKeys = {};
+  closed.forEach(t => {
+    const k = _dayKeyUTC(new Date(t.close_date));
+    dayKeys[k] = (dayKeys[k] || 0) + netPnl(t);
+  });
+  const tradingDays = Object.keys(dayKeys).length;
+  const totalNet = Object.values(dayKeys).reduce((s,x) => s + x, 0);
+  const avgPerTradingDay = tradingDays ? totalNet / tradingDays : null;
+
+  const heroActual = document.getElementById('salHeroActual');
+  if(ready && avgPerTradingDay !== null){
+    const pct = dailyUsd > 0 ? (avgPerTradingDay / dailyUsd * 100) : 0;
+    const good = avgPerTradingDay >= dailyUsd;
+    heroActual.innerHTML = `<span class="sal-hero-actual-label">Your actual average per trading day</span>
+      <span class="sal-hero-actual-value" style="color:${avgPerTradingDay >= 0 ? 'var(--win)' : 'var(--loss)'};">${_salMoney(avgPerTradingDay, 'USD')}</span>
+      <span class="sal-hero-actual-pct" style="color:${good ? 'var(--win)' : 'var(--muted)'};">${good ? '✓ ahead of the job' : `${fmtNum(Math.max(0,pct),0)}% of the way there`}</span>`;
+  }else{
+    heroActual.innerHTML = '';
+  }
+
+  // --- breakdown ---
+  document.getElementById('salBreakdown').innerHTML = [
+    _salStatCard('Monthly Salary', _salMoney(monthlyAed, 'AED'),
+      ready ? `${_salMoney(toUsd(monthlyAed), 'USD')} · ${_salMoney(toPhp(monthlyAed), 'PHP')}` : ''),
+    _salStatCard('Working Days / Month', fmtNum(days, 2), 'days'),
+    _salStatCard('Working Hours / Day', fmtNum(hours, 1), 'hours'),
+    _salStatCard('Daily Salary', _salMoney(dailyAed, 'AED'),
+      ready ? `${_salMoney(dailyUsd, 'USD')} · ${_salMoney(toPhp(dailyAed), 'PHP')}` : ''),
+    _salStatCard('Hourly Rate', _salMoney(hourlyAed, 'AED'),
+      ready ? `${_salMoney(toUsd(hourlyAed), 'USD')} · ${_salMoney(toPhp(hourlyAed), 'PHP')}` : '')
+  ].join('');
+
+  // --- time saved ---
+  const perMonthHours = hours * days;
+  document.getElementById('salTimeSaved').innerHTML = [
+    _salStatCard('Per Day', `${fmtNum(hours,1)} h`, 'back in your day'),
+    _salStatCard('Per Week', `${fmtNum(hours*5,1)} h`, '5 working days'),
+    _salStatCard('Per Month', `${fmtNum(perMonthHours,1)} h`, `${fmtNum(days,2)} working days`),
+    _salStatCard('≈ Free Days / Month', fmtNum(perMonthHours/16, 1), 'at 16 waking hours each')
+  ].join('');
+
+  // --- targets table ---
+  const periods = [
+    { label: '1 Day', aedVal: dailyAed },
+    { label: '1 Week (5 days)', aedVal: weeklyAed },
+    { label: '1 Month', aedVal: ready ? monthlyAed : null }
+  ];
+  document.getElementById('salTargetsBody').innerHTML = periods.map(p => `
+    <tr>
+      <td style="font-family:'Public Sans',sans-serif;">${p.label}</td>
+      <td>${_salMoney(p.aedVal, 'AED')}</td>
+      <td class="pos">${_salMoney(toUsd(p.aedVal), 'USD')}</td>
+      <td>${_salMoney(toPhp(p.aedVal), 'PHP')}</td>
+    </tr>`).join('');
+
+  renderSalaryProfitNeeded(dailyUsd);
+  renderSalaryReality({ dailyUsd, monthlyAed, toUsd, avgPerTradingDay, tradingDays, dayKeys, days });
+}
+
+// Uses the real prop-firm accounts rather than generic tiers, so the required
+// return can be judged against each account's own daily rules.
+function renderSalaryProfitNeeded(dailyUsd){
+  const body = document.getElementById('salProfitNeededBody');
+  const sub = document.getElementById('salProfitNeededSub');
+  if(!body) return;
+
+  const accounts = TRADING_ACCOUNTS
+    .filter(a => a.account_type !== 'Exchange' && Number(a.account_size) > 0)
+    .slice()
+    .sort((a,b) => Number(b.account_size) - Number(a.account_size));
+
+  if(!accounts.length){
+    sub.textContent = 'Add an account in My Accounts and this table fills in with your real sizes.';
+    body.innerHTML = `<tr><td colspan="5" style="color:var(--muted);">No prop firm accounts yet.</td></tr>`;
+    return;
+  }
+  sub.textContent = "The daily return each of your real accounts would have to produce to cover one working day's pay.";
+
+  if(dailyUsd == null){
+    body.innerHTML = `<tr><td colspan="5" style="color:var(--muted);">Enter your monthly salary to see what each account needs.</td></tr>`;
+    return;
+  }
+
+  const maxPct = Math.max(...accounts.map(a => dailyUsd / Number(a.account_size) * 100));
+
+  body.innerHTML = accounts.map(a => {
+    const size = Number(a.account_size);
+    const pct = dailyUsd / size * 100;
+    // Judged against the account's own Min Daily Profit rule (Upscale Basic
+    // uses 0.5% of size) — a target far above it is a stretch, not a plan.
+    const rule = a.min_daily_profit_pct != null ? Number(a.min_daily_profit_pct) : 0.5;
+    const tone = pct <= rule ? 'var(--win)' : (pct <= rule * 3 ? 'var(--warn)' : 'var(--loss)');
+    const barPct = maxPct > 0 ? Math.min(100, pct / maxPct * 100) : 0;
+    return `<tr>
+      <td style="font-family:'Public Sans',sans-serif;">${escapeHtml(a.account_name)}</td>
+      <td>$${size.toLocaleString()}</td>
+      <td class="pos">${_salMoney(dailyUsd, 'USD')}</td>
+      <td style="color:${tone};font-weight:700;">${fmtNum(pct, 2)}%</td>
+      <td style="min-width:120px;">
+        <div class="cfe-bar-track"><div class="cfe-bar-fill" style="width:${barPct.toFixed(0)}%;background:${tone};"></div></div>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+// Everything here is measured from journaled trades. Where there isn't enough
+// data, it says so instead of extrapolating.
+function renderSalaryReality({ dailyUsd, monthlyAed, toUsd, avgPerTradingDay, tradingDays, dayKeys, days }){
+  const body = document.getElementById('salRealityBody');
+  if(!body) return;
+
+  if(!tradingDays){
+    body.innerHTML = `<div class="empty-state">No closed trades yet — this section wakes up once you've journaled some.</div>`;
+    return;
+  }
+  if(dailyUsd == null){
+    body.innerHTML = `<div class="empty-state">Enter your monthly salary above to compare it against your real results.</div>`;
+    return;
+  }
+
+  // This month's actual trading P&L vs one month of salary.
+  const now = new Date();
+  const monthKeys = Object.keys(dayKeys).filter(k => {
+    const d = new Date(Number(k));
+    return d.getUTCFullYear() === now.getUTCFullYear() && d.getUTCMonth() === now.getUTCMonth();
+  });
+  const monthNet = monthKeys.reduce((s,k) => s + dayKeys[k], 0);
+  const monthlyUsd = toUsd(monthlyAed);
+  const monthPct = monthlyUsd > 0 ? Math.max(0, Math.min(100, monthNet / monthlyUsd * 100)) : 0;
+
+  // How many of your trading days actually cleared a day's salary.
+  const daysBeat = Object.values(dayKeys).filter(v => v >= dailyUsd).length;
+  const beatRate = tradingDays ? daysBeat / tradingDays * 100 : 0;
+
+  // At your real average, how many trading days to cover one month of salary?
+  const daysNeeded = (avgPerTradingDay > 0 && monthlyUsd > 0) ? monthlyUsd / avgPerTradingDay : null;
+
+  const notes = [];
+  if(daysNeeded !== null){
+    notes.push(daysNeeded <= days
+      ? `At your current average of ${_salMoney(avgPerTradingDay,'USD')} per trading day, about ${fmtNum(daysNeeded,1)} trading days would cover a full month's salary — fewer than the ${fmtNum(days,2)} days the job takes.`
+      : `At your current average of ${_salMoney(avgPerTradingDay,'USD')} per trading day, it would take about ${fmtNum(daysNeeded,1)} trading days to cover a month's salary — more than the ${fmtNum(days,2)} days the job takes. The gap is the work.`);
+  }else if(avgPerTradingDay <= 0){
+    notes.push(`Your average trading day is currently ${_salMoney(avgPerTradingDay,'USD')}. Getting that above zero comes before comparing it to a salary.`);
+  }
+  notes.push(`${daysBeat} of your ${tradingDays} trading days beat a full day's pay (${fmtNum(beatRate,0)}%). You don't need every day to clear it — you need the average to.`);
+
+  body.innerHTML = `
+    <div class="sal-stat-grid" style="margin-bottom:16px;">
+      ${_salStatCard('Avg / Trading Day', `<span style="color:${avgPerTradingDay>=0?'var(--win)':'var(--loss)'};">${_salMoney(avgPerTradingDay,'USD')}</span>`, `measured over ${tradingDays} trading day${tradingDays===1?'':'s'}`)}
+      ${_salStatCard('Days That Beat the Job', `${daysBeat} / ${tradingDays}`, `${fmtNum(beatRate,0)}% of your trading days`)}
+      ${_salStatCard('Trading Days to Cover a Month', daysNeeded !== null ? fmtNum(daysNeeded,1) : '—', daysNeeded !== null ? `vs ${fmtNum(days,2)} days at the job` : 'needs a positive average')}
+    </div>
+    <div class="sal-progress-label">
+      <span>This month's trading P&amp;L vs one month's salary</span>
+      <span style="color:${monthNet>=0?'var(--win)':'var(--loss)'};">${_salMoney(monthNet,'USD')} / ${_salMoney(monthlyUsd,'USD')}</span>
+    </div>
+    <div class="sal-progress-track"><div class="sal-progress-fill" style="width:${monthPct.toFixed(1)}%;"></div></div>
+    ${notes.map(n => `<div class="cfe-insight">💡 ${n}</div>`).join('')}
+  `;
 }
 
 /* ---------------- Finance (personal money tracker) ---------------- */
