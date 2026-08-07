@@ -2990,9 +2990,9 @@ function renderSalaryGoal(){
   const short = (need != null && typical != null) ? Math.max(0, need - typical) : null;
 
   _salRenderAnswer({ need, done, typical });
+  _salRenderJourney({ months, totalNet, nowKey });
   _salRenderThree({ need, typical, short });
   _salRenderMonths({ months, need, nowKey });
-  _salRenderAllTime({ months, totalNet });
 }
 
 // The answer, in words. Only completed months count — a part-finished month
@@ -3072,23 +3072,116 @@ function _salRenderMonths({ months, need, nowKey }){
     const status = inProgress ? 'still running'
       : need == null ? ''
       : covered ? 'covered your salary' : 'short of your salary';
+
+    // How far this month got toward the salary. A losing month fills nothing
+    // — a negative width would be meaningless — so the track stays empty and
+    // just carries a red tint to mark it as a step backwards.
+    let bar = '';
+    if(need != null && need > 0){
+      const pct = Math.max(0, Math.min(100, m.net / need * 100));
+      const tone = m.net < 0 ? 'var(--loss)' : (covered ? 'var(--win)' : 'var(--accent)');
+      bar = '<span class="sal-month-bar' + (m.net < 0 ? ' sal-month-bar-neg' : '') + '" ' +
+            'title="' + fmtNum(Math.max(0, m.net / need * 100), 0) + '% of a month\'s salary">' +
+              '<span class="sal-month-bar-fill" style="width:' + pct.toFixed(0) + '%;background:' + tone + ';"></span>' +
+            '</span>';
+    }
+
     return '<div class="sal-month">' +
         '<span class="sal-month-mark ' + markCls + '">' + mark + '</span>' +
         '<span class="sal-month-name">' + m.label + '<span class="sal-month-days">' + m.days + ' trading day' + (m.days===1?'':'s') + '</span></span>' +
+        bar +
         '<span class="sal-month-amt" style="color:' + (m.net >= 0 ? 'var(--win)' : 'var(--loss)') + ';">' + _salTriInline(m.net) + '</span>' +
         '<span class="sal-month-status">' + status + '</span>' +
       '</div>';
   }).join('');
 }
 
-// The zoom-out: one line, so a single red month can't look like failure.
-function _salRenderAllTime({ months, totalNet }){
-  const el = document.getElementById('salAllTime');
-  if(!months.length){ el.innerHTML = ''; return; }
+let salJourneyChartRef = null;
+
+// The zoom-out, given the most room on the page: a RUNNING TOTAL rather than
+// monthly bars. A bad month dents the slope but the line keeps its height —
+// which is the honest picture when you're down this month but up overall.
+function _salRenderJourney({ months, totalNet, nowKey }){
+  const totalEl = document.getElementById('salJourneyTotal');
+  const subEl = document.getElementById('salJourneySub');
+  const noteEl = document.getElementById('salJourneyNote');
+  const emptyEl = document.getElementById('salJourneyEmpty');
+  const canvas = document.getElementById('salJourneyChart');
+  if(!totalEl) return;
+
+  if(!months.length){
+    totalEl.textContent = '—';
+    subEl.textContent = '';
+    noteEl.textContent = '';
+    emptyEl.style.display = 'block';
+    canvas.style.display = 'none';
+    if(salJourneyChartRef){ salJourneyChartRef.destroy(); salJourneyChartRef = null; }
+    return;
+  }
+  emptyEl.style.display = 'none';
+  canvas.style.display = '';
+
   const green = months.filter(m => m.net > 0).length;
-  el.innerHTML = 'All time: <strong style="color:' + (totalNet >= 0 ? 'var(--win)' : 'var(--loss)') + ';">' +
-    _salMoney(totalNet,'USD') + '</strong> across ' + months.length + ' month' + (months.length===1?'':'s') +
-    ' · <strong>' + green + ' of ' + months.length + '</strong> profitable';
+  totalEl.textContent = _salMoney(totalNet, 'USD');
+  totalEl.style.color = totalNet >= 0 ? 'var(--win)' : 'var(--loss)';
+  const rates = _salaryInputValues();
+  const rAed = Number(rates.aed_per_usd) > 0 ? Number(rates.aed_per_usd) : SALARY_DEFAULTS.aed_per_usd;
+  const rPhp = Number(rates.php_per_usd) > 0 ? Number(rates.php_per_usd) : SALARY_DEFAULTS.php_per_usd;
+  subEl.textContent = _salMoney(totalNet * rAed, 'AED') + ' · ' + _salMoney(totalNet * rPhp, 'PHP');
+  noteEl.innerHTML = '<strong>' + green + ' of ' + months.length + '</strong> month' +
+    (months.length === 1 ? '' : 's') + ' profitable' +
+    (months.length > green
+      ? '<span class="sal-journey-note-sub">' + (months.length - green) + ' down month' +
+        (months.length - green === 1 ? '' : 's') + ' — the total still stands</span>'
+      : '');
+
+  // Oldest first, accumulating.
+  const chrono = [...months].reverse();
+  let run = 0;
+  const points = chrono.map(m => { run += m.net; return { label: m.label.replace(/ \d{4}$/, ''), run, net: m.net, key: m.key }; });
+
+  if(salJourneyChartRef){ salJourneyChartRef.destroy(); salJourneyChartRef = null; }
+  const ctx = canvas.getContext('2d');
+  salJourneyChartRef = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: points.map(p => p.label),
+      datasets: [{
+        data: points.map(p => p.run),
+        borderColor: cssVar('--win'),
+        backgroundColor: 'color-mix(in srgb, ' + cssVar('--win') + ' 18%, transparent)',
+        fill: true,
+        borderWidth: 2.5,
+        tension: 0.25,
+        pointRadius: 5,
+        pointBackgroundColor: points.map(p => p.net >= 0 ? cssVar('--win') : cssVar('--loss')),
+        pointBorderColor: cssVar('--surface'),
+        pointBorderWidth: 2
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: c => {
+              const p = points[c.dataIndex];
+              return [
+                'Running total: ' + _salMoney(p.run, 'USD'),
+                'That month: ' + _salMoney(p.net, 'USD') + (p.key === nowKey ? ' (still running)' : '')
+              ];
+            }
+          }
+        }
+      },
+      scales: {
+        y: { ticks: { color: cssVar('--muted') }, grid: { color: cssVar('--rule') } },
+        x: { ticks: { color: cssVar('--muted') }, grid: { display: false } }
+      }
+    }
+  });
 }
 
 function _salaryStreakTarget(){
@@ -10555,6 +10648,13 @@ function closeChallengeDetail(){
 /* ---------------- Profile (trader identity, rules, inspiration board) ---------------- */
 let PROFILE_DATA = null;
 let profileRulesArr = [];
+// profileRulesArr is only filled once the Profile page has actually rendered.
+// Until then it's an empty array that must NEVER be written back — every other
+// field in persistProfile() falls back to PROFILE_DATA when its input isn't on
+// screen, and this flag gives trading_rules the same protection. Without it,
+// any background persistProfile() call (the Salary page's auto-save, the daily
+// FX refresh) silently wipes the saved rules.
+let profileRulesLoaded = false;
 let profileEditing = false;
 
 const PROFILE_STYLE_OPTIONS = ['Scalper', 'Day Trader', 'Swing Trader', 'Position Trader'];
@@ -10687,6 +10787,7 @@ async function renderProfile(){
 
 function renderProfileRules(rules){
   profileRulesArr = [...rules];
+  profileRulesLoaded = true;
   const wrap = document.getElementById('profileRulesList');
   const addRow = document.getElementById('profileRulesAddRow');
   if(addRow) addRow.style.display = profileEditing ? 'flex' : 'none';
@@ -10739,31 +10840,50 @@ async function uploadInspirationImage(file){
   }
 }
 
+// A PostgREST upsert with merge-duplicates only overwrites the columns it is
+// actually given, so a caller that just wants to store one setting (the
+// Salary page's auto-save, the daily FX refresh) must NOT resend the whole
+// profile. Sending it blind is how saved data gets replaced by the empty
+// defaults of a page that was never rendered — which is exactly how the
+// trading rules were lost.
 async function persistProfile(partial){
   const { data: { user } } = await sb.auth.getUser();
-  const nameEl = document.getElementById('profileName');
   const body = {
     user_id: user.id,
-    display_name: nameEl ? nameEl.value.trim() : (PROFILE_DATA?.display_name || ''),
-    nickname: document.getElementById('profileNickname')
-      ? document.getElementById('profileNickname').value.trim()
-      : (PROFILE_DATA?.nickname || ''),
-    username: document.getElementById('profileUsername')
-      ? document.getElementById('profileUsername').value.trim().toLowerCase() || null
-      : (PROFILE_DATA?.username || null),
-    discord_username: document.getElementById('profileDiscord')
-      ? document.getElementById('profileDiscord').value.trim() || null
-      : (PROFILE_DATA?.discord_username || null),
-    trading_style: document.getElementById('profileStyle')?.value || PROFILE_DATA?.trading_style || 'Scalper',
-    primary_market: document.getElementById('profileMarket')?.value || PROFILE_DATA?.primary_market || 'Crypto',
-    risk_per_trade: document.getElementById('profileRisk')
-      ? (parseFloat(document.getElementById('profileRisk').value) || null)
-      : (PROFILE_DATA?.risk_per_trade ?? null),
-    trading_rules: profileRulesArr,
-    my_why: document.getElementById('profileWhy') ? document.getElementById('profileWhy').value.trim() : (PROFILE_DATA?.my_why || ''),
-    updated_at: new Date().toISOString(),
-    ...partial
+    updated_at: new Date().toISOString()
   };
+
+  // Only touch the profile's own fields once it has genuinely loaded. If the
+  // fetch failed (PROFILE_DATA null) the inputs on screen are empty, and
+  // writing them would erase the real values.
+  if(PROFILE_DATA){
+    const nameEl = document.getElementById('profileName');
+    Object.assign(body, {
+      display_name: nameEl ? nameEl.value.trim() : (PROFILE_DATA.display_name || ''),
+      nickname: document.getElementById('profileNickname')
+        ? document.getElementById('profileNickname').value.trim()
+        : (PROFILE_DATA.nickname || ''),
+      username: document.getElementById('profileUsername')
+        ? document.getElementById('profileUsername').value.trim().toLowerCase() || null
+        : (PROFILE_DATA.username || null),
+      discord_username: document.getElementById('profileDiscord')
+        ? document.getElementById('profileDiscord').value.trim() || null
+        : (PROFILE_DATA.discord_username || null),
+      trading_style: document.getElementById('profileStyle')?.value || PROFILE_DATA.trading_style || 'Scalper',
+      primary_market: document.getElementById('profileMarket')?.value || PROFILE_DATA.primary_market || 'Crypto',
+      risk_per_trade: document.getElementById('profileRisk')
+        ? (parseFloat(document.getElementById('profileRisk').value) || null)
+        : (PROFILE_DATA.risk_per_trade ?? null),
+      // Never write an unrendered (empty) rules array over the saved one.
+      trading_rules: profileRulesLoaded ? profileRulesArr : (PROFILE_DATA.trading_rules || []),
+      my_why: document.getElementById('profileWhy')
+        ? document.getElementById('profileWhy').value.trim()
+        : (PROFILE_DATA.my_why || '')
+    });
+  }
+
+  // The caller's own fields always win.
+  Object.assign(body, partial);
   const res = await fetch(`${SUPABASE_URL}/rest/v1/user_profile?on_conflict=user_id`, {
     method: 'POST',
     headers: {

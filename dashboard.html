@@ -17,7 +17,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<link rel="stylesheet" href="css/style.css?v=173">
+<link rel="stylesheet" href="css/style.css?v=175">
 </head>
 <body>
 
@@ -592,12 +592,24 @@
       <div class="sal-answer-why" id="salAnswerWhy">Enter your monthly salary below.</div>
     </div>
 
+    <div class="panel sal-journey" style="margin-bottom:22px;">
+      <div class="sal-journey-head">
+        <div>
+          <div class="sal-journey-label">The journey so far</div>
+          <div class="sal-journey-total" id="salJourneyTotal">—</div>
+          <div class="sal-journey-sub" id="salJourneySub"></div>
+        </div>
+        <div class="sal-journey-note" id="salJourneyNote"></div>
+      </div>
+      <div id="salJourneyEmpty" class="empty-state" style="display:none;">Journal a few trades and the line starts here.</div>
+      <div class="chart-fill" style="height:220px;"><canvas id="salJourneyChart"></canvas></div>
+    </div>
+
     <div class="sal-three" id="salThree"></div>
 
     <div class="panel" style="margin-bottom:22px;">
       <h2>Every Month</h2>
       <div id="salMonthsBody"></div>
-      <div class="sal-alltime" id="salAllTime"></div>
     </div>
 
     <div class="panel" style="margin-bottom:22px;">
@@ -1923,6 +1935,6 @@
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=1"></script>
-<script src="js/dashboard.js?v=265"></script>
+<script src="js/dashboard.js?v=268"></script>
 </body>
 </html>
