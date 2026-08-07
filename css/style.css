@@ -1066,6 +1066,65 @@
   /* ---------- Salary vs Trading Goal ---------- */
   /* Built from the app's own tokens, so it follows the light/dark toggle
      instead of hard-coding one theme. */
+  /* Compact verdict strip — the page answers one question, so the answer
+     leads, but as a single line rather than a full-height hero. */
+  .sal-verdict-strip{
+    display:flex;align-items:center;gap:18px;flex-wrap:wrap;
+    border:1px solid color-mix(in srgb, var(--accent) 40%, var(--rule));
+    background:linear-gradient(145deg, color-mix(in srgb, var(--accent) 10%, var(--surface)), var(--surface));
+    border-radius:11px;padding:14px 18px;margin-bottom:22px;
+  }
+  .sal-verdict-tag{font-size:10px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--accent);}
+  .sal-verdict-answer{font-size:22px;font-weight:800;line-height:1.15;color:var(--accent);}
+  .sal-verdict-line{flex:1;min-width:220px;font-size:12.5px;color:var(--ink);line-height:1.55;}
+  .sal-verdict-count{
+    font-family:'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums;
+    font-size:12px;font-weight:700;color:var(--muted);flex-shrink:0;
+  }
+
+  .sal-sec-head{display:flex;align-items:center;gap:10px;margin:0 0 12px;flex-wrap:wrap;}
+  .sal-sec-no{
+    font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:700;color:var(--accent);
+    border:1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+    border-radius:5px;padding:2px 7px;flex-shrink:0;
+  }
+  .sal-sec-title{font-size:16px;font-weight:700;}
+  .sal-sec-sub{font-size:11.5px;color:var(--muted);margin-left:auto;display:flex;gap:8px;align-items:center;}
+
+  .sal-derived{
+    display:flex;gap:26px;flex-wrap:wrap;margin-top:16px;padding-top:14px;border-top:1px solid var(--rule);
+  }
+  .sal-derived-item{font-size:11.5px;color:var(--muted);}
+  .sal-derived-item strong{
+    display:block;font-size:17px;color:var(--ink);margin-top:3px;
+    font-family:'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums;
+  }
+
+  .sal-an-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px;}
+  .sal-an-grid .panel{margin-bottom:0;}
+  .sal-trend-stats{display:flex;gap:22px;flex-wrap:wrap;margin-top:14px;}
+  .sal-trend-stats > div{font-size:11px;color:var(--muted);}
+  .sal-trend-stats strong{
+    display:block;font-size:17px;margin-top:3px;
+    font-family:'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums;
+  }
+
+  /* Readiness checklist rows */
+  .sal-crit{display:flex;align-items:flex-start;gap:11px;padding:11px 0;border-bottom:1px solid var(--rule);}
+  .sal-crit:last-child{border-bottom:none;}
+  .sal-crit-mark{
+    flex-shrink:0;width:20px;height:20px;border-radius:50%;
+    display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;margin-top:1px;
+  }
+  .sal-crit-pass{background:color-mix(in srgb, var(--win) 18%, transparent);color:var(--win);}
+  .sal-crit-fail{background:color-mix(in srgb, var(--loss) 18%, transparent);color:var(--loss);}
+  .sal-crit-t{font-size:12.5px;font-weight:600;}
+  .sal-crit-d{font-size:11px;color:var(--muted);margin-top:2px;line-height:1.5;}
+  .sal-crit-s{
+    margin-left:auto;flex-shrink:0;font-size:13.5px;font-weight:700;
+    font-family:'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums;
+  }
+
   .sal-hero{
     background:linear-gradient(145deg, color-mix(in srgb, var(--accent) 12%, var(--surface)), var(--surface));
     border:1px solid color-mix(in srgb, var(--accent) 35%, var(--rule));
@@ -1594,6 +1653,11 @@
   body.mobile-mode .ps-lev-badge{padding:3px 8px;font-size:11px;}
   body.mobile-mode .cfe-grid{grid-template-columns:1fr;}
   body.mobile-mode .be-stat-grid{grid-template-columns:1fr;}
+  body.mobile-mode .sal-an-grid{grid-template-columns:1fr;}
+  body.mobile-mode .sal-verdict-strip{gap:10px;padding:13px 15px;}
+  body.mobile-mode .sal-verdict-count{margin-left:auto;}
+  body.mobile-mode .sal-sec-sub{margin-left:0;width:100%;flex-wrap:wrap;}
+  body.mobile-mode .sal-derived{gap:14px 20px;}
   body.mobile-mode .sal-hero{padding:18px 16px;}
   body.mobile-mode .sal-hero-value{font-size:29px;}
   body.mobile-mode .sal-hero-sub{font-size:11.5px;}
