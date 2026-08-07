@@ -1085,34 +1085,50 @@
   }
   .sal-three-note{font-size:11.5px;color:var(--muted);margin-top:6px;}
 
-  /* One line per month — mark, name, amount, plain-language status */
+  /* One card per month. The bar spans the full card width so its length is
+     actually comparable between months — wedged between columns as a short
+     inline strip it read as decoration rather than data, and left a dead gap
+     in the middle of every row. */
   .sal-month{
-    display:flex;align-items:center;gap:14px;
-    padding:13px 0;border-bottom:1px solid var(--rule);
+    background:var(--surface-2);border:1px solid var(--rule);border-radius:10px;
+    padding:14px 16px;margin-bottom:10px;
   }
-  .sal-month:last-child{border-bottom:none;}
+  .sal-month:last-child{margin-bottom:0;}
+  .sal-month-top{display:flex;align-items:center;gap:12px;}
   .sal-month-mark{
-    flex-shrink:0;width:24px;height:24px;border-radius:50%;
-    display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;
+    flex-shrink:0;width:26px;height:26px;border-radius:50%;
+    display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;
   }
   .sal-m-yes{background:color-mix(in srgb, var(--win) 18%, transparent);color:var(--win);}
   .sal-m-no{background:color-mix(in srgb, var(--loss) 18%, transparent);color:var(--loss);}
   .sal-m-now{background:color-mix(in srgb, var(--muted) 20%, transparent);color:var(--muted);}
-  .sal-month-name{flex:1;min-width:0;font-size:13.5px;font-weight:600;}
-  /* How far the month got toward a full salary. The dashed cap on the right
-     is the target, so a bar that reaches it has cleared the bar. */
-  .sal-month-bar{
-    flex:0 0 130px;height:8px;background:var(--surface-2);
-    border:1px solid var(--rule);border-radius:5px;overflow:hidden;position:relative;
-  }
-  .sal-month-bar-neg{border-color:color-mix(in srgb, var(--loss) 45%, var(--rule));}
-  .sal-month-bar-fill{display:block;height:100%;border-radius:4px;}
-  .sal-month-days{display:block;font-size:11px;font-weight:400;color:var(--muted);margin-top:2px;}
+  .sal-month-name{flex:1;min-width:0;font-size:14px;font-weight:600;}
+  .sal-month-days{display:block;font-size:11.5px;font-weight:400;color:var(--muted);margin-top:3px;}
   .sal-month-amt{
-    flex-shrink:0;text-align:right;font-size:14px;font-weight:700;
+    flex-shrink:0;text-align:right;font-size:15px;font-weight:700;
     font-family:'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums;
   }
-  .sal-month-status{flex-shrink:0;width:150px;text-align:right;font-size:11.5px;color:var(--muted);}
+  /* What the month was made of — trades, the W/L split and the win rate.
+     Explains why the amount above came out the way it did. */
+  .sal-month-stats{
+    display:flex;flex-wrap:wrap;gap:8px 18px;margin-top:11px;padding-left:38px;
+    font-size:11.5px;color:var(--muted);
+  }
+  .sal-month-stats strong{
+    color:var(--ink);font-weight:700;
+    font-family:'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums;
+  }
+  .sal-month-bottom{display:flex;align-items:center;gap:12px;margin-top:12px;}
+  .sal-month-track{
+    flex:1;height:8px;background:var(--surface);
+    border:1px solid var(--rule);border-radius:5px;overflow:hidden;
+  }
+  .sal-month-track-neg{border-color:color-mix(in srgb, var(--loss) 45%, var(--rule));}
+  .sal-month-fill{height:100%;border-radius:4px;}
+  .sal-month-pct{
+    flex-shrink:0;width:118px;text-align:right;font-size:11px;font-weight:600;
+    font-family:'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums;
+  }
 
   /* The zoom-out, given real estate: a running total that keeps its height
      even when the newest month is red. */
@@ -1616,10 +1632,11 @@
   body.mobile-mode .sal-three-value{font-size:20px;}
   /* The status text is the first thing to drop on a phone — the tick mark
      and the amount already say whether the month cleared the bar. */
-  body.mobile-mode .sal-month-status{display:none;}
-  body.mobile-mode .sal-month{gap:10px;}
-  body.mobile-mode .sal-month-bar{flex:0 0 64px;}
+  body.mobile-mode .sal-month{padding:12px 13px;}
+  body.mobile-mode .sal-month-top{gap:10px;}
   body.mobile-mode .sal-month-amt{font-size:13px;}
+  body.mobile-mode .sal-month-pct{width:auto;font-size:10px;}
+  body.mobile-mode .sal-month-stats{padding-left:0;gap:6px 14px;font-size:11px;}
   body.mobile-mode .sal-journey-head{flex-direction:column;gap:10px;}
   body.mobile-mode .sal-journey-total{font-size:27px;}
   body.mobile-mode .sal-journey-note{text-align:left;}

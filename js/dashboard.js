@@ -2967,13 +2967,35 @@ function renderSalaryGoal(){
   // Net per UTC day, grouped into months. One source for every figure below.
   const { dayKeys, monthOfDay } = _salaryDayAndMonthBuckets();
   const monthKeys = _salaryMonthsPresent(monthOfDay);   // newest first
+
+  // Trade counts per month, alongside the day/net buckets — the amount says
+  // what a month made, these say how it got there.
+  const tradesByMonth = {};
+  ALL_TRADES.filter(t => t.close_date).forEach(t => {
+    const k = _salaryMonthKey(new Date(t.close_date));
+    if(!tradesByMonth[k]) tradesByMonth[k] = { trades: 0, wins: 0, losses: 0 };
+    const b = tradesByMonth[k];
+    b.trades++;
+    const wl = (t.win_loss || '').toLowerCase();
+    if(wl === 'win') b.wins++;
+    else if(wl === 'loss' || wl === 'liquidated') b.losses++;
+  });
+
   const months = monthKeys.map(m => {
     const keys = Object.keys(dayKeys).filter(k => monthOfDay[k] === m);
+    const tb = tradesByMonth[m] || { trades: 0, wins: 0, losses: 0 };
+    // Win rate over decided trades only — breakevens are neither, and
+    // counting them as losses would understate the read.
+    const decided = tb.wins + tb.losses;
     return {
       key: m,
       label: _salaryMonthLabel(m),
       days: keys.length,
-      net: keys.reduce((s,k) => s + dayKeys[k], 0)
+      net: keys.reduce((s,k) => s + dayKeys[k], 0),
+      trades: tb.trades,
+      wins: tb.wins,
+      losses: tb.losses,
+      winRate: decided ? tb.wins / decided * 100 : null
     };
   });
 
@@ -3076,22 +3098,37 @@ function _salRenderMonths({ months, need, nowKey }){
     // How far this month got toward the salary. A losing month fills nothing
     // — a negative width would be meaningless — so the track stays empty and
     // just carries a red tint to mark it as a step backwards.
-    let bar = '';
-    if(need != null && need > 0){
-      const pct = Math.max(0, Math.min(100, m.net / need * 100));
-      const tone = m.net < 0 ? 'var(--loss)' : (covered ? 'var(--win)' : 'var(--accent)');
-      bar = '<span class="sal-month-bar' + (m.net < 0 ? ' sal-month-bar-neg' : '') + '" ' +
-            'title="' + fmtNum(Math.max(0, m.net / need * 100), 0) + '% of a month\'s salary">' +
-              '<span class="sal-month-bar-fill" style="width:' + pct.toFixed(0) + '%;background:' + tone + ';"></span>' +
-            '</span>';
-    }
+    const rawPct = (need != null && need > 0) ? m.net / need * 100 : null;
+    const tone = m.net < 0 ? 'var(--loss)' : (covered ? 'var(--win)' : 'var(--accent)');
+    const bar = rawPct == null ? '' :
+      '<div class="sal-month-track' + (m.net < 0 ? ' sal-month-track-neg' : '') + '">' +
+        '<div class="sal-month-fill" style="width:' + Math.max(0, Math.min(100, rawPct)).toFixed(0) + '%;background:' + tone + ';"></div>' +
+      '</div>' +
+      '<span class="sal-month-pct" style="color:' + tone + ';">' +
+        (m.net < 0 ? 'nothing covered' : fmtNum(Math.max(0, rawPct), 0) + '% of a month') +
+      '</span>';
+
+    const wrTone = m.winRate == null ? 'var(--muted)'
+      : (m.winRate >= 60 ? 'var(--win)' : (m.winRate >= 40 ? 'var(--accent)' : 'var(--loss)'));
+    const stats = m.trades
+      ? '<div class="sal-month-stats">' +
+          '<span><strong>' + m.trades + '</strong> trade' + (m.trades===1?'':'s') + '</span>' +
+          '<span><strong style="color:var(--win);">' + m.wins + 'W</strong> / <strong style="color:var(--loss);">' + m.losses + 'L</strong></span>' +
+          (m.winRate == null ? '' : '<span><strong style="color:' + wrTone + ';">' + fmtNum(m.winRate,0) + '%</strong> win rate</span>') +
+          '<span>' + m.days + ' trading day' + (m.days===1?'':'s') + '</span>' +
+        '</div>'
+      : '';
 
     return '<div class="sal-month">' +
-        '<span class="sal-month-mark ' + markCls + '">' + mark + '</span>' +
-        '<span class="sal-month-name">' + m.label + '<span class="sal-month-days">' + m.days + ' trading day' + (m.days===1?'':'s') + '</span></span>' +
-        bar +
-        '<span class="sal-month-amt" style="color:' + (m.net >= 0 ? 'var(--win)' : 'var(--loss)') + ';">' + _salTriInline(m.net) + '</span>' +
-        '<span class="sal-month-status">' + status + '</span>' +
+        '<div class="sal-month-top">' +
+          '<span class="sal-month-mark ' + markCls + '">' + mark + '</span>' +
+          '<span class="sal-month-name">' + m.label +
+            (status ? '<span class="sal-month-days">' + status + '</span>' : '') +
+          '</span>' +
+          '<span class="sal-month-amt" style="color:' + (m.net >= 0 ? 'var(--win)' : 'var(--loss)') + ';">' + _salTriInline(m.net) + '</span>' +
+        '</div>' +
+        stats +
+        (bar ? '<div class="sal-month-bottom">' + bar + '</div>' : '') +
       '</div>';
   }).join('');
 }
@@ -3580,7 +3617,7 @@ function renderFinDashCharts(accFilterIdParam){
   renderFinDashCategoryChart(chartTx, primary);
   renderFinDashSubcategoryChart(chartTx, primary);
   renderFinDashEquityChart(chartTx, primary);
-  renderFinDashDisciplineRadar(chartTx);
+  renderFinDashDisciplineRadar(chartTx, primary);
 }
 
 function _categoryPalette(n){
@@ -3785,10 +3822,17 @@ function renderFinDashEquityChart(chartTx, primary){
 const FIN_NEEDS_CATEGORIES = ['🏠 Housing', '💡 Utilities', '🍽️ Food & Groceries', '🚗 Transportation', '🏥 Healthcare', '📚 Education'];
 const FIN_WANTS_CATEGORIES = ['🎉 Entertainment', '🚬 Vices', '🛍️ Shopping', '🎁 Gifts & Donations', '✈️ Travel', '📦 Subscriptions'];
 
-function _finDisciplineMetrics(chartTx){
+function _finDisciplineMetrics(chartTx, primary){
+  // Money metrics are restricted to ONE currency — the same primary the rest
+  // of the dashboard's charts use. Summing AED and PHP amounts as bare
+  // numbers treats 500 dirhams and 500 pesos as equal and badly distorts both
+  // the savings rate and the needs/wants split. Day counts and payment counts
+  // below are currency-agnostic, so they still use every transaction.
+  const money = primary ? chartTx.filter(t => _finTxCurrency(t) === primary) : chartTx;
+
   // 1. Savings Rate — are you keeping more than you spend.
-  const income = chartTx.filter(t => t.tx_type === 'Income').reduce((s,t) => s + (Number(t.amount)||0), 0);
-  const expenses = chartTx.filter(t => t.tx_type === 'Expense');
+  const income = money.filter(t => t.tx_type === 'Income').reduce((s,t) => s + (Number(t.amount)||0), 0);
+  const expenses = money.filter(t => t.tx_type === 'Expense');
   const expenseTotal = expenses.reduce((s,t) => s + (Number(t.amount)||0), 0);
   const savingsRate = income > 0
     ? Math.max(0, Math.min(100, Math.round((income - expenseTotal) / income * 100)))
@@ -3796,7 +3840,10 @@ function _finDisciplineMetrics(chartTx){
 
   // 2. Credit Utilization (inverted — LOW usage scores HIGH) — are you
   // leaning on credit sparingly. A right-now snapshot, not period-filtered.
-  const creditAccs = FIN_ACCOUNTS.filter(a => a.account_class === 'Credit');
+  // Owed and limit are also money — mixing a PHP card's limit with an AED
+  // card's balance would give a meaningless ratio, so this stays in the
+  // primary currency too.
+  const creditAccs = FIN_ACCOUNTS.filter(a => a.account_class === 'Credit' && (!primary || a.currency === primary));
   const totalOwed = creditAccs.reduce((s,a) => s + finOwedFor(a), 0);
   const totalLimit = creditAccs.reduce((s,a) => s + (Number(a.credit_limit)||0), 0);
   const utilizationPct = totalLimit > 0 ? (totalOwed / totalLimit * 100) : 0;
@@ -3805,9 +3852,11 @@ function _finDisciplineMetrics(chartTx){
   // 3. No-Spend Days — restraint: what fraction of days in the selected
   // period had zero Expense activity at all. Unlike Bills On Time, this
   // gives every account a real score even with no credit cards at all.
+  // Counting days, not money — so this looks at spending in ANY currency.
+  // Using only the primary would credit a no-spend day you actually spent on.
   const { start: periodStart, end: periodEnd } = _finPeriodRange();
   const totalDays = Math.max(1, Math.round((periodEnd - periodStart) / 86400000) + 1);
-  const expenseDays = new Set(expenses.map(t => t.tx_date));
+  const expenseDays = new Set(chartTx.filter(t => t.tx_type === 'Expense').map(t => t.tx_date));
   const noSpendDays = Math.max(0, totalDays - expenseDays.size);
   const noSpendPct = Math.round(noSpendDays / totalDays * 100);
 
@@ -3874,13 +3923,13 @@ function _finPeriodRange(){
 }
 
 let finDashDisciplineRadarRef = null;
-function renderFinDashDisciplineRadar(chartTx){
+function renderFinDashDisciplineRadar(chartTx, primary){
   const canvas = document.getElementById('finDashDisciplineRadar');
   if(!canvas) return;
   const ctx = canvas.getContext('2d');
   if(finDashDisciplineRadarRef) finDashDisciplineRadarRef.destroy();
 
-  const m = _finDisciplineMetrics(chartTx);
+  const m = _finDisciplineMetrics(chartTx, primary);
   const labels = ['Savings Rate', 'Credit Utilization', 'No-Spend Days', 'Needs vs Wants', 'Debt Progress'];
   const data = [m.savingsRate, m.creditUtilizationScore, m.noSpendPct, m.needsPct, m.debtProgressPct];
   const score = Math.round(data.reduce((s,v) => s+v, 0) / data.length);
