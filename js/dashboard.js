@@ -3088,11 +3088,16 @@ function renderSalaryGoal(){
   const perMonthHours = hours * days;
 
   // --- derived strip under the inputs (replaces the old breakdown panels) ---
+  const spendLabel = spend.monthsUsed
+    ? `Your spending — avg of ${spend.monthsUsed} month${spend.monthsUsed===1?'':'s'}`
+    : 'Your spending — per month';
+
   document.getElementById('salDerived').innerHTML = [
     { label: 'Payslip — per day', html: ready ? _salTri(dailyUsd, { color:'var(--accent)' }) : '—' },
     { label: 'Payslip — per month', html: ready ? _salTri(monthlyUsdVal, { color:'var(--accent)' }) : '—' },
-    { label: 'Your real spending — per month', html: spend.monthly != null ? _salTri(spend.monthly, { color:'var(--warn)' }) : '—' },
-    { label: 'Hours back if you quit', html: `<span>${fmtNum(perMonthHours,0)} h / mo</span>` }
+    { label: spendLabel, html: spend.monthly != null ? _salTri(spend.monthly, { color:'var(--warn)' }) : '—' },
+    { label: 'Hours back if you quit',
+      html: `<span>${fmtNum(perMonthHours,0)} h / mo</span><span class="sal-tri">${fmtNum(hours,1)} h / day · ${fmtNum(hours*5,1)} h / week</span>` }
   ].map(d => `<div class="sal-derived-item">${d.label}<strong>${d.html}</strong></div>`).join('');
 
   const stats = _salaryMonthlyStats({ dailyUsd, monthlyUsd: monthlyUsdVal, dayKeys, monthOfDay, months });
@@ -3194,9 +3199,12 @@ function renderSalaryCombined({ stats, monthlyUsd, spendMonthly }){
 
   // What the job alone would have left after living costs, versus what both
   // together leave — the honest measure of what trading is adding right now.
+  // A trading loss comes out of trading capital, not out of what the salary
+  // leaves you — so only PROFIT is added here. A losing month leaves the
+  // salary's leftover exactly where it was.
   const spendTotal = spendMonthly != null ? spendMonthly * monthsCount : null;
   const savedJobOnly = spendTotal != null ? salary - spendTotal : null;
-  const savedBoth = spendTotal != null ? combined - spendTotal : null;
+  const savedBoth = spendTotal != null ? salary + Math.max(0, trading) - spendTotal : null;
 
   const periodWord = monthsCount === 1 ? 'this month' : `these ${monthsCount} months`;
 
@@ -3231,8 +3239,8 @@ function renderSalaryCombined({ stats, monthlyUsd, spendMonthly }){
     ${savedBoth !== null ? `
       <div class="sal-trend-stats">
         <div>Left over — job only<strong>${_salTri(savedJobOnly, { color: savedJobOnly>=0?'var(--win)':'var(--loss)' })}</strong></div>
-        <div>Left over — job + trading<strong>${_salTri(savedBoth, { color: savedBoth>=0?'var(--win)':'var(--loss)' })}</strong></div>
-        <div>${down ? 'Cost of the drawdown' : 'Extra you got to keep'}<strong>${_salTri(Math.abs(trading), { color: down?'var(--loss)':'var(--win)' })}</strong></div>
+        <div>Left over — job + trading<strong>${_salTri(savedBoth, { color: savedBoth>=0?'var(--win)':'var(--loss)' })}</strong>${down ? `<span class="sal-tri" style="color:var(--muted);">unchanged — the loss didn't touch your pay</span>` : ''}</div>
+        <div>${down ? 'Trading capital given back' : 'Extra you got to keep'}<strong>${_salTri(Math.abs(trading), { color: down?'var(--loss)':'var(--win)' })}</strong></div>
       </div>` : ''}
     ${trading > 0
       ? `<div class="cfe-insight">💡 Over ${periodWord}, trading added ${_salMoney(trading,'USD')} on top of a salary you were getting anyway — ${fmtNum(upliftPct,0)}% more income, with none of the risk of having quit. Staying employed while the streak builds is what turns trading profit into savings instead of rent.</div>`
@@ -3602,15 +3610,24 @@ function renderSalaryHistory({ stats, spendMonthly, monthlyUsd }){
       <span style="color:${color};">${fmtNum(pct,0)}%</span>
     </div>`;
 
+  // The current month is only part-elapsed, so comparing it against a whole
+  // month's salary overstates the shortfall. Pro-rate the salary by how much
+  // of the month has actually passed.
+  const now = new Date();
+  const daysInThisMonth = new Date(now.getUTCFullYear(), now.getUTCMonth() + 1, 0).getDate();
+  const elapsedFraction = Math.min(1, now.getUTCDate() / daysInThisMonth);
+
   body.innerHTML = listed.map(r => {
-    const vsSpend = spendMonthly > 0 ? r.net / spendMonthly * 100 : null;
-    const vsSalary = monthlyUsd > 0 ? r.net / monthlyUsd * 100 : null;
-    const diff = monthlyUsd > 0 ? r.net - monthlyUsd : null;
+    const inProgress = r.key === nowKey;
+    const salarySoFar = monthlyUsd > 0 ? monthlyUsd * (inProgress ? elapsedFraction : 1) : null;
+    const spendSoFar = spendMonthly > 0 ? spendMonthly * (inProgress ? elapsedFraction : 1) : null;
+
+    const vsSpend = spendSoFar > 0 ? r.net / spendSoFar * 100 : null;
+    const vsSalary = salarySoFar > 0 ? r.net / salarySoFar * 100 : null;
+    const diff = salarySoFar != null ? r.net - salarySoFar : null;
 
     const spendTone = vsSpend == null ? 'var(--muted)' : (vsSpend >= 100 ? 'var(--win)' : 'var(--loss)');
     const salTone = vsSalary == null ? 'var(--muted)' : (vsSalary >= 100 ? 'var(--accent)' : 'var(--loss)');
-
-    const inProgress = r.key === nowKey;
     const verdict = inProgress ? `<span class="pill pill-muted">In progress</span>`
       : (vsSalary != null && vsSalary >= 100) ? `<span class="pill pill-green">Full salary</span>`
       : (vsSpend != null && vsSpend >= 100) ? `<span class="pill pill-blue">Covers costs</span>`
@@ -3619,7 +3636,7 @@ function renderSalaryHistory({ stats, spendMonthly, monthlyUsd }){
     return `<tr onclick="focusSalaryMonth('${r.key}')" style="cursor:pointer;${r.key === selectedKey ? 'background:var(--surface-2);' : ''}">
       <td style="font-family:'Public Sans',sans-serif;">${r.label}</td>
       <td>${r.tradingDays}</td>
-      <td style="color:var(--muted);">${monthlyUsd > 0 ? _salTriInline(monthlyUsd) : '—'}</td>
+      <td style="color:var(--muted);">${salarySoFar != null ? _salTriInline(salarySoFar) : '—'}${inProgress ? `<span class="sal-tri-sm" style="color:var(--warn);">${fmtNum(elapsedFraction*100,0)}% of the month so far</span>` : ''}</td>
       <td class="${r.net >= 0 ? 'pos' : 'neg'}">${_salTriInline(r.net)}</td>
       <td style="color:${diff == null ? 'var(--muted)' : (diff >= 0 ? 'var(--win)' : 'var(--loss)')};">${diff == null ? '—' : (diff >= 0 ? '+' : '') + _salTriInline(diff)}</td>
       <td>${bar(vsSpend, spendTone)}</td>
