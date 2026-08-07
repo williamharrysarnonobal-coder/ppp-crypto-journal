@@ -497,9 +497,11 @@ function switchView(view){
   if(view === 'salary'){
     fillSalaryInputs();
     renderSalaryGoal();
-    // Once a day at most, and never blocking the render above — a failed
-    // fetch just leaves the saved rates in place.
-    if(_fxIsStale()) fetchFxRates(false);
+    // Both of these depend on saved settings, so they wait for the profile.
+    // Opening the app straight onto this page used to beat loadProfile(),
+    // and the FX refresh would then save the blank defaults over the real
+    // numbers. loadProfile() re-runs this block itself once it lands.
+    if(PROFILE_DATA && _fxIsStale()) fetchFxRates(false);
     // Finance data is lazy-loaded by its own view, but the spending
     // comparison needs it — fetch it here if this page was opened first.
     if(!FIN_TXNS.length || !FIN_ACCOUNTS.length){
@@ -2858,6 +2860,13 @@ function onSalaryInput(){
 
 async function saveSalarySettings(){
   const stateEl = document.getElementById('salSaveState');
+  // Never write before the profile has loaded. Until it does, the inputs
+  // hold SALARY_DEFAULTS (a blank salary), and saving those would erase the
+  // real numbers — which is exactly how the Monthly Salary kept vanishing.
+  if(!PROFILE_DATA){
+    if(stateEl) stateEl.textContent = '';
+    return;
+  }
   try{
     await persistProfile({ salary_settings: _salaryInputValues() });
     if(stateEl) stateEl.textContent = 'Saved';
@@ -2905,7 +2914,11 @@ async function fetchFxRates(manual){
     statusEl.innerHTML = `Rates as of <strong>${asOf.toLocaleDateString(undefined,{day:'numeric',month:'short',year:'numeric'})}</strong> · 1 USD = ${aed} AED · ${php} PHP`;
 
     renderSalaryGoal();
-    await persistProfile({ salary_settings: { ..._salaryInputValues(), fx_updated_at: new Date().toISOString() } });
+    // Same guard as saveSalarySettings: writing before the profile has
+    // loaded would persist the blank defaults sitting in the inputs.
+    if(PROFILE_DATA){
+      await persistProfile({ salary_settings: { ..._salaryInputValues(), fx_updated_at: new Date().toISOString() } });
+    }
   }catch(e){
     console.error("Couldn't fetch FX rates:", e);
     statusEl.textContent = manual
@@ -10733,6 +10746,15 @@ async function loadProfile(){
   // the first sync at login can beat this profile fetch and would otherwise
   // leave the email prefix as the visible leaderboard name.
   if(LAST_LEADERBOARD_SCORE) syncLeaderboardScore(LAST_LEADERBOARD_SCORE.points, LAST_LEADERBOARD_SCORE.label);
+  // The Payslip page reads its inputs from the profile, but it can be the
+  // restored view and render before this fetch returns — so refill it now
+  // that the real values exist, and only then let the FX refresh (which
+  // writes) run.
+  if(currentView === 'salary'){
+    fillSalaryInputs();
+    renderSalaryGoal();
+    if(PROFILE_DATA && _fxIsStale()) fetchFxRates(false);
+  }
   await renderProfile();
 }
 
