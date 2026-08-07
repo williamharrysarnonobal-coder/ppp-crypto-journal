@@ -2780,30 +2780,6 @@ const SALARY_DEFAULTS = {
 };
 
 let SALARY_SAVE_TIMER = null;
-// Year and month are separate filters so the month list stays short once
-// there are several years of trades. SALARY_YEAR is 'all' or 'YYYY';
-// SALARY_MONTH is 'all' or a two-digit 'MM' WITHIN the selected year.
-let SALARY_YEAR = 'all';
-let SALARY_MONTH = 'all';
-// The year picker defaults to your most recent trading year the first time
-// the page renders, so the month picker is usable straight away instead of
-// sitting greyed out until you notice a year has to be chosen first.
-let SALARY_YEAR_AUTOSET = false;
-
-// True when a 'YYYY-MM' bucket belongs to the currently selected period.
-function _salaryInPeriod(monthKey){
-  if(SALARY_YEAR === 'all') return true;
-  const [y, m] = monthKey.split('-');
-  if(y !== SALARY_YEAR) return false;
-  return SALARY_MONTH === 'all' || m === SALARY_MONTH;
-}
-
-function _salaryPeriodLabel(){
-  if(SALARY_YEAR === 'all') return 'All time';
-  if(SALARY_MONTH === 'all') return SALARY_YEAR;
-  return _salaryMonthLabel(`${SALARY_YEAR}-${SALARY_MONTH}`);
-}
-
 // UTC month key, matching how _dayKeyUTC buckets days, so a trade never
 // lands in a different month here than it does in the day counts.
 function _salaryMonthKey(d){
@@ -2831,27 +2807,6 @@ function _salaryDayAndMonthBuckets(){
 
 function _salaryMonthsPresent(monthOfDay){
   return [...new Set(Object.values(monthOfDay))].sort().reverse();
-}
-
-function onSalaryYearChange(){
-  SALARY_YEAR = document.getElementById('salYearFilter').value || 'all';
-  // Whichever month was picked belonged to the previous year — start that
-  // year on "All months" rather than silently carrying it over.
-  SALARY_MONTH = 'all';
-  renderSalaryGoal();
-}
-
-function onSalaryMonthChange(){
-  SALARY_MONTH = document.getElementById('salMonthFilter').value || 'all';
-  renderSalaryGoal();
-}
-
-// Clicking a row in the Month by Month table jumps both filters to it.
-function focusSalaryMonth(key){
-  const [y, m] = key.split('-');
-  SALARY_YEAR = y;
-  SALARY_MONTH = m;
-  renderSalaryGoal();
 }
 
 function _salaryFields(){
@@ -3000,352 +2955,140 @@ function _salStatCard(label, primary, secondary){
 }
 
 function renderSalaryGoal(){
-  // Guard on an element that actually exists on the page — this used to key
-  // off the old hero, which silently made the whole render a no-op once the
-  // hero was replaced by the verdict strip.
-  if(!document.getElementById('salVerdictAnswer')) return;
+  if(!document.getElementById('salAnswerText')) return;
 
   const v = _salaryInputValues();
   const aed = Number(v.aed_per_usd) > 0 ? Number(v.aed_per_usd) : SALARY_DEFAULTS.aed_per_usd;
   const php = Number(v.php_per_usd) > 0 ? Number(v.php_per_usd) : SALARY_DEFAULTS.php_per_usd;
-  const days = Number(v.working_days) > 0 ? Number(v.working_days) : SALARY_DEFAULTS.working_days;
-  const hours = Number(v.hours_per_day) > 0 ? Number(v.hours_per_day) : SALARY_DEFAULTS.hours_per_day;
   const monthlyAed = Number(v.monthly_salary);
-
   const ready = Number.isFinite(monthlyAed) && monthlyAed > 0;
+  const need = ready ? monthlyAed / aed : null;   // the bar, in USD
 
-  // Everything is derived from AED (how the salary is actually paid), then
-  // converted — so USD/PHP can never drift from the AED figure.
-  const dailyAed = ready ? monthlyAed / days : null;
-  const hourlyAed = dailyAed != null ? dailyAed / hours : null;
-  const weeklyAed = dailyAed != null ? dailyAed * 5 : null;
-  const toUsd = a => a == null ? null : a / aed;
-  const toPhp = a => a == null ? null : (a / aed) * php;
-
-  const dailyUsd = toUsd(dailyAed);
-
-  // --- month buckets from real trades (measured, never projected) ---
+  // Net per UTC day, grouped into months. One source for every figure below.
   const { dayKeys, monthOfDay } = _salaryDayAndMonthBuckets();
-  const months = _salaryMonthsPresent(monthOfDay);
-
-  // Both pickers are built from the journal itself — only years and months
-  // that actually contain closed trades ever appear.
-  const years = [...new Set(months.map(m => m.split('-')[0]))].sort().reverse();
-  if(SALARY_YEAR !== 'all' && !years.includes(SALARY_YEAR)){ SALARY_YEAR = 'all'; SALARY_MONTH = 'all'; }
-  // Open on the current month by default. Falls back gracefully when there
-  // are no trades in it yet: current year (all months), otherwise the newest
-  // year that does have trades. Runs once, so deliberately switching to
-  // "All years" afterwards sticks.
-  if(!SALARY_YEAR_AUTOSET && years.length){
-    SALARY_YEAR_AUTOSET = true;
-    const now = new Date();
-    const curYear = String(now.getUTCFullYear());
-    const curMonth = String(now.getUTCMonth() + 1).padStart(2, '0');
-    if(months.includes(`${curYear}-${curMonth}`)){
-      SALARY_YEAR = curYear;
-      SALARY_MONTH = curMonth;
-    }else if(years.includes(curYear)){
-      SALARY_YEAR = curYear;
-      SALARY_MONTH = 'all';
-    }else{
-      SALARY_YEAR = years[0];
-      SALARY_MONTH = 'all';
-    }
-  }
-
-  const monthsInYear = SALARY_YEAR === 'all'
-    ? []
-    : months.filter(m => m.startsWith(SALARY_YEAR + '-')).map(m => m.split('-')[1]);
-  if(SALARY_MONTH !== 'all' && !monthsInYear.includes(SALARY_MONTH)) SALARY_MONTH = 'all';
-
-  const yearSel = document.getElementById('salYearFilter');
-  if(yearSel){
-    yearSel.innerHTML = `<option value="all">All years</option>` +
-      years.map(y => `<option value="${y}">${y}</option>`).join('');
-    yearSel.value = SALARY_YEAR;
-  }
-  const monthSel = document.getElementById('salMonthFilter');
-  if(monthSel){
-    // With no year picked there's nothing sensible to list, so the month
-    // picker is disabled — but it says why rather than sitting there as a
-    // dead "All months" that looks broken.
-    monthSel.disabled = SALARY_YEAR === 'all';
-    monthSel.title = SALARY_YEAR === 'all' ? 'Choose a year first to filter by month' : '';
-    monthSel.innerHTML = SALARY_YEAR === 'all'
-      ? `<option value="all">Pick a year first</option>`
-      : `<option value="all">All months</option>` +
-        monthsInYear.map(m => `<option value="${m}">${_salaryMonthLabel(`${SALARY_YEAR}-${m}`).replace(' ' + SALARY_YEAR, '')}</option>`).join('');
-    monthSel.value = SALARY_MONTH;
-  }
-
-  const allDays = Object.keys(dayKeys);
-  const tradingDays = allDays.length;
-  const totalNet = allDays.reduce((s,k) => s + dayKeys[k], 0);
-  const avgPerTradingDay = tradingDays ? totalNet / tradingDays : null;
-
-  const monthlyUsdVal = ready ? toUsd(monthlyAed) : null;
-  const spend = _salaryMonthlySpending(aed, php);
-  const perMonthHours = hours * days;
-
-  // --- derived strip under the inputs (replaces the old breakdown panels) ---
-  const spendLabel = spend.monthsUsed
-    ? `Your spending — avg of ${spend.monthsUsed} month${spend.monthsUsed===1?'':'s'}`
-    : 'Your spending — per month';
-
-  document.getElementById('salDerived').innerHTML = [
-    { label: 'Payslip — per day', html: ready ? _salTri(dailyUsd, { color:'var(--accent)' }) : '—' },
-    { label: 'Payslip — per month', html: ready ? _salTri(monthlyUsdVal, { color:'var(--accent)' }) : '—' },
-    { label: spendLabel, html: spend.monthly != null ? _salTri(spend.monthly, { color:'var(--warn)' }) : '—' },
-    { label: 'Hours back if you quit',
-      html: `<span>${fmtNum(perMonthHours,0)} h / mo</span><span class="sal-tri">${fmtNum(hours,1)} h / day · ${fmtNum(hours*5,1)} h / week</span>` }
-  ].map(d => `<div class="sal-derived-item">${d.label}<strong>${d.html}</strong></div>`).join('');
-
-  const stats = _salaryMonthlyStats({ dailyUsd, monthlyUsd: monthlyUsdVal, dayKeys, monthOfDay, months });
-
-  // --- time saved for family ---
-  document.getElementById('salTimeSaved').innerHTML = [
-    _salStatCard('Per Day', `${fmtNum(hours,1)} h`, 'back in your day'),
-    _salStatCard('Per Week', `${fmtNum(hours*5,1)} h`, '5 working days'),
-    _salStatCard('Per Month', `${fmtNum(perMonthHours,1)} h`, `${fmtNum(days,2)} working days`),
-    _salStatCard('≈ Free Days / Month', fmtNum(perMonthHours/16, 1), 'at 16 waking hours each')
-  ].join('');
-
-  renderSalaryHistory({ stats, spendMonthly: spend.monthly, monthlyUsd: monthlyUsdVal });
-  renderSalaryVerdict({ stats, monthlyUsd: monthlyUsdVal });
-  renderSalaryBigPicture({ stats, monthlyUsd: monthlyUsdVal, totalNet, tradingDays });
-  renderSalaryCombined({ stats, monthlyUsd: monthlyUsdVal, spendMonthly: spend.monthly });
-  renderSalaryReadiness({ stats, monthlyUsd: monthlyUsdVal, aed, php, totalNet, tradingDays });
-  renderSalaryTrend({ monthlyUsd: monthlyUsdVal, dayKeys, monthOfDay, months });
-  renderSalaryGap({ stats, monthlyUsd: monthlyUsdVal, days, dailyUsd });
-}
-
-// Deliberately ignores the year/month picker. A single red month makes the
-// filtered views look like failure even when the whole run is up — this is
-// the zoomed-out number that can't be distorted by which month is selected.
-function renderSalaryBigPicture({ stats, monthlyUsd, totalNet, tradingDays }){
-  const body = document.getElementById('salBigPictureBody');
-  if(!body) return;
-
-  if(!stats.length){
-    body.innerHTML = `<div class="empty-state">No closed trades yet.</div>`;
-    return;
-  }
+  const monthKeys = _salaryMonthsPresent(monthOfDay);   // newest first
+  const months = monthKeys.map(m => {
+    const keys = Object.keys(dayKeys).filter(k => monthOfDay[k] === m);
+    return {
+      key: m,
+      label: _salaryMonthLabel(m),
+      days: keys.length,
+      net: keys.reduce((s,k) => s + dayKeys[k], 0)
+    };
+  });
 
   const nowKey = _salaryMonthKey(new Date());
-  const done = stats.filter(s => s.key !== nowKey);
-  const monthsTraded = stats.length;
-  const avgPerMonth = monthsTraded ? totalNet / monthsTraded : 0;
-  const upMonths = stats.filter(s => s.net > 0).length;
-  const matched = monthlyUsd > 0 ? done.filter(s => s.net >= monthlyUsd).length : null;
+  const done = months.filter(m => m.key !== nowKey);   // completed months only
+  const totalNet = months.reduce((s,m) => s + m.net, 0);
 
-  // Oldest month first for the "since" wording.
-  const oldest = stats[stats.length - 1];
-  const salaryOverSame = monthlyUsd > 0 ? monthlyUsd * monthsTraded : null;
-  const upliftPct = salaryOverSame > 0 ? totalNet / salaryOverSame * 100 : null;
+  // Lower median of completed months. With an even count the usual median
+  // averages the two middle months, which on a 2-month sample is just the
+  // mean — one huge month then hides a weak one and the shortfall reads as
+  // zero. Taking the lower middle keeps this honest while the sample is small.
+  const nets = done.map(m => m.net).sort((a,b) => a - b);
+  const typical = nets.length ? nets[Math.floor((nets.length - 1) / 2)] : null;
+  const short = (need != null && typical != null) ? Math.max(0, need - typical) : null;
 
-  body.innerHTML = `
-    <div class="sal-trend-stats" style="margin-top:0;">
-      <div>Trading, all time
-        <strong>${_salTri(totalNet, { color: totalNet>=0?'var(--win)':'var(--loss)' })}</strong>
-      </div>
-      <div>Across
-        <strong>${monthsTraded} mo · ${tradingDays} days</strong>
-      </div>
-      <div>Average month
-        <strong>${_salTri(avgPerMonth, { color: avgPerMonth>=0?'var(--win)':'var(--loss)' })}</strong>
-      </div>
-      <div>Green months
-        <strong style="color:${upMonths >= monthsTraded/2 ? 'var(--win)' : 'var(--warn)'};">${upMonths} / ${monthsTraded}</strong>
-      </div>
-      ${matched !== null ? `<div>Months matching salary
-        <strong style="color:${matched ? 'var(--accent)' : 'var(--muted)'};">${matched} / ${done.length}</strong>
-      </div>` : ''}
-    </div>
-    <div class="cfe-insight">💡 Since ${oldest.label}, trading is ${totalNet >= 0 ? 'up' : 'down'} ${_salMoney(Math.abs(totalNet),'USD')} overall${upliftPct !== null ? ` — that's ${fmtNum(upliftPct,0)}% of what the job paid over the same stretch` : ''}. ${
-      upMonths < monthsTraded
-        ? `${monthsTraded - upMonths} month${monthsTraded-upMonths===1?' was':'s were'} negative, and the total is still ${totalNet >= 0 ? 'positive' : 'negative'} — that is the number that matters, not any single month.`
-        : `Every month has been green so far.`
-    }</div>
-  `;
+  _salRenderAnswer({ need, done, typical });
+  _salRenderThree({ need, typical, short });
+  _salRenderMonths({ months, need, nowKey });
+  _salRenderAllTime({ months, totalNet });
 }
 
-// The case for NOT resigning yet: salary and trading added together. Follows
-// the year/month picker, so selecting a month actually changes something —
-// and it reframes trading from "replacing income" to "money you get to keep".
-function renderSalaryCombined({ stats, monthlyUsd, spendMonthly }){
-  const body = document.getElementById('salCombinedBody');
-  const titleEl = document.getElementById('salCombinedTitle');
-  if(!body) return;
-
-  const label = _salaryPeriodLabel();
-  if(titleEl) titleEl.textContent = `Payslip + P&L — ${label}`;
-
-  if(monthlyUsd == null){
-    body.innerHTML = `<div class="empty-state">Enter your monthly salary to see what the two are worth together.</div>`;
-    return;
-  }
-
-  const inPeriod = stats.filter(s => _salaryInPeriod(s.key));
-  if(!inPeriod.length){
-    body.innerHTML = `<div class="empty-state">No closed trades in ${label.toLowerCase()} — pick another period.</div>`;
-    return;
-  }
-
-  const monthsCount = inPeriod.length;
-  const trading = inPeriod.reduce((s,x) => s + x.net, 0);
-  const salary = monthlyUsd * monthsCount;
-  const combined = salary + trading;
-  const upliftPct = salary > 0 ? trading / salary * 100 : 0;
-
-  // What the job alone would have left after living costs, versus what both
-  // together leave — the honest measure of what trading is adding right now.
-  // A trading loss comes out of trading capital, not out of what the salary
-  // leaves you — so only PROFIT is added here. A losing month leaves the
-  // salary's leftover exactly where it was.
-  const spendTotal = spendMonthly != null ? spendMonthly * monthsCount : null;
-  const savedJobOnly = spendTotal != null ? salary - spendTotal : null;
-  const savedBoth = spendTotal != null ? salary + Math.max(0, trading) - spendTotal : null;
-
-  const periodWord = monthsCount === 1 ? 'this month' : `these ${monthsCount} months`;
-
-  // A losing month does NOT reduce the salary — the pay lands either way, and
-  // the loss comes out of trading capital. So the third box only reads as a
-  // sum when trading is positive; when it's negative it shows the salary as
-  // untouched and reports the loss separately.
-  const down = trading < 0;
-
-  body.innerHTML = `
-    <div class="sal-combined-row">
-      <div class="sal-combined-part">
-        <div class="sal-combined-label">Payslip</div>
-        <div class="sal-combined-value">${_salTri(salary, { color:'var(--accent)' })}</div>
-        <div class="sal-combined-note">${monthsCount} month${monthsCount===1?'':'s'} of salary${down ? ' — untouched by the loss' : ''}</div>
-      </div>
-      <div class="sal-combined-op">${down ? '−' : '+'}</div>
-      <div class="sal-combined-part">
-        <div class="sal-combined-label">${down ? 'Trading Loss' : 'P&amp;L'}</div>
-        <div class="sal-combined-value">${_salTri(Math.abs(trading), { color: down ? 'var(--loss)' : 'var(--win)' })}</div>
-        <div class="sal-combined-note">${down ? 'out of trading capital, not your pay' : 'straight to savings'}</div>
-      </div>
-      <div class="sal-combined-op">=</div>
-      <div class="sal-combined-part sal-combined-total">
-        <div class="sal-combined-label">${down ? 'Net Position' : 'Together'}</div>
-        <div class="sal-combined-value">${_salTri(combined, { color:'var(--ink)' })}</div>
-        <div class="sal-combined-note">${down
-          ? `salary held, ${_salMoney(Math.abs(trading),'USD')} given back to the market`
-          : `+${fmtNum(upliftPct,0)}% on top of the payslip`}</div>
-      </div>
-    </div>
-    ${savedBoth !== null ? `
-      <div class="sal-trend-stats">
-        <div>Left over — job only<strong>${_salTri(savedJobOnly, { color: savedJobOnly>=0?'var(--win)':'var(--loss)' })}</strong></div>
-        <div>Left over — job + trading<strong>${_salTri(savedBoth, { color: savedBoth>=0?'var(--win)':'var(--loss)' })}</strong>${down ? `<span class="sal-tri" style="color:var(--muted);">unchanged — the loss didn't touch your pay</span>` : ''}</div>
-        <div>${down ? 'Trading capital given back' : 'Extra you got to keep'}<strong>${_salTri(Math.abs(trading), { color: down?'var(--loss)':'var(--win)' })}</strong></div>
-      </div>` : ''}
-    ${trading > 0
-      ? `<div class="cfe-insight">💡 Over ${periodWord}, trading added ${_salMoney(trading,'USD')} on top of a salary you were getting anyway — ${fmtNum(upliftPct,0)}% more income, with none of the risk of having quit. Staying employed while the streak builds is what turns trading profit into savings instead of rent.</div>`
-      : `<div class="cfe-insight">💡 Your salary of ${_salMoney(salary,'USD')} arrived in full — a losing month costs you trading capital, not your pay. That is exactly what the job is protecting right now, and why the streak has to be built before you resign.</div>`}
-  `;
-}
-
-// Average real monthly spending from Finance, converted to USD through the
-// same rates the rest of the page uses. The current month is left out — it's
-// only part-filled, so including it would understate the real figure.
-function _salaryMonthlySpending(aed, php){
-  const rate = { USD: 1, AED: aed, PHP: php };
-  const byMonth = {};
-  let skipped = 0;
-  FIN_TXNS.forEach(t => {
-    if(t.tx_type !== 'Expense' || !t.tx_date) return;
-    const r = rate[_finTxCurrency(t)];
-    if(!r){ skipped++; return; }
-    const k = String(t.tx_date).slice(0,7);
-    byMonth[k] = (byMonth[k] || 0) + (Number(t.amount) || 0) / r;
-  });
-  const keys = Object.keys(byMonth).sort();
-  if(!keys.length) return { monthly: null, monthsUsed: 0, skipped };
-  const nowKey = new Date().toISOString().slice(0,7);
-  const complete = keys.filter(k => k < nowKey);
-  const used = complete.length ? complete : keys;
-  return {
-    monthly: used.reduce((s,k) => s + byMonth[k], 0) / used.length,
-    monthsUsed: used.length,
-    skipped
-  };
-}
-
-// Cash you could actually live on: Finance balances excluding Credit accounts,
-// which are debt rather than savings. Converted to USD.
-function _salarySavings(aed, php){
-  const rate = { USD: 1, AED: aed, PHP: php };
-  let total = 0, counted = 0, skipped = 0;
-  FIN_ACCOUNTS.forEach(a => {
-    if(a.account_class === 'Credit') return;
-    const r = rate[a.currency];
-    if(!r){ skipped++; return; }
-    total += (Number(a.current_balance) || 0) / r;
-    counted++;
-  });
-  return { total, counted, skipped };
-}
-
-// The single question the page exists to answer, as a one-line answer plus
-// the reason. Three tiers so a month that covers spending but not the payslip
-// isn't lumped in with one that covers neither.
-// The bar is the SALARY — matching what the job pays, not merely surviving.
-// (Spending still appears in Month by Month as the softer second bar, but it
-// never decides this answer.)
-function renderSalaryVerdict({ stats, monthlyUsd }){
-  const answerEl = document.getElementById('salVerdictAnswer');
-  const lineEl = document.getElementById('salVerdictLine');
-  const countEl = document.getElementById('salVerdictCount');
-  if(!answerEl) return;
-
+// The answer, in words. Only completed months count — a part-finished month
+// can't be judged either way.
+function _salRenderAnswer({ need, done, typical }){
+  const box = document.getElementById('salAnswerBox');
+  const a = document.getElementById('salAnswerText');
+  const why = document.getElementById('salAnswerWhy');
   const target = _salaryStreakTarget();
-  const strip = document.getElementById('salVerdictStrip');
 
-  const setTone = c => {
-    answerEl.style.color = c;
-    strip.style.borderColor = `color-mix(in srgb, ${c} 40%, var(--rule))`;
-    strip.style.background = `linear-gradient(145deg, color-mix(in srgb, ${c} 10%, var(--surface)), var(--surface))`;
-    const tag = document.querySelector('.sal-verdict-tag');
-    if(tag) tag.style.color = c;
+  const tone = c => {
+    a.style.color = c;
+    box.style.borderColor = 'color-mix(in srgb, ' + c + ' 40%, var(--rule))';
+    box.style.background = 'linear-gradient(145deg, color-mix(in srgb, ' + c + ' 10%, var(--surface)), var(--surface))';
   };
 
-  if(monthlyUsd == null){
-    answerEl.textContent = '—';
-    lineEl.textContent = 'Enter your monthly salary above to get an answer.';
-    countEl.textContent = '';
-    setTone('var(--accent)');
+  if(need == null){
+    a.textContent = '—';
+    why.textContent = 'Enter your monthly salary below.';
+    tone('var(--accent)');
     return;
   }
-
-  // Completed months only: a part-filled current month can't be judged.
-  const nowKey = _salaryMonthKey(new Date());
-  const done = stats.filter(s => s.key !== nowKey);
   if(!done.length){
-    answerEl.textContent = 'Too early';
-    lineEl.textContent = 'No completed trading months yet — come back once a month has closed.';
-    countEl.textContent = '';
-    setTone('var(--muted)');
+    a.textContent = 'Too early';
+    why.textContent = 'No completed month yet — the answer needs at least one full month of trading.';
+    tone('var(--muted)');
     return;
   }
 
-  const matched = done.filter(s => s.net >= monthlyUsd).length;
-  const streak = _salaryCurrentStreak(done, monthlyUsd);
+  const cleared = done.filter(m => m.net >= need).length;
+  const streak = _salaryCurrentStreak(done, need);
 
   if(streak >= target){
-    answerEl.textContent = 'Ready';
-    lineEl.innerHTML = `Trading has matched your <strong>full salary</strong> for ${streak} months running. On the numbers, nothing changes if you resign.`;
-    setTone('var(--win)');
+    a.textContent = 'Yes';
+    why.innerHTML = 'Trading has covered your salary <strong>' + streak + ' months in a row</strong>. On the numbers, you could live on it.';
+    tone('var(--win)');
   }else{
-    answerEl.textContent = 'Not yet';
-    lineEl.innerHTML = matched
-      ? `Matched your salary in <strong>${matched} of ${done.length} completed months</strong>, but the current run is ${streak}. One strong month isn't income — the blocker is <strong>consistency</strong>.`
-      : `Trading hasn't matched a full month's salary yet in ${done.length} completed month${done.length===1?'':'s'}. That is the bar to clear.`;
-    setTone('var(--accent)');
+    a.textContent = 'Not yet';
+    why.innerHTML = cleared
+      ? 'Trading covered your salary in <strong>' + cleared + ' of ' + done.length + ' months</strong>, but only ' + streak + ' in a row. You need ' + target + ' straight.'
+      : 'Trading has not covered a full month yet, in ' + done.length + ' month' + (done.length===1?'':'s') + '.';
+    tone('var(--accent)');
   }
-  countEl.textContent = `${streak} / ${target} month streak`;
+}
+
+// Three numbers: the bar, what trading typically makes, and the shortfall.
+function _salRenderThree({ need, typical, short }){
+  const el = document.getElementById('salThree');
+  if(need == null){ el.innerHTML = ''; return; }
+
+  const card = (label, usd, color, note) =>
+    '<div class="sal-three-card">' +
+      '<div class="sal-three-label">' + label + '</div>' +
+      '<div class="sal-three-value">' + _salTri(usd, { color: color }) + '</div>' +
+      (note ? '<div class="sal-three-note">' + note + '</div>' : '') +
+    '</div>';
+
+  el.innerHTML =
+    card('You need each month', need, 'var(--accent)', 'your salary') +
+    card('Trading makes', typical, typical == null ? 'var(--muted)' : (typical >= 0 ? 'var(--win)' : 'var(--loss)'), 'a typical month, not your best') +
+    card('Short by', short, short > 0 ? 'var(--loss)' : 'var(--win)', short > 0 ? 'still to close' : 'nothing — you clear it');
+}
+
+// One line per month: did it cover the salary or not.
+function _salRenderMonths({ months, need, nowKey }){
+  const body = document.getElementById('salMonthsBody');
+  if(!months.length){
+    body.innerHTML = '<div class="empty-state">No closed trades yet.</div>';
+    return;
+  }
+
+  body.innerHTML = months.map(m => {
+    const inProgress = m.key === nowKey;
+    const covered = need != null && m.net >= need;
+    const mark = inProgress ? '·' : (covered ? '✓' : '✕');
+    const markCls = inProgress ? 'sal-m-now' : (covered ? 'sal-m-yes' : 'sal-m-no');
+    const status = inProgress ? 'still running'
+      : need == null ? ''
+      : covered ? 'covered your salary' : 'short of your salary';
+    return '<div class="sal-month">' +
+        '<span class="sal-month-mark ' + markCls + '">' + mark + '</span>' +
+        '<span class="sal-month-name">' + m.label + '<span class="sal-month-days">' + m.days + ' trading day' + (m.days===1?'':'s') + '</span></span>' +
+        '<span class="sal-month-amt" style="color:' + (m.net >= 0 ? 'var(--win)' : 'var(--loss)') + ';">' + _salTriInline(m.net) + '</span>' +
+        '<span class="sal-month-status">' + status + '</span>' +
+      '</div>';
+  }).join('');
+}
+
+// The zoom-out: one line, so a single red month can't look like failure.
+function _salRenderAllTime({ months, totalNet }){
+  const el = document.getElementById('salAllTime');
+  if(!months.length){ el.innerHTML = ''; return; }
+  const green = months.filter(m => m.net > 0).length;
+  el.innerHTML = 'All time: <strong style="color:' + (totalNet >= 0 ? 'var(--win)' : 'var(--loss)') + ';">' +
+    _salMoney(totalNet,'USD') + '</strong> across ' + months.length + ' month' + (months.length===1?'':'s') +
+    ' · <strong>' + green + ' of ' + months.length + '</strong> profitable';
 }
 
 function _salaryStreakTarget(){
@@ -3354,544 +3097,144 @@ function _salaryStreakTarget(){
 }
 
 // Consecutive completed months, newest first, that cleared the bar.
-function _salaryCurrentStreak(doneStatsNewestFirst, bar){
+function _salaryCurrentStreak(doneNewestFirst, bar){
   let n = 0;
-  for(const s of doneStatsNewestFirst){
-    if(s.net >= bar) n++; else break;
+  for(const m of doneNewestFirst){
+    if(m.net >= bar) n++; else break;
   }
   return n;
 }
 
-function renderSalaryReadiness({ stats, monthlyUsd, aed, php, totalNet, tradingDays }){
-  const body = document.getElementById('salReadinessBody');
-  if(!body) return;
-
-  if(monthlyUsd == null){
-    body.innerHTML = `<div class="empty-state">Enter your monthly salary to see the checks.</div>`;
-    return;
-  }
-
-  const target = _salaryStreakTarget();
-  const nowKey = _salaryMonthKey(new Date());
-  const done = stats.filter(s => s.key !== nowKey);
-  const savings = _salarySavings(aed, php);
-
-  const matched = done.filter(s => s.net >= monthlyUsd).length;
-  const streak = _salaryCurrentStreak(done, monthlyUsd);
-  // Buffer measured in months of SALARY, matching the bar used everywhere
-  // else on this page.
-  const bufferMonths = monthlyUsd > 0 ? savings.total / monthlyUsd : null;
-
-  const checks = [
-    {
-      pass: matched >= target,
-      title: `Match your salary, ${target} months`,
-      detail: `Months where trading cleared ${_salMoney(monthlyUsd,'USD')}, out of ${done.length} completed.`,
-      score: `${matched} / ${target}`,
-      good: matched >= target
-    },
-    {
-      pass: streak >= target,
-      title: 'Unbroken streak',
-      detail: streak ? `Current run of months that matched your salary.` : `The most recent completed month fell short, so the run is zero.`,
-      score: `${streak} mo`,
-      good: streak >= target
-    },
-    {
-      pass: totalNet > 0,
-      title: 'Profitable overall',
-      detail: `Net across every closed trade, over ${tradingDays} trading day${tradingDays===1?'':'s'}.`,
-      score: _salMoney(totalNet,'USD'),
-      good: totalNet > 0
-    },
-    {
-      pass: bufferMonths !== null && bufferMonths >= target,
-      title: `Savings buffer of ${target} months`,
-      detail: savings.counted
-        ? `From ${savings.counted} Finance account${savings.counted===1?'':'s'} (credit cards excluded — that's debt, not savings).`
-        : 'No non-credit Finance accounts found to count as savings.',
-      score: bufferMonths === null ? '—' : `${fmtNum(bufferMonths,1)} mo`,
-      good: bufferMonths !== null && bufferMonths >= target
-    }
-  ];
-
-  const passed = checks.filter(c => c.pass).length;
-  body.innerHTML = checks.map(c => `
-    <div class="sal-crit">
-      <div class="sal-crit-mark ${c.pass ? 'sal-crit-pass' : 'sal-crit-fail'}">${c.pass ? '✓' : '✕'}</div>
-      <div style="min-width:0;">
-        <div class="sal-crit-t">${c.title}</div>
-        <div class="sal-crit-d">${c.detail}</div>
-      </div>
-      <div class="sal-crit-s" style="color:${c.good ? 'var(--win)' : 'var(--loss)'};">${c.score}</div>
-    </div>
-  `).join('') + `<div class="cfe-insight">💡 ${passed} of 4 checks passed. "Months to Call It Ready" in your inputs sets the bar — it's your call, not a rule.</div>`;
-}
-
-// "How much more do I need to earn to replace the salary?" — measured against
-// the MEDIAN completed month, not the average, so one exceptional month can't
-// make the gap look smaller than it really is.
-function renderSalaryGap({ stats, monthlyUsd, days, dailyUsd }){
-  const body = document.getElementById('salGapBody');
-  if(!body) return;
-
-  if(monthlyUsd == null){
-    body.innerHTML = `<div class="empty-state">Enter your monthly salary to see what's still missing.</div>`;
-    return;
-  }
-
-  const nowKey = _salaryMonthKey(new Date());
-  const done = stats.filter(s => s.key !== nowKey);
-  if(!done.length){
-    body.innerHTML = `<div class="empty-state">No completed trading months yet — the gap needs at least one closed month.</div>`;
-    return;
-  }
-
-  const nets = done.map(s => s.net).sort((a,b) => a - b);
-  const mid = Math.floor(nets.length / 2);
-  const median = nets.length % 2 ? nets[mid] : (nets[mid-1] + nets[mid]) / 2;
-  const worst = nets[0], best = nets[nets.length-1];
-
-  const gap = Math.max(0, monthlyUsd - median);
-  const gapPerDay = days > 0 ? gap / days : null;
-  const pctThere = monthlyUsd > 0 ? Math.max(0, median / monthlyUsd * 100) : 0;
-
-  body.innerHTML = `
-    <div class="sal-trend-stats" style="margin-top:0;">
-      <div>Still short each month
-        <strong>${gap > 0 ? _salTri(gap, { color:'var(--loss)' }) : `<span style="color:var(--win);">Nothing</span>`}</strong>
-      </div>
-      <div>Per trading day
-        <strong>${gapPerDay ? _salTri(gapPerDay, { color: gap > 0 ? 'var(--loss)' : 'var(--win)' }) : '—'}</strong>
-      </div>
-      <div>Typical month covers
-        <strong style="color:${pctThere >= 100 ? 'var(--win)' : 'var(--accent)'};">${fmtNum(pctThere,0)}%</strong>
-      </div>
-    </div>
-    ${gap > 0
-      ? `<div class="cfe-insight">💡 Your typical month earns ${_salMoney(median,'USD')} against a salary of ${_salMoney(monthlyUsd,'USD')}. You need <strong>${_salMoney(gap,'USD')} more per month</strong>${gapPerDay ? ` — about ${_salMoney(gapPerDay,'USD')} on each of your ${fmtNum(days,0)} trading days` : ''}.</div>`
-      : `<div class="cfe-insight">💡 Your typical month already clears the salary. The gap is closed — what's left is keeping it there.</div>`}
-    <div class="cfe-insight">💡 Measured on the median, not the average: your completed months run ${_salMoney(worst,'USD')} to ${_salMoney(best,'USD')}, and one big month would otherwise make this gap look smaller than it is.</div>
-  `;
-}
-
-// Day keys belonging to the currently selected year/month period.
-function _salaryPeriodDayKeys(dayKeys, monthOfDay){
-  return Object.keys(dayKeys).filter(k => _salaryInPeriod(monthOfDay[k]));
-}
-
-// Per-month stats — shared by the history table and the PDF so the two can
-// never show different numbers for the same month.
-function _salaryMonthlyStats({ dailyUsd, monthlyUsd, dayKeys, monthOfDay, months }){
-  return months.map(m => {
-    const keys = Object.keys(dayKeys).filter(k => monthOfDay[k] === m);
-    const net = keys.reduce((s,k) => s + dayKeys[k], 0);
-    return {
-      key: m,
-      label: _salaryMonthLabel(m),
-      tradingDays: keys.length,
-      net,
-      daysBeat: dailyUsd != null ? keys.filter(k => dayKeys[k] >= dailyUsd).length : null,
-      pctOfSalary: (monthlyUsd > 0) ? net / monthlyUsd * 100 : null
-    };
-  });
-}
-
-let salTrendChartRef = null;
-
-// Oldest-to-newest line of "% of a month's salary covered", with the 100%
-// target drawn across it — the one view that answers "am I getting closer?".
-function renderSalaryTrend({ monthlyUsd, dayKeys, monthOfDay, months }){
-  const canvas = document.getElementById('salTrendChart');
-  const emptyEl = document.getElementById('salTrendEmpty');
-  const statsEl = document.getElementById('salTrendStats');
-  if(!canvas || !emptyEl || !statsEl) return;
-
-  const chronological = [...months].reverse();
-  const usable = monthlyUsd > 0 && chronological.length >= 2;
-
-  emptyEl.style.display = usable ? 'none' : 'block';
-  canvas.style.display = usable ? '' : 'none';
-  emptyEl.textContent = monthlyUsd > 0
-    ? 'Not enough months yet — this chart needs at least two months of closed trades.'
-    : 'Enter your monthly salary above to see the trajectory.';
-
-  if(salTrendChartRef){ salTrendChartRef.destroy(); salTrendChartRef = null; }
-  if(!usable){ statsEl.innerHTML = ''; return; }
-
-  const stats = _salaryMonthlyStats({ dailyUsd: null, monthlyUsd, dayKeys, monthOfDay, months: chronological });
-  const pcts = stats.map(s => s.pctOfSalary);
-
-  salTrendChartRef = new Chart(canvas.getContext('2d'), {
-    type: 'line',
-    data: {
-      labels: stats.map(s => s.label.replace(/ \d{4}$/, '')),
-      datasets: [
-        {
-          data: pcts,
-          borderColor: cssVar('--accent'),
-          backgroundColor: 'transparent',
-          pointBackgroundColor: pcts.map(p => p >= 100 ? cssVar('--win') : (p >= 0 ? cssVar('--accent') : cssVar('--loss'))),
-          pointRadius: 4,
-          borderWidth: 2,
-          tension: 0.25
-        },
-        {
-          label: 'Target',
-          data: pcts.map(() => 100),
-          borderColor: cssVar('--win'),
-          borderDash: [5, 5],
-          borderWidth: 1.5,
-          pointRadius: 0
-        }
-      ]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: { display: false },
-        tooltip: { callbacks: { label: c => c.datasetIndex === 1 ? 'Full salary' : `${fmtNum(c.parsed.y,0)}% of salary` } }
-      },
-      scales: {
-        y: { ticks: { color: cssVar('--muted'), callback: v => v + '%' }, grid: { color: cssVar('--rule') } },
-        x: { ticks: { color: cssVar('--muted') }, grid: { display: false } }
-      }
-    }
-  });
-
-  // Best month, and how the newest month compares with the one before it.
-  const best = stats.reduce((b,s) => (b === null || s.net > b.net) ? s : b, null);
-  const last = stats[stats.length-1], prev = stats[stats.length-2];
-  const rose = last.pctOfSalary >= prev.pctOfSalary;
-  const monthsCleared = stats.filter(s => s.pctOfSalary >= 100).length;
-
-  statsEl.innerHTML = [
-    _salStatCard('Best Month',
-      `<span style="color:${best.net>=0?'var(--win)':'var(--loss)'};">${_salMoney(best.net,'USD')}</span>`,
-      `${best.label} · covered ${fmtNum(best.pctOfSalary,0)}% of a month's salary`),
-    // The headline is the latest month's own coverage — a bare "-233 pts"
-    // reads like a score out of nowhere, so the comparison goes in the
-    // subtitle where it has something to be relative to.
-    _salStatCard('Latest Month',
-      `<span style="color:${last.pctOfSalary>=0?'var(--win)':'var(--loss)'};">${fmtNum(last.pctOfSalary,0)}%</span>`,
-      `${last.label} · ${rose ? 'up' : 'down'} from ${fmtNum(prev.pctOfSalary,0)}% in ${prev.label}`),
-    _salStatCard('Months That Cleared It', `${monthsCleared} / ${stats.length}`,
-      monthsCleared ? 'months trading covered a full salary' : 'no month has covered a full salary yet')
-  ].join('');
-}
-
-// The direct salary-vs-trading comparison, month by month. Two bars: the
-// green one is spending (survival), the gold one is salary (full
-// replacement). Only the salary bar drives the verdict above.
-function renderSalaryHistory({ stats, spendMonthly, monthlyUsd }){
-  const body = document.getElementById('salHistoryBody');
-  if(!body) return;
-
-  const cols = 8;
-  if(!stats.length){
-    body.innerHTML = `<tr><td colspan="${cols}" style="color:var(--muted);">No closed trades yet.</td></tr>`;
-    return;
-  }
-
-  // Narrowed to the selected year so this table doesn't sprawl — the month
-  // selection is ignored here, since the point is to compare months.
-  const listed = SALARY_YEAR === 'all' ? stats : stats.filter(s => s.key.startsWith(SALARY_YEAR + '-'));
-  if(!listed.length){
-    body.innerHTML = `<tr><td colspan="${cols}" style="color:var(--muted);">No closed trades in ${SALARY_YEAR}.</td></tr>`;
-    return;
-  }
-
-  const selectedKey = (SALARY_YEAR !== 'all' && SALARY_MONTH !== 'all') ? `${SALARY_YEAR}-${SALARY_MONTH}` : null;
-  const nowKey = _salaryMonthKey(new Date());
-
-  const bar = (pct, color) => pct == null ? '—' : `<div class="cfe-bar-wrap">
-      <div class="cfe-bar-track"><div class="cfe-bar-fill" style="width:${Math.max(0,Math.min(100,pct)).toFixed(0)}%;background:${color};"></div></div>
-      <span style="color:${color};">${fmtNum(pct,0)}%</span>
-    </div>`;
-
-  // The current month is only part-elapsed, so comparing it against a whole
-  // month's salary overstates the shortfall. Pro-rate the salary by how much
-  // of the month has actually passed.
-  const now = new Date();
-  const daysInThisMonth = new Date(now.getUTCFullYear(), now.getUTCMonth() + 1, 0).getDate();
-  const elapsedFraction = Math.min(1, now.getUTCDate() / daysInThisMonth);
-
-  body.innerHTML = listed.map(r => {
-    const inProgress = r.key === nowKey;
-    const salarySoFar = monthlyUsd > 0 ? monthlyUsd * (inProgress ? elapsedFraction : 1) : null;
-    const spendSoFar = spendMonthly > 0 ? spendMonthly * (inProgress ? elapsedFraction : 1) : null;
-
-    const vsSpend = spendSoFar > 0 ? r.net / spendSoFar * 100 : null;
-    const vsSalary = salarySoFar > 0 ? r.net / salarySoFar * 100 : null;
-    const diff = salarySoFar != null ? r.net - salarySoFar : null;
-
-    const spendTone = vsSpend == null ? 'var(--muted)' : (vsSpend >= 100 ? 'var(--win)' : 'var(--loss)');
-    const salTone = vsSalary == null ? 'var(--muted)' : (vsSalary >= 100 ? 'var(--accent)' : 'var(--loss)');
-    const verdict = inProgress ? `<span class="pill pill-muted">In progress</span>`
-      : (vsSalary != null && vsSalary >= 100) ? `<span class="pill pill-green">Full salary</span>`
-      : (vsSpend != null && vsSpend >= 100) ? `<span class="pill pill-blue">Covers costs</span>`
-      : `<span class="pill pill-red">Short</span>`;
-
-    return `<tr onclick="focusSalaryMonth('${r.key}')" style="cursor:pointer;${r.key === selectedKey ? 'background:var(--surface-2);' : ''}">
-      <td style="font-family:'Public Sans',sans-serif;">${r.label}</td>
-      <td>${r.tradingDays}</td>
-      <td style="color:var(--muted);">${salarySoFar != null ? _salTriInline(salarySoFar) : '—'}${inProgress ? `<span class="sal-tri-sm" style="color:var(--warn);">${fmtNum(elapsedFraction*100,0)}% of the month so far</span>` : ''}</td>
-      <td class="${r.net >= 0 ? 'pos' : 'neg'}">${_salTriInline(r.net)}</td>
-      <td style="color:${diff == null ? 'var(--muted)' : (diff >= 0 ? 'var(--win)' : 'var(--loss)')};">${diff == null ? '—' : (diff >= 0 ? '+' : '') + _salTriInline(diff)}</td>
-      <td>${bar(vsSpend, spendTone)}</td>
-      <td>${bar(vsSalary, salTone)}</td>
-      <td>${verdict}</td>
-    </tr>`;
-  }).join('');
-}
-
-// Shareable one-pager of the salary comparison. Same light palette and
-// section idiom as downloadReportPDF() — a PDF is a white page, so it uses
-// the app's light-mode tokens rather than the dark UI's values.
+// One-page answer to "can trading pay for my life without the job?" — the
+// same four things the page shows, nothing more.
 function downloadSalaryPDF(){
   if(!window.jspdf){ showToast("PDF library didn't load — check your connection and try again."); return; }
 
   const v = _salaryInputValues();
-  const monthlyAed = Number(v.monthly_salary);
-  if(!(monthlyAed > 0)){ showToast('Enter your monthly salary first.'); return; }
-
   const aed = Number(v.aed_per_usd) > 0 ? Number(v.aed_per_usd) : SALARY_DEFAULTS.aed_per_usd;
   const php = Number(v.php_per_usd) > 0 ? Number(v.php_per_usd) : SALARY_DEFAULTS.php_per_usd;
-  const days = Number(v.working_days) > 0 ? Number(v.working_days) : SALARY_DEFAULTS.working_days;
-  const hours = Number(v.hours_per_day) > 0 ? Number(v.hours_per_day) : SALARY_DEFAULTS.hours_per_day;
+  const monthlyAed = Number(v.monthly_salary);
+  if(!(monthlyAed > 0)){ showToast('Enter your monthly salary first.'); return; }
+  const need = monthlyAed / aed;
+  const target = _salaryStreakTarget();
 
-  const dailyAed = monthlyAed / days;
-  const hourlyAed = dailyAed / hours;
-  const weeklyAed = dailyAed * 5;
-  const toUsd = a => a / aed;
-  const toPhp = a => (a / aed) * php;
-  const dailyUsd = toUsd(dailyAed);
+  const { dayKeys, monthOfDay } = _salaryDayAndMonthBuckets();
+  const monthKeys = _salaryMonthsPresent(monthOfDay);
+  const months = monthKeys.map(m => {
+    const keys = Object.keys(dayKeys).filter(k => monthOfDay[k] === m);
+    return { key: m, label: _salaryMonthLabel(m), days: keys.length,
+             net: keys.reduce((s,k) => s + dayKeys[k], 0) };
+  });
+  const nowKey = _salaryMonthKey(new Date());
+  const done = months.filter(m => m.key !== nowKey);
+  const totalNet = months.reduce((s,m) => s + m.net, 0);
+  const nets = done.map(m => m.net).sort((a,b) => a - b);
+  const mid = Math.floor(nets.length / 2);
+  const typical = nets.length ? (nets.length % 2 ? nets[mid] : (nets[mid-1] + nets[mid]) / 2) : null;
+  const short = typical != null ? Math.max(0, need - typical) : null;
+  const streak = _salaryCurrentStreak(done, need);
+  const cleared = done.filter(m => m.net >= need).length;
 
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ unit: 'pt', format: 'a4' });
   const pageWidth = doc.internal.pageSize.getWidth();
-  const pageHeight = doc.internal.pageSize.getHeight();
   const margin = 44;
   let y = 56;
 
-  const ACCENT = [214, 158, 46], INK = [28, 32, 39], MUTED = [107, 113, 120],
-        WIN = [22, 163, 74], LOSS = [229, 62, 62], WARN = [242, 153, 74],
-        RULE = [226, 221, 209], TINT = [247, 240, 220];
+  const ACCENT = [214,158,46], INK = [28,32,39], MUTED = [107,113,120],
+        WIN = [22,163,74], LOSS = [229,62,62], RULE = [226,221,209], TINT = [247,240,220];
 
-  const money = (n, cur) => {
-    const sym = { USD: '$', AED: 'AED ', PHP: 'PHP ' }[cur] || '';
-    return sym + n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  };
+  const money = n => '$' + n.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+  const alt = n => 'AED ' + (n*aed).toLocaleString(undefined,{maximumFractionDigits:0}) +
+                   '  /  PHP ' + (n*php).toLocaleString(undefined,{maximumFractionDigits:0});
 
-  function ensureSpace(needed){
-    if(y + needed > pageHeight - 50){ doc.addPage(); y = 56; }
-  }
-  function sectionTitle(text){
-    ensureSpace(40);
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.setTextColor(...ACCENT);
-    doc.text(text.toUpperCase(), margin, y);
-    y += 6;
-    doc.setDrawColor(...RULE); doc.setLineWidth(1);
-    doc.line(margin, y, pageWidth - margin, y);
-    y += 22;
-  }
-  function statRow(items){
-    ensureSpace(44);
-    const colWidth = (pageWidth - margin*2) / items.length;
-    items.forEach((item, i) => {
-      const x = margin + i*colWidth;
-      doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(...MUTED);
-      doc.text(item.label.toUpperCase(), x, y);
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(14); doc.setTextColor(...(item.color || INK));
-      doc.text(item.value, x, y + 18);
-    });
-    y += 42;
-  }
-  function noteLine(text, color){
-    ensureSpace(20);
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5); doc.setTextColor(...(color || MUTED));
-    doc.splitTextToSize(text, pageWidth - margin*2).forEach(line => {
-      ensureSpace(14);
-      doc.text(line, margin, y);
-      y += 13;
-    });
-    y += 12;
-  }
-  function tableRows(headers, rows, colColors){
-    ensureSpace(30);
-    const colWidth = (pageWidth - margin*2) / headers.length;
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); doc.setTextColor(...MUTED);
-    headers.forEach((h, i) => doc.text(h.toUpperCase(), margin + i*colWidth, y));
-    y += 6;
-    doc.setDrawColor(...RULE); doc.setLineWidth(0.7);
-    doc.line(margin, y, pageWidth - margin, y);
-    y += 16;
-    rows.forEach(r => {
-      ensureSpace(22);
-      r.forEach((cell, i) => {
-        doc.setFont('helvetica', i === 0 ? 'bold' : 'normal'); doc.setFontSize(10);
-        doc.setTextColor(...((colColors && colColors[i]) || INK));
-        doc.text(String(cell), margin + i*colWidth, y);
-      });
-      y += 20;
-    });
-    y += 10;
-  }
-
-  // --- header ---
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(20); doc.setTextColor(...INK);
+  // Header
+  doc.setFont('helvetica','bold'); doc.setFontSize(20); doc.setTextColor(...INK);
   doc.text('TANAYDANA', margin, y);
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(11); doc.setTextColor(...MUTED);
-  const periodLabel = _salaryPeriodLabel();
-  doc.text(`Salary vs Trading Goal  ·  ${periodLabel}`, margin, y + 16);
+  doc.setFont('helvetica','normal'); doc.setFontSize(11); doc.setTextColor(...MUTED);
+  doc.text('Can trading pay for your life without the job?', margin, y + 16);
   doc.setFontSize(10);
-  doc.text(`Generated ${new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}`, pageWidth - margin, y, { align: 'right' });
-  doc.text(`1 USD = ${aed} AED / ${php} PHP`, pageWidth - margin, y + 14, { align: 'right' });
-  y += 36;
+  doc.text('Generated ' + new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}),
+           pageWidth - margin, y, { align:'right' });
+  y += 34;
   doc.setDrawColor(...RULE); doc.setLineWidth(1.2);
   doc.line(margin, y, pageWidth - margin, y);
-  y += 28;
+  y += 26;
 
-  // --- hero ---
-  ensureSpace(90);
+  // The answer
+  const answer = !done.length ? 'TOO EARLY' : (streak >= target ? 'YES' : 'NOT YET');
+  const answerColor = !done.length ? MUTED : (streak >= target ? WIN : ACCENT);
   doc.setFillColor(...TINT);
-  doc.roundedRect(margin, y - 8, pageWidth - margin*2, 76, 6, 6, 'F');
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(...ACCENT);
-  doc.text('THE NUMBER TO BEAT — ONE WORKING DAY', margin + 16, y + 12);
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(28); doc.setTextColor(...WIN);
-  doc.text(money(dailyUsd, 'USD'), margin + 16, y + 42);
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(...MUTED);
-  doc.text(`${money(dailyAed, 'AED')}  ·  ${money(toPhp(dailyAed), 'PHP')}`, margin + 16, y + 60);
-  y += 92;
+  doc.roundedRect(margin, y - 10, pageWidth - margin*2, 66, 6, 6, 'F');
+  doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(...ACCENT);
+  doc.text('THE ANSWER', margin + 16, y + 8);
+  doc.setFont('helvetica','bold'); doc.setFontSize(26); doc.setTextColor(...answerColor);
+  doc.text(answer, margin + 16, y + 36);
+  doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor(...MUTED);
+  const whyText = !done.length
+    ? 'No completed month yet.'
+    : (streak >= target
+        ? 'Trading covered your salary ' + streak + ' months in a row.'
+        : 'Covered in ' + cleared + ' of ' + done.length + ' months, ' + streak + ' in a row. You need ' + target + ' straight.');
+  doc.text(whyText, margin + 16, y + 50);
+  y += 82;
 
-  // --- salary breakdown ---
-  sectionTitle('Salary Breakdown');
-  statRow([
-    { label: 'Monthly', value: money(monthlyAed, 'AED') },
-    { label: 'Daily', value: money(dailyAed, 'AED') },
-    { label: 'Hourly', value: money(hourlyAed, 'AED') },
-    { label: 'Working Days', value: fmtNum(days, 2) }
-  ]);
-
-  // --- trading targets ---
-  sectionTitle('Trading Targets');
-  tableRows(
-    ['Period', 'AED', 'USD', 'PHP'],
-    [
-      ['1 Day', money(dailyAed,'AED'), money(dailyUsd,'USD'), money(toPhp(dailyAed),'PHP')],
-      ['1 Week (5 days)', money(weeklyAed,'AED'), money(toUsd(weeklyAed),'USD'), money(toPhp(weeklyAed),'PHP')],
-      ['1 Month', money(monthlyAed,'AED'), money(toUsd(monthlyAed),'USD'), money(toPhp(monthlyAed),'PHP')]
-    ],
-    [INK, INK, WIN, INK]
-  );
-
-  // --- time saved ---
-  sectionTitle('Time Saved for Family');
-  const perMonthHours = hours * days;
-  statRow([
-    { label: 'Per Day', value: `${fmtNum(hours,1)} h` },
-    { label: 'Per Week', value: `${fmtNum(hours*5,1)} h` },
-    { label: 'Per Month', value: `${fmtNum(perMonthHours,1)} h` },
-    { label: '≈ Free Days / Mo', value: fmtNum(perMonthHours/16, 1) }
-  ]);
-
-  // --- profit needed per account ---
-  const accounts = TRADING_ACCOUNTS
-    .filter(a => a.account_type !== 'Exchange' && Number(a.account_size) > 0)
-    .slice().sort((a,b) => Number(b.account_size) - Number(a.account_size));
-  if(accounts.length){
-    sectionTitle('Profit Needed Per Account');
-    tableRows(
-      ['Account', 'Size', 'Profit / Day', 'Return Required'],
-      accounts.map(a => {
-        const size = Number(a.account_size);
-        return [
-          a.account_name,
-          '$' + size.toLocaleString(),
-          money(dailyUsd, 'USD'),
-          fmtNum(dailyUsd / size * 100, 2) + '%'
-        ];
-      }),
-      [INK, INK, WIN, INK]
-    );
-  }
-
-  // --- reality check (measured only, for the selected period) ---
-  const { dayKeys, monthOfDay } = _salaryDayAndMonthBuckets();
-  const months = _salaryMonthsPresent(monthOfDay);
-  const monthlyUsd = toUsd(monthlyAed);
-  const periodKeys = _salaryPeriodDayKeys(dayKeys, monthOfDay);
-
-  if(periodKeys.length){
-    const net = periodKeys.reduce((s,k) => s + dayKeys[k], 0);
-    const avgPerDay = net / periodKeys.length;
-    const daysBeat = periodKeys.filter(k => dayKeys[k] >= dailyUsd).length;
-    const daysNeeded = avgPerDay > 0 ? monthlyUsd / avgPerDay : null;
-
-    sectionTitle(`Reality Check — ${periodLabel}`);
-    statRow([
-      { label: 'Net P&L', value: money(net, 'USD'), color: net >= 0 ? WIN : LOSS },
-      { label: 'Avg / Trading Day', value: money(avgPerDay, 'USD'), color: avgPerDay >= 0 ? WIN : LOSS },
-      { label: 'Days That Beat It', value: `${daysBeat} / ${periodKeys.length}` },
-      { label: 'Days to Cover a Month', value: daysNeeded !== null ? fmtNum(daysNeeded,1) : '—',
-        color: daysNeeded !== null && daysNeeded <= days ? WIN : WARN }
-    ]);
-    noteLine(`Measured from ${periodKeys.length} trading day${periodKeys.length===1?'':'s'} in your journal — not a projection.`);
-  }
-
-  // --- what you actually need to cover (real expenses) ---
-  const rate = { USD: 1, AED: aed, PHP: php };
-  const expByMonth = {};
-  FIN_TXNS.forEach(t => {
-    if(t.tx_type !== 'Expense' || !t.tx_date) return;
-    const r = rate[_finTxCurrency(t)];
-    if(!r) return;
-    const k = String(t.tx_date).slice(0,7);
-    expByMonth[k] = (expByMonth[k] || 0) + (Number(t.amount) || 0) / r;
+  // Three numbers
+  const three = [
+    { label: 'YOU NEED EACH MONTH', val: need, color: INK },
+    { label: 'TRADING MAKES (TYPICAL)', val: typical, color: typical == null ? MUTED : (typical >= 0 ? WIN : LOSS) },
+    { label: 'SHORT BY', val: short, color: short > 0 ? LOSS : WIN }
+  ];
+  const colW = (pageWidth - margin*2) / 3;
+  three.forEach((t, idx) => {
+    const x = margin + idx*colW;
+    doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(...MUTED);
+    doc.text(t.label, x, y);
+    doc.setFont('helvetica','bold'); doc.setFontSize(16); doc.setTextColor(...t.color);
+    doc.text(t.val == null ? '—' : money(t.val), x, y + 18);
+    doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor(...MUTED);
+    doc.text(t.val == null ? '' : alt(t.val), x, y + 30);
   });
-  const expKeys = Object.keys(expByMonth).sort();
-  if(expKeys.length){
-    const nowKey = new Date().toISOString().slice(0,7);
-    const completeKeys = expKeys.filter(k => k < nowKey);
-    const usedKeys = completeKeys.length ? completeKeys : expKeys;
-    const avgExpense = usedKeys.reduce((s,k) => s + expByMonth[k], 0) / usedKeys.length;
-    sectionTitle('What You Actually Need to Cover');
-    statRow([
-      { label: 'Avg Monthly Spending', value: money(avgExpense, 'USD'), color: WARN },
-      { label: 'Daily Bar to Clear', value: money(avgExpense / days, 'USD'), color: WIN },
-      { label: 'vs Payslip Bar', value: money(dailyUsd, 'USD') },
-      { label: 'Spending vs Salary', value: monthlyUsd > 0 ? fmtNum(avgExpense / monthlyUsd * 100, 0) + '%' : '—' }
-    ]);
-    noteLine(`Averaged over ${usedKeys.length} month${usedKeys.length===1?'':'s'} of recorded expenses. Covering spending — not matching the payslip — is what actually ends the job.`);
-  }
+  y += 52;
 
-  // --- month by month (narrowed to the selected year, like the page) ---
-  const listedMonths = SALARY_YEAR === 'all' ? months : months.filter(m => m.startsWith(SALARY_YEAR + '-'));
-  if(listedMonths.length){
-    sectionTitle(SALARY_YEAR === 'all' ? 'Month by Month' : `Month by Month — ${SALARY_YEAR}`);
-    const stats = _salaryMonthlyStats({ dailyUsd, monthlyUsd, dayKeys, monthOfDay, months: listedMonths });
-    tableRows(
-      ['Month', 'Trading Days', 'Net P&L', 'vs Salary', 'Days Beat'],
-      stats.map(r => [
-        r.label,
-        String(r.tradingDays),
-        money(r.net, 'USD'),
-        r.pctOfSalary == null ? '—' : fmtNum(r.pctOfSalary, 0) + '%',
-        r.daysBeat == null ? '—' : `${r.daysBeat} / ${r.tradingDays}`
-      ]),
-      [INK, INK, INK, INK, INK]
-    );
-  }
-
-  // --- disclaimer ---
-  ensureSpace(50);
+  // Every month
+  doc.setFont('helvetica','bold'); doc.setFontSize(12); doc.setTextColor(...ACCENT);
+  doc.text('EVERY MONTH', margin, y);
+  y += 6;
   doc.setDrawColor(...RULE); doc.setLineWidth(1);
   doc.line(margin, y, pageWidth - margin, y);
-  y += 18;
-  noteLine('Trading income is not guaranteed. Focus on consistent execution and risk management — not on making your full salary every single day.');
+  y += 20;
 
-  doc.save(`Tanaydana-Salary-Goal-${new Date().toISOString().slice(0,10)}.pdf`);
+  months.forEach(m => {
+    const inProgress = m.key === nowKey;
+    const covered = m.net >= need;
+    doc.setFont('helvetica','bold'); doc.setFontSize(11);
+    doc.setTextColor(...(inProgress ? MUTED : (covered ? WIN : LOSS)));
+    doc.text(inProgress ? '-' : (covered ? 'Y' : 'N'), margin, y);
+    doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(...INK);
+    doc.text(m.label, margin + 18, y);
+    doc.setTextColor(...MUTED); doc.setFontSize(8.5);
+    doc.text(m.days + ' day' + (m.days===1?'':'s'), margin + 130, y);
+    doc.setFont('helvetica','bold'); doc.setFontSize(10);
+    doc.setTextColor(...(m.net >= 0 ? WIN : LOSS));
+    doc.text(money(m.net), margin + 200, y);
+    doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(...MUTED);
+    doc.text(inProgress ? 'still running' : (covered ? 'covered your salary' : 'short of your salary'), margin + 300, y);
+    y += 18;
+  });
+
+  y += 10;
+  doc.setDrawColor(...RULE); doc.line(margin, y, pageWidth - margin, y);
+  y += 18;
+  const green = months.filter(m => m.net > 0).length;
+  doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor(...MUTED);
+  doc.text('All time: ' + money(totalNet) + ' across ' + months.length + ' month' + (months.length===1?'':'s') +
+           ' - ' + green + ' of ' + months.length + ' profitable', margin, y);
+  y += 24;
+  doc.setFontSize(8.5);
+  doc.text('Trading income is not guaranteed. A month that clears the bar once is not income - consistency is.', margin, y);
+
+  doc.save('Tanaydana-Can-I-Quit-' + new Date().toISOString().slice(0,10) + '.pdf');
 }
 
 /* ---------------- Finance (personal money tracker) ---------------- */

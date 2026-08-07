@@ -17,7 +17,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<link rel="stylesheet" href="css/style.css?v=172">
+<link rel="stylesheet" href="css/style.css?v=173">
 </head>
 <body>
 
@@ -586,41 +586,29 @@
       </div>
     </header>
 
-    <div class="sal-verdict-strip" id="salVerdictStrip">
-      <div>
-        <div class="sal-verdict-tag">Can I resign yet?</div>
-        <div class="sal-verdict-answer" id="salVerdictAnswer">—</div>
-      </div>
-      <div class="sal-verdict-line" id="salVerdictLine">Enter your monthly salary below to get an answer.</div>
-      <div class="sal-verdict-count" id="salVerdictCount"></div>
+    <div class="sal-answer" id="salAnswerBox">
+      <div class="sal-answer-q">Can trading pay for your life without the job?</div>
+      <div class="sal-answer-a" id="salAnswerText">—</div>
+      <div class="sal-answer-why" id="salAnswerWhy">Enter your monthly salary below.</div>
     </div>
 
-    <div class="panel sal-bigpicture" style="margin-bottom:22px;">
-      <h2 style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-        <span>The Big Picture</span>
-        <span class="pill pill-muted" style="font-size:10px;">All time · ignores the filter</span>
-      </h2>
-      <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-8px;margin-bottom:14px;">A bad month can hide a good year. This never changes with the month you pick.</div>
-      <div id="salBigPictureBody"></div>
-    </div>
+    <div class="sal-three" id="salThree"></div>
 
-    <div class="sal-sec-head">
-      <span class="sal-sec-no">1</span><span class="sal-sec-title">Your Inputs</span>
-      <span class="sal-sec-sub" id="salSaveState"></span>
-    </div>
     <div class="panel" style="margin-bottom:22px;">
+      <h2>Every Month</h2>
+      <div id="salMonthsBody"></div>
+      <div class="sal-alltime" id="salAllTime"></div>
+    </div>
+
+    <div class="panel" style="margin-bottom:22px;">
+      <h2 style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
+        <span>Your Numbers</span>
+        <span id="salSaveState" class="sal-save-state"></span>
+      </h2>
       <div class="sal-input-grid">
         <div class="field-row">
           <label>Monthly Salary (AED)</label>
           <input id="salMonthly" type="number" step="0.01" placeholder="e.g. 7300" oninput="onSalaryInput()">
-        </div>
-        <div class="field-row">
-          <label>Working Days / Month</label>
-          <input id="salWorkDays" type="number" step="0.01" placeholder="21.75" oninput="onSalaryInput()">
-        </div>
-        <div class="field-row">
-          <label>Working Hours / Day</label>
-          <input id="salHours" type="number" step="0.5" placeholder="8" oninput="onSalaryInput()">
         </div>
         <div class="field-row">
           <label>Months to Call It Ready</label>
@@ -639,65 +627,10 @@
         <button class="poscalc-accent-btn" id="salFxBtn" onclick="fetchFxRates(true)">Refresh rates</button>
         <span class="sub" id="salFxStatus" style="font-size:11px;color:var(--muted);">AED is pegged and barely moves. PHP floats — rates refresh once a day, or tap Refresh.</span>
       </div>
-      <div class="sal-derived" id="salDerived"></div>
     </div>
 
-    <div class="sal-sec-head">
-      <span class="sal-sec-no">2</span><span class="sal-sec-title">Month by Month</span>
-      <span class="sal-sec-sub">Click a month to focus the analytics below</span>
-    </div>
-    <div class="panel" style="margin-bottom:22px;">
-      <div style="overflow-x:auto;">
-        <table class="breakdown">
-          <thead><tr><th>Month</th><th>Days</th><th>Salary</th><th>Trading</th><th>Difference</th><th>vs Spending</th><th>vs Salary</th><th>Verdict</th></tr></thead>
-          <tbody id="salHistoryBody"></tbody>
-        </table>
-      </div>
-      <div class="cfe-insight" style="margin-top:14px;">💡 Two bars on purpose: <strong style="color:var(--win);">green</strong> is survival — it covers what you actually spend. <strong style="color:var(--accent);">Gold</strong> is full replacement — it matches the payslip. The verdict above uses the <strong>salary</strong> bar.</div>
-    </div>
-
-    <div class="sal-sec-head">
-      <span class="sal-sec-no">3</span><span class="sal-sec-title">Analytics</span>
-      <span class="sal-sec-sub">
-        <select id="salYearFilter" onchange="onSalaryYearChange()" style="font-size:11.5px;padding:4px 8px;"></select>
-        <select id="salMonthFilter" onchange="onSalaryMonthChange()" style="font-size:11.5px;padding:4px 8px;"></select>
-      </span>
-    </div>
-
-    <div class="panel" style="margin-bottom:18px;">
-      <h2 id="salCombinedTitle">Payslip + P&amp;L — Keeping Both</h2>
-      <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:14px;">While you still have the job, every trading dollar is savings rather than survival. This is what the two together are worth.</div>
-      <div id="salCombinedBody"></div>
-    </div>
-
-    <div class="sal-an-grid">
-      <div class="panel">
-        <h2>What's Still Missing</h2>
-        <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:14px;">How much more trading has to earn to fully replace the payslip.</div>
-        <div id="salGapBody"></div>
-      </div>
-      <div class="panel">
-        <h2>Time Saved for Family</h2>
-        <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:14px;">Hours you'd get back if trading replaced the job.</div>
-        <div class="sal-stat-grid" id="salTimeSaved"></div>
-      </div>
-    </div>
-
-    <div class="sal-an-grid" style="margin-top:18px;">
-      <div class="panel">
-        <h2>Readiness Checks</h2>
-        <div id="salReadinessBody"></div>
-      </div>
-      <div class="panel">
-        <h2>Trajectory</h2>
-        <div id="salTrendEmpty" class="empty-state" style="display:none;">Not enough months yet — this chart needs at least two months of closed trades.</div>
-        <div class="chart-fill" style="height:200px;"><canvas id="salTrendChart"></canvas></div>
-        <div class="sal-trend-stats" id="salTrendStats"></div>
-      </div>
-    </div>
-
-    <div class="sal-disclaimer" style="margin-top:22px;">
-      Trading income is not guaranteed. Focus on consistent execution and risk management — not on making your full salary every single day.
+    <div class="sal-disclaimer">
+      Trading income is not guaranteed. A month that clears the bar once isn't income — consistency is.
     </div>
   </div>
 
@@ -1990,6 +1923,6 @@
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=1"></script>
-<script src="js/dashboard.js?v=263"></script>
+<script src="js/dashboard.js?v=265"></script>
 </body>
 </html>
