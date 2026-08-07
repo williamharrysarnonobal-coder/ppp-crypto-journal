@@ -2967,6 +2967,30 @@ function _salMoney(n, cur){
   return (symbols[cur] || '') + n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+// Every money figure on this page shows all three currencies: USD as the
+// headline (how trading P&L arrives), AED underneath (how the salary is
+// actually paid), PHP alongside (what it's worth back home). Reads the rates
+// from the inputs itself so callers don't have to thread them through.
+function _salTri(usd, opts){
+  if(usd == null || !Number.isFinite(usd)) return '—';
+  const v = _salaryInputValues();
+  const aed = Number(v.aed_per_usd) > 0 ? Number(v.aed_per_usd) : SALARY_DEFAULTS.aed_per_usd;
+  const php = Number(v.php_per_usd) > 0 ? Number(v.php_per_usd) : SALARY_DEFAULTS.php_per_usd;
+  const color = opts && opts.color ? ` style="color:${opts.color};"` : '';
+  return `<span${color}>${_salMoney(usd,'USD')}</span>` +
+    `<span class="sal-tri">${_salMoney(usd*aed,'AED')} · ${_salMoney(usd*php,'PHP')}</span>`;
+}
+
+// Compact one-line variant for table cells, where a stacked block would make
+// the row too tall.
+function _salTriInline(usd){
+  if(usd == null || !Number.isFinite(usd)) return '—';
+  const v = _salaryInputValues();
+  const aed = Number(v.aed_per_usd) > 0 ? Number(v.aed_per_usd) : SALARY_DEFAULTS.aed_per_usd;
+  const php = Number(v.php_per_usd) > 0 ? Number(v.php_per_usd) : SALARY_DEFAULTS.php_per_usd;
+  return `${_salMoney(usd,'USD')}<span class="sal-tri-sm">${_salMoney(usd*aed,'AED')} · ${_salMoney(usd*php,'PHP')}</span>`;
+}
+
 function _salStatCard(label, primary, secondary){
   return `<div class="sal-stat">
     <div class="sal-stat-label">${label}</div>
@@ -3065,11 +3089,11 @@ function renderSalaryGoal(){
 
   // --- derived strip under the inputs (replaces the old breakdown panels) ---
   document.getElementById('salDerived').innerHTML = [
-    { label: 'Payslip — per day', value: ready ? _salMoney(dailyUsd,'USD') : '—', color: 'var(--accent)' },
-    { label: 'Payslip — per month', value: ready ? _salMoney(monthlyUsdVal,'USD') : '—', color: 'var(--accent)' },
-    { label: 'Your real spending — per month', value: spend.monthly != null ? _salMoney(spend.monthly,'USD') : '—', color: 'var(--warn)' },
-    { label: 'Hours back if you quit', value: `${fmtNum(perMonthHours,0)} h / mo`, color: 'var(--ink)' }
-  ].map(d => `<div class="sal-derived-item">${d.label}<strong style="color:${d.color};">${d.value}</strong></div>`).join('');
+    { label: 'Payslip — per day', html: ready ? _salTri(dailyUsd, { color:'var(--accent)' }) : '—' },
+    { label: 'Payslip — per month', html: ready ? _salTri(monthlyUsdVal, { color:'var(--accent)' }) : '—' },
+    { label: 'Your real spending — per month', html: spend.monthly != null ? _salTri(spend.monthly, { color:'var(--warn)' }) : '—' },
+    { label: 'Hours back if you quit', html: `<span>${fmtNum(perMonthHours,0)} h / mo</span>` }
+  ].map(d => `<div class="sal-derived-item">${d.label}<strong>${d.html}</strong></div>`).join('');
 
   const stats = _salaryMonthlyStats({ dailyUsd, monthlyUsd: monthlyUsdVal, dayKeys, monthOfDay, months });
 
@@ -3117,13 +3141,13 @@ function renderSalaryBigPicture({ stats, monthlyUsd, totalNet, tradingDays }){
   body.innerHTML = `
     <div class="sal-trend-stats" style="margin-top:0;">
       <div>Trading, all time
-        <strong style="color:${totalNet>=0?'var(--win)':'var(--loss)'};">${_salMoney(totalNet,'USD')}</strong>
+        <strong>${_salTri(totalNet, { color: totalNet>=0?'var(--win)':'var(--loss)' })}</strong>
       </div>
       <div>Across
         <strong>${monthsTraded} mo · ${tradingDays} days</strong>
       </div>
       <div>Average month
-        <strong style="color:${avgPerMonth>=0?'var(--win)':'var(--loss)'};">${_salMoney(avgPerMonth,'USD')}</strong>
+        <strong>${_salTri(avgPerMonth, { color: avgPerMonth>=0?'var(--win)':'var(--loss)' })}</strong>
       </div>
       <div>Green months
         <strong style="color:${upMonths >= monthsTraded/2 ? 'var(--win)' : 'var(--warn)'};">${upMonths} / ${monthsTraded}</strong>
@@ -3176,35 +3200,43 @@ function renderSalaryCombined({ stats, monthlyUsd, spendMonthly }){
 
   const periodWord = monthsCount === 1 ? 'this month' : `these ${monthsCount} months`;
 
+  // A losing month does NOT reduce the salary — the pay lands either way, and
+  // the loss comes out of trading capital. So the third box only reads as a
+  // sum when trading is positive; when it's negative it shows the salary as
+  // untouched and reports the loss separately.
+  const down = trading < 0;
+
   body.innerHTML = `
     <div class="sal-combined-row">
       <div class="sal-combined-part">
         <div class="sal-combined-label">Payslip</div>
-        <div class="sal-combined-value" style="color:var(--accent);">${_salMoney(salary,'USD')}</div>
-        <div class="sal-combined-note">${monthsCount} month${monthsCount===1?'':'s'} of salary</div>
+        <div class="sal-combined-value">${_salTri(salary, { color:'var(--accent)' })}</div>
+        <div class="sal-combined-note">${monthsCount} month${monthsCount===1?'':'s'} of salary${down ? ' — untouched by the loss' : ''}</div>
       </div>
-      <div class="sal-combined-op">+</div>
+      <div class="sal-combined-op">${down ? '−' : '+'}</div>
       <div class="sal-combined-part">
-        <div class="sal-combined-label">P&amp;L</div>
-        <div class="sal-combined-value" style="color:${trading>=0?'var(--win)':'var(--loss)'};">${_salMoney(trading,'USD')}</div>
-        <div class="sal-combined-note">${trading >= 0 ? 'straight to savings' : 'a drag on the month'}</div>
+        <div class="sal-combined-label">${down ? 'Trading Loss' : 'P&amp;L'}</div>
+        <div class="sal-combined-value">${_salTri(Math.abs(trading), { color: down ? 'var(--loss)' : 'var(--win)' })}</div>
+        <div class="sal-combined-note">${down ? 'out of trading capital, not your pay' : 'straight to savings'}</div>
       </div>
       <div class="sal-combined-op">=</div>
       <div class="sal-combined-part sal-combined-total">
-        <div class="sal-combined-label">Together</div>
-        <div class="sal-combined-value" style="color:var(--ink);">${_salMoney(combined,'USD')}</div>
-        <div class="sal-combined-note">${upliftPct >= 0 ? '+' : ''}${fmtNum(upliftPct,0)}% on top of the payslip</div>
+        <div class="sal-combined-label">${down ? 'Net Position' : 'Together'}</div>
+        <div class="sal-combined-value">${_salTri(combined, { color:'var(--ink)' })}</div>
+        <div class="sal-combined-note">${down
+          ? `salary held, ${_salMoney(Math.abs(trading),'USD')} given back to the market`
+          : `+${fmtNum(upliftPct,0)}% on top of the payslip`}</div>
       </div>
     </div>
     ${savedBoth !== null ? `
       <div class="sal-trend-stats">
-        <div>Left over — job only<strong style="color:${savedJobOnly>=0?'var(--win)':'var(--loss)'};">${_salMoney(savedJobOnly,'USD')}</strong></div>
-        <div>Left over — job + trading<strong style="color:${savedBoth>=0?'var(--win)':'var(--loss)'};">${_salMoney(savedBoth,'USD')}</strong></div>
-        <div>Extra you got to keep<strong style="color:${trading>=0?'var(--win)':'var(--loss)'};">${_salMoney(trading,'USD')}</strong></div>
+        <div>Left over — job only<strong>${_salTri(savedJobOnly, { color: savedJobOnly>=0?'var(--win)':'var(--loss)' })}</strong></div>
+        <div>Left over — job + trading<strong>${_salTri(savedBoth, { color: savedBoth>=0?'var(--win)':'var(--loss)' })}</strong></div>
+        <div>${down ? 'Cost of the drawdown' : 'Extra you got to keep'}<strong>${_salTri(Math.abs(trading), { color: down?'var(--loss)':'var(--win)' })}</strong></div>
       </div>` : ''}
     ${trading > 0
       ? `<div class="cfe-insight">💡 Over ${periodWord}, trading added ${_salMoney(trading,'USD')} on top of a salary you were getting anyway — ${fmtNum(upliftPct,0)}% more income, with none of the risk of having quit. Staying employed while the streak builds is what turns trading profit into savings instead of rent.</div>`
-      : `<div class="cfe-insight">💡 Trading is ${_salMoney(trading,'USD')} over ${periodWord}, so the salary carried you. That's exactly the cushion a job is for — and the reason to build the streak before resigning.</div>`}
+      : `<div class="cfe-insight">💡 Your salary of ${_salMoney(salary,'USD')} arrived in full — a losing month costs you trading capital, not your pay. That is exactly what the job is protecting right now, and why the streak has to be built before you resign.</div>`}
   `;
 }
 
@@ -3419,10 +3451,10 @@ function renderSalaryGap({ stats, monthlyUsd, days, dailyUsd }){
   body.innerHTML = `
     <div class="sal-trend-stats" style="margin-top:0;">
       <div>Still short each month
-        <strong style="color:${gap > 0 ? 'var(--loss)' : 'var(--win)'};">${gap > 0 ? _salMoney(gap,'USD') : 'Nothing'}</strong>
+        <strong>${gap > 0 ? _salTri(gap, { color:'var(--loss)' }) : `<span style="color:var(--win);">Nothing</span>`}</strong>
       </div>
       <div>Per trading day
-        <strong style="color:${gap > 0 ? 'var(--loss)' : 'var(--win)'};">${gapPerDay ? _salMoney(gapPerDay,'USD') : '—'}</strong>
+        <strong>${gapPerDay ? _salTri(gapPerDay, { color: gap > 0 ? 'var(--loss)' : 'var(--win)' }) : '—'}</strong>
       </div>
       <div>Typical month covers
         <strong style="color:${pctThere >= 100 ? 'var(--win)' : 'var(--accent)'};">${fmtNum(pctThere,0)}%</strong>
@@ -3587,9 +3619,9 @@ function renderSalaryHistory({ stats, spendMonthly, monthlyUsd }){
     return `<tr onclick="focusSalaryMonth('${r.key}')" style="cursor:pointer;${r.key === selectedKey ? 'background:var(--surface-2);' : ''}">
       <td style="font-family:'Public Sans',sans-serif;">${r.label}</td>
       <td>${r.tradingDays}</td>
-      <td style="color:var(--muted);">${monthlyUsd > 0 ? _salMoney(monthlyUsd,'USD') : '—'}</td>
-      <td class="${r.net >= 0 ? 'pos' : 'neg'}">${_salMoney(r.net,'USD')}</td>
-      <td style="color:${diff == null ? 'var(--muted)' : (diff >= 0 ? 'var(--win)' : 'var(--loss)')};">${diff == null ? '—' : (diff >= 0 ? '+' : '') + _salMoney(diff,'USD')}</td>
+      <td style="color:var(--muted);">${monthlyUsd > 0 ? _salTriInline(monthlyUsd) : '—'}</td>
+      <td class="${r.net >= 0 ? 'pos' : 'neg'}">${_salTriInline(r.net)}</td>
+      <td style="color:${diff == null ? 'var(--muted)' : (diff >= 0 ? 'var(--win)' : 'var(--loss)')};">${diff == null ? '—' : (diff >= 0 ? '+' : '') + _salTriInline(diff)}</td>
       <td>${bar(vsSpend, spendTone)}</td>
       <td>${bar(vsSalary, salTone)}</td>
       <td>${verdict}</td>
