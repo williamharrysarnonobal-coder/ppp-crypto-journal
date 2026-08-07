@@ -3083,9 +3083,129 @@ function renderSalaryGoal(){
 
   renderSalaryHistory({ stats, spendMonthly: spend.monthly, monthlyUsd: monthlyUsdVal });
   renderSalaryVerdict({ stats, monthlyUsd: monthlyUsdVal });
+  renderSalaryBigPicture({ stats, monthlyUsd: monthlyUsdVal, totalNet, tradingDays });
+  renderSalaryCombined({ stats, monthlyUsd: monthlyUsdVal, spendMonthly: spend.monthly });
   renderSalaryReadiness({ stats, monthlyUsd: monthlyUsdVal, aed, php, totalNet, tradingDays });
   renderSalaryTrend({ monthlyUsd: monthlyUsdVal, dayKeys, monthOfDay, months });
   renderSalaryGap({ stats, monthlyUsd: monthlyUsdVal, days, dailyUsd });
+}
+
+// Deliberately ignores the year/month picker. A single red month makes the
+// filtered views look like failure even when the whole run is up — this is
+// the zoomed-out number that can't be distorted by which month is selected.
+function renderSalaryBigPicture({ stats, monthlyUsd, totalNet, tradingDays }){
+  const body = document.getElementById('salBigPictureBody');
+  if(!body) return;
+
+  if(!stats.length){
+    body.innerHTML = `<div class="empty-state">No closed trades yet.</div>`;
+    return;
+  }
+
+  const nowKey = _salaryMonthKey(new Date());
+  const done = stats.filter(s => s.key !== nowKey);
+  const monthsTraded = stats.length;
+  const avgPerMonth = monthsTraded ? totalNet / monthsTraded : 0;
+  const upMonths = stats.filter(s => s.net > 0).length;
+  const matched = monthlyUsd > 0 ? done.filter(s => s.net >= monthlyUsd).length : null;
+
+  // Oldest month first for the "since" wording.
+  const oldest = stats[stats.length - 1];
+  const salaryOverSame = monthlyUsd > 0 ? monthlyUsd * monthsTraded : null;
+  const upliftPct = salaryOverSame > 0 ? totalNet / salaryOverSame * 100 : null;
+
+  body.innerHTML = `
+    <div class="sal-trend-stats" style="margin-top:0;">
+      <div>Trading, all time
+        <strong style="color:${totalNet>=0?'var(--win)':'var(--loss)'};">${_salMoney(totalNet,'USD')}</strong>
+      </div>
+      <div>Across
+        <strong>${monthsTraded} mo · ${tradingDays} days</strong>
+      </div>
+      <div>Average month
+        <strong style="color:${avgPerMonth>=0?'var(--win)':'var(--loss)'};">${_salMoney(avgPerMonth,'USD')}</strong>
+      </div>
+      <div>Green months
+        <strong style="color:${upMonths >= monthsTraded/2 ? 'var(--win)' : 'var(--warn)'};">${upMonths} / ${monthsTraded}</strong>
+      </div>
+      ${matched !== null ? `<div>Months matching salary
+        <strong style="color:${matched ? 'var(--accent)' : 'var(--muted)'};">${matched} / ${done.length}</strong>
+      </div>` : ''}
+    </div>
+    <div class="cfe-insight">💡 Since ${oldest.label}, trading is ${totalNet >= 0 ? 'up' : 'down'} ${_salMoney(Math.abs(totalNet),'USD')} overall${upliftPct !== null ? ` — that's ${fmtNum(upliftPct,0)}% of what the job paid over the same stretch` : ''}. ${
+      upMonths < monthsTraded
+        ? `${monthsTraded - upMonths} month${monthsTraded-upMonths===1?' was':'s were'} negative, and the total is still ${totalNet >= 0 ? 'positive' : 'negative'} — that is the number that matters, not any single month.`
+        : `Every month has been green so far.`
+    }</div>
+  `;
+}
+
+// The case for NOT resigning yet: salary and trading added together. Follows
+// the year/month picker, so selecting a month actually changes something —
+// and it reframes trading from "replacing income" to "money you get to keep".
+function renderSalaryCombined({ stats, monthlyUsd, spendMonthly }){
+  const body = document.getElementById('salCombinedBody');
+  const titleEl = document.getElementById('salCombinedTitle');
+  if(!body) return;
+
+  const label = _salaryPeriodLabel();
+  if(titleEl) titleEl.textContent = `Payslip + P&L — ${label}`;
+
+  if(monthlyUsd == null){
+    body.innerHTML = `<div class="empty-state">Enter your monthly salary to see what the two are worth together.</div>`;
+    return;
+  }
+
+  const inPeriod = stats.filter(s => _salaryInPeriod(s.key));
+  if(!inPeriod.length){
+    body.innerHTML = `<div class="empty-state">No closed trades in ${label.toLowerCase()} — pick another period.</div>`;
+    return;
+  }
+
+  const monthsCount = inPeriod.length;
+  const trading = inPeriod.reduce((s,x) => s + x.net, 0);
+  const salary = monthlyUsd * monthsCount;
+  const combined = salary + trading;
+  const upliftPct = salary > 0 ? trading / salary * 100 : 0;
+
+  // What the job alone would have left after living costs, versus what both
+  // together leave — the honest measure of what trading is adding right now.
+  const spendTotal = spendMonthly != null ? spendMonthly * monthsCount : null;
+  const savedJobOnly = spendTotal != null ? salary - spendTotal : null;
+  const savedBoth = spendTotal != null ? combined - spendTotal : null;
+
+  const periodWord = monthsCount === 1 ? 'this month' : `these ${monthsCount} months`;
+
+  body.innerHTML = `
+    <div class="sal-combined-row">
+      <div class="sal-combined-part">
+        <div class="sal-combined-label">Payslip</div>
+        <div class="sal-combined-value" style="color:var(--accent);">${_salMoney(salary,'USD')}</div>
+        <div class="sal-combined-note">${monthsCount} month${monthsCount===1?'':'s'} of salary</div>
+      </div>
+      <div class="sal-combined-op">+</div>
+      <div class="sal-combined-part">
+        <div class="sal-combined-label">P&amp;L</div>
+        <div class="sal-combined-value" style="color:${trading>=0?'var(--win)':'var(--loss)'};">${_salMoney(trading,'USD')}</div>
+        <div class="sal-combined-note">${trading >= 0 ? 'straight to savings' : 'a drag on the month'}</div>
+      </div>
+      <div class="sal-combined-op">=</div>
+      <div class="sal-combined-part sal-combined-total">
+        <div class="sal-combined-label">Together</div>
+        <div class="sal-combined-value" style="color:var(--ink);">${_salMoney(combined,'USD')}</div>
+        <div class="sal-combined-note">${upliftPct >= 0 ? '+' : ''}${fmtNum(upliftPct,0)}% on top of the payslip</div>
+      </div>
+    </div>
+    ${savedBoth !== null ? `
+      <div class="sal-trend-stats">
+        <div>Left over — job only<strong style="color:${savedJobOnly>=0?'var(--win)':'var(--loss)'};">${_salMoney(savedJobOnly,'USD')}</strong></div>
+        <div>Left over — job + trading<strong style="color:${savedBoth>=0?'var(--win)':'var(--loss)'};">${_salMoney(savedBoth,'USD')}</strong></div>
+        <div>Extra you got to keep<strong style="color:${trading>=0?'var(--win)':'var(--loss)'};">${_salMoney(trading,'USD')}</strong></div>
+      </div>` : ''}
+    ${trading > 0
+      ? `<div class="cfe-insight">💡 Over ${periodWord}, trading added ${_salMoney(trading,'USD')} on top of a salary you were getting anyway — ${fmtNum(upliftPct,0)}% more income, with none of the risk of having quit. Staying employed while the streak builds is what turns trading profit into savings instead of rent.</div>`
+      : `<div class="cfe-insight">💡 Trading is ${_salMoney(trading,'USD')} over ${periodWord}, so the salary carried you. That's exactly the cushion a job is for — and the reason to build the streak before resigning.</div>`}
+  `;
 }
 
 // Average real monthly spending from Finance, converted to USD through the

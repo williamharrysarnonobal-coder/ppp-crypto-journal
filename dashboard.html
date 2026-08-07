@@ -17,7 +17,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<link rel="stylesheet" href="css/style.css?v=170">
+<link rel="stylesheet" href="css/style.css?v=171">
 </head>
 <body>
 
@@ -595,6 +595,15 @@
       <div class="sal-verdict-count" id="salVerdictCount"></div>
     </div>
 
+    <div class="panel sal-bigpicture" style="margin-bottom:22px;">
+      <h2 style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        <span>The Big Picture</span>
+        <span class="pill pill-muted" style="font-size:10px;">All time · ignores the filter</span>
+      </h2>
+      <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-8px;margin-bottom:14px;">A bad month can hide a good year. This never changes with the month you pick.</div>
+      <div id="salBigPictureBody"></div>
+    </div>
+
     <div class="sal-sec-head">
       <span class="sal-sec-no">1</span><span class="sal-sec-title">Your Inputs</span>
       <span class="sal-sec-sub" id="salSaveState"></span>
@@ -653,6 +662,12 @@
         <select id="salYearFilter" onchange="onSalaryYearChange()" style="font-size:11.5px;padding:4px 8px;"></select>
         <select id="salMonthFilter" onchange="onSalaryMonthChange()" style="font-size:11.5px;padding:4px 8px;"></select>
       </span>
+    </div>
+
+    <div class="panel" style="margin-bottom:18px;">
+      <h2 id="salCombinedTitle">Payslip + P&amp;L — Keeping Both</h2>
+      <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:14px;">While you still have the job, every trading dollar is savings rather than survival. This is what the two together are worth.</div>
+      <div id="salCombinedBody"></div>
     </div>
 
     <div class="sal-an-grid">
@@ -1975,6 +1990,6 @@
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=1"></script>
-<script src="js/dashboard.js?v=260"></script>
+<script src="js/dashboard.js?v=261"></script>
 </body>
 </html>
