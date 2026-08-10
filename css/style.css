@@ -640,6 +640,28 @@
     font-size:10.5px;font-weight:700;color:var(--ink);text-transform:uppercase;letter-spacing:.03em;
   }
   .wr-cfl-more{font-size:10.5px;color:var(--muted);padding-top:6px;}
+
+  /* Mistakes, grouped by pattern — the page's whole reason to exist, so it
+     gets the top of the modal and nothing competes with it. */
+  .wr-mist-title{margin-bottom:10px;--wr-tone:var(--loss);}
+  .wr-mist{
+    border:1px solid var(--rule);border-left:3px solid var(--loss);
+    border-radius:8px;padding:11px 14px;margin-bottom:10px;background:var(--surface);
+    --wr-tone:var(--loss);
+  }
+  .wr-mist-head{
+    display:flex;justify-content:space-between;align-items:baseline;gap:10px;
+    padding-bottom:6px;margin-bottom:4px;border-bottom:1px solid var(--rule);
+  }
+  .wr-mist-pattern{font-size:13px;font-weight:700;color:var(--ink);}
+  .wr-mist-net{
+    font-family:'IBM Plex Mono',monospace;font-size:12.5px;font-weight:700;
+    color:var(--loss);font-variant-numeric:tabular-nums;flex-shrink:0;
+  }
+  .wr-mist-clean{
+    border-left-color:var(--muted);color:var(--muted);
+    font-size:12px;line-height:1.6;--wr-tone:var(--muted);
+  }
   .wr-cfl-col .wr-col-head{display:flex;justify-content:space-between;align-items:baseline;gap:8px;}
   .wr-col-net{
     font-family:'IBM Plex Mono',monospace;font-size:11.5px;font-weight:700;
@@ -1141,7 +1163,22 @@
     background:linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 55%, black));color:#fff;
     display:flex;align-items:center;justify-content:center;
     font-size:26px;font-weight:700;font-family:var(--font-ui);
+    position:relative;overflow:hidden;
   }
+  /* object-fit keeps a non-square upload from stretching — it crops to the
+     circle instead, which is what every other avatar on the web does. */
+  .profile-avatar img{
+    position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:50%;
+  }
+  .profile-avatar.editable{cursor:pointer;}
+  .profile-avatar-hint{
+    position:absolute;inset:0;border-radius:50%;
+    align-items:center;justify-content:center;
+    background:rgba(0,0,0,.55);color:#fff;font-size:11px;font-weight:600;
+    opacity:0;transition:opacity .15s ease;
+  }
+  .profile-avatar.editable:hover .profile-avatar-hint{opacity:1;}
+  .profile-avatar-remove{margin-top:10px;padding:5px 11px;font-size:11.5px;}
   .profile-header-info{flex:1;min-width:0;}
   .profile-header-name{font-size:20px;font-weight:700;color:var(--ink);margin-bottom:8px;}
   .profile-nickname{font-size:13px;font-weight:400;color:var(--muted);}

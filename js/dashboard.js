@@ -187,7 +187,20 @@ const ACCENT_OPTIONS = [
   { name: 'Sky', value: '#0EA5E9' },
   { name: 'Teal', value: '#14B8A6' },
   { name: 'Green', value: '#22C55E' },
-  { name: 'Lime', value: '#84CC16' }
+  { name: 'Lime', value: '#84CC16' },
+  // Added because the original sixteen were all bright, fully-saturated hues —
+  // no earth tones, no neutrals, and a couple of obvious gaps in the spectrum.
+  // Every value sits in the mid range so it stays legible as a link or an
+  // active nav item on BOTH the dark and the light ground.
+  { name: 'Emerald', value: '#10B981' },
+  { name: 'Forest', value: '#15803D' },
+  { name: 'Magenta', value: '#D946EF' },
+  { name: 'Lavender', value: '#9F8FEF' },
+  { name: 'Ruby', value: '#E11D48' },
+  { name: 'Mustard', value: '#CA8A04' },
+  { name: 'Copper', value: '#C2703F' },
+  { name: 'Olive', value: '#7C8A2E' },
+  { name: 'Steel', value: '#64748B' }
 ];
 
 function applyAccent(name){
@@ -1878,6 +1891,9 @@ function _wrConfluenceRows(closed, periodIds){
   return entries.map(e => ({
     met: _wrAnswerMet(e.it, e.ans),
     answer: e.it.select ? e.ans : (labelFor[e.ans] || e.ans),
+    // Kept so the review can group mistakes under the pattern they happened
+    // on — "5 mins HL" behaves nothing like "1 hour LH".
+    pattern: e.key.split('|')[1] || e.key,
     tag: e.it.tag,
     text: e.it.text || '',
     nowN: e.now.length,
@@ -1967,13 +1983,56 @@ function _weekReviewHtml(trades, label, periodName){
     bullet(doingWrong, `${escapeHtml(worst.key.split('|')[1])} taken ${worst.arr.length}× in one day`, money(worst.s.net));
   }
 
-  /* ---- Confluence: which conditions you ignored, and which you honoured ----
-     The centrepiece. A setup name can't explain a loss — two Bounce Plays are
-     opposite trades depending on whether the Left Hand was there. This reads
-     the actual checklist answers, splits them into conditions you entered
-     DESPITE and conditions you waited for, and puts the money on each. */
+  /* ---- The mistakes, grouped by pattern ----
+     The whole point of the page. Only conditions that were NOT met and that
+     actually lost money, listed under the pattern they happened on, because a
+     5 mins HL and a 1 hour LH are different trades with different checklists.
+     Nothing that went right appears here — that's what the folded detail is
+     for. A patternless summary was the thing that made this unreadable. */
   const periodIds = new Set(closed.map(t => t.id));
   const cflRows = _wrConfluenceRows(closed, periodIds);
+
+  let mistakesHtml = '';
+  const byPattern = {};
+  cflRows.filter(r => r.met !== 'met' && r.nowNet < 0).forEach(r => {
+    (byPattern[r.pattern] = byPattern[r.pattern] || []).push(r);
+  });
+  // Worst-hit pattern first, and worst condition first inside it.
+  const patternOrder = Object.keys(byPattern).sort((a,b) =>
+    byPattern[a].reduce((s,r) => s + r.nowNet, 0) - byPattern[b].reduce((s,r) => s + r.nowNet, 0));
+
+  if(patternOrder.length){
+    mistakesHtml = patternOrder.map(pat => {
+      const rows = byPattern[pat].sort((a,b) => a.nowNet - b.nowNet);
+      // De-duplicated: one trade usually misses several conditions at once, so
+      // summing the per-condition totals would count the same loss repeatedly.
+      const seenT = new Map();
+      rows.forEach(r => r.nowTrades.forEach(t => seenT.set(t.id, t)));
+      const patNet = [...seenT.values()].reduce((s,t) => s + netPnl(t), 0);
+      return `<div class="wr-mist">
+        <div class="wr-mist-head">
+          <span class="wr-mist-pattern">${escapeHtml(pat)}</span>
+          <span class="wr-mist-net">${money(patNet)}<span class="wr-count"> · ${seenT.size} trade${seenT.size===1?'':'s'}</span></span>
+        </div>
+        ${rows.map(r => {
+          const tip = [
+            `Answered ${r.answer}${r.met === 'partial' ? ' (partly met)' : ''}`,
+            `${r.nowN} trade${r.nowN===1?'':'s'} this ${periodName}`,
+            r.hist ? `${r.hist.n} earlier trades averaged ${money(r.hist.avg)}` : ''
+          ].filter(Boolean).join(' · ');
+          return `<div class="wr-cfl-row" title="${escapeHtml(tip)}">
+              <span class="wr-cfl-q">${escapeHtml(r.text || r.tag)}<span class="wr-cfl-a">${escapeHtml(r.answer)}</span></span>
+              <span class="wr-val wr-bad">${money(r.nowNet)}</span>
+            </div>`;
+        }).join('')}
+      </div>`;
+    }).join('');
+  }else if(cflRows.length){
+    mistakesHtml = `<div class="wr-mist wr-mist-clean">Nothing to flag — every losing trade this ${periodName} had its confluence conditions met. The losses weren't from skipping the checklist.</div>`;
+  }else{
+    mistakesHtml = `<div class="wr-mist wr-mist-clean">No confluence checklists filled in this ${periodName}, so there's nothing to read. Fill one in on a setup and this page starts working.</div>`;
+  }
+
   let cflHtml = '';
   if(cflRows.length){
     // Most expensive first on the left, most profitable first on the right —
@@ -2180,20 +2239,18 @@ function _weekReviewHtml(trades, label, periodName){
       ${col('Doing wrong', 'bad', doingWrong, 'Nothing flagged — a clean ' + periodName + '.')}
     </div>`;
 
-  // Only three things stay above the fold: the number, the right/wrong glance,
-  // and the confluence split that explains both. Everything else is real but
-  // secondary — a wall of sections buries the one answer this page exists to
-  // give, so the rest folds away until it's actually wanted.
-  const primary = [cflHtml, ruleHtml].filter(Boolean).join('');
-  const extras = [rulesHtml, repeatHtml, rightHtml, baseHtml].filter(Boolean);
+  // Above the fold: the number, then the mistakes. Nothing else. Everything
+  // that went RIGHT, every comparison and every secondary stat is real but it
+  // is not what this page is for — with a month of trades on screen it buried
+  // the handful of lines actually worth acting on.
+  const extras = [cflHtml, rulesHtml, repeatHtml, rightHtml, baseHtml, glance].filter(Boolean);
   const more = extras.length
-    ? `<details class="wr-more"><summary>More detail — ${extras.length} section${extras.length===1?'':'s'}</summary>${extras.join('')}</details>`
+    ? `<details class="wr-more"><summary>Everything else — ${extras.length} section${extras.length===1?'':'s'}</summary>${extras.join('')}</details>`
     : '';
 
-  if(!primary && !more){
-    return head + glance + `<div class="wr-note">Not enough tagged detail this ${periodName} to say much. Filling in the confluence checklist and Unfollowed Rules is what gives this page something to work with.</div>`;
-  }
-  return head + glance + primary + more;
+  return head +
+    `<div class="wr-sec-head wr-bad wr-mist-title">Where you lost it</div>` +
+    mistakesHtml + ruleHtml + more;
 }
 
 function showCategoryTrades(field, key){
@@ -11936,7 +11993,7 @@ async function renderProfile(){
 
   // Header card — always shows the saved values, whether editing or not.
   const initial = (p.display_name || '').trim().charAt(0).toUpperCase() || '?';
-  document.getElementById('profileAvatar').textContent = initial;
+  _renderProfileAvatar(p, initial);
   document.getElementById('profileHeaderName').innerHTML = p.display_name
     ? `${escapeHtml(p.display_name)}${p.nickname ? ` <span class="profile-nickname">(${escapeHtml(p.nickname)})</span>` : ''}`
     : 'Set your name';
@@ -12044,6 +12101,97 @@ function addProfileRule(){
 function removeProfileRule(i){
   profileRulesArr.splice(i, 1);
   renderProfileRules(profileRulesArr);
+}
+
+// The avatar lives in the same private bucket as the Vision Board, so the
+// stored value is a path and the <img> gets a short-lived signed URL. Falls
+// back to the display name's first letter whenever there's no picture, which
+// is also what happens if the signed URL can't be minted.
+async function _renderProfileAvatar(p, initial){
+  const wrap = document.getElementById('profileAvatar');
+  const img = document.getElementById('profileAvatarImg');
+  const letter = document.getElementById('profileAvatarInitial');
+  const hint = document.getElementById('profileAvatarHint');
+  if(!wrap || !img || !letter) return;
+
+  letter.textContent = initial;
+  // Clickable only in Edit mode, matching how the Vision Board behaves.
+  wrap.classList.toggle('editable', !!profileEditing);
+  wrap.onclick = profileEditing
+    ? () => document.getElementById('profileAvatarInput').click()
+    : null;
+  if(hint) hint.style.display = profileEditing ? 'flex' : 'none';
+  const removeBtn = document.getElementById('profileAvatarRemove');
+  if(removeBtn) removeBtn.style.display = (profileEditing && p.avatar_path) ? 'inline-flex' : 'none';
+
+  if(!p.avatar_path){
+    img.style.display = 'none';
+    img.removeAttribute('src');
+    letter.style.display = '';
+    return;
+  }
+  try{
+    const { data, error } = await sb.storage.from('profile-images').createSignedUrl(p.avatar_path, 3600);
+    if(error) throw error;
+    img.src = data.signedUrl;
+    img.style.display = 'block';
+    letter.style.display = 'none';
+  }catch(e){
+    console.error("Couldn't load profile picture:", e);
+    img.style.display = 'none';
+    letter.style.display = '';
+  }
+}
+
+async function uploadProfileAvatar(file){
+  if(!file) return;
+  // 5 MB is generous for a headshot and keeps a stray 40 MB phone photo from
+  // sitting in storage forever.
+  if(file.size > 5 * 1024 * 1024){
+    await customAlert('That image is larger than 5 MB — pick a smaller one.');
+    return;
+  }
+  try{
+    const { data: { user } } = await sb.auth.getUser();
+    const path = `${user.id}/avatar_${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g,'_')}`;
+
+    const { error: uploadErr } = await sb.storage.from('profile-images').upload(path, file);
+    if(uploadErr) throw uploadErr;
+
+    const oldPath = PROFILE_DATA?.avatar_path;
+    await persistProfile({ avatar_path: path });
+    // Only after the new path is safely saved — otherwise a failed write would
+    // leave the profile pointing at a file that no longer exists.
+    if(oldPath) await sb.storage.from('profile-images').remove([oldPath]);
+
+    await loadProfile();
+    showToast('Profile picture updated');
+  }catch(e){
+    console.error("Couldn't upload profile picture:", e);
+    const msg = e?.message || String(e);
+    const hint = /bucket not found/i.test(msg)
+      ? ' The "profile-images" storage bucket doesn\'t exist yet — create it in Supabase Storage.'
+      : (/column .*avatar_path/i.test(msg) ? ' Run supabase_profile_avatar.sql in Supabase first.' : '');
+    await customAlert("Couldn't upload picture: " + msg + hint);
+  }finally{
+    const input = document.getElementById('profileAvatarInput');
+    if(input) input.value = '';   // so re-picking the same file fires onchange
+  }
+}
+
+async function removeProfileAvatar(){
+  if(!PROFILE_DATA?.avatar_path) return;
+  if(!(await customConfirm('Remove your profile picture? Your initial will be shown instead.', 'Remove'))) return;
+  const oldPath = PROFILE_DATA.avatar_path;
+  try{
+    await persistProfile({ avatar_path: null });
+    await sb.storage.from('profile-images').remove([oldPath]);
+    await loadProfile();
+    showToast('Profile picture removed');
+  }catch(e){
+    console.error("Couldn't remove profile picture:", e);
+    await customAlert("Couldn't remove picture: " + (e?.message || e));
+  }
 }
 
 async function uploadInspirationImage(file){

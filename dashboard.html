@@ -17,7 +17,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<link rel="stylesheet" href="css/style.css?v=192">
+<link rel="stylesheet" href="css/style.css?v=194">
 </head>
 <body>
 
@@ -361,11 +361,17 @@
     </header>
 
     <div class="panel profile-header-card" style="margin-bottom:20px;">
-      <div class="profile-avatar" id="profileAvatar">?</div>
+      <div class="profile-avatar" id="profileAvatar">
+        <span id="profileAvatarInitial">?</span>
+        <img id="profileAvatarImg" alt="" style="display:none;">
+        <div class="profile-avatar-hint" id="profileAvatarHint" style="display:none;">Change</div>
+      </div>
+      <input type="file" id="profileAvatarInput" accept="image/*" style="display:none;" onchange="uploadProfileAvatar(this.files[0])">
       <div class="profile-header-info">
         <div class="profile-header-name" id="profileHeaderName">Set your name</div>
         <div class="profile-header-badges" id="profileHeaderBadges"></div>
         <div class="profile-header-why" id="profileHeaderWhy"></div>
+        <button class="drawer-secondary-btn profile-avatar-remove" id="profileAvatarRemove" style="display:none;" onclick="removeProfileAvatar()">Remove picture</button>
       </div>
       <div class="profile-rank-badge" id="profileRankBadge" onclick="switchView('challenges')" title="View Challenges">
         <span class="profile-rank-icon" id="profileRankIcon"></span>
@@ -1996,6 +2002,6 @@
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=2"></script>
-<script src="js/dashboard.js?v=299"></script>
+<script src="js/dashboard.js?v=301"></script>
 </body>
 </html>
