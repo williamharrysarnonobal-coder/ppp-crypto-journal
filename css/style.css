@@ -628,12 +628,18 @@
   }
   /* One line per condition. The question wraps; the money never does. */
   .wr-cfl-row{
-    display:flex;justify-content:space-between;align-items:baseline;gap:10px;
+    display:flex;align-items:baseline;gap:10px;
     padding:5px 0;border-bottom:1px solid color-mix(in srgb, var(--wr-tone) 20%, transparent);
-    font-size:12px;line-height:1.45;cursor:help;
+    font-size:12px;line-height:1.45;
   }
   .wr-cfl-row:last-of-type{border-bottom:none;}
-  .wr-cfl-q{color:var(--ink);}
+  .wr-cfl-q{color:var(--ink);flex:1;min-width:0;}
+  /* Trade count sits between the condition and the money, on screen rather
+     than in a tooltip — a hover is invisible until you go looking for it. */
+  .wr-cfl-n{
+    font-size:11px;color:var(--muted);flex-shrink:0;white-space:nowrap;
+    font-variant-numeric:tabular-nums;
+  }
   .wr-cfl-a{
     display:inline-block;margin-left:6px;padding:1px 6px;border-radius:3px;
     background:color-mix(in srgb, var(--wr-tone) 22%, transparent);

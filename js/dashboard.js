@@ -1994,37 +1994,43 @@ function _weekReviewHtml(trades, label, periodName){
 
   let mistakesHtml = '';
   const byPattern = {};
-  cflRows.filter(r => r.met !== 'met' && r.nowNet < 0).forEach(r => {
-    (byPattern[r.pattern] = byPattern[r.pattern] || []).push(r);
+  cflRows.forEach(r => {
+    if(r.met === 'met') return;
+    // LOSING trades only. Counting the winners that also skipped this
+    // condition made the header disagree with the rows underneath it, and
+    // "conditions I skipped that cost me" is the actual question — a skipped
+    // condition on a winning trade belongs in the folded detail, not here.
+    const lost = r.nowTrades.filter(t => netPnl(t) < 0);
+    if(!lost.length) return;
+    (byPattern[r.pattern] = byPattern[r.pattern] || []).push({
+      ...r,
+      lostN: lost.length,
+      lostNet: lost.reduce((s,t) => s + netPnl(t), 0),
+      lostTrades: lost
+    });
   });
   // Worst-hit pattern first, and worst condition first inside it.
   const patternOrder = Object.keys(byPattern).sort((a,b) =>
-    byPattern[a].reduce((s,r) => s + r.nowNet, 0) - byPattern[b].reduce((s,r) => s + r.nowNet, 0));
+    byPattern[a].reduce((s,r) => s + r.lostNet, 0) - byPattern[b].reduce((s,r) => s + r.lostNet, 0));
 
   if(patternOrder.length){
     mistakesHtml = patternOrder.map(pat => {
-      const rows = byPattern[pat].sort((a,b) => a.nowNet - b.nowNet);
+      const rows = byPattern[pat].sort((a,b) => a.lostNet - b.lostNet);
       // De-duplicated: one trade usually misses several conditions at once, so
       // summing the per-condition totals would count the same loss repeatedly.
       const seenT = new Map();
-      rows.forEach(r => r.nowTrades.forEach(t => seenT.set(t.id, t)));
+      rows.forEach(r => r.lostTrades.forEach(t => seenT.set(t.id, t)));
       const patNet = [...seenT.values()].reduce((s,t) => s + netPnl(t), 0);
       return `<div class="wr-mist">
         <div class="wr-mist-head">
           <span class="wr-mist-pattern">${escapeHtml(pat)}</span>
-          <span class="wr-mist-net">${money(patNet)}<span class="wr-count"> · ${seenT.size} trade${seenT.size===1?'':'s'}</span></span>
+          <span class="wr-mist-net">${money(patNet)}<span class="wr-count"> across ${seenT.size} losing trade${seenT.size===1?'':'s'}</span></span>
         </div>
-        ${rows.map(r => {
-          const tip = [
-            `Answered ${r.answer}${r.met === 'partial' ? ' (partly met)' : ''}`,
-            `${r.nowN} trade${r.nowN===1?'':'s'} this ${periodName}`,
-            r.hist ? `${r.hist.n} earlier trades averaged ${money(r.hist.avg)}` : ''
-          ].filter(Boolean).join(' · ');
-          return `<div class="wr-cfl-row" title="${escapeHtml(tip)}">
+        ${rows.map(r => `<div class="wr-cfl-row">
               <span class="wr-cfl-q">${escapeHtml(r.text || r.tag)}<span class="wr-cfl-a">${escapeHtml(r.answer)}</span></span>
-              <span class="wr-val wr-bad">${money(r.nowNet)}</span>
-            </div>`;
-        }).join('')}
+              <span class="wr-cfl-n">${r.lostN} trade${r.lostN===1?'':'s'}</span>
+              <span class="wr-val wr-bad">${money(r.lostNet)}</span>
+            </div>`).join('')}
       </div>`;
     }).join('');
   }else if(cflRows.length){
@@ -2048,13 +2054,9 @@ function _weekReviewHtml(trades, label, periodName){
     // the one thing this page is for into a page you have to read.
     const row = (r, tone) => {
       const wr = r.nowStats.winRate;
-      const tip = [
-        `Answered ${r.answer}${r.met === 'partial' ? ' (partly met)' : ''}`,
-        `${r.nowN} trade${r.nowN===1?'':'s'} this ${periodName}${wr !== null ? `, ${fmtNum(wr,0)}% win` : ''}`,
-        r.hist ? `${r.hist.n} earlier trades averaged ${money(r.hist.avg)}` : ''
-      ].filter(Boolean).join(' · ');
-      return `<div class="wr-cfl-row" title="${escapeHtml(tip)}">
+      return `<div class="wr-cfl-row">
           <span class="wr-cfl-q">${escapeHtml(r.text || r.tag)}<span class="wr-cfl-a">${escapeHtml(r.answer)}</span></span>
+          <span class="wr-cfl-n">${r.nowN} trade${r.nowN===1?'':'s'}${wr !== null ? ` · ${fmtNum(wr,0)}% win` : ''}</span>
           <span class="wr-val wr-${tone}">${money(r.nowNet)}</span>
         </div>`;
     };
@@ -2094,7 +2096,7 @@ function _weekReviewHtml(trades, label, periodName){
              : '<div class="wr-bullet wr-bullet-empty">None fully met.</div>'}
          </div>
        </div>
-       <div class="wr-note">Hover a line for the counts and how the same answer has done before. Coloured by what those trades actually made — a green line on the left means you skipped it and still won.</div>`);
+       <div class="wr-note">Coloured by what those trades actually made — a green line on the left means you skipped that condition and still won.</div>`);
 
     if(ignored.length && ignored[0].nowNet < 0)
       bullet(doingWrong, `Entered without: ${escapeHtml(ignored[0].text || ignored[0].tag)}`, money(ignored[0].nowNet));
@@ -2849,7 +2851,11 @@ const ALL_DRAWER_FIELDS = [
   {key:'close_price', label:'Close Price', widget:'number', editable:true},
   {key:'tp_price', label:'TP Price', widget:'number', editable:true},
   {key:'sl_price', label:'SL Price', widget:'number', editable:true},
-  {key:'position_size', label:'Position Size', widget:'number', editable:true},
+  {key:'position_size', label:'Quantity', widget:'number', editable:true},
+  // Computed, never stored: |entry − SL| × quantity. Everything it needs is
+  // already on the trade, so a column would only be a second copy that could
+  // drift out of step with the prices.
+  {key:'risk_amount', label:'Risk Amount ($)', widget:'text', editable:false},
   {key:'win_loss', label:'Win/Loss', widget:'select', editable:true, options:FIELD_OPTIONS.win_loss},
   {key:'trade_type', label:'Trade Type', widget:'select', editable:true, options:FIELD_OPTIONS.trade_type},
   {key:'trade_setup', label:'Trade Setup', widget:'select', editable:true, options:FIELD_OPTIONS.trade_setup},
@@ -2949,7 +2955,7 @@ const ALL_JOURNAL_COLUMNS = [
   {key:'close_price', label:'Close Price'},
   {key:'tp_price', label:'TP Price'},
   {key:'sl_price', label:'SL Price'},
-  {key:'position_size', label:'Position Size'},
+  {key:'position_size', label:'Quantity'},
   {key:'rules_followed', label:'Rules Followed?'},
   {key:'unfollowed_rules', label:'Unfollowed Rules'},
   {key:'exit_type', label:'Exit Type'},
@@ -9010,7 +9016,7 @@ function openTradeViewModal(positionId){
 // vs the rest).
 const JOURNAL_FIELD_GROUPS = [
   { title: 'Overview', keys: ['symbol','open_date','close_date','duration','objective'] },
-  { title: 'Result', keys: ['win_loss','profit_loss','pnl_percent','rr','fee','entry_price','close_price','tp_price','sl_price','position_size'] },
+  { title: 'Result', keys: ['win_loss','profit_loss','pnl_percent','rr','fee','entry_price','close_price','tp_price','sl_price','position_size','risk_amount'] },
   { title: 'Account', keys: ['account','account_type','session','day_of_week'] },
   { title: 'Setup & Strategy', keys: ['trade_type','trade_setup','pattern_type','execution_tf','aof_phase'] },
   { title: 'Discipline', keys: ['rules_followed','unfollowed_rules','exit_type','post_be_result'] },
@@ -9024,6 +9030,17 @@ function _renderTradeViewFieldRow(f, row){
   if(f.key === 'objective' || f.key === 'duration'){
     const computed = f.key === 'objective' ? computeObjective(row) : computeDuration(row);
     return `<div class="field-row${spanCls}"><label>${f.label}</label><div class="field-static">${computed || '—'}</div></div>`;
+  }
+  if(f.key === 'risk_amount'){
+    // Same helper the Breakeven-Saved stat uses, so the two can't disagree.
+    // It also flags implausible source data (a placeholder stop, or a row
+    // where position_size holds dollar notional instead of a unit quantity) —
+    // worth saying out loud rather than printing a confident wrong number.
+    const r = _beAvoidedLoss(row);
+    const html = r
+      ? `${fmtMoney(r.value).replace('+','')}${r.suspect ? ' <span class="wr-count">— check the entry, SL and quantity on this trade</span>' : ''}`
+      : '—';
+    return `<div class="field-row${spanCls}"><label>${f.label}</label><div class="field-static">${html}</div></div>`;
   }
   if(f.key === 'trade_summary'){
     return `<div class="field-row${spanCls}">
@@ -9569,7 +9586,7 @@ const REQUIRED_JOURNAL_FIELDS = [
 ];
 const REQUIRED_JOURNAL_FIELD_LABELS = {
   symbol: 'Symbol', win_loss: 'Win/Loss', profit_loss: 'Profit/Loss', account: 'Account',
-  entry_price: 'Entry Price', close_price: 'Close Price', position_size: 'Position Size',
+  entry_price: 'Entry Price', close_price: 'Close Price', position_size: 'Quantity',
   rules_followed: 'Rules Followed?', trade_type: 'Trade Type', exit_type: 'Exit Type', trade_setup: 'Trade Setup'
 };
 
