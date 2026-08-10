@@ -1882,6 +1882,7 @@ function _wrConfluenceRows(closed, periodIds){
     text: e.it.text || '',
     nowN: e.now.length,
     nowNet: e.now.reduce((s,t) => s + netPnl(t), 0),
+    nowTrades: e.now,          // kept so column totals can de-duplicate
     nowStats: _wrStats(e.now),
     hist: e.hist.length >= WR_MIN_HIST ? _wrStats(e.hist) : null
   }));
@@ -1951,8 +1952,10 @@ function _weekReviewHtml(trades, label, periodName){
   if(repeats.length){
     repeatHtml = sec('The same mistake, more than once', 'bad',
       repeats.map(({ key, arr, s }) => {
+        // _dayKeyUTC returns a millisecond timestamp, not a "YYYY-MM-DD"
+        // string — concatenating 'T00:00:00' onto it produced Invalid Date.
         const [dayKey, symbol, setup] = key.split('|');
-        const day = new Date(dayKey + 'T00:00:00').toLocaleDateString('en-US',{weekday:'long', month:'short', day:'numeric'});
+        const day = new Date(Number(dayKey)).toLocaleDateString('en-US',{weekday:'long', month:'short', day:'numeric', timeZone:'UTC'});
         const tags = [...new Set(arr.map(t => (t.unfollowed_rules||'').trim()).filter(Boolean))];
         return `<div class="wr-item">
           <div class="wr-item-top"><strong>${escapeHtml(symbol)} · ${escapeHtml(setup)}</strong><span class="wr-val wr-bad">${money(s.net)}</span></div>
@@ -1980,44 +1983,59 @@ function _weekReviewHtml(trades, label, periodName){
     const honoured = cflRows.filter(r => r.met === 'met')
                             .sort((a,b) => b.nowNet - a.nowNet);
 
+    // One line per condition — question, the answer given, the money. Counts,
+    // win rate and the historical record live in the hover title rather than
+    // on screen: with a nine-item checklist, spelling all of that out turned
+    // the one thing this page is for into a page you have to read.
     const row = (r, tone) => {
       const wr = r.nowStats.winRate;
-      const histBit = r.hist
-        ? ` Across ${r.hist.n} earlier trades the same answer${r.hist.winRate !== null ? ` won ${fmtNum(r.hist.winRate,0)}% of the time and` : ''} averaged ${money(r.hist.avg)}.`
-        : '';
-      return `<div class="wr-item">
-        <div class="wr-item-top">
-          <strong>${escapeHtml(r.text || r.tag)}</strong>
+      const tip = [
+        `Answered ${r.answer}${r.met === 'partial' ? ' (partly met)' : ''}`,
+        `${r.nowN} trade${r.nowN===1?'':'s'} this ${periodName}${wr !== null ? `, ${fmtNum(wr,0)}% win` : ''}`,
+        r.hist ? `${r.hist.n} earlier trades averaged ${money(r.hist.avg)}` : ''
+      ].filter(Boolean).join(' · ');
+      return `<div class="wr-cfl-row" title="${escapeHtml(tip)}">
+          <span class="wr-cfl-q">${escapeHtml(r.text || r.tag)}<span class="wr-cfl-a">${escapeHtml(r.answer)}</span></span>
           <span class="wr-val wr-${tone}">${money(r.nowNet)}</span>
-        </div>
-        <div class="wr-item-ans">You answered <strong>${escapeHtml(r.answer)}</strong>${r.met === 'partial' ? ' <span class="wr-count">(partly met)</span>' : ''} · ${r.nowN} trade${r.nowN===1?'':'s'}${wr !== null ? ` · ${fmtNum(wr,0)}% win` : ''}</div>
-        ${histBit ? `<div class="wr-item-sub">${histBit.trim()}</div>` : ''}
-      </div>`;
+        </div>`;
     };
 
-    const ignoredNet  = ignored.reduce((s,r) => s + r.nowNet, 0);
-    const honouredNet = honoured.reduce((s,r) => s + r.nowNet, 0);
+    // A single trade normally skips several conditions at once, so summing the
+    // per-condition totals counts the same money over and over — seven skipped
+    // conditions on one -$525 week reported -$3,675. The column total is the
+    // net of the DISTINCT trades involved.
+    const netOfDistinct = rows => {
+      const seenTrades = new Map();
+      rows.forEach(r => r.nowTrades.forEach(t => seenTrades.set(t.id, t)));
+      return { net: [...seenTrades.values()].reduce((s,t) => s + netPnl(t), 0), n: seenTrades.size };
+    };
+    const ignoredAgg  = netOfDistinct(ignored);
+    const honouredAgg = netOfDistinct(honoured);
+    const ignoredNet  = ignoredAgg.net;
+    const honouredNet = honouredAgg.net;
+    const TOP = 3;
+    const rest = n => n > TOP ? `<div class="wr-cfl-more">+${n - TOP} more</div>` : '';
 
     // Rows are coloured by what the money actually did, not by which column
     // they sit in. A skipped condition that still paid is real information —
     // painting it red because it's on the left would be the tool insisting on
     // a story the trades don't support.
     const net = v => `<span class="wr-col-net wr-${v < 0 ? 'bad' : 'good'}">${money(v)}</span>`;
-    cflHtml = sec('Confluence — what you followed, and what you didn\'t',
+    cflHtml = sec('Confluence',
       ignoredNet < 0 ? 'bad' : 'good',
       `<div class="wr-cfl-cols">
          <div class="wr-cfl-col wr-bad">
-           <div class="wr-col-head">Entered without it ${ignored.length ? net(ignoredNet) : ''}</div>
-           ${ignored.length ? ignored.map(r => row(r, r.nowNet < 0 ? 'bad' : 'good')).join('')
-             : '<div class="wr-bullet wr-bullet-empty">Every condition was met on every trade.</div>'}
+           <div class="wr-col-head">Skipped it${ignored.length ? ` <span class="wr-count">${ignoredAgg.n} trade${ignoredAgg.n===1?'':'s'}</span>` : ''} ${ignored.length ? net(ignoredNet) : ''}</div>
+           ${ignored.length ? ignored.slice(0, TOP).map(r => row(r, r.nowNet < 0 ? 'bad' : 'good')).join('') + rest(ignored.length)
+             : '<div class="wr-bullet wr-bullet-empty">Every condition met.</div>'}
          </div>
          <div class="wr-cfl-col wr-good">
-           <div class="wr-col-head">Waited for it ${honoured.length ? net(honouredNet) : ''}</div>
-           ${honoured.length ? honoured.map(r => row(r, r.nowNet < 0 ? 'bad' : 'good')).join('')
-             : '<div class="wr-bullet wr-bullet-empty">No condition was fully met this ' + periodName + '.</div>'}
+           <div class="wr-col-head">Waited for it${honoured.length ? ` <span class="wr-count">${honouredAgg.n} trade${honouredAgg.n===1?'':'s'}</span>` : ''} ${honoured.length ? net(honouredNet) : ''}</div>
+           ${honoured.length ? honoured.slice(0, TOP).map(r => row(r, r.nowNet < 0 ? 'bad' : 'good')).join('') + rest(honoured.length)
+             : '<div class="wr-bullet wr-bullet-empty">None fully met.</div>'}
          </div>
        </div>
-       <div class="wr-note">Left is what you entered without; right is what you waited for. A condition counts as met the same way the checklist scores it — inverted questions flip, "Almost" is half credit, and a later position in the sequence counts against you. Each row is coloured by what those trades actually did, so a green row on the left means you skipped that condition and still won — worth knowing, not a rule to start breaking. The history line appears once ${WR_MIN_HIST}+ earlier trades share the same answer.</div>`);
+       <div class="wr-note">Hover a line for the counts and how the same answer has done before. Coloured by what those trades actually made — a green line on the left means you skipped it and still won.</div>`);
 
     if(ignored.length && ignored[0].nowNet < 0)
       bullet(doingWrong, `Entered without: ${escapeHtml(ignored[0].text || ignored[0].tag)}`, money(ignored[0].nowNet));
@@ -2101,7 +2119,7 @@ function _weekReviewHtml(trades, label, periodName){
   const dayRows = Object.entries(byDay).sort((a,b) => b[1] - a[1]);
   if(dayRows.length && dayRows[0][1] > 0){
     const [k, v] = dayRows[0];
-    rightParts.push(line(`Best day — ${new Date(k + 'T00:00:00').toLocaleDateString('en-US',{weekday:'long'})}`, money(v), 'good'));
+    rightParts.push(line(`Best day — ${new Date(Number(k)).toLocaleDateString('en-US',{weekday:'long', timeZone:'UTC'})}`, money(v), 'good'));
   }
 
   const groupNet = key => {
@@ -2162,9 +2180,20 @@ function _weekReviewHtml(trades, label, periodName){
       ${col('Doing wrong', 'bad', doingWrong, 'Nothing flagged — a clean ' + periodName + '.')}
     </div>`;
 
-  // Confluence leads: it's the layer that actually explains a win or a loss.
-  const body = [cflHtml, rulesHtml, repeatHtml, ruleHtml, rightHtml, baseHtml].filter(Boolean).join('');
-  return head + glance + (body || `<div class="wr-note">Not enough tagged detail this ${periodName} to say much. Filling in Rules Followed, Unfollowed Rules and the confluence checklist is what gives this page something to work with.</div>`);
+  // Only three things stay above the fold: the number, the right/wrong glance,
+  // and the confluence split that explains both. Everything else is real but
+  // secondary — a wall of sections buries the one answer this page exists to
+  // give, so the rest folds away until it's actually wanted.
+  const primary = [cflHtml, ruleHtml].filter(Boolean).join('');
+  const extras = [rulesHtml, repeatHtml, rightHtml, baseHtml].filter(Boolean);
+  const more = extras.length
+    ? `<details class="wr-more"><summary>More detail — ${extras.length} section${extras.length===1?'':'s'}</summary>${extras.join('')}</details>`
+    : '';
+
+  if(!primary && !more){
+    return head + glance + `<div class="wr-note">Not enough tagged detail this ${periodName} to say much. Filling in the confluence checklist and Unfollowed Rules is what gives this page something to work with.</div>`;
+  }
+  return head + glance + primary + more;
 }
 
 function showCategoryTrades(field, key){
