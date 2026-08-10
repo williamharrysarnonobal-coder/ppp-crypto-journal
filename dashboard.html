@@ -17,7 +17,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<link rel="stylesheet" href="css/style.css?v=178">
+<link rel="stylesheet" href="css/style.css?v=190">
 </head>
 <body>
 
@@ -108,10 +108,13 @@
   <div class="row chart-row-eq" style="grid-template-columns:1.3fr 1fr;align-items:stretch;">
     <div class="panel panel-fixed-h">
       <h2>Calendar
-        <span class="nav">
-          <button onclick="shiftMonth(-1)">‹</button>
-          <span id="calLabel">—</span>
-          <button onclick="shiftMonth(1)">›</button>
+        <span class="cal-head-actions">
+          <button class="poscalc-accent-btn" id="monthReviewBtn" onclick="openMonthReview()">Review trades</button>
+          <span class="nav">
+            <button onclick="shiftMonth(-1)">‹</button>
+            <span id="calLabel">—</span>
+            <button onclick="shiftMonth(1)">›</button>
+          </span>
         </span>
       </h2>
       <div class="cal-total-summary" id="calTotalSummary"></div>
@@ -476,7 +479,11 @@
           <button class="drawer-danger-btn" onclick="clearCalculatorDraft()">Clear</button>
         </span>
       </h2>
-      <div class="sub" style="margin-bottom:16px;">Risk-based position sizing across your accounts — enter the prices, everything else is worked out for you.</div>
+      <div class="sub" style="margin-bottom:12px;">Risk-based position sizing across your accounts — enter the prices, everything else is worked out for you.</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;">
+        <button class="poscalc-accent-btn" onclick="openPosPasteModal()">Paste from exchange</button>
+        <button class="poscalc-accent-btn" onclick="openPsBbModal()">🍞 BnB Check</button>
+      </div>
 
       <div class="field-row">
         <label>Symbol</label>
@@ -969,8 +976,17 @@
           </div>
 
           <div class="panel panel-fixed-h-sm">
-            <h2>Income vs Expense — last 6 months</h2>
+            <h2 style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
+              <span>Income vs Expense</span>
+              <select id="finDashTrendSpan" onchange="onFinDashTrendSpanChange()" style="max-width:150px;font-size:11.5px;padding:4px 8px;">
+                <option value="6" selected>Last 6 months</option>
+                <option value="12">Last 12 months</option>
+                <option value="ytd">This year so far</option>
+                <option value="all">All time</option>
+              </select>
+            </h2>
             <div class="chart-fill"><canvas id="finDashTrendChart"></canvas></div>
+            <div class="fin-chart-hint">Click a bar to see that month's transactions.</div>
           </div>
         </div>
 
@@ -1013,6 +1029,7 @@
               </select>
               <button class="drawer-danger-btn" style="margin-left:auto;" onclick="deleteAllFilteredFinTx()">Delete All</button>
             </div>
+            <div id="finTxDrillChip" style="display:none;align-items:center;gap:8px;margin-bottom:12px;"></div>
             <div id="finTxBulkBar" style="display:none;align-items:center;gap:10px;margin-bottom:12px;font-size:12.5px;">
               <span id="finTxBulkCount"></span>
               <button class="poscalc-accent-btn" onclick="openFinBulkCategoryModal()">Edit Category</button>
@@ -1069,7 +1086,7 @@
           </div>
 
           <div class="panel" style="margin-top:20px;">
-            <h2 style="display:flex;align-items:center;justify-content:space-between;gap:10px;">Expense Subcategories <button class="poscalc-accent-btn" onclick="loadRecommendedFinanceTaxonomy()">Reset to Recommended Categories</button></h2>
+            <h2 style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">Expense Subcategories <span style="display:flex;gap:8px;flex-wrap:wrap;"><button class="poscalc-accent-btn" onclick="addMissingFinanceCategories()">Add Missing Categories</button><button class="ai-btn" style="padding:8px 14px;" onclick="loadRecommendedFinanceTaxonomy()">Reset to Recommended</button></span></h2>
             <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">Optional finer breakdown under each expense category — so "Food &amp; Groceries" can split into Grocery, Restaurant, Coffee, etc.</div>
             <select id="finSubcatPicker" onchange="renderFinanceSubcategoryListFor(this.value)"></select>
             <div id="finSubcatList" style="margin-top:14px;"></div>
@@ -1151,7 +1168,17 @@
     <button class="modal-close" onclick="closeModal()">✕</button>
     <h3 id="modalTitle">—</h3>
     <div class="modal-sub" id="modalSub"></div>
+    <button class="poscalc-accent-btn" id="weekReviewBtn" style="display:none;margin-bottom:14px;" onclick="openWeekReview()">Review this week</button>
     <div id="modalBody"></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="weekReviewModal" onclick="if(event.target===this) closeWeekReview()">
+  <div class="modal-box wr-box" style="position:relative;">
+    <button class="modal-close" onclick="closeWeekReview()">✕</button>
+    <h3 id="weekReviewTitle" style="margin-right:30px;">Weekly Review</h3>
+    <div class="modal-sub" id="weekReviewSub"></div>
+    <div id="weekReviewBody"></div>
   </div>
 </div>
 
@@ -1191,6 +1218,40 @@
     <textarea id="easyAddInput" placeholder="Paste here…" style="width:100%;min-height:200px;margin-top:10px;padding:10px 12px;background:var(--surface-2);border:1px solid var(--rule);border-radius:6px;color:var(--ink);font-size:13px;font-family:'IBM Plex Mono',monospace;resize:vertical;"></textarea>
     <div id="easyAddError" class="auth-error"></div>
     <button class="ai-btn" style="margin-top:14px;width:100%;" onclick="parseEasyAddText()">Proceed</button>
+  </div>
+</div>
+
+<div class="modal-overlay" id="posPasteModal" onclick="if(event.target===this) closePosPasteModal()">
+  <div class="modal-box" style="position:relative;">
+    <button class="modal-close" onclick="closePosPasteModal()">✕</button>
+    <h3>Paste from exchange</h3>
+    <div class="modal-sub">Copy the order ticket (entry, profit level, stop level) and paste it here. Direction is worked out from whether your target sits above or below entry.</div>
+    <textarea id="posPasteInput" placeholder="Entry price&#10;64808.053&#10;PROFIT LEVEL&#10;Ticks&#10;129046828&#10;Price&#10;64937.100&#10;STOP LEVEL&#10;Ticks&#10;613470749&#10;Price&#10;64746.706" style="width:100%;min-height:220px;margin-top:12px;padding:10px 12px;background:var(--surface-2);border:1px solid var(--rule);border-radius:6px;color:var(--ink);font-size:12.5px;font-family:'IBM Plex Mono',monospace;resize:vertical;"></textarea>
+    <div id="posPasteError" class="auth-error"></div>
+    <div id="posPastePreview" style="display:none;margin-top:12px;"></div>
+    <button class="ai-btn" style="margin-top:14px;width:100%;" onclick="applyPosPaste()">Fill in the calculator</button>
+  </div>
+</div>
+
+<div class="modal-overlay" id="psBbModal" onclick="if(event.target===this) closePsBbModal()">
+  <div class="modal-box psbb-box" style="position:relative;">
+    <button class="modal-close" onclick="closePsBbModal()">✕</button>
+    <h3 style="margin-right:30px;">🍞 Bread &amp; Butter Check</h3>
+    <div class="modal-sub">Run the setup you're sizing through the same checklist, and see how trades like it have gone for you before. Saved automatically on this device.</div>
+    <div class="field-row" style="margin-top:14px;">
+      <label>Trade Type</label>
+      <select id="psBbTradeType" onchange="onPsBbTradeTypeChange()"></select>
+    </div>
+    <div class="field-row">
+      <label>Pattern Type</label>
+      <select id="psBbPatternType" onchange="onPsBbTypeChange()"></select>
+    </div>
+    <div id="psBbChecklistBody"></div>
+    <div class="psbb-foot">
+      <span id="psBbSaveState" class="sal-save-state"></span>
+      <button class="drawer-danger-btn" onclick="clearPsBbCheck()">Clear</button>
+      <button class="ai-btn" onclick="closePsBbModal()">Done</button>
+    </div>
   </div>
 </div>
 
@@ -1935,6 +1996,6 @@
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=2"></script>
-<script src="js/dashboard.js?v=273"></script>
+<script src="js/dashboard.js?v=297"></script>
 </body>
 </html>

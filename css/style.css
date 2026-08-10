@@ -337,8 +337,43 @@
   .cfl-checklist-title{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);}
   .cfl-progress-chip{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);}
   .cfl-progress-track{width:72px;height:5px;border-radius:4px;background:var(--rule);overflow:hidden;}
-  .cfl-progress-fill{height:100%;background:var(--accent);border-radius:4px;transition:width .25s ease;}
+  /* display:block is load-bearing: this fill is a <span> inside a non-flex
+     track, so as an inline element it ignored both width and height and the
+     bar never appeared to move. The track itself escapes this only because
+     it's a direct flex child of .cfl-progress-chip, which blockifies it. */
+  .cfl-progress-fill{display:block;height:100%;background:var(--accent);border-radius:4px;transition:width .25s ease;}
   .cfl-progress-chip .num{font-weight:700;color:var(--ink);}
+  /* Journal column cell: the fraction plus a miniature fill, so a column of
+     scores can be skimmed by bar length rather than read number by number.
+     Unlike the other coloured columns this one is deliberately unboxed — the
+     bar and the number carry the tone, so it sets --box-tone itself rather
+     than inheriting it from a .box-win / .box-orange / .box-loss pill. */
+  .cfl-score-box{display:inline-flex;align-items:center;gap:8px;}
+  .cfl-t-win{--box-tone:var(--win);}
+  .cfl-t-orange{--box-tone:var(--warn);}
+  .cfl-t-loss{--box-tone:var(--loss);}
+  .cfl-score-bar{
+    display:block;width:40px;height:4px;border-radius:3px;flex-shrink:0;
+    background:color-mix(in srgb, var(--box-tone) 25%, transparent);overflow:hidden;
+  }
+  .cfl-score-bar-fill{display:block;height:100%;border-radius:3px;background:var(--box-tone);}
+  .cfl-score-num{font-weight:700;color:var(--box-tone);font-variant-numeric:tabular-nums;}
+  /* Calculator > BnB Check. The checklist plus its warning signs runs long, so
+     this modal gets more height than the default and keeps its footer reachable
+     without hunting for it at the bottom of a long scroll. */
+  .psbb-box{max-width:560px;max-height:88vh;}
+  .psbb-foot{
+    display:flex;align-items:center;gap:10px;margin-top:18px;padding-top:14px;
+    border-top:1px solid var(--rule);position:sticky;bottom:-22px;
+    background:var(--surface);padding-bottom:4px;
+  }
+  .psbb-foot #psBbSaveState{margin-right:auto;}
+  @media (max-width: 560px){
+    .psbb-foot{flex-wrap:wrap;}
+    .psbb-foot #psBbSaveState{width:100%;margin-right:0;}
+    .psbb-foot button{flex:1;}
+  }
+
   .cfl-unanswered-note{
     display:inline-block;font-size:11px;font-weight:600;color:var(--loss);margin-bottom:10px;
     background:color-mix(in srgb, var(--loss) 14%, transparent);padding:3px 9px;border-radius:20px;
@@ -381,6 +416,214 @@
   .cfl-pattern-chip.active{border-color:var(--accent);background:var(--accent);color:#1A1200;}
   .cfl-pattern-chip.cfl-none.active{border-color:var(--muted);background:var(--surface-2);color:var(--ink);}
 
+  /* Bread & Butter warning signs — your own history, surfaced while the
+     setup is still live. --bb-tone drives the border, heading and bullets. */
+  .bb-warn{
+    border:1px solid color-mix(in srgb, var(--bb-tone) 45%, var(--rule));
+    border-left:3px solid var(--bb-tone);
+    background:color-mix(in srgb, var(--bb-tone) 7%, var(--surface));
+    border-radius:10px;padding:15px 17px;margin-top:16px;
+  }
+  .bb-warn-bad{--bb-tone:var(--loss);}
+  .bb-warn-good{--bb-tone:var(--win);}
+  .bb-warn-neutral{--bb-tone:var(--muted);}
+  .bb-warn-top{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+  /* The one word that has to survive being read at a glance, mid-rush. */
+  .bb-verdict{
+    font-size:15px;font-weight:800;letter-spacing:.08em;line-height:1;
+    color:var(--bb-tone);flex-shrink:0;
+  }
+  .bb-warn-head{
+    font-size:12px;font-weight:600;letter-spacing:.01em;
+    color:var(--muted);text-transform:none;
+  }
+  /* Four numbers, no sentences — the fallback read when even the headline is
+     too many words. Scrolls rather than wrapping mid-figure on narrow screens. */
+  .bb-warn-stats{
+    display:flex;gap:18px;margin-top:12px;overflow-x:auto;padding-bottom:2px;
+  }
+  .bb-stat{display:flex;flex-direction:column;gap:2px;flex-shrink:0;}
+  .bb-stat b{
+    font-size:15px;font-weight:700;color:var(--ink);
+    font-family:'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums;
+  }
+  .bb-stat i{font-size:10px;font-style:normal;color:var(--muted);letter-spacing:.03em;}
+  .bb-stat-good b{color:var(--win);}
+  .bb-stat-bad b{color:var(--loss);}
+
+  .bb-warn-more{margin-top:12px;}
+  .bb-warn-more > summary{
+    cursor:pointer;font-size:11px;font-weight:600;color:var(--bb-tone);
+    list-style:none;padding:3px 0;user-select:none;
+  }
+  .bb-warn-more > summary::-webkit-details-marker{display:none;}
+  .bb-warn-more > summary::before{content:'▸ ';font-size:10px;}
+  .bb-warn-more[open] > summary::before{content:'▾ ';}
+  .bb-warn-more > summary:hover{text-decoration:underline;}
+  .bb-warn-more .bb-warn-body{margin-top:8px;}
+
+  .bb-warn-body{font-size:12.5px;color:var(--ink);line-height:1.6;}
+  .bb-warn-list{margin-top:12px;display:flex;flex-direction:column;gap:8px;}
+  .bb-warn-item{
+    font-size:12px;line-height:1.55;color:var(--muted);
+    padding-left:14px;position:relative;
+  }
+  .bb-warn-item::before{
+    content:'';position:absolute;left:0;top:6px;
+    width:6px;height:6px;border-radius:50%;background:var(--dot);
+  }
+  .bb-warn-item-bad{--dot:var(--loss);}
+  .bb-warn-item-good{--dot:var(--win);}
+  .bb-warn-foot{
+    margin-top:12px;padding-top:10px;border-top:1px solid var(--rule);
+    font-size:10.5px;color:var(--muted);line-height:1.5;
+  }
+
+  /* Dashboard chart -> Transactions drill-down. The legend doubles as a list
+     of links, so it needs to look pressable without turning into a row of
+     buttons competing with the figures beside it. */
+  .fin-legend-row{
+    display:flex;justify-content:space-between;gap:10px;margin-bottom:3px;
+    padding:2px 4px;margin-left:-4px;margin-right:-4px;border-radius:4px;
+    cursor:pointer;transition:background .12s ease;
+  }
+  .fin-legend-row:hover{background:var(--surface-2);}
+  .fin-chart-hint{font-size:10.5px;color:var(--muted);text-align:center;padding-top:4px;}
+
+  /* The active drill-down, shown above the table. Deliberately loud compared
+     to the dropdown filters beside it: it's a filter the user didn't set from
+     this page, so it has to be obvious why the list looks short. */
+  .fin-drill-chip{
+    display:inline-flex;align-items:center;gap:8px;font-size:12px;
+    background:color-mix(in srgb, var(--accent) 14%, transparent);
+    border:1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+    border-radius:20px;padding:5px 6px 5px 12px;color:var(--ink);
+  }
+  .fin-drill-chip .fin-drill-kind{
+    color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.06em;
+  }
+  .fin-drill-chip .fin-drill-sub{color:var(--muted);font-size:11px;}
+  .fin-drill-chip button{
+    background:none;border:none;color:var(--muted);cursor:pointer;
+    font-size:13px;line-height:1;padding:3px 6px;border-radius:50%;
+  }
+  .fin-drill-chip button:hover{color:var(--ink);background:var(--surface-2);}
+
+  /* Weekly Review. Read once a week, top to bottom, so it leans on section
+     rhythm and one big number rather than dense tables. */
+  .wr-box{max-width:620px;max-height:88vh;}
+  .wr-head{
+    border-radius:10px;padding:16px 18px;margin-bottom:18px;
+    background:color-mix(in srgb, var(--wr-tone) 12%, var(--surface-2));
+    border:1px solid color-mix(in srgb, var(--wr-tone) 40%, transparent);
+  }
+  .wr-head-net{
+    font-size:28px;font-weight:800;color:var(--wr-tone);
+    font-family:'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums;line-height:1.1;
+  }
+  .wr-head-meta{font-size:12px;color:var(--muted);margin-top:5px;}
+  .wr-good{--wr-tone:var(--win);}
+  .wr-bad{--wr-tone:var(--loss);}
+  .wr-neutral{--wr-tone:var(--muted);}
+
+  /* The one-glance panel: right and wrong side by side, before any prose. */
+  .wr-glance{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px;}
+  .wr-col{
+    flex:1;min-width:210px;border-radius:9px;padding:12px 14px;
+    background:color-mix(in srgb, var(--wr-tone) 8%, var(--surface-2));
+    border:1px solid color-mix(in srgb, var(--wr-tone) 32%, transparent);
+  }
+  .wr-col-head{
+    font-size:10.5px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;
+    color:var(--wr-tone);margin-bottom:9px;
+  }
+  .wr-bullet{
+    display:flex;justify-content:space-between;align-items:baseline;gap:10px;
+    font-size:12px;line-height:1.5;padding:4px 0 4px 13px;position:relative;color:var(--ink);
+  }
+  .wr-bullet::before{
+    content:'';position:absolute;left:0;top:9px;
+    width:5px;height:5px;border-radius:50%;background:var(--wr-tone);
+  }
+  .wr-bullet-empty{color:var(--muted);font-style:italic;}
+  .wr-bullet-empty::before{opacity:.4;}
+
+  .wr-sub-head{
+    font-size:10.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;
+    margin:12px 0 4px;color:var(--wr-tone);
+  }
+  .wr-sub-head:first-child{margin-top:0;}
+  .wr-sub-head.wr-good{--wr-tone:var(--win);color:var(--win);}
+  .wr-sub-head.wr-bad{--wr-tone:var(--loss);color:var(--loss);}
+
+  .wr-sec{
+    border:1px solid var(--rule);border-left:3px solid var(--wr-tone);
+    border-radius:8px;padding:13px 15px;margin-bottom:14px;background:var(--surface);
+  }
+  .wr-sec-head{
+    font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;
+    color:var(--wr-tone);margin-bottom:10px;
+  }
+  .wr-line{
+    display:flex;justify-content:space-between;align-items:baseline;gap:12px;
+    font-size:12.5px;padding:4px 0;border-bottom:1px solid color-mix(in srgb, var(--rule) 50%, transparent);
+  }
+  .wr-line:last-child{border-bottom:none;}
+  .wr-val{
+    font-family:'IBM Plex Mono',monospace;font-weight:600;flex-shrink:0;
+    font-variant-numeric:tabular-nums;color:var(--ink);
+  }
+  .wr-val.wr-good{color:var(--win);}
+  .wr-val.wr-bad{color:var(--loss);}
+  .wr-count{color:var(--muted);font-size:11px;font-weight:400;}
+  .wr-delta{font-size:11px;font-weight:600;}
+  .wr-delta.wr-good{color:var(--win);}
+  .wr-delta.wr-bad{color:var(--loss);}
+  .wr-note{font-size:11.5px;color:var(--muted);line-height:1.6;margin-top:10px;}
+
+  /* The money comparison — two halves, deliberately the loudest thing here. */
+  .wr-vs{display:flex;gap:10px;flex-wrap:wrap;}
+  .wr-vs-side{
+    flex:1;min-width:150px;border-radius:8px;padding:11px 13px;
+    background:color-mix(in srgb, var(--wr-tone) 10%, transparent);
+    border:1px solid color-mix(in srgb, var(--wr-tone) 35%, transparent);
+  }
+  .wr-vs-num{
+    font-size:19px;font-weight:700;color:var(--wr-tone);
+    font-family:'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums;
+  }
+  .wr-vs-lbl{font-size:11px;color:var(--muted);margin-top:3px;line-height:1.45;}
+
+  .wr-item{padding:8px 0;border-bottom:1px solid color-mix(in srgb, var(--rule) 50%, transparent);}
+  .wr-item:last-of-type{border-bottom:none;}
+  .wr-item-top{display:flex;justify-content:space-between;gap:10px;font-size:12.5px;}
+  .wr-item-sub{font-size:11.5px;color:var(--muted);margin-top:3px;line-height:1.5;}
+  /* The checklist question itself — the tag alone ("Divergence") is shorthand
+     the user shouldn't have to decode mid-review. */
+  .wr-item-q{font-size:11.5px;color:var(--ink);opacity:.75;margin-top:2px;font-style:italic;}
+  .wr-item-ans{font-size:11.5px;color:var(--ink);opacity:.85;margin-top:3px;line-height:1.5;}
+  /* The clean-trades line sits under the breaches as the comparison, so it
+     needs a visible break from the list of things that went wrong. */
+  .wr-clean-line{margin-top:6px;padding-top:6px;border-top:1px solid var(--rule);}
+
+  /* Confluence: the two columns are the answer to "what should I do, what
+     shouldn't I" — side by side on desktop, stacked on a phone. */
+  .wr-cfl-cols{display:flex;gap:10px;flex-wrap:wrap;}
+  .wr-cfl-col{
+    flex:1;min-width:225px;border-radius:9px;padding:11px 13px;
+    background:color-mix(in srgb, var(--wr-tone) 8%, var(--surface-2));
+    border:1px solid color-mix(in srgb, var(--wr-tone) 30%, transparent);
+  }
+  .wr-cfl-col .wr-item{border-bottom-color:color-mix(in srgb, var(--wr-tone) 22%, transparent);}
+  .wr-cfl-col .wr-item-top strong{font-size:12px;line-height:1.4;}
+  .wr-cfl-col .wr-col-head{display:flex;justify-content:space-between;align-items:baseline;gap:8px;}
+  .wr-col-net{
+    font-family:'IBM Plex Mono',monospace;font-size:11.5px;font-weight:700;
+    font-variant-numeric:tabular-nums;letter-spacing:0;text-transform:none;
+  }
+  .wr-col-net.wr-good{color:var(--win);}
+  .wr-col-net.wr-bad{color:var(--loss);}
+
   /* ---------- Panels ---------- */
   .row{display:grid;grid-template-columns:1.1fr 1.1fr 0.9fr;gap:20px;margin-bottom:20px;align-items:start;}
   @media(max-width:1100px){.row{grid-template-columns:1fr 1fr;}}
@@ -401,6 +644,11 @@
   .panel h2 .nav button{background:none;border:1px solid var(--rule);color:var(--muted);width:26px;height:26px;border-radius:4px;cursor:pointer;}
   .panel h2 .nav button:hover{color:var(--ink);border-color:var(--accent);}
   .panel h2 .nav span{font-size:12px;color:var(--muted);min-width:80px;text-align:center;}
+  /* The Review button sits OUTSIDE .nav on purpose — ".panel h2 .nav button"
+     forces every button in there to a 26x26 square, which crushed a text
+     label into two wrapped lines on top of the month arrows. */
+  .cal-head-actions{display:flex;align-items:center;gap:10px;font-family:var(--font-ui);}
+  .cal-head-actions > .poscalc-accent-btn{padding:5px 12px;font-size:11.5px;white-space:nowrap;}
 
   /* ---------- Settings page ---------- */
   .settings-option-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;}
@@ -654,10 +902,21 @@
     padding:3px 9px;border-radius:4px;font-size:10.5px;font-weight:700;
     text-transform:uppercase;letter-spacing:.03em;font-family:var(--font-ui);border:1px solid transparent;
   }
-  .box-win{background:rgba(111,162,135,.18);color:var(--win);border-color:rgba(111,162,135,.35);}
-  .box-loss{background:rgba(193,101,79,.18);color:var(--loss);border-color:rgba(193,101,79,.35);}
-  .box-be{background:rgba(108,155,201,.18);color:var(--info);border-color:rgba(108,155,201,.35);}
-  .box-orange{background:rgba(208,143,78,.18);color:var(--warn);border-color:rgba(208,143,78,.35);}
+  /* Tint and border carry the meaning; the label stays --ink. Colouring the
+     text as well put same-hue-on-same-hue in three adjacent columns (Win/Loss,
+     Profit/Loss, Exit Type all saying "loss" in red), which read as a wall of
+     colour and made the red-on-red the hardest text in the table. */
+  /* Neutral label, coloured ground. The first attempt at this looked dead
+     because the tint stayed at 18% — --ink over that reads as grey. The tint
+     carries the meaning now, so it's strong enough (32%) for the label to sit
+     on it cleanly. --ink rather than #fff on purpose: it flips to near-black
+     in light mode, where white on a pale tint would be unreadable.
+     --box-tone exposes the hue to children (the Confluence Score mini-bar)
+     independently of the text colour. */
+  .box-win{--box-tone:var(--win);background:color-mix(in srgb, var(--win) 32%, transparent);color:var(--ink);border-color:color-mix(in srgb, var(--win) 65%, transparent);}
+  .box-loss{--box-tone:var(--loss);background:color-mix(in srgb, var(--loss) 32%, transparent);color:var(--ink);border-color:color-mix(in srgb, var(--loss) 65%, transparent);}
+  .box-be{--box-tone:var(--info);background:color-mix(in srgb, var(--info) 32%, transparent);color:var(--ink);border-color:color-mix(in srgb, var(--info) 65%, transparent);}
+  .box-orange{--box-tone:var(--warn);background:color-mix(in srgb, var(--warn) 32%, transparent);color:var(--ink);border-color:color-mix(in srgb, var(--warn) 65%, transparent);}
 
   /* Solid variant — used only for Rules Followed */
   .box-solid-win{background:var(--win);color:#fff;}
@@ -1028,6 +1287,14 @@
   .ps-risk-input{
     width:90px;padding:7px 9px;background:var(--surface-2);border:1px solid var(--rule);
     border-radius:6px;color:var(--ink);font-size:13px;font-family:'IBM Plex Mono',monospace;
+  }
+  /* The typed amount is more than the account can margin — the row below is
+     computed from the capped figure, and this says so rather than letting
+     the two silently disagree. */
+  .ps-risk-capped{border-color:var(--warn);}
+  .ps-risk-note{
+    display:block;margin-top:5px;max-width:150px;
+    font-size:10px;line-height:1.4;color:var(--warn);
   }
   /* Derived numbers sit in their own strip so they read as results rather
      than more fields waiting to be filled in. */

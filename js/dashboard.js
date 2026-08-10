@@ -895,7 +895,12 @@ function normalizeTrade(r){
     chart_pattern: r.chart_pattern || "",
     confluence_answers: (r.confluence_answers && typeof r.confluence_answers === 'object') ? r.confluence_answers : null,
     session: r.session || computeSession(r) || "Unspecified",
-    day_of_week: r.day_of_week || (r.close_date ? new Date(r.close_date).toLocaleDateString('en-US',{weekday:'long'}) : "Unspecified"),
+    // Always derived, never read from the stored column: rows imported from
+    // AppSheet carry a day computed off the CLOSE date, which disagrees with
+    // Session (open date) for any trade entered late in the evening. Trusting
+    // the stored value would leave that inconsistency baked into history.
+    // The stored value is still the fallback for a row with no dates at all.
+    day_of_week: computeDayOfWeek(r) || r.day_of_week || "Unspecified",
     emotion: r.emotion || "Unspecified",
     rules_followed: r.rules_followed || "",
     unfollowed_rules: r.unfollowed_rules || "",
@@ -946,8 +951,15 @@ function computeSession(row){
   return 'Low Liquidity';
 }
 
+// Keyed off OPEN date, matching computeSession above. Which day a trade
+// belongs to is a question about when you decided to enter, not when the
+// position happened to resolve — a New York-session entry at 00:30 local is a
+// Friday-night decision even though it closes on Saturday. Reading it off the
+// close date used to put session and day-of-week on different calendar days
+// for exactly those late entries, and shifted them in the Weekday Ace
+// challenge too. Falls back to the close date when there's no open date.
 function computeDayOfWeek(row){
-  const d = row.close_date ? new Date(row.close_date) : (row.open_date ? new Date(row.open_date) : null);
+  const d = row.open_date ? new Date(row.open_date) : (row.close_date ? new Date(row.close_date) : null);
   if(!d || isNaN(d)) return '';
   return d.toLocaleDateString('en-US', {weekday:'long'});
 }
@@ -1690,6 +1702,12 @@ function renderSessionFrequencyChart(){
 /* ---------------- Modal / clickable drill-down ---------------- */
 function closeModal(){
   document.getElementById('tradeModal').classList.remove('open');
+  // This modal is shared by day, category, rank and signal drill-downs — the
+  // Review button belongs to Week Summary alone, so it's retired on close
+  // rather than in each of the seven places that open the modal.
+  const btn = document.getElementById('weekReviewBtn');
+  if(btn) btn.style.display = 'none';
+  WEEK_REVIEW_CONTEXT = null;
 }
 
 function renderTradeCards(trades){
@@ -1734,6 +1752,10 @@ function showDayTrades(y, m, d){
   document.getElementById('tradeModal').classList.add('open');
 }
 
+// Set whenever a Week Summary is open, so the Review button knows what to
+// read. Cleared for day/category drill-downs, which share the same modal.
+let WEEK_REVIEW_CONTEXT = null;
+
 function showWeekTrades(weekIdx){
   const week = window._calByWeek ? window._calByWeek[weekIdx] : null;
   if(!week || !week.trades.length) return;
@@ -1742,10 +1764,407 @@ function showWeekTrades(weekIdx){
   const monthLabel = calMonth.toLocaleDateString('en-US',{month:'long', year:'numeric'});
   const rangeLabel = days.length > 1 ? `${days[0]}–${days[days.length-1]} ${monthLabel}` : `${days[0]} ${monthLabel}`;
 
+  WEEK_REVIEW_CONTEXT = { trades: week.trades, label: rangeLabel };
+  const btn = document.getElementById('weekReviewBtn');
+  if(btn) btn.style.display = '';
+
   document.getElementById('modalTitle').textContent = `Week Summary — ${rangeLabel}`;
   document.getElementById('modalSub').textContent = `${week.count} trade${week.count===1?'':'s'} · ${fmtMoney(week.pnl)}`;
   document.getElementById('modalBody').innerHTML = renderTradeCards(week.trades);
   document.getElementById('tradeModal').classList.add('open');
+}
+
+function openWeekReview(){
+  if(!WEEK_REVIEW_CONTEXT) return;
+  const { trades, label } = WEEK_REVIEW_CONTEXT;
+  _showReview('Trade Review', label, trades, 'week');
+}
+
+// Reads the calendar's current month rather than a stored context — the month
+// on screen is always the one the button belongs to.
+function openMonthReview(){
+  const y = calMonth.getFullYear(), m = calMonth.getMonth();
+  const monthTrades = FILTERED.filter(t =>
+    t.close_date && t.close_date.getFullYear() === y && t.close_date.getMonth() === m
+  );
+  const label = calMonth.toLocaleDateString('en-US', { month:'long', year:'numeric' });
+  _showReview('Trade Review', label, monthTrades, 'month');
+}
+
+function _showReview(title, label, trades, periodName){
+  document.getElementById('weekReviewTitle').textContent = `${title} — ${label}`;
+  const s = _wrStats(trades.filter(t => t.close_date));
+  document.getElementById('weekReviewSub').textContent =
+    s.n ? `${s.n} trade${s.n===1?'':'s'} · ${fmtMoney(s.net)}` : '';
+  document.getElementById('weekReviewBody').innerHTML = _weekReviewHtml(trades, label, periodName);
+  document.getElementById('weekReviewModal').classList.add('open');
+}
+
+function closeWeekReview(){
+  document.getElementById('weekReviewModal').classList.remove('open');
+}
+
+function _wrStats(arr){
+  const wins = arr.filter(t => (t.win_loss||'').toLowerCase() === 'win');
+  const losses = arr.filter(t => ['loss','liquidated'].includes((t.win_loss||'').toLowerCase()));
+  const decided = wins.length + losses.length;
+  const rrs = arr.map(t => t.rr).filter(v => v !== null && v !== undefined && !isNaN(v));
+  const net = arr.reduce((s,t) => s + netPnl(t), 0);
+  return {
+    n: arr.length, wins: wins.length, losses: losses.length,
+    winRate: decided ? wins.length / decided * 100 : null,
+    net,
+    // Per-trade average — the confluence comparison ranks on this, since a
+    // total would just favour whichever answer happens to be used most.
+    avg: arr.length ? net / arr.length : 0,
+    avgRR: rrs.length ? rrs.reduce((a,b) => a+b, 0) / rrs.length : null
+  };
+}
+
+// Which confluence ANSWERS were actually given, judged against how that same
+// answer has performed across the whole journal. This is the level a setup
+// name can't reach: two Bounce Plays are opposite trades depending on whether
+// the Left Hand was present, so "Bounce Play lost money" hides the real cause.
+// Historical record only — never the score. A 4/9 answer that has consistently
+// won says so, which is the whole point.
+const WR_MIN_HIST = 5;
+
+// Was this condition actually MET? Mirrors _confluenceProgress exactly, so
+// "not met" here means the same thing it means when the checklist scores you:
+// invert items flip, Almost is half credit, and a later position in the
+// sequence is progressively worse (matching _sequenceTint's 1st/2nd green,
+// 3rd orange, 4th/5th red).
+function _wrAnswerMet(it, ans){
+  if(ans === undefined || ans === null) return null;
+  if(it.select){
+    const idx = it.select.indexOf(ans);
+    if(idx < 0) return null;
+    return idx <= 1 ? 'met' : (idx === 2 ? 'partial' : 'missed');
+  }
+  if(it.invert) return ans === 'no' ? 'met' : (ans === 'almost' ? 'partial' : 'missed');
+  return (ans === 'yes' || ans === 'retest') ? 'met' : (ans === 'almost' ? 'partial' : 'missed');
+}
+
+function _wrConfluenceRows(closed, periodIds){
+  const seen = {};
+  closed.forEach(t => {
+    const key = `${t.trade_type}|${t.pattern_type}`;
+    const cfg = CONFLUENCE_SETUPS[key];
+    if(!cfg || !t.confluence_answers) return;
+    cfg.items.forEach((it, i) => {
+      const ans = t.confluence_answers[i];
+      if(ans === undefined) return;
+      const id = `${key}|${i}|${ans}`;
+      if(!seen[id]) seen[id] = { key, i, ans, it, now: [], hist: [] };
+      seen[id].now.push(t);
+    });
+  });
+  const entries = Object.values(seen);
+  if(!entries.length) return [];
+
+  ALL_TRADES.forEach(t => {
+    if(!t.close_date || periodIds.has(t.id) || !t.confluence_answers) return;
+    const key = `${t.trade_type}|${t.pattern_type}`;
+    entries.forEach(e => {
+      if(e.key === key && t.confluence_answers[e.i] === e.ans) e.hist.push(t);
+    });
+  });
+
+  const labelFor = { yes:'Yes', no:'No', retest:'Retest', almost:'Almost' };
+  // No minimum-history filter here: whether a condition was met is a fact
+  // about THIS period's trades, not a statistical claim. History is attached
+  // as supporting evidence when there's enough of it, and stays quiet when
+  // there isn't.
+  return entries.map(e => ({
+    met: _wrAnswerMet(e.it, e.ans),
+    answer: e.it.select ? e.ans : (labelFor[e.ans] || e.ans),
+    tag: e.it.tag,
+    text: e.it.text || '',
+    nowN: e.now.length,
+    nowNet: e.now.reduce((s,t) => s + netPnl(t), 0),
+    nowStats: _wrStats(e.now),
+    hist: e.hist.length >= WR_MIN_HIST ? _wrStats(e.hist) : null
+  }));
+}
+
+// The whole review is built from what's already journaled — no new fields, no
+// guesses. Every claim carries the money attached to it, because "you broke a
+// rule 3 times" lands differently once it says what those 3 times cost.
+function _weekReviewHtml(trades, label, periodName){
+  periodName = periodName || 'week';
+  const closed = trades.filter(t => t.close_date);
+  if(!closed.length) return `<div class="empty-state">No closed trades in this ${periodName}.</div>`;
+
+  const week = _wrStats(closed);
+  const money = v => fmtMoney(v);
+  const sec = (title, tone, inner) =>
+    `<div class="wr-sec wr-${tone}"><div class="wr-sec-head">${title}</div>${inner}</div>`;
+  const line = (label, value, tone) =>
+    `<div class="wr-line"><span>${label}</span><span class="wr-val${tone ? ' wr-' + tone : ''}">${value}</span></div>`;
+
+  // Collected as we go, then rendered at the very top — the one-glance answer
+  // to "what am I doing right, what am I doing wrong".
+  const doingRight = [], doingWrong = [];
+  const bullet = (arr, text, value) => arr.push({ text, value });
+
+  /* ---- Rules kept vs broken, in money ---- */
+  const kept  = closed.filter(t => (t.rules_followed||'').toLowerCase() === 'yes');
+  const broke = closed.filter(t => (t.rules_followed||'').toLowerCase() === 'no');
+  let rulesHtml = '';
+  if(kept.length && broke.length){
+    const k = _wrStats(kept), b = _wrStats(broke);
+    const swing = k.net - b.net;
+    rulesHtml = sec('Rules kept vs broken', b.net < 0 ? 'bad' : 'neutral',
+      `<div class="wr-vs">
+         <div class="wr-vs-side wr-good">
+           <div class="wr-vs-num">${money(k.net)}</div>
+           <div class="wr-vs-lbl">${k.n} trade${k.n===1?'':'s'} following your rules${k.winRate!==null?` · ${fmtNum(k.winRate,0)}% win`:''}</div>
+         </div>
+         <div class="wr-vs-side wr-bad">
+           <div class="wr-vs-num">${money(b.net)}</div>
+           <div class="wr-vs-lbl">${b.n} trade${b.n===1?'':'s'} breaking them${b.winRate!==null?` · ${fmtNum(b.winRate,0)}% win`:''}</div>
+         </div>
+       </div>
+       <div class="wr-note">${swing > 0
+         ? `Following your own rules was worth <strong>${money(swing)}</strong> to you this ${periodName}.`
+         : `Your rule-following trades didn't outperform this ${periodName} — worth checking whether the rules themselves need revisiting, not just your discipline.`}</div>`);
+    if(k.net > 0) bullet(doingRight, `Followed your rules on ${k.n} trade${k.n===1?'':'s'}`, money(k.net));
+    if(b.net < 0) bullet(doingWrong, `Broke your rules on ${b.n} trade${b.n===1?'':'s'}`, money(b.net));
+  }else if(!kept.length && !broke.length){
+    rulesHtml = sec('Rules kept vs broken', 'neutral',
+      `<div class="wr-note">No trade this week has "Rules Followed" set, so there's nothing to compare. Filling that one field in is what makes this section work.</div>`);
+  }
+
+  /* ---- Repeated mistakes: same symbol + setup, stacked into one day ---- */
+  const clusters = {};
+  closed.forEach(t => {
+    const d = t.open_date || t.close_date;
+    if(!d) return;
+    const key = `${_dayKeyUTC(d)}|${t.symbol}|${t.trade_setup}`;
+    (clusters[key] = clusters[key] || []).push(t);
+  });
+  const repeats = Object.entries(clusters)
+    .map(([key, arr]) => ({ key, arr, s: _wrStats(arr) }))
+    .filter(x => x.arr.length >= 3 && x.s.net < 0)
+    .sort((a,b) => a.s.net - b.s.net);
+  let repeatHtml = '';
+  if(repeats.length){
+    repeatHtml = sec('The same mistake, more than once', 'bad',
+      repeats.map(({ key, arr, s }) => {
+        const [dayKey, symbol, setup] = key.split('|');
+        const day = new Date(dayKey + 'T00:00:00').toLocaleDateString('en-US',{weekday:'long', month:'short', day:'numeric'});
+        const tags = [...new Set(arr.map(t => (t.unfollowed_rules||'').trim()).filter(Boolean))];
+        return `<div class="wr-item">
+          <div class="wr-item-top"><strong>${escapeHtml(symbol)} · ${escapeHtml(setup)}</strong><span class="wr-val wr-bad">${money(s.net)}</span></div>
+          <div class="wr-item-sub">${arr.length} trades on ${day}, ${s.losses} of them losing.${tags.length ? ` Tagged: ${escapeHtml(tags.join('; '))}.` : ''}</div>
+        </div>`;
+      }).join('') +
+      `<div class="wr-note">Three entries on one setup in one day is usually one decision repeated, not three decisions. This is the pattern worth catching live — the BnB Check in the calculator is there for exactly that moment.</div>`);
+    const worst = repeats[0];
+    bullet(doingWrong, `${escapeHtml(worst.key.split('|')[1])} taken ${worst.arr.length}× in one day`, money(worst.s.net));
+  }
+
+  /* ---- Confluence: which conditions you ignored, and which you honoured ----
+     The centrepiece. A setup name can't explain a loss — two Bounce Plays are
+     opposite trades depending on whether the Left Hand was there. This reads
+     the actual checklist answers, splits them into conditions you entered
+     DESPITE and conditions you waited for, and puts the money on each. */
+  const periodIds = new Set(closed.map(t => t.id));
+  const cflRows = _wrConfluenceRows(closed, periodIds);
+  let cflHtml = '';
+  if(cflRows.length){
+    // Most expensive first on the left, most profitable first on the right —
+    // so the top line of each column is the one that mattered most.
+    const ignored  = cflRows.filter(r => r.met === 'missed' || r.met === 'partial')
+                            .sort((a,b) => a.nowNet - b.nowNet);
+    const honoured = cflRows.filter(r => r.met === 'met')
+                            .sort((a,b) => b.nowNet - a.nowNet);
+
+    const row = (r, tone) => {
+      const wr = r.nowStats.winRate;
+      const histBit = r.hist
+        ? ` Across ${r.hist.n} earlier trades the same answer${r.hist.winRate !== null ? ` won ${fmtNum(r.hist.winRate,0)}% of the time and` : ''} averaged ${money(r.hist.avg)}.`
+        : '';
+      return `<div class="wr-item">
+        <div class="wr-item-top">
+          <strong>${escapeHtml(r.text || r.tag)}</strong>
+          <span class="wr-val wr-${tone}">${money(r.nowNet)}</span>
+        </div>
+        <div class="wr-item-ans">You answered <strong>${escapeHtml(r.answer)}</strong>${r.met === 'partial' ? ' <span class="wr-count">(partly met)</span>' : ''} · ${r.nowN} trade${r.nowN===1?'':'s'}${wr !== null ? ` · ${fmtNum(wr,0)}% win` : ''}</div>
+        ${histBit ? `<div class="wr-item-sub">${histBit.trim()}</div>` : ''}
+      </div>`;
+    };
+
+    const ignoredNet  = ignored.reduce((s,r) => s + r.nowNet, 0);
+    const honouredNet = honoured.reduce((s,r) => s + r.nowNet, 0);
+
+    // Rows are coloured by what the money actually did, not by which column
+    // they sit in. A skipped condition that still paid is real information —
+    // painting it red because it's on the left would be the tool insisting on
+    // a story the trades don't support.
+    const net = v => `<span class="wr-col-net wr-${v < 0 ? 'bad' : 'good'}">${money(v)}</span>`;
+    cflHtml = sec('Confluence — what you followed, and what you didn\'t',
+      ignoredNet < 0 ? 'bad' : 'good',
+      `<div class="wr-cfl-cols">
+         <div class="wr-cfl-col wr-bad">
+           <div class="wr-col-head">Entered without it ${ignored.length ? net(ignoredNet) : ''}</div>
+           ${ignored.length ? ignored.map(r => row(r, r.nowNet < 0 ? 'bad' : 'good')).join('')
+             : '<div class="wr-bullet wr-bullet-empty">Every condition was met on every trade.</div>'}
+         </div>
+         <div class="wr-cfl-col wr-good">
+           <div class="wr-col-head">Waited for it ${honoured.length ? net(honouredNet) : ''}</div>
+           ${honoured.length ? honoured.map(r => row(r, r.nowNet < 0 ? 'bad' : 'good')).join('')
+             : '<div class="wr-bullet wr-bullet-empty">No condition was fully met this ' + periodName + '.</div>'}
+         </div>
+       </div>
+       <div class="wr-note">Left is what you entered without; right is what you waited for. A condition counts as met the same way the checklist scores it — inverted questions flip, "Almost" is half credit, and a later position in the sequence counts against you. Each row is coloured by what those trades actually did, so a green row on the left means you skipped that condition and still won — worth knowing, not a rule to start breaking. The history line appears once ${WR_MIN_HIST}+ earlier trades share the same answer.</div>`);
+
+    if(ignored.length && ignored[0].nowNet < 0)
+      bullet(doingWrong, `Entered without: ${escapeHtml(ignored[0].text || ignored[0].tag)}`, money(ignored[0].nowNet));
+    if(honoured.length && honoured[0].nowNet > 0)
+      bullet(doingRight, `Waited for: ${escapeHtml(honoured[0].text || honoured[0].tag)}`, money(honoured[0].nowNet));
+  }
+
+  /* ---- Which rule broke most, and what it cost ---- */
+  // "Rules Followed" is a sentinel inside the same checklist field, meaning
+  // nothing was broken — it belongs at the bottom as the clean comparison,
+  // not listed among the breaches under a heading that says they cost you.
+  const ruleCost = {};
+  let cleanEntry = null;
+  closed.forEach(t => {
+    (t.unfollowed_rules||'').split(',').map(s => s.trim()).filter(Boolean).forEach(r => {
+      if(r.toLowerCase() === 'rules followed'){
+        cleanEntry = cleanEntry || { n:0, net:0 };
+        cleanEntry.n++; cleanEntry.net += netPnl(t);
+        return;
+      }
+      const e = ruleCost[r] = ruleCost[r] || { n:0, net:0 };
+      e.n++; e.net += netPnl(t);
+    });
+  });
+  const ruleRows = Object.entries(ruleCost).sort((a,b) => a[1].net - b[1].net);
+  let ruleHtml = '';
+  if(ruleRows.length || cleanEntry){
+    ruleHtml = sec('What broke, and what it cost', ruleRows.length ? 'bad' : 'good',
+      ruleRows.map(([r, e]) =>
+        line(`${escapeHtml(r)} <span class="wr-count">${e.n}×</span>`, money(e.net), e.net < 0 ? 'bad' : 'good')
+      ).join('') +
+      (cleanEntry
+        ? `<div class="wr-clean-line">${line(`Nothing broken <span class="wr-count">${cleanEntry.n}×</span>`, money(cleanEntry.net), cleanEntry.net >= 0 ? 'good' : 'bad')}</div>`
+        : ''));
+    if(ruleRows.length){
+      const [worstRule, worstCost] = ruleRows[0];
+      if(worstCost.net < 0) bullet(doingWrong, `${escapeHtml(worstRule)} — ${worstCost.n}×`, money(worstCost.net));
+    }
+  }
+
+  /* ---- This period against your own baseline ---- */
+  const baseline = ALL_TRADES.filter(t => t.close_date && !periodIds.has(t.id));
+  let baseHtml = '';
+  if(baseline.length >= 10){
+    const b = _wrStats(baseline);
+    const delta = (now, before, digits, suffix) => {
+      if(now === null || before === null) return '—';
+      const d = now - before;
+      const cls = d >= 0 ? 'good' : 'bad';
+      return `${fmtNum(now,digits)}${suffix} <span class="wr-delta wr-${cls}">${d>=0?'+':''}${fmtNum(d,digits)}</span>`;
+    };
+    baseHtml = sec(`This ${periodName} vs your usual`, 'neutral',
+      line('Win rate', delta(week.winRate, b.winRate, 0, '%')) +
+      line('Average RR', delta(week.avgRR, b.avgRR, 2, '')) +
+      line('Trades', `${week.n} <span class="wr-count">vs ${fmtNum(b.n / Math.max(1, new Set(baseline.map(t => getWeekKey(t.close_date))).size), 1)}/wk typical</span>`) +
+      `<div class="wr-note">Measured against your other ${b.n} closed trades. A bad ${periodName} inside a good baseline is variance; a bad ${periodName} that matches your baseline is the baseline.</div>`);
+    if(week.winRate !== null && b.winRate !== null){
+      const d = week.winRate - b.winRate;
+      if(d <= -10) bullet(doingWrong, 'Win rate below your baseline', `${fmtNum(d,0)} pts`);
+      if(d >= 10)  bullet(doingRight, 'Win rate above your baseline', `+${fmtNum(d,0)} pts`);
+    }
+  }
+
+  /* ---- What actually worked ---- */
+  const wins = closed.filter(t => (t.win_loss||'').toLowerCase() === 'win');
+  let rightHtml = '';
+  const rightParts = [];
+
+  if(wins.length){
+    const best = wins.reduce((a,b) => netPnl(b) > netPnl(a) ? b : a);
+    const bits = [best.trade_setup, best.session].filter(v => v && v !== 'Unspecified');
+    rightParts.push(line(`Best trade — ${escapeHtml(best.symbol)}${bits.length ? ` <span class="wr-count">${escapeHtml(bits.join(' · '))}</span>` : ''}`, money(netPnl(best)), 'good'));
+  }
+
+  const byDay = {};
+  closed.forEach(t => {
+    const d = t.close_date; if(!d) return;
+    const k = _dayKeyUTC(d);
+    byDay[k] = (byDay[k] || 0) + netPnl(t);
+  });
+  const dayRows = Object.entries(byDay).sort((a,b) => b[1] - a[1]);
+  if(dayRows.length && dayRows[0][1] > 0){
+    const [k, v] = dayRows[0];
+    rightParts.push(line(`Best day — ${new Date(k + 'T00:00:00').toLocaleDateString('en-US',{weekday:'long'})}`, money(v), 'good'));
+  }
+
+  const groupNet = key => {
+    const g = {};
+    closed.forEach(t => {
+      const v = t[key];
+      if(!v || v === 'Unspecified') return;
+      g[v] = (g[v] || 0) + netPnl(t);
+    });
+    return Object.entries(g).filter(([,v]) => v > 0).sort((a,b) => b[1] - a[1]);
+  };
+  groupNet('trade_setup').slice(0,2).forEach(([n,v]) => rightParts.push(line(`Setup that paid — ${escapeHtml(n)}`, money(v), 'good')));
+  const paidSessions = groupNet('session');
+  paidSessions.slice(0,2).forEach(([n,v]) => rightParts.push(line(`Session that paid — ${escapeHtml(n)}`, money(v), 'good')));
+  if(paidSessions.length) bullet(doingRight, `${escapeHtml(paidSessions[0][0])} session`, money(paidSessions[0][1]));
+
+  // Longest run of consecutive rules-followed trades, in date order. Process,
+  // not outcome — a clean streak counts even if the trades lost.
+  const ordered = [...closed].sort((a,b) => (a.open_date||a.close_date) - (b.open_date||b.close_date));
+  let run = 0, bestRun = 0;
+  ordered.forEach(t => {
+    if((t.rules_followed||'').toLowerCase() === 'yes'){ run++; bestRun = Math.max(bestRun, run); }
+    else run = 0;
+  });
+  if(bestRun >= 2){
+    rightParts.push(line('Longest clean streak', `${bestRun} trades in a row`, 'good'));
+    bullet(doingRight, 'Clean streak', `${bestRun} in a row`);
+  }
+
+  const cflDone = closed.filter(t => _confluenceScoreFor(t) !== null);
+  if(cflDone.length){
+    const c = _wrStats(cflDone);
+    rightParts.push(line(`Checklist filled in <span class="wr-count">${cflDone.length} of ${closed.length}</span>`, money(c.net), c.net >= 0 ? 'good' : 'bad'));
+    if(cflDone.length < closed.length){
+      bullet(doingWrong, `Skipped the checklist on ${closed.length - cflDone.length} trade${closed.length - cflDone.length === 1 ? '' : 's'}`, '');
+    }else{
+      bullet(doingRight, 'Filled the checklist every time', `${cflDone.length}/${closed.length}`);
+    }
+  }
+
+  if(rightParts.length) rightHtml = sec('What worked', 'good', rightParts.join(''));
+
+  /* ---- Headline + the one-glance verdict ---- */
+  const head = `<div class="wr-head wr-${week.net > 0 ? 'good' : 'bad'}">
+      <div class="wr-head-net">${money(week.net)}</div>
+      <div class="wr-head-meta">${week.n} trades · ${week.winRate !== null ? fmtNum(week.winRate,0) + '% win rate' : 'no decided results'}${week.avgRR !== null ? ` · avg RR ${fmtNum(week.avgRR,2)}` : ''}</div>
+    </div>`;
+
+  const col = (title, tone, items, empty) => `
+    <div class="wr-col wr-${tone}">
+      <div class="wr-col-head">${title}</div>
+      ${items.length
+        ? items.map(b => `<div class="wr-bullet"><span>${b.text}</span>${b.value ? `<span class="wr-val wr-${tone}">${b.value}</span>` : ''}</div>`).join('')
+        : `<div class="wr-bullet wr-bullet-empty">${empty}</div>`}
+    </div>`;
+  const glance = `<div class="wr-glance">
+      ${col('Doing right', 'good', doingRight, 'Nothing stood out this ' + periodName + '.')}
+      ${col('Doing wrong', 'bad', doingWrong, 'Nothing flagged — a clean ' + periodName + '.')}
+    </div>`;
+
+  // Confluence leads: it's the layer that actually explains a win or a loss.
+  const body = [cflHtml, rulesHtml, repeatHtml, ruleHtml, rightHtml, baseHtml].filter(Boolean).join('');
+  return head + glance + (body || `<div class="wr-note">Not enough tagged detail this ${periodName} to say much. Filling in Rules Followed, Unfollowed Rules and the confluence checklist is what gives this page something to work with.</div>`);
 }
 
 function showCategoryTrades(field, key){
@@ -2358,7 +2777,9 @@ const ALL_DRAWER_FIELDS = [
   {key:'account', label:'Account', widget:'select', editable:true, options:FIELD_OPTIONS.account},
   {key:'account_type', label:'Account Type', widget:'select', editable:true, options:FIELD_OPTIONS.account_type},
   {key:'session', label:'Session', widget:'select', editable:true, options:FIELD_OPTIONS.session},
-  {key:'day_of_week', label:'Day of Week', widget:'select', editable:true, options:FIELD_OPTIONS.day_of_week},
+  // Read-only: always derived from the open date now, so an edit here would be
+  // silently discarded on the next load. Change the Open Date instead.
+  {key:'day_of_week', label:'Day of Week', widget:'select', editable:false, options:FIELD_OPTIONS.day_of_week},
   {key:'notes', label:'Notes', widget:'textarea', editable:true},
   {key:'link', label:'Chart Link', widget:'text', editable:true},
   {key:'trade_summary', label:'Trade Summary', widget:'textarea', editable:false}
@@ -2447,6 +2868,7 @@ const ALL_JOURNAL_COLUMNS = [
   {key:'unfollowed_rules', label:'Unfollowed Rules'},
   {key:'exit_type', label:'Exit Type'},
   {key:'post_be_result', label:'Post-BE Result'},
+  {key:'confluence_score', label:'Confluence Score'},
   {key:'account', label:'Account'},
   {key:'account_type', label:'Account Type'},
   {key:'session', label:'Session'},
@@ -2618,18 +3040,73 @@ function onPsRiskInput(accountId, value, inputEl){
   row.querySelectorAll('td:last-child button').forEach((btn, i) => {
     btn.disabled = i === 0 ? cells.qty == null : cells.minLev == null;
   });
+
+  // Keep the note and highlight in step while typing. The field itself is
+  // NOT rewritten mid-keystroke — replacing the value under the caret would
+  // fight whatever is being typed. The adjustment lands on blur instead.
+  inputEl.classList.toggle('ps-risk-capped', cells.capped);
+  const existing = inputEl.parentElement.querySelector('.ps-risk-note');
+  if(existing) existing.remove();
+  if(cells.capped) inputEl.insertAdjacentHTML('afterend', _psCappedNote(cells));
+}
+
+// Applies the cap once you've finished typing, so the field ends up holding
+// the figure the row was actually sized from.
+function onPsRiskBlur(accountId, inputEl){
+  const entry = parseFloat(document.getElementById('psEntry').value);
+  const sl = parseFloat(document.getElementById('psSL').value);
+  if(!Number.isFinite(entry) || !Number.isFinite(sl) || entry === sl) return;
+  const acc = TRADING_ACCOUNTS.find(a => String(a.id) === String(accountId));
+  if(!acc) return;
+  const c = _psComputeRow(acc, parseFloat(inputEl.value) || 0, entry, Math.abs(entry - sl));
+  if(!c.capped) return;
+  _psSetRiskAmount(accountId, c.effRisk);
+  renderPosSizeCalculator();
 }
 
 // One place that turns an account + risk amount into the three derived
 // cells, so the full render and the live per-row update can never drift.
+// Shown under a risk input that had to be sized down, naming the amount it
+// was reduced FROM — the input now holds the adjusted figure, so without this
+// there'd be no trace of what you originally asked for.
+function _psCappedNote(c){
+  if(!c.capped) return '';
+  return `<span class="ps-risk-note">Adjusted down from $${c.requested.toLocaleString(undefined,{maximumFractionDigits:2})} — more than this account can margin</span>`;
+}
+
 function _psComputeRow(acc, riskAmount, entry, riskPerUnit){
-  const qty = riskAmount > 0 ? riskAmount / riskPerUnit : null;
-  const notional = qty != null ? qty * entry : null;
   const available = Number(acc.current_balance ?? acc.account_size ?? 0);
+  const cap = Number(acc.max_leverage) > 0 ? Math.floor(Number(acc.max_leverage)) : 5;
+
+  // The largest risk this account can actually carry. At max leverage the
+  // biggest position it can margin is available x cap, and risk scales with
+  // position size, so: maxRisk = (available x cap) x riskPerUnit / entry.
+  // 0.995, not 1.0. Sizing to exactly 100% of the balance leaves the margin
+  // equal to the balance, which (a) has no room for fees or a tick of slippage
+  // and (b) lands on a floating-point knife edge — margin came out a hair
+  // above balance often enough that the row still reported "Won't fit" right
+  // after saying it had capped the risk.
+  const MARGIN_HEADROOM = 0.995;
+  const maxRisk = (available > 0 && entry > 0 && riskPerUnit > 0)
+    ? (available * MARGIN_HEADROOM * cap) * riskPerUnit / entry
+    : null;
+
+  // Rather than stopping at "Won't fit", size down to what does fit — those
+  // are the numbers you'd actually trade. The typed amount is deliberately
+  // left untouched in storage, so a bigger balance later un-caps it instead
+  // of quietly overwriting what you asked for.
+  const capped = (maxRisk != null && riskAmount > maxRisk && maxRisk > 0);
+  // Rounded to cents so the value written back into the input is a figure you
+  // could actually type yourself, not 195.7834920011.
+  const effRisk = capped ? Math.floor(maxRisk * 100) / 100 : riskAmount;
+  const requested = riskAmount;
+
+  const qty = effRisk > 0 ? effRisk / riskPerUnit : null;
+  const notional = qty != null ? qty * entry : null;
   const minLev = notional != null ? _psMinLeverage(notional, available, acc.max_leverage) : null;
   const margin = (minLev != null && notional != null) ? notional / minLev : null;
   return {
-    qty, minLev, margin,
+    qty, minLev, margin, capped, maxRisk, effRisk, requested,
     qtyText: qty != null ? qty.toFixed(4) : '—',
     qtyData: qty != null ? qty.toFixed(4) : '',
     // Tinted per leverage level (1x green through 5x red) — the same scale
@@ -2717,9 +3194,14 @@ function renderPosSizeCalculator(){
     const riskRaw = saved[acc.id] != null ? saved[acc.id] : _psSeedRisk(acc);
     const c = _psComputeRow(acc, parseFloat(riskRaw) || 0, entry, riskPerUnit);
 
+    // The adjusted figure is written straight into the field (and saved), so
+    // the number on screen is always the risk the row was actually sized from.
+    if(c.capped) _psSetRiskAmount(acc.id, c.effRisk);
+    const shown = c.capped ? c.effRisk : riskRaw;
+
     return `<tr>
       <td>${escapeHtml(acc.account_name)}</td>
-      <td><input class="ps-risk-input" type="number" step="0.01" value="${riskRaw}" oninput="onPsRiskInput('${acc.id}', this.value, this)"></td>
+      <td><input class="ps-risk-input${c.capped ? ' ps-risk-capped' : ''}" type="number" step="0.01" value="${shown}" oninput="onPsRiskInput('${acc.id}', this.value, this)" onblur="onPsRiskBlur('${acc.id}', this)">${_psCappedNote(c)}</td>
       <td class="ps-qty-cell" data-qty="${c.qtyData}">${c.qtyText}</td>
       <td>${c.levHtml}</td>
       <td>${c.marginText}</td>
@@ -2736,6 +3218,102 @@ function renderPosSizeCalculator(){
 function copyCellValue(btnEl){
   const qtyCell = btnEl.closest('tr')?.querySelector('.ps-qty-cell');
   _copyWithFeedback(qtyCell?.dataset.qty || '', btnEl);
+}
+
+/* ---------------- Position calculator: paste an order ticket ---------------- */
+
+// Anchored on LABELS, never on "the numbers in order". An exchange ticket
+// carries tick counts next to the prices (129046828 sitting beside
+// 64937.100), and grabbing numbers positionally would happily read one of
+// those as a price. Each value is only accepted if it follows its own label
+// and looks like a price rather than a tick count.
+function parsePositionTicket(raw){
+  const lines = String(raw || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+
+  // Tick counts are big integers with no decimal part; prices here carry
+  // decimals. Anything without a decimal point is rejected outright.
+  const asPrice = s => {
+    const m = String(s).replace(/,/g, '').match(/-?\d+\.\d+/);
+    if(!m) return null;
+    const n = parseFloat(m[0]);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  };
+
+  // Finds the first price at or after the line matching `labelRe`, skipping
+  // any "Ticks" block in between.
+  const priceAfter = (labelRe, startAt = 0) => {
+    for(let i = startAt; i < lines.length; i++){
+      if(!labelRe.test(lines[i])) continue;
+      // Same-line value ("Entry price 64808.053") wins if present.
+      const inline = asPrice(lines[i].replace(labelRe, ''));
+      if(inline !== null) return { value: inline, at: i };
+      for(let j = i + 1; j < Math.min(i + 8, lines.length); j++){
+        if(/^ticks$/i.test(lines[j])) continue;          // label, skip
+        if(/^\d+$/.test(lines[j].replace(/,/g, ''))) continue;  // the tick count itself
+        const v = asPrice(lines[j]);
+        if(v !== null) return { value: v, at: j };
+        if(/^(price|level)$/i.test(lines[j])) continue;  // sub-label, keep looking
+      }
+    }
+    return null;
+  };
+
+  const entry = priceAfter(/entry\s*(price|level)?/i);
+  // TP/SL prices sit inside their own blocks, so search starts at the block
+  // header and the nested "Price" label is what actually carries the number.
+  const tpBlock = lines.findIndex(l => /profit\s*level|take\s*profit/i.test(l));
+  const slBlock = lines.findIndex(l => /stop\s*level|stop\s*loss/i.test(l));
+  // \b not $ — some tickets put the value on the same line ("Price 64937.100")
+  // and an anchored match would skip those entirely.
+  const tp = tpBlock >= 0 ? priceAfter(/^price\b/i, tpBlock) : null;
+  const sl = slBlock >= 0 ? priceAfter(/^price\b/i, slBlock) : null;
+
+  const out = {
+    entry: entry ? entry.value : null,
+    tp: tp ? tp.value : null,
+    sl: sl ? sl.value : null
+  };
+  // Direction is implied, not stated: a target above entry is a Long.
+  if(out.entry != null && out.tp != null){
+    out.direction = out.tp > out.entry ? 'Long' : 'Short';
+  }
+  return out;
+}
+
+function openPosPasteModal(){
+  document.getElementById('posPasteInput').value = '';
+  document.getElementById('posPasteError').textContent = '';
+  document.getElementById('posPastePreview').style.display = 'none';
+  document.getElementById('posPasteModal').classList.add('open');
+  document.getElementById('posPasteInput').focus();
+}
+
+function closePosPasteModal(){
+  document.getElementById('posPasteModal').classList.remove('open');
+}
+
+function applyPosPaste(){
+  const errEl = document.getElementById('posPasteError');
+  const parsed = parsePositionTicket(document.getElementById('posPasteInput').value);
+
+  const missing = ['entry','tp','sl'].filter(k => parsed[k] == null);
+  if(missing.length === 3){
+    errEl.textContent = "Couldn't find any prices in that. Make sure the entry, profit level and stop level are all included.";
+    return;
+  }
+  // A partial read is worth applying, but it has to say what it missed
+  // rather than quietly leaving a stale price in place.
+  errEl.textContent = missing.length
+    ? `Filled in what I could — no ${missing.map(k => k === 'tp' ? 'TP' : k === 'sl' ? 'SL' : 'entry').join(' or ')} price found, so that field was left alone.`
+    : '';
+
+  if(parsed.entry != null) document.getElementById('psEntry').value = parsed.entry;
+  if(parsed.tp != null) document.getElementById('psTP').value = parsed.tp;
+  if(parsed.sl != null) document.getElementById('psSL').value = parsed.sl;
+  if(parsed.direction) document.getElementById('psDirection').value = parsed.direction;
+
+  onPosSizeInput();
+  if(!missing.length) closePosPasteModal();
 }
 
 async function pasteIntoField(fieldId){
@@ -3407,6 +3985,10 @@ function switchFinanceTab(tab){
   if(tab === 'dashboard') renderFinDashboard();
   if(tab === 'accounts') loadFinanceAccounts();
   if(tab === 'transactions'){
+    // Opening the tab normally clears any drill-down left over from a chart
+    // click — otherwise the list silently stays filtered on a category the
+    // user picked minutes ago on a different page.
+    if(!_finDrillNavigating) FIN_TX_DRILL = null;
     // Transactions need the account names/balances too.
     if(!FIN_ACCOUNTS.length) loadFinanceAccounts();
     loadFinanceTransactions();
@@ -3647,7 +4229,7 @@ function renderFinDashCharts(accFilterIdParam){
   renderFinDashCategoryChart(chartTx, primary);
   renderFinDashSubcategoryChart(chartTx, primary);
   renderFinDashEquityChart(chartTx, primary);
-  renderFinDashDisciplineRadar(chartTx, primary);
+  renderFinDashDisciplineRadar(chartTx, primary, accFilterId);
 }
 
 function _categoryPalette(n){
@@ -3686,17 +4268,36 @@ function renderFinDashCategoryChart(monthTx, primary){
       responsive: true,
       maintainAspectRatio: false,
       cutout: '68%',
-      plugins: { legend: { display:false } }
+      plugins: { legend: { display:false } },
+      onClick: (evt, els) => {
+        if(!els.length) return;
+        const label = labels[els[0].index];
+        finDrillToTransactions('category', label, [label]);
+      },
+      onHover: (evt, els) => {
+        if(evt.native?.target) evt.native.target.style.cursor = els.length ? 'pointer' : 'default';
+      }
     }
   });
 
   const total = dataVals.reduce((s,v) => s + v, 0);
   legendEl.innerHTML = labels.map((label, i) => `
-    <div style="display:flex;justify-content:space-between;margin-bottom:3px;">
+    <div class="fin-legend-row" onclick="finDrillToTransactions('category', ${_jsStr(label)}, [${_jsStr(label)}])" title="See these transactions">
       <span><span style="color:${colors[i]};">●</span> ${escapeHtml(label)}</span>
       <span class="num">${finMoney(dataVals[i], primary)} (${fmtNum(dataVals[i]/total*100,1)}%)</span>
     </div>
   `).join('');
+}
+
+// Single-quoted JS string literal, safe to drop inside an HTML onclick="…".
+// Escapes the quote characters for BOTH layers — a category like "Mom's" would
+// otherwise close the JS string, and &quot; would close the attribute.
+function _jsStr(s){
+  return "'" + String(s)
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g, "\\'")
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '\\x3C') + "'";
 }
 
 // Ranks individual subcategories (across ALL categories) by spend — a finer
@@ -3723,8 +4324,12 @@ function renderFinDashSubcategoryChart(chartTx, primary){
     bySub[label] = (bySub[label] || 0) + (Number(t.amount) || 0);
   });
   let entries = Object.entries(bySub).sort((a,b) => b[1] - a[1]);
+  // Remembered so clicking the "Other" bar can drill into everything it rolled
+  // up, rather than searching for a subcategory literally named "Other".
+  let otherNames = [];
   if(entries.length > 8){
     const top = entries.slice(0, 8);
+    otherNames = entries.slice(8).map(([l]) => l);
     const otherTotal = entries.slice(8).reduce((s,[,v]) => s + v, 0);
     entries = [...top, ['Other', otherTotal]];
   }
@@ -3743,11 +4348,20 @@ function renderFinDashSubcategoryChart(chartTx, primary){
       scales: {
         x: { ticks: { color: cssVar('--muted'), font: { size: 10 } }, grid: { color: cssVar('--rule') } },
         y: { ticks: { color: cssVar('--muted'), font: { size: 10 } }, grid: { display: false } }
+      },
+      onClick: (evt, els) => {
+        if(!els.length) return;
+        const label = labels[els[0].index];
+        const values = (label === 'Other' && otherNames.length) ? otherNames : [label];
+        finDrillToTransactions('subcategory', label, values);
+      },
+      onHover: (evt, els) => {
+        if(evt.native?.target) evt.native.target.style.cursor = els.length ? 'pointer' : 'default';
       }
     }
   });
 
-  legendEl.innerHTML = '';
+  legendEl.innerHTML = '<div class="fin-chart-hint">Click a bar to see its transactions.</div>';
 }
 
 function _finPrimaryCurrencyForTxns(txns){
@@ -3849,10 +4463,50 @@ function renderFinDashEquityChart(chartTx, primary){
 // trading BEHAVIOR), rebuilt around real personal-finance discipline
 // concepts instead of just "did you fill out every field" — categorized/
 // subcategorized % measured data hygiene, not actual money habits.
-const FIN_NEEDS_CATEGORIES = ['🏠 Housing', '💡 Utilities', '🍽️ Food & Groceries', '🚗 Transportation', '🏥 Healthcare', '📚 Education'];
+// Every category added to the taxonomy has to land in one of these two lists
+// (or be deliberately left out, like Debt & Loans and Savings & Investments) —
+// a category in neither is silently invisible to the Needs vs Wants metric.
+const FIN_NEEDS_CATEGORIES = [
+  '🏠 Housing', '💡 Utilities', '🍽️ Food & Groceries', '🚗 Transportation', '🏥 Healthcare',
+  '📚 Education', '🧴 Personal Care', '🛡️ Insurance', '🛂 Government & Visa', '🏦 Bank & Remittance Fees'
+];
 const FIN_WANTS_CATEGORIES = ['🎉 Entertainment', '🚬 Vices', '🛍️ Shopping', '🎁 Gifts & Donations', '✈️ Travel', '📦 Subscriptions'];
 
-function _finDisciplineMetrics(chartTx, primary){
+// Trailing N FULL calendar months of transactions (excluding the current,
+// still-incomplete one), in the primary currency and honouring the account
+// filter. Used wherever a period-scoped number would otherwise be distorted by
+// where in the month we happen to be.
+function _finTrailingMonths(n, primary, accFilterId){
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth() - n, 1);
+  const end = new Date(now.getFullYear(), now.getMonth(), 1);
+  return FIN_TXNS.filter(t => {
+    if(!t.tx_date || t.tx_type === 'Transfer') return false;
+    if(accFilterId && t.account_id !== accFilterId) return false;
+    if(primary && _finTxCurrency(t) !== primary) return false;
+    const d = new Date(t.tx_date + 'T00:00:00');
+    return d >= start && d < end;
+  });
+}
+
+// Did a real settlement land for this account's statement month? The Paid flow
+// logs a Transfer tagged "Credit card payments"; a payment made outside the app
+// and typed in by hand carries the same tag. Accepted in the statement month or
+// the one after it, since a bill is normally paid the month AFTER it closes.
+function _finHasSettlementTx(accountId, monthDate){
+  const target = monthDate.getFullYear() * 12 + monthDate.getMonth();
+  return FIN_TXNS.some(t => {
+    if(!t.tx_date) return false;
+    if(t.to_account_id !== accountId && t.account_id !== accountId) return false;
+    if((t.subcategory || '') !== 'Credit card payments') return false;
+    const d = new Date(t.tx_date + 'T00:00:00');
+    if(isNaN(d.getTime())) return false;
+    const idx = d.getFullYear() * 12 + d.getMonth();
+    return idx === target || idx === target + 1;
+  });
+}
+
+function _finDisciplineMetrics(chartTx, primary, accFilterId){
   // Money metrics are restricted to ONE currency — the same primary the rest
   // of the dashboard's charts use. Summing AED and PHP amounts as bare
   // numbers treats 500 dirhams and 500 pesos as equal and badly distorts both
@@ -3860,13 +4514,45 @@ function _finDisciplineMetrics(chartTx, primary){
   // below are currency-agnostic, so they still use every transaction.
   const money = primary ? chartTx.filter(t => _finTxCurrency(t) === primary) : chartTx;
 
-  // 1. Savings Rate — are you keeping more than you spend.
-  const income = money.filter(t => t.tx_type === 'Income').reduce((s,t) => s + (Number(t.amount)||0), 0);
+  // Still period-scoped — Needs vs Wants below reads the selected window.
   const expenses = money.filter(t => t.tx_type === 'Expense');
-  const expenseTotal = expenses.reduce((s,t) => s + (Number(t.amount)||0), 0);
-  const savingsRate = income > 0
-    ? Math.max(0, Math.min(100, Math.round((income - expenseTotal) / income * 100)))
+
+  // 1. Savings Rate — are you keeping more than you spend.
+  // Deliberately IGNORES the period filter and always reads the last 6
+  // complete months. This is a measure of habit, not of one window: salary
+  // lands once a month (so a half-finished month shows expenses and no income
+  // at all), and a single visa renewal or big remittance shouldn't be able to
+  // sink it. Six months is long enough that lumpy annual costs get diluted
+  // rather than dominating — unlike the Emergency Fund burn rate below, which
+  // stays at 3 months precisely because it must reflect what life costs NOW.
+  const SAVINGS_WINDOW_MONTHS = 6;
+  const savingsWindow = _finTrailingMonths(SAVINGS_WINDOW_MONTHS, primary, accFilterId);
+  const income = savingsWindow.filter(t => t.tx_type === 'Income').reduce((s,t) => s + (Number(t.amount)||0), 0);
+  const expenseTotal = savingsWindow.filter(t => t.tx_type === 'Expense').reduce((s,t) => s + (Number(t.amount)||0), 0);
+  const savingsMonths = new Set(savingsWindow.map(t => t.tx_date.slice(0, 7))).size;
+
+  // The 6-month figure is the honest one, but it moves slowly by design — an
+  // improvement made this month barely shifts it. So the most recent COMPLETE
+  // month is computed alongside purely as feedback: it shows the change
+  // immediately without letting a single lumpy month drive the score.
+  const lastFullMonth = _finTrailingMonths(1, primary, accFilterId);
+  const lastIncome = lastFullMonth.filter(t => t.tx_type === 'Income').reduce((s,t) => s + (Number(t.amount)||0), 0);
+  const lastExpense = lastFullMonth.filter(t => t.tx_type === 'Expense').reduce((s,t) => s + (Number(t.amount)||0), 0);
+  const lastMonthSavingsPct = lastIncome > 0 ? Math.round((lastIncome - lastExpense) / lastIncome * 100) : null;
+  const lastMonthLabel = _finPreviousMonthLabel().toLocaleDateString('en-US', { month: 'long' });
+  // The raw percentage kept — it's the real, quotable number.
+  const savingsRatePct = income > 0
+    ? Math.round((income - expenseTotal) / income * 100)
     : (expenseTotal > 0 ? 0 : 100);
+  // ...but scored against a target rather than plotted as-is. A 100% savings
+  // rate would mean spending nothing at all, so treating the bare percentage
+  // as a score out of 100 makes every achievable rate look like a failure.
+  // 20% is the textbook 50/30/20 standard; 30% is the level someone actually
+  // working toward leaving their job needs. Anchoring the axis at 30 leaves
+  // the textbook rate visibly short of full marks, so the axis still says
+  // something once you're past the minimum.
+  const SAVINGS_TARGET_PCT = 30;
+  const savingsRate = Math.max(0, Math.min(100, Math.round(savingsRatePct / SAVINGS_TARGET_PCT * 100)));
 
   // 2. Credit Utilization (inverted — LOW usage scores HIGH) — are you
   // leaning on credit sparingly. A right-now snapshot, not period-filtered.
@@ -3879,16 +4565,25 @@ function _finDisciplineMetrics(chartTx, primary){
   const utilizationPct = totalLimit > 0 ? (totalOwed / totalLimit * 100) : 0;
   const creditUtilizationScore = totalLimit > 0 ? Math.max(0, Math.min(100, Math.round(100 - utilizationPct))) : 100;
 
-  // 3. No-Spend Days — restraint: what fraction of days in the selected
-  // period had zero Expense activity at all. Unlike Bills On Time, this
-  // gives every account a real score even with no credit cards at all.
-  // Counting days, not money — so this looks at spending in ANY currency.
-  // Using only the primary would credit a no-spend day you actually spent on.
-  const { start: periodStart, end: periodEnd } = _finPeriodRange();
-  const totalDays = Math.max(1, Math.round((periodEnd - periodStart) / 86400000) + 1);
-  const expenseDays = new Set(chartTx.filter(t => t.tx_type === 'Expense').map(t => t.tx_date));
-  const noSpendDays = Math.max(0, totalDays - expenseDays.size);
-  const noSpendPct = Math.round(noSpendDays / totalDays * 100);
+  // 3. Emergency Fund Runway — how many months you could live on the cash you
+  // hold if income stopped today. Replaced No-Spend Days, which measured how
+  // OFTEN you spent rather than how well: one weekly grocery run scored better
+  // than a smaller daily spend, and logging honestly made the number worse.
+  // Six months is the conventional target and maps to 100.
+  const RUNWAY_TARGET_MONTHS = 6;
+  const liquidAccs = FIN_ACCOUNTS.filter(a => a.account_class !== 'Credit' && (!primary || a.currency === primary));
+  const liquidTotal = liquidAccs.reduce((s,a) => s + (Number(a.current_balance) || 0), 0);
+  // Burn rate from the last 3 COMPLETE months — the current month is partial,
+  // so including it would understate the monthly cost and overstate runway.
+  const burnWindow = _finTrailingMonths(3, primary, accFilterId).filter(t => t.tx_type === 'Expense');
+  const burnMonths = new Set(burnWindow.map(t => t.tx_date.slice(0, 7))).size;
+  const monthlyBurn = burnMonths
+    ? burnWindow.reduce((s,t) => s + (Number(t.amount)||0), 0) / burnMonths
+    : 0;
+  const runwayMonths = monthlyBurn > 0 ? liquidTotal / monthlyBurn : null;
+  const runwayPct = runwayMonths === null
+    ? (liquidTotal > 0 ? 100 : 0)
+    : Math.max(0, Math.min(100, Math.round(runwayMonths / RUNWAY_TARGET_MONTHS * 100)));
 
   // 4. Needs vs Wants — of your CLEARLY-classifiable spending (obligations
   // like Debt & Loans and the act of Savings & Investments itself are left
@@ -3902,24 +4597,56 @@ function _finDisciplineMetrics(chartTx, primary){
   const classifiableTotal = needsTotal + wantsTotal;
   const needsPct = classifiableTotal > 0 ? Math.round(needsTotal / classifiableTotal * 100) : 100;
 
-  // 5. Debt Progress — how far along are you actually paying off what
-  // you've financed (not period-filtered — this is the state of your
-  // installments overall, not just what happened in the selected window).
+  // 5. On-Time Payments — of everything you've committed to pay monthly, how
+  // much is actually up to date. Replaced Debt Progress, which measured how
+  // far through a loan you were: that punished you for STARTING a sensible
+  // installment and rewarded never borrowing at all, neither of which is
+  // discipline. A brand-new installment paid on schedule scores full marks
+  // here from its first bill.
+  const prevMonth = _finPreviousMonthLabel();
+  const monthIdx = d => d.getFullYear() * 12 + d.getMonth();
+  // Measured per ACCOUNT, because that is the granularity the "Paid" button
+  // works at: one press settles every commitment on that card at once and
+  // stamps the account's last_bill_paid.
+  //
+  // The previous per-item version compared payments_applied against the number
+  // of payments due since first_bill, and was wrong for the most ordinary case
+  // there is: an installment that started in real life BEFORE it was added
+  // here. payments_applied begins at zero on the day you create the record, so
+  // a Tabby plan running since January but entered in July shows 1 paid
+  // against 7 expected — permanently "behind" no matter how faithfully the
+  // button is pressed every month.
+  //
+  // Evidence is the Paid marker OR a real settlement transaction, so a bill
+  // paid outside the app still counts.
   const installments = FIN_RECURRING.filter(r => r.kind === 'Installment');
-  let debtProgressPct = 100;
-  if(installments.length){
-    const avg = installments.reduce((s,r) => {
-      const total = Number(r.total_payments) || 1;
-      const paid = Math.min(Number(r.payments_applied) || 0, total);
-      return s + (paid / total * 100);
-    }, 0) / installments.length;
-    debtProgressPct = Math.round(avg);
-  }
+  const liveCommitments = FIN_RECURRING.filter(r =>
+    r.account_id && !_finRecIsFullyPaid(r) && _finRecStartedBy(r, prevMonth) &&
+    (r.kind === 'Installment' || (r.cycle || 'Monthly') === 'Monthly')
+  );
+  const commitmentAccountIds = [...new Set(liveCommitments.map(r => r.account_id))];
+  let onTrack = 0, tracked = 0, behind = 0;
+  commitmentAccountIds.forEach(accId => {
+    const acc = FIN_ACCOUNTS.find(a => a.id === accId);
+    if(!acc) return;
+    tracked++;
+    const marked = _finBillPaidCovers(acc.last_bill_paid, prevMonth);
+    const viaTx = _finHasSettlementTx(accId, prevMonth);
+    const itemMarked = liveCommitments.some(r =>
+      r.account_id === accId && _finBillPaidCovers(r.last_billed, prevMonth)
+    );
+    if(marked || viaTx || itemMarked) onTrack++; else behind++;
+  });
+  const onTimePct = tracked ? Math.round(onTrack / tracked * 100) : 100;
 
   return {
-    savingsRate, creditUtilizationScore, noSpendPct, needsPct, debtProgressPct,
-    utilizationPct, creditCount: creditAccs.length, totalDays, noSpendDays,
-    classifiableTotal, installmentCount: installments.length, totalLimit
+    savingsRate, creditUtilizationScore, runwayPct, needsPct, onTimePct,
+    utilizationPct, creditCount: creditAccs.length,
+    classifiableTotal, installmentCount: installments.length, totalLimit,
+    savingsRatePct, savingsTarget: SAVINGS_TARGET_PCT,
+    savingsWindow: SAVINGS_WINDOW_MONTHS, savingsMonths, lastMonthSavingsPct, lastMonthLabel,
+    liquidTotal, monthlyBurn, runwayMonths, runwayTarget: RUNWAY_TARGET_MONTHS,
+    onTimeTracked: tracked, onTimeBehind: behind
   };
 }
 
@@ -3953,16 +4680,26 @@ function _finPeriodRange(){
 }
 
 let finDashDisciplineRadarRef = null;
-function renderFinDashDisciplineRadar(chartTx, primary){
+function renderFinDashDisciplineRadar(chartTx, primary, accFilterId){
   const canvas = document.getElementById('finDashDisciplineRadar');
   if(!canvas) return;
   const ctx = canvas.getContext('2d');
   if(finDashDisciplineRadarRef) finDashDisciplineRadarRef.destroy();
 
-  const m = _finDisciplineMetrics(chartTx, primary);
-  const labels = ['Savings Rate', 'Credit Utilization', 'No-Spend Days', 'Needs vs Wants', 'Debt Progress'];
-  const data = [m.savingsRate, m.creditUtilizationScore, m.noSpendPct, m.needsPct, m.debtProgressPct];
-  const score = Math.round(data.reduce((s,v) => s+v, 0) / data.length);
+  const m = _finDisciplineMetrics(chartTx, primary, accFilterId);
+  // An axis with a null value is one we genuinely can't measure yet. It's
+  // dropped from both the shape and the score rather than plotted as a zero —
+  // a zero is a claim ("you failed this"), and an unmeasured axis isn't one.
+  const axes = [
+    ['Savings Rate',       m.savingsRate],
+    ['Credit Utilization', m.creditUtilizationScore],
+    ['Emergency Fund',     m.runwayPct],
+    ['Needs vs Wants',     m.needsPct],
+    ['On-Time Payments',   m.onTimePct]
+  ].filter(([, v]) => v !== null && v !== undefined && !isNaN(v));
+  const labels = axes.map(([l]) => l);
+  const data = axes.map(([, v]) => v);
+  const score = data.length ? Math.round(data.reduce((s,v) => s+v, 0) / data.length) : 0;
 
   const valueEl = document.getElementById('finDashDisciplineValue');
   const markerEl = document.getElementById('finDashDisciplineMarker');
@@ -4013,17 +4750,25 @@ function renderFinDashDisciplineRadar(chartTx, primary){
           callbacks: {
             label: (ctx) => {
               const explanations = {
-                'Savings Rate': `You kept ${m.savingsRate}% of what you earned in view (Income − Expense ÷ Income) — the rest went to spending.`,
+                'Savings Rate': [
+                  `You kept ${m.savingsRatePct}% of what you earned across your last ${m.savingsMonths} complete month${m.savingsMonths===1?'':'s'}.`,
+                  m.lastMonthSavingsPct !== null
+                    ? `${m.lastMonthLabel} alone: ${m.lastMonthSavingsPct}% — the fast read, so a change shows up before the ${m.savingsWindow}-month figure catches up.`
+                    : '',
+                  `This axis always reads ${m.savingsWindow} months and ignores the period filter, so one visa renewal or big remittance can't sink a habit. Scored against a ${m.savingsTarget}% target: the textbook 50/30/20 rule asks for 20%. A 100% savings rate would mean spending nothing, which is why the raw percentage isn't the score.`
+                ].filter(Boolean).join(' '),
                 'Credit Utilization': m.totalLimit
                   ? `Using ${Math.round(m.utilizationPct)}% of your total credit limit across ${m.creditCount} credit account${m.creditCount!==1?'s':''} — lower utilization scores higher.`
                   : 'No credit limit set on any credit account yet.',
-                'No-Spend Days': `${m.noSpendDays} of ${m.totalDays} day${m.totalDays!==1?'s':''} in view had zero Expense activity.`,
+                'Emergency Fund': m.runwayMonths === null
+                  ? (m.liquidTotal > 0 ? 'No spending in the last 3 complete months to measure a burn rate against.' : 'No cash balance recorded on any non-credit account.')
+                  : `${finMoney(m.liquidTotal, primary)} in cash ÷ ${finMoney(m.monthlyBurn, primary)} average monthly spend = ${m.runwayMonths.toFixed(1)} month${m.runwayMonths===1?'':'s'} of runway. ${m.runwayTarget} months scores 100.`,
                 'Needs vs Wants': m.classifiableTotal
-                  ? `${m.needsPct}% of your needs-vs-wants-classified spending went to needs (Housing, Utilities, Food, Transport, Healthcare, Education) rather than wants (Entertainment, Vices, Shopping, Gifts, Travel, Subscriptions).`
+                  ? `${m.needsPct}% of your needs-vs-wants-classified spending went to needs (Housing, Utilities, Food, Transport, Healthcare, Education, Personal Care, Insurance, Government & Visa, Bank & Remittance Fees) rather than wants (Entertainment, Vices, Shopping, Gifts, Travel, Subscriptions).`
                   : 'No spending yet in a category classified as a need or a want.',
-                'Debt Progress': m.installmentCount
-                  ? `Averaging ${m.debtProgressPct}% paid off across ${m.installmentCount} installment${m.installmentCount!==1?'s':''}.`
-                  : 'No active installments — nothing being paid down.'
+                'On-Time Payments': m.onTimeTracked
+                  ? `${m.onTimeTracked - m.onTimeBehind} of ${m.onTimeTracked} account${m.onTimeTracked!==1?'s carrying commitments had':' carrying commitments had'} last month's bill settled. Counted per account, not per item — one "Paid" press clears that card's whole statement. A payment logged as a transaction counts too, so settling outside the app still registers.`
+                  : 'No active installments or monthly subscriptions to keep up with.'
               };
               const label = ctx.label;
               const val = ctx.parsed.r;
@@ -4049,12 +4794,31 @@ function renderFinDashTrendChart(accFilterId){
   const ctx = canvas.getContext('2d');
   if(finDashTrendChartRef) finDashTrendChartRef.destroy();
 
-  // Always the trailing 6 real-world months, independent of whatever month
-  // the calendar above is currently drilled into — a trend widget reads
-  // better as a stable rolling window than one that jumps with the nav.
+  // A trailing window of real-world months, independent of whatever month the
+  // calendar above is drilled into — a trend widget reads better as a stable
+  // rolling window than one that jumps with the nav. How far back is the
+  // user's call; the default stays at 6.
   const now = new Date();
+  const span = document.getElementById('finDashTrendSpan')?.value || '6';
   const months = [];
-  for(let i = 5; i >= 0; i--) months.push(new Date(now.getFullYear(), now.getMonth() - i, 1));
+  if(span === 'ytd'){
+    for(let m = 0; m <= now.getMonth(); m++) months.push(new Date(now.getFullYear(), m, 1));
+  }else if(span === 'all'){
+    // From the earliest transaction on record. Capped so a stray 1970 date
+    // can't try to draw hundreds of bars.
+    const dated = FIN_TXNS.filter(t => t.tx_date && t.tx_type !== 'Transfer').map(t => t.tx_date).sort();
+    const first = dated.length ? new Date(dated[0] + 'T00:00:00') : now;
+    let cursor = new Date(first.getFullYear(), first.getMonth(), 1);
+    const end = new Date(now.getFullYear(), now.getMonth(), 1);
+    while(cursor <= end && months.length < 120){
+      months.push(new Date(cursor));
+      cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
+    }
+    if(!months.length) months.push(new Date(now.getFullYear(), now.getMonth(), 1));
+  }else{
+    const n = parseInt(span, 10) || 6;
+    for(let i = n - 1; i >= 0; i--) months.push(new Date(now.getFullYear(), now.getMonth() - i, 1));
+  }
   const rangeStart = months[0];
   const rangeEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
 
@@ -4074,7 +4838,10 @@ function renderFinDashTrendChart(accFilterId){
 
   const incomeData = months.map(mo => sumFor('Income', mo));
   const expenseData = months.map(mo => sumFor('Expense', mo));
-  const labels = months.map(mo => mo.toLocaleDateString('en-US',{month:'short'}));
+  // Once the window crosses a year boundary, a bare "Jan" is ambiguous.
+  const spansYears = months[0].getFullYear() !== months[months.length - 1].getFullYear();
+  const labels = months.map(mo => mo.toLocaleDateString('en-US',
+    spansYears ? { month:'short', year:'2-digit' } : { month:'short' }));
 
   finDashTrendChartRef = new Chart(ctx, {
     type: 'bar',
@@ -4090,11 +4857,53 @@ function renderFinDashTrendChart(accFilterId){
       maintainAspectRatio: false,
       plugins: { legend: { display: true, labels: { color: cssVar('--muted'), font: { size: 10.5 }, boxWidth: 10 } } },
       scales: {
-        x: { ticks: { color: cssVar('--muted'), font: { size: 10 } }, grid: { display: false } },
+        x: { ticks: { color: cssVar('--muted'), font: { size: 10 }, maxRotation: 0, autoSkip: true }, grid: { display: false } },
         y: { ticks: { color: cssVar('--muted'), font: { size: 10 } }, grid: { color: cssVar('--rule') } }
+      },
+      onClick: (evt, els) => {
+        if(!els.length) return;
+        // Dataset 0 is Income, 1 is Expense — drill into the one actually clicked.
+        finDrillToMonth(months[els[0].index], els[0].datasetIndex === 0 ? 'Income' : 'Expense');
+      },
+      onHover: (evt, els) => {
+        if(evt.native?.target) evt.native.target.style.cursor = els.length ? 'pointer' : 'default';
       }
     }
   });
+}
+
+function onFinDashTrendSpanChange(){
+  const v = document.getElementById('finDashAccountFilter')?.value || 'all';
+  renderFinDashTrendChart(v !== 'all' ? parseInt(v, 10) : null);
+}
+
+// Drill from a trend bar: one calendar month, one transaction type. Unlike the
+// category drill this needs no chip — it lands entirely in the Period and Type
+// dropdowns, which are visible and editable right there on the page.
+function finDrillToMonth(monthDate, type){
+  FIN_TX_DRILL = null;
+  const y = monthDate.getFullYear(), m = monthDate.getMonth();
+  const pad = n => String(n).padStart(2, '0');
+  const lastDay = new Date(y, m + 1, 0).getDate();
+
+  const period = document.getElementById('finTxPeriodFilter');
+  if(period) period.value = 'range';
+  const from = document.getElementById('finTxRangeFrom');
+  const to = document.getElementById('finTxRangeTo');
+  if(from) from.value = `${y}-${pad(m + 1)}-01`;
+  if(to) to.value = `${y}-${pad(m + 1)}-${pad(lastDay)}`;
+  const rangeRow = document.getElementById('finTxRangeFilterRow');
+  if(rangeRow) rangeRow.style.display = 'flex';
+
+  const typeSel = document.getElementById('finTxTypeFilter');
+  if(typeSel) typeSel.value = type;
+  const searchSel = document.getElementById('finTxSearchFilter');
+  if(searchSel) searchSel.value = '';
+  _finTxPendingAccountFilter = document.getElementById('finDashAccountFilter')?.value || 'all';
+
+  _finDrillNavigating = true;
+  try{ switchFinanceTab('transactions'); }
+  finally{ _finDrillNavigating = false; }
 }
 
 function showFinDashDay(y, m, d){
@@ -4167,30 +4976,50 @@ function showFinDashWeek(weekIdx){
 // only non-flat-array option, since Category > Subcategory is the one
 // dropdown that's actually hierarchical. Everything else here stays a
 // plain editable string list.
+// Bumped whenever the recommended taxonomy gains entries existing users should
+// be backfilled with. Deliberately stored INSIDE FINANCE_OPTIONS rather than as
+// its own localStorage flag: finance_options is mirrored to user_profile, so an
+// older copy coming down from the account would otherwise overwrite a completed
+// backfill while the separate flag stayed set — leaving the list permanently
+// stale with nothing left to trigger a re-run. Riding along with the data means
+// an old copy arrives carrying an old stamp, and re-triggers the merge itself.
+const FINANCE_TAXONOMY_VERSION = 2;
+
 const FINANCE_OPTION_DEFAULTS = {
+  taxonomy_version: FINANCE_TAXONOMY_VERSION,
   account_types: ['Bank', 'E-Wallet', 'Cash', 'Crypto', 'Exchange', 'Other'],
   currencies: ['PHP', 'USD', 'USDT'],
-  income_categories: ['Salary', 'Trading Payout', 'Business', 'Allowance', 'Gift', 'Other'],
+  income_categories: [
+    'Salary', 'Bonus', 'Overtime', 'Trading Payout', 'Business', 'Freelance / Sideline',
+    'Allowance', 'Gift', 'Refund / Reimbursement', 'Cashback', 'Interest', 'Selling items', 'Other'
+  ],
   expense_categories: [
     '🏠 Housing', '💡 Utilities', '🍽️ Food & Groceries', '🚗 Transportation', '🏥 Healthcare',
-    '🎉 Entertainment', '🚬 Vices', '🛍️ Shopping', '📚 Education', '💼 Work & Business',
-    '👨‍👩‍👧‍👦 Family Support', '🎁 Gifts & Donations', '✈️ Travel', '💳 Debt & Loans',
+    '🧴 Personal Care', '🛡️ Insurance', '🎉 Entertainment', '🚬 Vices', '🛍️ Shopping',
+    '📚 Education', '💼 Work & Business', '👨‍👩‍👧‍👦 Family Support', '🎁 Gifts & Donations',
+    '✈️ Travel', '🛂 Government & Visa', '🏦 Bank & Remittance Fees', '💳 Debt & Loans',
     '💰 Savings & Investments', '🐶 Pets', '📦 Subscriptions', '❓ Miscellaneous'
   ],
   expense_subcategories: {
-    '🏠 Housing': ['Rent', 'Mortgage', 'Maintenance', 'Home supplies'],
-    '💡 Utilities': ['Electricity', 'Water', 'Internet', 'Mobile plan'],
-    '🍽️ Food & Groceries': ['Grocery', 'Restaurant', 'Coffee', 'Snacks'],
-    '🚗 Transportation': ['Fuel', 'Parking', 'Taxi/Uber/Careem', 'Public transport', 'Vehicle maintenance'],
-    '🏥 Healthcare': ['Medicines', 'Doctor consultation', 'Insurance', 'Medical tests'],
+    '🏠 Housing': ['Rent', 'Mortgage', 'Maintenance', 'Home supplies', 'Furniture', 'Ejari & housing fees'],
+    '💡 Utilities': ['Electricity', 'Water', 'Gas', 'Chiller / AC', 'Internet', 'Mobile plan'],
+    '🍽️ Food & Groceries': ['Grocery', 'Restaurant', 'Food delivery', 'Coffee', 'Snacks'],
+    '🚗 Transportation': ['Fuel', 'Parking', 'Salik & tolls', 'Nol card', 'Taxi/Uber/Careem', 'Public transport', 'Vehicle maintenance', 'Car registration & Mulkiya'],
+    // Insurance moved out to its own category — car and life cover aren't healthcare.
+    '🏥 Healthcare': ['Medicines', 'Doctor consultation', 'Dental', 'Eye care & glasses', 'Medical tests'],
+    '🧴 Personal Care': ['Haircut & barber', 'Salon & spa', 'Skincare & toiletries', 'Laundry & dry cleaning', 'Gym & fitness'],
+    '🛡️ Insurance': ['Car insurance', 'Life insurance', 'Home insurance', 'Travel insurance'],
     '🎉 Entertainment': ['Movies', 'Games', 'Streaming subscriptions', 'Hobbies'],
     '🚬 Vices': ['Cigarettes', 'Alcohol', 'Vapes', 'Gambling'],
     '🛍️ Shopping': ['Clothes', 'Gadgets', 'Accessories', 'Household items'],
     '📚 Education': ['Courses', 'Books', 'Certifications'],
     '💼 Work & Business': ['Office supplies', 'Software subscriptions', 'Business expenses'],
-    '👨‍👩‍👧‍👦 Family Support': ['Allowance', 'Gifts', 'Support for parents or relatives'],
+    '👨‍👩‍👧‍👦 Family Support': ['Allowance', 'Gifts', 'Support for parents or relatives', 'Padala / remittance'],
     '🎁 Gifts & Donations': ['Charity', 'Birthday gifts', 'Special occasions'],
-    '✈️ Travel': ['Flights', 'Hotels', 'Visa fees', 'Tours'],
+    // Visa fees moved to Government & Visa — renewing a residency visa isn't travel.
+    '✈️ Travel': ['Flights', 'Hotels', 'Tours', 'Baggage & transfers'],
+    '🛂 Government & Visa': ['Visa renewal', 'Emirates ID', 'Passport & NBI', 'SSS / PhilHealth / Pag-IBIG', 'Attestation & notary'],
+    '🏦 Bank & Remittance Fees': ['Remittance fee', 'Bank charges', 'ATM fee', 'FX spread', 'Late payment fee'],
     '💳 Debt & Loans': ['Credit card payments', 'Personal loans', 'Installments'],
     '💰 Savings & Investments': ['Emergency fund', 'Stocks', 'Crypto', 'Retirement savings'],
     '🐶 Pets': ['Food', 'Vet', 'Grooming'],
@@ -4217,6 +5046,10 @@ function loadFinanceOptions(){
         if(Array.isArray(v) && v.length) FINANCE_OPTIONS[k] = v;
         else if(v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length) FINANCE_OPTIONS[k] = v;
       });
+      // The loop above only copies arrays and objects, so the stamp needs
+      // handling on its own. A saved list without one predates versioning and
+      // still needs backfilling — hence 0 rather than the current version.
+      FINANCE_OPTIONS.taxonomy_version = Number(saved.taxonomy_version) || 0;
     }
   }catch(e){}
   if(!FINANCE_OPTIONS.expense_subcategories || typeof FINANCE_OPTIONS.expense_subcategories !== 'object'){
@@ -4230,30 +5063,12 @@ function saveFinanceOptions(){
   syncUIPrefsToProfile();
 }
 
-// One-click backfill for accounts that already had their own expense
-// categories before this taxonomy existed — ADDS whatever's missing
-// (by case-insensitive name match), never removes or renames anything
-// the user already has.
-const FINANCE_RECOMMENDED_EXPENSE_TAXONOMY = [
-  { name: '🏠 Housing', subs: ['Rent', 'Mortgage', 'Maintenance', 'Home supplies'] },
-  { name: '💡 Utilities', subs: ['Electricity', 'Water', 'Internet', 'Mobile plan'] },
-  { name: '🍽️ Food & Groceries', subs: ['Grocery', 'Restaurant', 'Coffee', 'Snacks'] },
-  { name: '🚗 Transportation', subs: ['Fuel', 'Parking', 'Taxi/Uber/Careem', 'Public transport', 'Vehicle maintenance'] },
-  { name: '🏥 Healthcare', subs: ['Medicines', 'Doctor consultation', 'Insurance', 'Medical tests'] },
-  { name: '🎉 Entertainment', subs: ['Movies', 'Games', 'Streaming subscriptions', 'Hobbies'] },
-  { name: '🚬 Vices', subs: ['Cigarettes', 'Alcohol', 'Vapes', 'Gambling'] },
-  { name: '🛍️ Shopping', subs: ['Clothes', 'Gadgets', 'Accessories', 'Household items'] },
-  { name: '📚 Education', subs: ['Courses', 'Books', 'Certifications'] },
-  { name: '💼 Work & Business', subs: ['Office supplies', 'Software subscriptions', 'Business expenses'] },
-  { name: '👨‍👩‍👧‍👦 Family Support', subs: ['Allowance', 'Gifts', 'Support for parents or relatives'] },
-  { name: '🎁 Gifts & Donations', subs: ['Charity', 'Birthday gifts', 'Special occasions'] },
-  { name: '✈️ Travel', subs: ['Flights', 'Hotels', 'Visa fees', 'Tours'] },
-  { name: '💳 Debt & Loans', subs: ['Credit card payments', 'Personal loans', 'Installments'] },
-  { name: '💰 Savings & Investments', subs: ['Emergency fund', 'Stocks', 'Crypto', 'Retirement savings'] },
-  { name: '🐶 Pets', subs: ['Food', 'Vet', 'Grooming'] },
-  { name: '📦 Subscriptions', subs: ['Netflix', 'Spotify', 'ChatGPT', 'Cloud storage'] },
-  { name: '❓ Miscellaneous', subs: ['Unexpected expenses', 'Small purchases', 'Uncategorized items'] }
-];
+// Kept in the same order as FINANCE_OPTION_DEFAULTS.expense_categories — this
+// is the single source of truth the Configuration buttons write from.
+const FINANCE_RECOMMENDED_EXPENSE_TAXONOMY =
+  FINANCE_OPTION_DEFAULTS.expense_categories.map(name => ({
+    name, subs: (FINANCE_OPTION_DEFAULTS.expense_subcategories[name] || []).slice()
+  }));
 
 // REPLACES expense_categories/expense_subcategories with EXACTLY this list —
 // old leftover categories (Food, Bills, Transport, etc. from before this
@@ -4266,26 +5081,95 @@ function _finResetToRecommendedTaxonomy(){
   FINANCE_RECOMMENDED_EXPENSE_TAXONOMY.forEach(({name, subs}) => {
     FINANCE_OPTIONS.expense_subcategories[name] = subs.slice();
   });
+  FINANCE_OPTIONS.taxonomy_version = FINANCE_TAXONOMY_VERSION;
   saveFinanceOptions();
 }
 
-// Runs ONCE per browser (gated by a plain localStorage flag, not part of
-// FINANCE_OPTIONS) — replaces whatever expense category list existed before
-// with exactly the recommended taxonomy. After this runs once, manual edits
-// made later in Configuration are never overwritten again.
+// ADDS whatever's missing from the recommended taxonomy — categories, their
+// subcategories, and income categories — and never removes or renames anything
+// already there. Matching is case-insensitive and ignores the emoji prefix, so
+// a hand-typed "housing" isn't duplicated as "🏠 Housing". New categories are
+// appended rather than reordered, so a list the user has arranged stays put.
+// Returns how many things it added.
+const _finCatKey = s => String(s).replace(/[^\p{L}\p{N}]+/gu, '').toLowerCase();
+
+function _finMergeRecommendedTaxonomy(){
+  let added = 0;
+  const cats = FINANCE_OPTIONS.expense_categories || (FINANCE_OPTIONS.expense_categories = []);
+  const subsMap = FINANCE_OPTIONS.expense_subcategories || (FINANCE_OPTIONS.expense_subcategories = {});
+
+  FINANCE_RECOMMENDED_EXPENSE_TAXONOMY.forEach(({ name, subs }) => {
+    const existing = cats.find(c => _finCatKey(c) === _finCatKey(name));
+    const target = existing || name;
+    if(!existing){ cats.push(name); added++; }
+
+    const have = subsMap[target] || (subsMap[target] = []);
+    subs.forEach(s => {
+      if(!have.some(x => _finCatKey(x) === _finCatKey(s))){ have.push(s); added++; }
+    });
+  });
+
+  const inc = FINANCE_OPTIONS.income_categories || (FINANCE_OPTIONS.income_categories = []);
+  FINANCE_OPTION_DEFAULTS.income_categories.forEach(name => {
+    if(!inc.some(x => _finCatKey(x) === _finCatKey(name))){
+      // Keep "Other" last — it's the catch-all and reads wrong mid-list.
+      const otherAt = inc.findIndex(x => _finCatKey(x) === 'other');
+      if(otherAt >= 0) inc.splice(otherAt, 0, name); else inc.push(name);
+      added++;
+    }
+  });
+
+  if(added) saveFinanceOptions();
+  return added;
+}
+
+// The version-gated backfill. Called at load AND again from
+// applyUIPrefsFromProfile() whenever a finance_options copy arrives from the
+// account — if that copy predates the current taxonomy it carries an old stamp
+// and gets merged up to date, then synced back so every device agrees.
+// Safe to call any number of times: the merge adds only what's missing, and
+// once stamped this returns immediately, so categories the user deliberately
+// deleted afterwards are never resurrected.
+function _finApplyRecommendedTaxonomy(){
+  if(Number(FINANCE_OPTIONS.taxonomy_version) >= FINANCE_TAXONOMY_VERSION) return 0;
+  const added = _finMergeRecommendedTaxonomy();
+  FINANCE_OPTIONS.taxonomy_version = FINANCE_TAXONOMY_VERSION;
+  saveFinanceOptions();   // unconditional: the stamp must stick even if added === 0
+  return added;
+}
+
+// v1 REPLACED whatever list existed before with the recommended taxonomy; it
+// stays gated on its original localStorage flag so it never fires twice.
+// Everything after it is handled by the version stamp instead.
 try{
   if(localStorage.getItem('ledger-finance-taxonomy-reset-v1') !== '1'){
     _finResetToRecommendedTaxonomy();
     localStorage.setItem('ledger-finance-taxonomy-reset-v1', '1');
   }
 }catch(e){}
+// v2 adds Personal Care, Insurance, Government & Visa, Bank & Remittance Fees,
+// the new subcategories and the new income categories — by merging, so anyone
+// who has customised their list keeps every bit of it.
+_finApplyRecommendedTaxonomy();
 
 async function loadRecommendedFinanceTaxonomy(){
-  if(!(await customConfirm("Replace your expense categories with EXACTLY the recommended list (18 categories + subcategories)? Anything you've added beyond this list will be removed from the dropdown — existing transactions keep their category text either way.", 'Replace'))) return;
+  const n = FINANCE_RECOMMENDED_EXPENSE_TAXONOMY.length;
+  if(!(await customConfirm(`Replace your expense categories with EXACTLY the recommended list (${n} categories + subcategories)? Anything you've added beyond this list will be removed from the dropdown — existing transactions keep their category text either way.`, 'Replace'))) return;
   _finResetToRecommendedTaxonomy();
   try{ localStorage.setItem('ledger-finance-taxonomy-reset-v1', '1'); }catch(e){}
   renderFinanceConfig();
   showToast('Expense categories replaced with the recommended list');
+}
+
+// The safe sibling of the button above: nothing is ever lost.
+async function addMissingFinanceCategories(){
+  if(!(await customConfirm('Add any recommended categories, subcategories and income categories you\'re missing? Nothing you already have is removed, renamed or reordered.', 'Add missing'))) return;
+  // Merges regardless of the stamp — the user asked for it explicitly.
+  const added = _finMergeRecommendedTaxonomy();
+  FINANCE_OPTIONS.taxonomy_version = FINANCE_TAXONOMY_VERSION;
+  saveFinanceOptions();
+  renderFinanceConfig();
+  showToast(added ? `Added ${added} missing ${added === 1 ? 'entry' : 'entries'}` : 'Nothing missing — your list is already complete');
 }
 
 /* ---- Finance > Accounts ---- */
@@ -4331,7 +5215,7 @@ function finAccountCardHTML(a){
   // Paid/Undo action, AND the sub-account list itself all live in the
   // details popup (click the card) instead of stacking every pocket's own
   // row right on the card face, which got cluttered fast past 2-3 subs.
-  const dueForThisAccount = FIN_RECURRING.filter(r => r.account_id === a.id && !_finRecIsFullyPaid(r));
+  const dueForThisAccount = _finRecDueIn(a.id, _finPreviousMonthLabel());
   let paymentLineHtml = '';
   if(!isCredit && dueForThisAccount.length){
     // Debit-linked recurring items still get their inline line — there's
@@ -4613,19 +5497,21 @@ function openFinAccountDetailsModal(accountId, backToId){
 
   const now = new Date();
   const prevMonth = _finPreviousMonthLabel();
-  const monthlyRecurring = _finMonthlyRecurringTotal(a.id);
   const curTx = _finMonthTxTotal(a.id, now);
   const prevTx = _finMonthTxTotal(a.id, prevMonth);
-  const dueForThisAccount = FIN_RECURRING.filter(r => r.account_id === a.id && !_finRecIsFullyPaid(r));
-  const hasBill = dueForThisAccount.length > 0 || prevTx > 0;
+  const hasBill = _finRecDueIn(a.id, prevMonth).length > 0 || prevTx > 0;
   const paidThisCycle = _finBillPaidCovers(a.last_bill_paid, prevMonth);
 
   // "Recurring" is one number hiding several subscriptions and installments —
   // make it expandable so the total can be checked against its parts without
   // leaving for the Recurring tab. Each bill section gets its own toggle id
-  // since the same account renders two of them (this month and last).
-  const recurringItems = _finMonthlyRecurringItems(a.id);
-  const billSection = (label, recurring, tx, slug) => `
+  // since the same account renders two of them (this month and last), and its
+  // OWN item list — an item whose first bill is August belongs on the August
+  // statement only, not on July's.
+  const billSection = (label, monthDate, tx, slug) => {
+    const recurringItems = _finMonthlyRecurringItems(a.id, monthDate);
+    const recurring = recurringItems.reduce((s, x) => s + x.amount, 0);
+    return `
     <div class="fin-acc-details-heading">${label}</div>
     <div class="fin-acc-details-row fin-rec-toggle" onclick="toggleFinRecurringList('${slug}')">
       <span>Recurring
@@ -4644,6 +5530,7 @@ function openFinAccountDetailsModal(accountId, backToId){
     <div class="fin-acc-details-row"><span>Transactions</span><span>${finMoney(tx, a.currency)}</span></div>
     <div class="fin-acc-details-row fin-acc-details-total"><span>Total</span><span>${finMoney(recurring + tx, a.currency)}</span></div>
   `;
+  };
 
   let paymentHtml = '';
   if(hasBill){
@@ -4658,9 +5545,9 @@ function openFinAccountDetailsModal(accountId, backToId){
 
   document.getElementById('finAccDetailsBody').innerHTML = `
     <div class="fin-acc-details-summary">Owed <strong style="color:var(--loss);">${finMoney(finOwedFor(a), a.currency)}</strong> · Limit ${finMoney(a.credit_limit, a.currency)}</div>
-    <div class="fin-acc-details-section">${billSection('RUNNING BILL FOR ' + now.toLocaleDateString('en-US',{month:'long'}).toUpperCase(), monthlyRecurring, curTx, 'cur')}</div>
+    <div class="fin-acc-details-section">${billSection('RUNNING BILL FOR ' + now.toLocaleDateString('en-US',{month:'long'}).toUpperCase(), now, curTx, 'cur')}</div>
     <div class="fin-acc-details-section">
-      ${billSection('BILL FOR ' + prevMonth.toLocaleDateString('en-US',{month:'long'}).toUpperCase(), monthlyRecurring, prevTx, 'prev')}
+      ${billSection('BILL FOR ' + prevMonth.toLocaleDateString('en-US',{month:'long'}).toUpperCase(), prevMonth, prevTx, 'prev')}
       ${paymentHtml}
     </div>
     <div class="fin-acc-details-section">
@@ -5010,19 +5897,99 @@ function onFinTxPeriodFilterChange(){
 // Account filter's options are rebuilt from FIN_ACCOUNTS on every render
 // (accounts can be added/deleted while this tab is open) but the user's
 // current selection is preserved across that rebuild.
+// A drill-down arriving from the Dashboard sets _finTxPendingAccountFilter
+// instead of the select directly — at that moment the options may not exist
+// yet (the tab can be opened for the first time by the click itself), so the
+// value is applied here, once there's something for it to match.
+let _finTxPendingAccountFilter = null;
 function _populateFinTxAccountFilter(){
   const sel = document.getElementById('finTxAccountFilter');
   if(!sel) return;
-  const prevValue = sel.value;
+  const prevValue = _finTxPendingAccountFilter !== null ? _finTxPendingAccountFilter : sel.value;
+  _finTxPendingAccountFilter = null;
   sel.innerHTML = '<option value="all">All accounts</option>' +
     FIN_ACCOUNTS.map(a => `<option value="${a.id}">${escapeHtml(a.account_name)}</option>`).join('');
-  if([...sel.options].some(o => o.value === prevValue)) sel.value = prevValue;
+  sel.value = [...sel.options].some(o => o.value === prevValue) ? prevValue : 'all';
+}
+
+/* ---- Dashboard chart -> Transactions drill-down ----
+   Clicking a slice or a bar lands on the Transactions tab with the filter
+   already applied, so the rows behind a number can be read and edited with
+   the normal row actions instead of a second, parallel editing UI.
+   Held as a LIST of values, not one, because the subcategory chart rolls
+   everything past the top 8 into a single "Other" bar. */
+let FIN_TX_DRILL = null;   // { kind:'category'|'subcategory', label, values:[] }
+// Set only while a chart click is doing the navigating, so switchFinanceTab
+// can tell "arrived by drill-down" apart from "opened the tab normally".
+let _finDrillNavigating = false;
+
+function _finTxPassesDrill(t){
+  if(!FIN_TX_DRILL) return true;
+  // 'Uncategorized' is a display label the chart invents for a blank
+  // category — match it back to the blank rather than looking for the word.
+  const field = FIN_TX_DRILL.kind === 'category' ? (t.category || 'Uncategorized') : t.subcategory;
+  return FIN_TX_DRILL.values.includes(field);
+}
+
+function clearFinTxDrill(){
+  FIN_TX_DRILL = null;
+  renderFinanceTransactions();
+}
+
+function _renderFinTxDrillChip(){
+  const el = document.getElementById('finTxDrillChip');
+  if(!el) return;
+  if(!FIN_TX_DRILL){ el.style.display = 'none'; el.innerHTML = ''; return; }
+  const d = FIN_TX_DRILL;
+  const rolled = d.values.length > 1
+    ? `<span class="fin-drill-sub">${d.values.length} subcategories</span>` : '';
+  el.style.display = 'flex';
+  el.innerHTML = `<span class="fin-drill-chip">
+      <span class="fin-drill-kind">${d.kind === 'category' ? 'Category' : 'Subcategory'}</span>
+      <strong>${escapeHtml(d.label)}</strong>${rolled}
+      <button onclick="clearFinTxDrill()" title="Remove this filter" aria-label="Remove this filter">✕</button>
+    </span>`;
+}
+
+function finDrillToTransactions(kind, label, values){
+  FIN_TX_DRILL = { kind, label, values };
+
+  // Carry the Dashboard's period and account over, so the list adds up to the
+  // number that was just clicked instead of quietly showing all time.
+  const period = document.getElementById('finDashPeriodFilter')?.value;
+  const txPeriod = document.getElementById('finTxPeriodFilter');
+  if(period && txPeriod && [...txPeriod.options].some(o => o.value === period)){
+    txPeriod.value = period;
+    if(period === 'range'){
+      const from = document.getElementById('finTxRangeFrom');
+      const to = document.getElementById('finTxRangeTo');
+      if(from) from.value = document.getElementById('finDashRangeFrom')?.value || '';
+      if(to) to.value = document.getElementById('finDashRangeTo')?.value || '';
+    }
+    const rangeRow = document.getElementById('finTxRangeFilterRow');
+    if(rangeRow) rangeRow.style.display = period === 'range' ? 'flex' : 'none';
+  }
+
+  const dashAcc = document.getElementById('finDashAccountFilter')?.value || 'all';
+  _finTxPendingAccountFilter = dashAcc;
+
+  // Both charts only ever plot expenses, so anything else in view would be
+  // rows that were never part of the total that was clicked.
+  const typeSel = document.getElementById('finTxTypeFilter');
+  if(typeSel) typeSel.value = 'Expense';
+  const searchSel = document.getElementById('finTxSearchFilter');
+  if(searchSel) searchSel.value = '';
+
+  _finDrillNavigating = true;
+  try{ switchFinanceTab('transactions'); }
+  finally{ _finDrillNavigating = false; }
 }
 
 // Combines the period filter with the Account and Type filters — a
 // transaction must pass all three to show up (or be included in Delete All).
 function _finTxPassesFilters(t){
   if(!_finTxPassesPeriodFilter(t)) return false;
+  if(!_finTxPassesDrill(t)) return false;
 
   const accFilter = document.getElementById('finTxAccountFilter')?.value || 'all';
   if(accFilter !== 'all'){
@@ -5083,6 +6050,7 @@ function renderFinanceTransactions(){
   if(!wrap || !empty || !body) return;
 
   _populateFinTxAccountFilter();
+  _renderFinTxDrillChip();
   const rows = FIN_TXNS.filter(_finTxPassesFilters);
 
   // Selection is kept by id (not by visible row), so it survives filter
@@ -6198,9 +7166,29 @@ function toggleFinRecurringList(slug){
   if(caret) caret.textContent = open ? '▾' : '▸';
 }
 
-function _finMonthlyRecurringItems(accountId){
-  return FIN_RECURRING
-    .filter(r => r.account_id === accountId && !_finRecIsFullyPaid(r))
+// An item belongs to a bill only from its First Bill month onward. Setting
+// "First bill: August" and still seeing the item on the July statement is
+// simply wrong — it hadn't started yet. Compared by year-month, not by day,
+// because a bill covers a whole calendar month. No first_bill recorded means
+// it predates the field and has always been running.
+function _finRecStartedBy(r, monthDate){
+  if(!r.first_bill) return true;
+  const d = new Date(r.first_bill + 'T00:00:00');
+  if(isNaN(d.getTime())) return true;
+  return (d.getFullYear() * 12 + d.getMonth()) <= (monthDate.getFullYear() * 12 + monthDate.getMonth());
+}
+
+// Recurring items on an account that are live for the given month. Every
+// caller passes the month explicitly — a default would quietly bill the wrong
+// one, which is the bug this parameter exists to fix.
+function _finRecDueIn(accountId, monthDate){
+  return FIN_RECURRING.filter(r =>
+    r.account_id === accountId && !_finRecIsFullyPaid(r) && _finRecStartedBy(r, monthDate)
+  );
+}
+
+function _finMonthlyRecurringItems(accountId, monthDate){
+  return _finRecDueIn(accountId, monthDate)
     .map(r => {
       const isInstallment = r.kind === 'Installment';
       const amount = isInstallment
@@ -6211,8 +7199,8 @@ function _finMonthlyRecurringItems(accountId){
     .sort((a,b) => b.amount - a.amount);
 }
 
-function _finMonthlyRecurringTotal(accountId){
-  return _finMonthlyRecurringItems(accountId).reduce((s, x) => s + x.amount, 0);
+function _finMonthlyRecurringTotal(accountId, monthDate){
+  return _finMonthlyRecurringItems(accountId, monthDate).reduce((s, x) => s + x.amount, 0);
 }
 
 function _finBillPaidCovers(lastBillPaid, monthDate){
@@ -6321,7 +7309,7 @@ async function payAllDueForAccount(accountId){
   }
 
   _finCreditPaymentAccountId = accountId;
-  const billAmount = _finMonthlyRecurringTotal(accountId) + _finMonthTxTotal(accountId, prevMonth);
+  const billAmount = _finMonthlyRecurringTotal(accountId, prevMonth) + _finMonthTxTotal(accountId, prevMonth);
   document.getElementById('finCreditPaymentInfo').textContent =
     `Paying ${finMoney(billAmount, acc.currency)} for ${prevMonth.toLocaleDateString('en-US',{month:'long'})} — logged as a Transfer tagged Debt & Loans / Credit card payments.`;
   document.getElementById('finCreditPaymentSourceAccount').innerHTML = _finDebitAccountOptionsHtml();
@@ -6355,8 +7343,11 @@ async function confirmPayAllDueForAccount(){
 
   const prevMonth = _finPreviousMonthLabel();
 
-  // 1. Advance every linked recurring item by one payment.
-  const due = FIN_RECURRING.filter(r => r.account_id === accountId && !_finRecIsFullyPaid(r));
+  // 1. Advance every linked recurring item by one payment — but only the ones
+  //    that had actually started by this statement's month. Advancing an item
+  //    whose first bill is still in the future would burn a payment off an
+  //    installment that hasn't billed once.
+  const due = _finRecDueIn(accountId, prevMonth);
   for(const r of due){
     const result = await _markOneRecPaid(r);
     if(!result.ok){
@@ -6394,7 +7385,7 @@ async function confirmPayAllDueForAccount(){
 
   // 3. Log the actual payment as a Transfer, tagged so it's easy to find/
   //    total later, and deduct it from the account it really came from.
-  const billAmount = _finMonthlyRecurringTotal(accountId) + _finMonthTxTotal(accountId, prevMonth);
+  const billAmount = _finMonthlyRecurringTotal(accountId, prevMonth) + _finMonthTxTotal(accountId, prevMonth);
   let paymentTxId = null;
   if(billAmount > 0){
     try{
@@ -6570,6 +7561,22 @@ async function _finPatchRecurring(id, patch){
   }
 }
 
+// What period an item is actually due for. One helper for all four Recurring
+// lists (installment/subscription × table/card), because the previous copies
+// each hard-coded "last month" — which is how an item with First Bill in
+// August ended up displayed as a July charge.
+function _finRecDueCellHtml(r, { fullyPaid = false, alreadyPaid = false } = {}){
+  const fmtPeriod = d => d ? d.toLocaleDateString('en-US',{month:'short',year:'numeric'}) : '—';
+  if(fullyPaid) return '<span class="pill pill-green">Fully paid</span>';
+  const prev = _finPreviousMonthLabel();
+  if(!_finRecStartedBy(r, prev)){
+    const d = new Date(r.first_bill + 'T00:00:00');
+    return `<span class="pill pill-muted">Starts ${fmtPeriod(new Date(d.getFullYear(), d.getMonth(), 1))}</span>`;
+  }
+  if(alreadyPaid) return `<span class="pill pill-green">Paid — ${fmtPeriod(prev)}</span>`;
+  return fmtPeriod(prev);
+}
+
 function renderFinanceRecurring(){
   const instBody = document.getElementById('finInstBody');
   if(!instBody) return;
@@ -6593,11 +7600,7 @@ function renderFinanceRecurring(){
     // is already settled is read off the linked account's last_bill_paid.
     const linkedAcc = FIN_ACCOUNTS.find(a => a.id === r.account_id);
     const cycleAlreadyPaid = linkedAcc && _finBillPaidCovers(linkedAcc.last_bill_paid, _finPreviousMonthLabel());
-    const dueCell = done
-      ? '<span class="pill pill-green">Fully paid</span>'
-      : (cycleAlreadyPaid
-          ? `<span class="pill pill-green">Paid — ${fmtPeriod(_finPreviousMonthLabel())}</span>`
-          : fmtPeriod(_finPreviousMonthLabel()));
+    const dueCell = _finRecDueCellHtml(r, { fullyPaid: done, alreadyPaid: cycleAlreadyPaid });
     const remaining = (Number(r.total_amount) || 0) - (monthly * paid);
     return `
       <tr>
@@ -6626,11 +7629,7 @@ function renderFinanceRecurring(){
     const done = paid >= total;
     const linkedAcc = FIN_ACCOUNTS.find(a => a.id === r.account_id);
     const cycleAlreadyPaid = linkedAcc && _finBillPaidCovers(linkedAcc.last_bill_paid, _finPreviousMonthLabel());
-    const dueCell = done
-      ? '<span class="pill pill-green">Fully paid</span>'
-      : (cycleAlreadyPaid
-          ? `<span class="pill pill-green">Paid — ${fmtPeriod(_finPreviousMonthLabel())}</span>`
-          : fmtPeriod(_finPreviousMonthLabel()));
+    const dueCell = _finRecDueCellHtml(r, { fullyPaid: done, alreadyPaid: cycleAlreadyPaid });
     const remaining = (Number(r.total_amount) || 0) - (monthly * paid);
     return `
       <div class="account-card">
@@ -6663,13 +7662,10 @@ function renderFinanceRecurring(){
   document.getElementById('finSubWrap').style.display = subs.length ? 'block' : 'none';
   document.getElementById('finSubCardGrid').style.display = subs.length ? '' : 'none';
   document.getElementById('finSubBody').innerHTML = subs.map(r => {
-    const next = _finPreviousMonthLabel();
     // Subscriptions DO track their own last_billed per item, so this reads
     // straight off that instead of the linked account's last_bill_paid.
-    const cycleAlreadyPaid = _finBillPaidCovers(r.last_billed, next);
-    const dueCell = cycleAlreadyPaid
-      ? `<span class="pill pill-green">Paid — ${fmtPeriod(next)}</span>`
-      : fmtPeriod(next);
+    const cycleAlreadyPaid = _finBillPaidCovers(r.last_billed, _finPreviousMonthLabel());
+    const dueCell = _finRecDueCellHtml(r, { alreadyPaid: cycleAlreadyPaid });
     return `
       <tr>
         <td>${escapeHtml(r.name)}<div style="font-size:10.5px;color:var(--muted);">${escapeHtml(_finAccountName(r.account_id))}</div></td>
@@ -6686,11 +7682,8 @@ function renderFinanceRecurring(){
   }).join('');
 
   document.getElementById('finSubCardGrid').innerHTML = subs.map(r => {
-    const next = _finPreviousMonthLabel();
-    const cycleAlreadyPaid = _finBillPaidCovers(r.last_billed, next);
-    const dueCell = cycleAlreadyPaid
-      ? `<span class="pill pill-green">Paid — ${fmtPeriod(next)}</span>`
-      : fmtPeriod(next);
+    const cycleAlreadyPaid = _finBillPaidCovers(r.last_billed, _finPreviousMonthLabel());
+    const dueCell = _finRecDueCellHtml(r, { alreadyPaid: cycleAlreadyPaid });
     return `
       <div class="account-card">
         <div class="fin-acc-card-head">
@@ -6881,6 +7874,16 @@ function clearJournalFilters(){
 function _journalCellValue(row, key){
   if(key === 'objective') return computeObjective(row) || '—';
   if(key === 'duration') return computeDuration(row) || '—';
+  // Computed, not stored — the answers live in confluence_answers and the
+  // question list in CONFLUENCE_SETUPS, so the score is derived the same way
+  // the Trade View badge and the Dashboard's Confluence Edge derive it.
+  if(key === 'confluence_score'){
+    const cfg = CONFLUENCE_SETUPS[`${row.trade_type}|${row.pattern_type}`];
+    const ans = row.confluence_answers;
+    if(!cfg || !ans || typeof ans !== 'object' || !Object.keys(ans).length) return '—';
+    const { total, done } = _confluenceProgress(cfg.items, ans, !!row.chart_pattern);
+    return `${Number(done.toFixed(1))}/${total}`;
+  }
   if(key === 'trade_summary'){
     const plain = computeTradeSummary(row).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
     return plain.length > 120 ? plain.slice(0, 120) + '…' : plain;
@@ -6931,6 +7934,18 @@ function _winLossBoxClass(winLossRaw){
 }
 
 function _journalColoredCell(key, row, plainVal){
+  // Computed columns have no row[key] to read, so they're handled before the
+  // guard below — otherwise they bail out immediately and never get styled.
+  if(key === 'confluence_score'){
+    if(!plainVal || plainVal === '—') return null;
+    const [doneStr, totalStr] = String(plainVal).split('/');
+    const frac = Number(totalStr) > 0 ? Number(doneStr) / Number(totalStr) : 0;
+    // Deliberately not a .box-badge: this column reads better bare, with the
+    // bar and the number carrying the tone instead of a filled pill.
+    const cls = frac >= 0.8 ? 'cfl-t-win' : (frac >= 0.5 ? 'cfl-t-orange' : 'cfl-t-loss');
+    return `<span class="cfl-score-box ${cls}"><span class="cfl-score-bar"><span class="cfl-score-bar-fill" style="width:${(frac*100).toFixed(0)}%;"></span></span><span class="cfl-score-num">${plainVal}</span></span>`;
+  }
+
   const raw = row[key];
   if(raw === null || raw === undefined || raw === '') return null;
   const v = String(raw).trim();
@@ -7277,7 +8292,7 @@ function computeFinanceChallenges(){
   const c7 = {
     icon: 'target', title: 'Needs-Focused Living', points: 70,
     desc: 'Consecutive months where 70%+ of classified spending went to needs, not wants.',
-    howTo: 'Needs = Housing, Utilities, Food & Groceries, Transportation, Healthcare, Education. Wants = Entertainment, Vices, Shopping, Gifts & Donations, Travel, Subscriptions. A month with no spending in either bucket, or below 70% needs, ends the streak.',
+    howTo: 'Needs = Housing, Utilities, Food & Groceries, Transportation, Healthcare, Education, Personal Care, Insurance, Government & Visa, Bank & Remittance Fees. Wants = Entertainment, Vices, Shopping, Gifts & Donations, Travel, Subscriptions. Debt & Loans and Savings & Investments are deliberately in neither bucket. A month with no spending in either bucket, or below 70% needs, ends the streak.',
     current: needsStreak, tiers: [1,3,6,12], target: 12, done: needsStreak >= 12
   };
 
@@ -10137,21 +11152,32 @@ function computeChallenges(trades, achRows){
     statOverride: prev20.length > 0 ? `Now: $${Math.abs(recentAvgLoss).toFixed(2)} · Before: $${Math.abs(prevAvgLoss).toFixed(2)}` : 'Needs more trades to compare.'
   };
 
-  // 7. Drawdown Guard — tighter max-drawdown control over time
-  let peak = 0, maxDD = 0, cum = 0;
-  closed.forEach(t => {
-    cum += netPnl(t);
-    peak = Math.max(peak, cum);
-    const dd = peak > 0 ? (peak - cum) / peak * 100 : 0;
-    maxDD = Math.max(maxDD, dd);
-  });
-  const ddSafety = peak > 0 ? Math.max(0, 100 - maxDD) : 0;
+  // 7. Drawdown Guard — tighter max-drawdown control over time.
+  // The tier runs on a rolling window, not lifetime: a lifetime worst can
+  // never improve, so once you've had one bad stretch the challenge is frozen
+  // forever and there's nothing left to earn. The lifetime figure is still
+  // shown underneath so the record isn't lost.
+  const DD_WINDOW = 100;
+  const _maxDrawdown = arr => {
+    let pk = 0, dd = 0, run = 0;
+    arr.forEach(t => {
+      run += netPnl(t);
+      pk = Math.max(pk, run);
+      if(pk > 0) dd = Math.max(dd, (pk - run) / pk * 100);
+    });
+    return { peak: pk, maxDD: dd };
+  };
+  const ddAll = _maxDrawdown(closed);
+  const ddWindow = _maxDrawdown(closed.slice(-DD_WINDOW));
+  const ddSafety = ddWindow.peak > 0 ? Math.max(0, 100 - ddWindow.maxDD) : 0;
   const c7 = {
     icon:'octagon', title:'Drawdown Guard', points:90,
     desc:'Keep your max drawdown tight against peak equity.',
-    howTo:'Built from your cumulative equity curve — the biggest drop from any peak to the lowest point after it, as a percentage of that peak. Levels: staying under 50%, 40%, 30%, 20%, 10% max drawdown.',
-    current: ddSafety, tiers: [50, 60, 70, 80, 90], target: 90, done: peak > 0 && maxDD < 10,
-    statOverride: peak > 0 ? `Max drawdown: ${maxDD.toFixed(1)}%` : 'Not enough data yet.'
+    howTo:`Built from your cumulative equity curve — the biggest drop from any peak to the lowest point after it, as a percentage of that peak. Measured over your most recent ${DD_WINDOW} closed trades, so improving your risk control actually moves this. Levels: staying under 50%, 40%, 30%, 20%, 10% max drawdown.`,
+    current: ddSafety, tiers: [50, 60, 70, 80, 90], target: 90, done: ddWindow.peak > 0 && ddWindow.maxDD < 10,
+    statOverride: ddWindow.peak > 0
+      ? `Last ${Math.min(closed.length, DD_WINDOW)} trades: ${ddWindow.maxDD.toFixed(1)}% · all-time worst: ${ddAll.maxDD.toFixed(1)}%`
+      : 'Not enough data yet.'
   };
 
   // 8. Consistent Volume — trades logged this month
@@ -10173,21 +11199,22 @@ function computeChallenges(trades, achRows){
     current: setupsThisMonth.size, tiers: [1, 2, 3, 5, 8], target: 8, done: setupsThisMonth.size >= 8
   };
 
-  // 10. Clean Week — most recent week had zero losses
+  // 10. Clean Week — most recent week had zero losses. A liquidation is a
+  // losing week too, so it breaks the streak just like a "Loss" does.
+  const _isLosingResult = t => ['loss','liquidated'].includes((t.win_loss || '').toLowerCase());
   const lastWeekKey = weekKeys[weekKeys.length - 1];
   const lastWeekTrades = closed.filter(t => getWeekKey(t.close_date) === lastWeekKey);
-  const lastWeekLossCount = lastWeekTrades.filter(t => (t.win_loss || '').toLowerCase() === 'loss').length;
+  const lastWeekLossCount = lastWeekTrades.filter(_isLosingResult).length;
   let cleanWeekStreak = 0, maxCleanWeekStreak = 0;
   weekKeys.forEach(w => {
     const weekTrades = closed.filter(t => getWeekKey(t.close_date) === w);
-    const hasLoss = weekTrades.some(t => (t.win_loss || '').toLowerCase() === 'loss');
-    if(weekTrades.length > 0 && !hasLoss){ cleanWeekStreak++; maxCleanWeekStreak = Math.max(maxCleanWeekStreak, cleanWeekStreak); }
+    if(weekTrades.length > 0 && !weekTrades.some(_isLosingResult)){ cleanWeekStreak++; maxCleanWeekStreak = Math.max(maxCleanWeekStreak, cleanWeekStreak); }
     else cleanWeekStreak = 0;
   });
   const c10 = {
     icon:'star', title:'Clean Week', points:40,
     desc:'Consecutive weeks with zero losses.',
-    howTo:'Looks at each Monday–Sunday week and checks whether any closed trade in it is marked "Loss." A week with wins, breakevens, or no trades still counts as clean; one loss resets the streak. Levels: 1, 2, 3, 4, 5 clean weeks in a row.',
+    howTo:'Looks at each Monday–Sunday week and checks whether any closed trade in it is marked "Loss" or "Liquidated." A week of wins and breakevens still counts as clean; one loss resets the streak. Weeks you didn\'t trade are skipped rather than counted either way. Levels: 1, 2, 3, 4, 5 clean weeks in a row.',
     current: maxCleanWeekStreak, tiers: [1, 2, 3, 4, 5], target: 5, done: maxCleanWeekStreak >= 5,
     statOverride: lastWeekTrades.length ? `This week so far: ${lastWeekTrades.length} trades, ${lastWeekLossCount} loss${lastWeekLossCount===1?'':'es'}` : 'No trades yet this week.'
   };
@@ -10244,13 +11271,17 @@ function computeChallenges(trades, achRows){
   closed.forEach(t => {
     const key = t.trade_setup;
     if(!key || key === 'Unspecified') return;
-    if(!setupStats[key]) setupStats[key] = { wins: 0, total: 0 };
+    if(!setupStats[key]) setupStats[key] = { wins: 0, decided: 0, total: 0 };
     setupStats[key].total++;
-    if((t.win_loss || '').toLowerCase() === 'win') setupStats[key].wins++;
+    const wl = (t.win_loss || '').toLowerCase();
+    if(wl === 'win'){ setupStats[key].wins++; setupStats[key].decided++; }
+    else if(wl === 'loss' || wl === 'liquidated') setupStats[key].decided++;
   });
   let bestSetup = null, bestSetupRate = 0;
   Object.entries(setupStats).forEach(([name, s]) => {
-    if(s.total >= 10 && s.wins / s.total > bestSetupRate){ bestSetupRate = s.wins / s.total; bestSetup = name; }
+    if(s.total < 10 || !s.decided) return;
+    const rate = s.wins / s.decided;
+    if(rate > bestSetupRate){ bestSetupRate = rate; bestSetup = name; }
   });
   const c15 = {
     icon:'target', title:'Setup Specialist', points:110,
@@ -10334,13 +11365,17 @@ function computeChallenges(trades, achRows){
   closed.forEach(t => {
     const key = t.day_of_week;
     if(!key || key === 'Unspecified') return;
-    if(!dayStats[key]) dayStats[key] = { wins: 0, total: 0 };
+    if(!dayStats[key]) dayStats[key] = { wins: 0, decided: 0, total: 0 };
     dayStats[key].total++;
-    if((t.win_loss || '').toLowerCase() === 'win') dayStats[key].wins++;
+    const wl = (t.win_loss || '').toLowerCase();
+    if(wl === 'win'){ dayStats[key].wins++; dayStats[key].decided++; }
+    else if(wl === 'loss' || wl === 'liquidated') dayStats[key].decided++;
   });
   let bestDay = null, bestDayRate = 0;
   Object.entries(dayStats).forEach(([name, s]) => {
-    if(s.total >= 10 && s.wins / s.total > bestDayRate){ bestDayRate = s.wins / s.total; bestDay = name; }
+    if(s.total < 10 || !s.decided) return;
+    const rate = s.wins / s.decided;
+    if(rate > bestDayRate){ bestDayRate = rate; bestDay = name; }
   });
   const c23 = {
     icon:'medal', title:'Weekday Ace', points:90,
@@ -10365,13 +11400,14 @@ function computeChallenges(trades, achRows){
 
   // 25. Monthly Win Rate — win rate for this month's trades (resets monthly)
   const monthWins = thisMonthTrades.filter(t => (t.win_loss || '').toLowerCase() === 'win').length;
-  const monthWinRate = thisMonthTrades.length > 0 ? (monthWins / thisMonthTrades.length) * 100 : 0;
+  const monthDecided = thisMonthTrades.filter(t => ['win','loss','liquidated'].includes((t.win_loss || '').toLowerCase())).length;
+  const monthWinRate = monthDecided > 0 ? (monthWins / monthDecided) * 100 : 0;
   const c25 = {
     icon:'zap', title:'Monthly Win Rate', points:70,
     desc:'Win rate for this month\'s trades.',
-    howTo:'Wins ÷ total closed trades this month. Levels: 40%, 50%, 60%, 70%, 80% win rate. Resets every month — a fresh scoreboard each time. Never sit out a valid trade near month-end just to protect this number.',
-    current: thisMonthTrades.length > 0 ? monthWinRate : 0, tiers: [40, 50, 60, 70, 80], target: 80,
-    done: thisMonthTrades.length > 0 && monthWinRate >= 80
+    howTo:'Wins ÷ trades that actually resolved this month. Breakevens are left out of both sides — they are neither a win nor a loss, and counting them as losses would quietly drag the number down. Levels: 40%, 50%, 60%, 70%, 80%. Resets every month — a fresh scoreboard each time. Never sit out a valid trade near month-end just to protect this number.',
+    current: monthDecided > 0 ? monthWinRate : 0, tiers: [40, 50, 60, 70, 80], target: 80,
+    done: monthDecided > 0 && monthWinRate >= 80
   };
 
   // 26. Weeks Won — winning weeks within this month (resets monthly)
@@ -10383,6 +11419,81 @@ function computeChallenges(trades, achRows){
     howTo:'Counts how many Monday–Sunday weeks touching this month had a positive total P/L. Levels: 1, 2, 3, 4, 5 winning weeks. Resets every month. Keep trading your plan as usual — don\'t go quiet just because a week is already green.',
     current: weeksWonThisMonth, tiers: [1, 2, 3, 4, 5], target: 5, done: weeksWonThisMonth >= 5
   };
+
+  // 31. Confluence Discipline — consecutive trades where the checklist was
+  // filled in completely. Deliberately counts ANSWERING, not scoring: a
+  // thoughtful "no" on every line still completes it. Scoring it would push
+  // toward only logging setups that happen to look good, which is the exact
+  // opposite of what the checklist is for.
+  let cflStreak = 0, cflComplete = 0, cflApplicable = 0;
+  const _cflFilled = t => {
+    const cfg = CONFLUENCE_SETUPS[`${t.trade_type}|${t.pattern_type}`];
+    if(!cfg) return null;   // no checklist defined for this setup — not applicable
+    const answers = t.confluence_answers || {};
+    const { unanswered } = _confluenceProgress(cfg.items, answers, !!t.chart_pattern);
+    return unanswered === 0 && !!t.chart_pattern;
+  };
+  for(const t of recentFirst){
+    const filled = _cflFilled(t);
+    if(filled === null) continue;       // skip, don't break — nothing to fill in
+    if(filled) cflStreak++; else break;
+  }
+  closed.forEach(t => {
+    const filled = _cflFilled(t);
+    if(filled === null) return;
+    cflApplicable++;
+    if(filled) cflComplete++;
+  });
+  const c31 = {
+    icon:'search', title:'Confluence Discipline', points:80,
+    desc:'Consecutive trades with the confluence checklist fully filled in.',
+    howTo:'Counted from your most recent trade backwards. A trade counts when every checklist line has an answer and a Chart Pattern is set — the answers themselves don\'t matter, so an honest "No" all the way down still completes it. Trades whose setup has no checklist defined are skipped rather than breaking the streak. Levels: 3, 5, 10, 20, 30 in a row.',
+    current: cflStreak, tiers: [3, 5, 10, 20, 30], target: 30, done: cflStreak >= 30,
+    statOverride: cflApplicable ? `${cflComplete} of ${cflApplicable} trades fully checklisted` : 'No checklist-eligible trades yet.'
+  };
+
+  // 32. Plan Your Exit — both TP and SL logged, so the trade had defined
+  // targets before it was taken rather than being rationalised afterwards.
+  const withTpSl = closed.filter(t => t.tp_price != null && t.sl_price != null).length;
+  const c32 = {
+    icon:'target', title:'Plan Your Exit', points:70,
+    desc:'Trades logged with both a TP and an SL price.',
+    howTo:'Counts closed trades where you recorded both a Take Profit and a Stop Loss price. This is about defining your exit before you enter — it doesn\'t care whether either one actually got hit. Levels: 5, 10, 25, 50, 100 trades.',
+    current: withTpSl, tiers: [5, 10, 25, 50, 100], target: 100, done: withTpSl >= 100,
+    statOverride: closed.length ? `${withTpSl} of ${closed.length} trades have both prices` : 'No closed trades yet.'
+  };
+
+  // 33. Setup Follow-Through — planned setups that actually made it into the
+  // journal, rather than being left hanging in Pending forever.
+  const journaledSetups = SAVED_SETUPS.filter(s => s.status === 'Journaled').length;
+  const pendingSetups = SAVED_SETUPS.filter(s => (s.status || 'Pending') !== 'Journaled').length;
+  const c33 = {
+    icon:'check-circle', title:'Setup Follow-Through', points:60,
+    desc:'Setups you planned in the calculator and then journaled.',
+    howTo:'Counts Pending Setups that you carried through to a journal entry. It rewards closing the loop on a plan you made — leaving a setup pending because you decided not to take it costs you nothing here. Levels: 1, 5, 10, 25, 50 setups.',
+    current: journaledSetups, tiers: [1, 5, 10, 25, 50], target: 50, done: journaledSetups >= 50,
+    statOverride: `${journaledSetups} journaled · ${pendingSetups} still pending`
+  };
+
+  // 34. Freedom Months — completed months where trading alone cleared the
+  // salary bar from Payslip vs P&L. The only challenge tied to the actual goal.
+  let c34 = null;
+  const _salCfg = _salarySettings();
+  const salaryUsdBar = (Number(_salCfg.monthly_salary) > 0 && Number(_salCfg.aed_per_usd) > 0)
+    ? Number(_salCfg.monthly_salary) / Number(_salCfg.aed_per_usd) : null;
+  if(salaryUsdBar){
+    const freedomMonths = Object.keys(monthTotals)
+      .filter(k => k !== thisMonthKey && monthTotals[k] >= salaryUsdBar).length;
+    const streakGoal = Math.max(5, _salaryStreakTarget());
+    const c34Tiers = [1, 2, 3, 4, streakGoal];
+    c34 = {
+      icon:'dollar', title:'Freedom Months', points:150,
+      desc:'Completed months where trading alone out-earned your salary.',
+      howTo:`Compares each completed month's net trading P/L against your monthly salary (currently $${salaryUsdBar.toFixed(0)}/month, from Payslip vs P&L). The current month is excluded while it's still running. Levels: 1, 2, 3, 4, ${streakGoal} months, lifetime. This counts months that already happened — there is nothing to chase here, only to record.`,
+      current: freedomMonths, tiers: c34Tiers, target: streakGoal, done: freedomMonths >= streakGoal,
+      statOverride: `Bar to beat: $${salaryUsdBar.toFixed(0)}/month`
+    };
+  }
 
   // 28-30. Account compliance guards — pass/fail checks against your real prop
   // firm account rules (My Accounts), not performance targets to chase. These
@@ -10430,14 +11541,15 @@ function computeChallenges(trades, achRows){
     };
   }
 
-  return [c1,c2,c3,c4,c5,c6,c7,c8,c9,c10,c11,c12,c13,c14,c15,c17,c18,c19,c20,c21,c22,c23,c24,c25,c26,c27,c28,c29,c30].filter(Boolean);
+  return [c1,c2,c3,c4,c5,c6,c7,c8,c9,c10,c11,c12,c13,c14,c15,c17,c18,c19,c20,c21,c22,c23,c24,c25,c26,c27,c28,c29,c30,c31,c32,c33,c34].filter(Boolean);
 }
 
+// SL Discipline and Confluence Purist used to live here; they're now live as
+// Plan Your Exit and Confluence Discipline, since trades carry tp_price /
+// sl_price and confluence_answers.
 const LOCKED_CHALLENGES = [
-  {icon:'percent', title:'1% Risk Master', desc:'Risking ≤1% per trade, 30 trades in a row.', needs:'Needs an entry price, stop-loss price, or account balance field to calculate the % risked per trade.'},
-  {icon:'target', title:'SL Discipline', desc:'Always setting a Stop Loss before entering.', needs:'Needs a new checkbox field ("SL set before entry?") on the trade form.'},
+  {icon:'percent', title:'1% Risk Master', desc:'Risking ≤1% per trade, 30 trades in a row.', needs:'Entry and stop-loss prices exist now, but this also needs the account balance as it was on the day of each trade — only the current balance is stored, so old trades would be measured against the wrong number.'},
   {icon:'ban', title:'No Revenge Trading', desc:'Skipping the next signal after a loss.', needs:'Needs a log of skipped signals — not tracked yet.'},
-  {icon:'search', title:'Confluence Purist', desc:'Only entering when every confluence condition is "Met."', needs:'Needs a history/snapshot log of Trade Alerts (currently only the latest state is stored).'},
   {icon:'clock', title:'Same-Day Journaling', desc:'Logging every trade within 24 hours.', needs:'Needs a "created_at" column on trading_journal that records when you actually logged the trade.'},
   {icon:'calendar', title:'Daily Check-in Streak', desc:'Visiting the dashboard every day.', needs:'Needs new tracking of login/visit dates — not derived from trades.'},
   {icon:'medal', title:'Tournament Placement', desc:'Placing Top 10 or winning a tournament.', needs:'Needs a structured "placement" field on Achievements (currently just free text in subject/body).'}
@@ -11749,6 +12861,141 @@ function saveCalculatorDraft(){
   }
 }
 
+/* ---- Calculator > "BnB Check" — the same Bread & Butter checklist as the
+   Notebook, but reachable while you're sizing a position and, unlike the
+   Notebook's scratch copy, remembered. Device-local for the same reason the
+   calculator draft is: it's working state for a setup you haven't taken yet,
+   not a record of one you did. ---- */
+const PSBB_KEY = 'poscalc-bb-check';
+let psBbAnswers = {};
+let psBbChartPattern = null;
+let PSBB_SAVE_TIMER = null;
+
+function _psBbSetSaveState(txt){
+  const el = document.getElementById('psBbSaveState');
+  if(!el) return;
+  el.textContent = txt;
+  if(txt === 'Saved') setTimeout(() => { if(el.textContent === 'Saved') el.textContent = ''; }, 1800);
+}
+
+function savePsBbCheck(){
+  const payload = {
+    trade_type: document.getElementById('psBbTradeType')?.value || '',
+    pattern_type: document.getElementById('psBbPatternType')?.value || '',
+    answers: psBbAnswers,
+    chart_pattern: psBbChartPattern
+  };
+  try{
+    localStorage.setItem(PSBB_KEY, JSON.stringify(payload));
+    _psBbSetSaveState('Saved');
+  }catch(e){
+    console.error("Couldn't save BnB check:", e);
+    _psBbSetSaveState("Couldn't save on this device");
+  }
+}
+
+function _psBbQueueSave(){
+  _psBbSetSaveState('Saving…');
+  clearTimeout(PSBB_SAVE_TIMER);
+  PSBB_SAVE_TIMER = setTimeout(savePsBbCheck, 500);
+}
+
+function _psBbLoadSaved(){
+  try{
+    const raw = localStorage.getItem(PSBB_KEY);
+    return raw ? JSON.parse(raw) : null;
+  }catch(e){
+    console.error("Couldn't load BnB check:", e);
+    return null;
+  }
+}
+
+function openPsBbModal(){
+  const saved = _psBbLoadSaved();
+  psBbAnswers = (saved && saved.answers && typeof saved.answers === 'object') ? { ...saved.answers } : {};
+  psBbChartPattern = (saved && saved.chart_pattern) || null;
+
+  const ttSel = document.getElementById('psBbTradeType');
+  ttSel.innerHTML = '<option value="">— choose —</option>' +
+    FIELD_OPTIONS.trade_type.map(o => `<option value="${o}">${o}</option>`).join('');
+  // Nothing saved yet? Start from the direction already set in the calculator —
+  // it's the same Long/Short, and it saves a pointless first click.
+  ttSel.value = (saved && saved.trade_type) || document.getElementById('psDirection')?.value || '';
+
+  _renderPsBbPatternOptions();
+  if(saved && saved.pattern_type) document.getElementById('psBbPatternType').value = saved.pattern_type;
+
+  _psBbSetSaveState('');
+  renderPsBbChecklist();
+  document.getElementById('psBbModal').classList.add('open');
+}
+
+function closePsBbModal(){
+  // Flush the pending debounce rather than dropping it — closing right after
+  // the last tick would otherwise lose that tick.
+  clearTimeout(PSBB_SAVE_TIMER);
+  savePsBbCheck();
+  document.getElementById('psBbModal').classList.remove('open');
+}
+
+function _renderPsBbPatternOptions(){
+  const tt = document.getElementById('psBbTradeType').value;
+  const allowed = _patternTypesForTradeType(tt);
+  const sel = document.getElementById('psBbPatternType');
+  const current = sel.value;
+  sel.innerHTML = '<option value="">— choose —</option>' + allowed.map(o => `<option value="${o}">${o}</option>`).join('');
+  if(current && allowed.includes(current)) sel.value = current;
+}
+
+function onPsBbTradeTypeChange(){
+  _renderPsBbPatternOptions();
+  onPsBbTypeChange();
+}
+
+// Changing the setup invalidates the answers — they're answers to a different
+// list of questions once the pattern changes.
+function onPsBbTypeChange(){
+  psBbAnswers = {};
+  psBbChartPattern = null;
+  renderPsBbChecklist();
+  _psBbQueueSave();
+}
+
+function setPsBbAnswer(i, val){
+  psBbAnswers[i] = (psBbAnswers[i] === val) ? undefined : val;
+  if(psBbAnswers[i] === undefined) delete psBbAnswers[i];
+  renderPsBbChecklist();
+  _psBbQueueSave();
+}
+
+function selectPsBbChartPattern(p){
+  psBbChartPattern = (p === 'None') ? null : p;
+  renderPsBbChecklist();
+  _psBbQueueSave();
+}
+
+function renderPsBbChecklist(){
+  _bbRenderChecklist({
+    ttId: 'psBbTradeType', ptId: 'psBbPatternType', bodyId: 'psBbChecklistBody',
+    answers: psBbAnswers, chartPattern: psBbChartPattern,
+    setAnswerFn: 'setPsBbAnswer', setPatternFn: 'selectPsBbChartPattern'
+  });
+}
+
+async function clearPsBbCheck(){
+  if(!(await customConfirm('Clear this BnB check? The setup and every answer are reset.', 'Clear'))) return;
+  clearTimeout(PSBB_SAVE_TIMER);
+  psBbAnswers = {};
+  psBbChartPattern = null;
+  try{ localStorage.removeItem(PSBB_KEY); }catch(e){}
+  document.getElementById('psBbTradeType').value = document.getElementById('psDirection')?.value || '';
+  _renderPsBbPatternOptions();
+  document.getElementById('psBbPatternType').value = '';
+  _psBbSetSaveState('');
+  renderPsBbChecklist();
+  showToast('BnB check cleared');
+}
+
 function clearCalculatorDraft(){
   try{ localStorage.removeItem('poscalc-draft'); }catch(e){}
   document.getElementById('psSymbol').value = '';
@@ -11847,7 +13094,9 @@ async function tradeThisSetup(accountId){
     margin: c.margin,
     stop_loss_pct: slPct,
     take_profit_pct: tpPct,
-    risk_amount: riskAmount,
+    // The capped amount, not the typed one — the setup has to record the
+    // risk actually taken, which is what quantity and margin were sized from.
+    risk_amount: c.effRisk,
     position_size: c.qty * entry,
     entry_price: entry,
     tp_price: Number.isFinite(tp) ? tp : null,
@@ -13376,10 +14625,14 @@ function selectBbChartPattern(p){
   renderBbChecklist();
 }
 
-function renderBbChecklist(){
-  const body = document.getElementById('bbChecklistBody');
-  const tt = document.getElementById('bbTradeType').value;
-  const pt = document.getElementById('bbPatternType').value;
+// Shared by both Bread & Butter checklists — the Notebook's scratch copy and
+// the Calculator's saved one. Identical markup and behaviour; only the element
+// ids, the state they read, and the handler names they call differ.
+function _bbRenderChecklist({ ttId, ptId, bodyId, answers, chartPattern, setAnswerFn, setPatternFn }){
+  const body = document.getElementById(bodyId);
+  if(!body) return;
+  const tt = document.getElementById(ttId).value;
+  const pt = document.getElementById(ptId).value;
   const key = (tt && pt) ? `${tt}|${pt}` : null;
   if(!key){
     body.innerHTML = '<div class="empty-state">Pick a Trade Type and Pattern Type first.</div>';
@@ -13391,15 +14644,15 @@ function renderBbChecklist(){
     return;
   }
 
-  const { total, done, unanswered } = _confluenceProgress(cfg.items, bbAnswers, !!bbChartPattern);
+  const { total, done, unanswered } = _confluenceProgress(cfg.items, answers, !!chartPattern);
 
   const itemsHtml = cfg.items.map((it, i) =>
-    _renderConfluenceItemRow(it, i, bbAnswers[i], 'setBbAnswer')
+    _renderConfluenceItemRow(it, i, answers[i], setAnswerFn)
   ).join('');
 
   const chipsHtml = ['None', ...cfg.patterns].map(p => {
-    const isActive = (p === 'None' && !bbChartPattern) || p === bbChartPattern;
-    return `<span class="cfl-pattern-chip ${p==='None'?'cfl-none':''} ${isActive?'active':''}" onclick="selectBbChartPattern('${p.replace(/'/g,"\\'")}')">${p}</span>`;
+    const isActive = (p === 'None' && !chartPattern) || p === chartPattern;
+    return `<span class="cfl-pattern-chip ${p==='None'?'cfl-none':''} ${isActive?'active':''}" onclick="${setPatternFn}('${p.replace(/'/g,"\\'")}')">${p}</span>`;
   }).join('');
 
   body.innerHTML = `
@@ -13418,7 +14671,178 @@ function renderBbChecklist(){
       </div>
       <div class="cfl-pattern-chips">${chipsHtml}</div>
     </div>
+    ${_bbWarningSignsHtml(key, cfg, done, total, answers)}
   `;
+}
+
+function renderBbChecklist(){
+  _bbRenderChecklist({
+    ttId: 'bbTradeType', ptId: 'bbPatternType', bodyId: 'bbChecklistBody',
+    answers: bbAnswers, chartPattern: bbChartPattern,
+    setAnswerFn: 'setBbAnswer', setPatternFn: 'selectBbChartPattern'
+  });
+}
+
+// Reads your own journal back to you while the setup is still live: how this
+// exact setup has performed, how trades at this confluence level went, and
+// which of the answers you've just given have preceded losses before.
+// Every claim carries its sample size — with a handful of trades these are
+// observations, not predictions, and the copy says so rather than pretending
+// otherwise.
+// Two floors, because the levels differ in how much data reaches them. A
+// whole setup accumulates trades quickly, so 3 is enough to say anything at
+// all. A single answer on a single question inside that setup does not — at
+// 3 trades a 33% vs 67% split is chance, so those flags wait for 5.
+const BB_MIN_SAMPLE = 3;
+const BB_MIN_ANSWER_SAMPLE = 5;
+
+function _bbStats(trades){
+  const wins = trades.filter(t => (t.win_loss||'').toLowerCase() === 'win').length;
+  const losses = trades.filter(t => ['loss','liquidated'].includes((t.win_loss||'').toLowerCase())).length;
+  const decided = wins + losses;
+  const net = trades.reduce((s,t) => s + netPnl(t), 0);
+  return {
+    n: trades.length,
+    winRate: decided ? wins / decided * 100 : null,
+    net,
+    avg: trades.length ? net / trades.length : 0
+  };
+}
+
+// `answers` is passed in rather than read off a module global, because this
+// panel now renders for two independent checklists (Notebook + Calculator).
+function _bbWarningSignsHtml(key, cfg, done, total, answers){
+  const sameSetup = ALL_TRADES.filter(t =>
+    t.close_date && `${t.trade_type}|${t.pattern_type}` === key
+  );
+
+  if(sameSetup.length < BB_MIN_SAMPLE){
+    return `<div class="bb-warn bb-warn-neutral">
+      <div class="bb-warn-top">
+        <span class="bb-verdict">NO DATA</span>
+        <span class="bb-warn-head">Not enough history yet</span>
+      </div>
+      <div class="bb-warn-body" style="margin-top:8px;">You've journaled ${sameSetup.length} trade${sameSetup.length===1?'':'s'} on this setup. Once there are a few more, this panel will tell you how it has actually performed for you.</div>
+    </div>`;
+  }
+
+  const all = _bbStats(sameSetup);
+  const flags = [];
+
+  // 1. How trades at this confluence level have gone. Compared as a FRACTION,
+  //    since different setups have different question counts.
+  const nowFrac = total ? done / total : 0;
+  const scored = sameSetup
+    .map(t => ({ t, f: _confluenceScoreFor(t) }))
+    .filter(x => x.f !== null);
+  const withConfluence = scored.length;
+  const band = scored.filter(x => Math.abs(x.f - nowFrac) <= 0.15).map(x => x.t);
+  // The band is the primary evidence, and it is judged on what ACTUALLY
+  // happened — never on the assumption that a low score is bad. If your 4/9
+  // trades have historically won, this says so and the verdict follows it.
+  let bandStats = null;
+  if(band.length >= BB_MIN_SAMPLE){
+    bandStats = _bbStats(band);
+    const s = bandStats;
+    if(s.winRate !== null && s.avg < 0){
+      flags.push({ level:'bad', text:`At around this confluence level (${fmtNum(nowFrac*100,0)}%), your ${s.n} trades won ${fmtNum(s.winRate,0)}% of the time and averaged ${fmtMoney(s.avg)} — a loss on average.` });
+    }else if(s.winRate !== null && s.avg > 0){
+      flags.push({ level:'good', text:`At around this confluence level (${fmtNum(nowFrac*100,0)}%), your ${s.n} trades won ${fmtNum(s.winRate,0)}% of the time and averaged ${fmtMoney(s.avg)} — profitable on average${nowFrac < 0.6 ? ', even at this score' : ''}.` });
+    }
+  }
+
+  // 2. Individual answers you've picked that carry a losing record. Compared
+  //    against your record on this setup overall, so it flags what's actually
+  //    worse for you rather than anything that merely sits below 50%.
+  const answerLabel = { yes:'Yes', no:'No', retest:'Retest', almost:'Almost' };
+  cfg.items.forEach((it, i) => {
+    const ans = answers[i];
+    if(ans === undefined || all.winRate === null) return;
+    const matching = sameSetup.filter(t => t.confluence_answers && t.confluence_answers[i] === ans);
+    if(matching.length < BB_MIN_ANSWER_SAMPLE) return;
+    const s = _bbStats(matching);
+    if(s.winRate === null) return;
+
+    const label = it.select ? `${it.tag} “${ans}”` : `“${answerLabel[ans] || ans}” on ${it.tag}`;
+    if(s.winRate <= all.winRate - 15){
+      flags.push({ level:'bad', text:`${label} — ${fmtNum(s.winRate,0)}% win rate over ${s.n} trades, against ${fmtNum(all.winRate,0)}% on this setup overall.` });
+    }else if(s.winRate >= all.winRate + 15){
+      flags.push({ level:'good', text:`${label} — ${fmtNum(s.winRate,0)}% win rate over ${s.n} trades, better than your ${fmtNum(all.winRate,0)}% overall.` });
+    }
+  });
+
+  const bad = flags.filter(f => f.level === 'bad').length;
+  const good = flags.filter(f => f.level === 'good').length;
+  const overall = all.winRate === null ? 'no decided results yet' : `${fmtNum(all.winRate,0)}% win rate`;
+
+  // Gated on how many questions are ANSWERED, not on the score. Those are
+  // different things: a fully answered checklist that lands on 3/9 is a
+  // complete, low-confluence read — not an unfinished one — and treating it
+  // as unfinished was hiding exactly the case where history disagrees with
+  // the score.
+  const answeredCount = cfg.items.filter((_, i) => answers[i] !== undefined).length;
+  const mostlyAnswered = answeredCount >= Math.ceil(cfg.items.length * 0.6);
+
+  let level, head, body, verdict;
+  if(!mostlyAnswered){
+    level = 'neutral'; verdict = 'INCOMPLETE';
+    head = 'Keep filling this in';
+    body = `${answeredCount} of ${cfg.items.length} questions answered — too few to compare against your history yet. Your record on this setup: ${all.n} trades, ${overall}, ${fmtMoney(all.net)} total.`;
+  }else if(bandStats && bandStats.avg > 0 && bad === 0){
+    // History says setups like this one make money, whatever the score is.
+    level = 'good'; verdict = 'GOOD';
+    head = nowFrac < 0.6 ? 'Low score, but this has worked for you' : 'This matches what works for you';
+    body = `Setups at this confluence level have averaged ${fmtMoney(bandStats.avg)} across ${bandStats.n} of your trades${bandStats.winRate !== null ? ` at a ${fmtNum(bandStats.winRate,0)}% win rate` : ''}. The score alone isn't the reason to skip it.`;
+  }else if(bandStats && bandStats.avg < 0 && good === 0){
+    level = 'bad'; verdict = 'RISKY';
+    head = 'This one looks risky';
+    body = `Setups at this confluence level have averaged ${fmtMoney(bandStats.avg)} across ${bandStats.n} of your trades${bandStats.winRate !== null ? ` at a ${fmtNum(bandStats.winRate,0)}% win rate` : ''}. Your overall record on this setup is ${overall}.`;
+  }else if(bad > good){
+    level = 'bad'; verdict = 'RISKY';
+    head = 'This one looks risky';
+    body = `${bad} thing${bad===1?' here has':'s here have'} gone badly for you before. Your overall record on this setup is ${overall} over ${all.n} trades — this particular combination has done worse.`;
+  }else if(good > 0 && bad === 0){
+    level = 'good'; verdict = 'GOOD';
+    head = 'This matches what works for you';
+    body = `Nothing here carries a losing record, and ${good} thing${good===1?' has':'s have'} done better than your ${overall} on this setup (${all.n} trades).`;
+  }else{
+    level = 'neutral'; verdict = 'MIXED';
+    head = 'Mixed signals';
+    body = `No strong signal either way from your ${all.n} trades on this setup (${overall}, ${fmtMoney(all.net)} total).`;
+  }
+
+  // The glance layer: a verdict word and four numbers, sized to be read
+  // without reading. Everything else is one click away, because the moment
+  // this panel matters most is the moment there's least patience for prose.
+  // Stats describe the closest comparison available — trades at this
+  // confluence level if there are enough of them, otherwise the setup overall.
+  const src = bandStats || all;
+  const srcLabel = bandStats ? 'at this level' : 'on this setup';
+  const stats = [
+    { v: `${fmtNum(nowFrac*100,0)}%`, l: 'score' },
+    { v: src.n, l: srcLabel },
+    { v: src.winRate === null ? '—' : `${fmtNum(src.winRate,0)}%`, l: 'win rate' },
+    { v: fmtMoney(src.avg), l: 'avg', tone: src.avg > 0 ? 'good' : (src.avg < 0 ? 'bad' : '') }
+  ];
+
+  const detailCount = flags.length;
+  return `<div class="bb-warn bb-warn-${level}">
+    <div class="bb-warn-top">
+      <span class="bb-verdict">${verdict}</span>
+      <span class="bb-warn-head">${head}</span>
+    </div>
+    <div class="bb-warn-stats">${stats.map(s =>
+      `<span class="bb-stat${s.tone ? ' bb-stat-' + s.tone : ''}"><b>${s.v}</b><i>${s.l}</i></span>`
+    ).join('')}</div>
+    <details class="bb-warn-more">
+      <summary>${detailCount ? `Why — ${detailCount} signal${detailCount===1?'':'s'}` : 'Details'}</summary>
+      <div class="bb-warn-body">${body}</div>
+      ${flags.length ? `<div class="bb-warn-list">${flags.map(f =>
+        `<div class="bb-warn-item bb-warn-item-${f.level}">${f.text}</div>`
+      ).join('')}</div>` : ''}
+      <div class="bb-warn-foot">From your own journal: <strong>${all.n}</strong> trades on this setup, <strong>${withConfluence}</strong> with a filled-in checklist${band.length ? `, <strong>${band.length}</strong> at a similar confluence level` : ''}. ${all.n < 10 ? 'Still a small sample — read these as observations, not predictions.' : 'Per-answer flags only appear once an answer has ' + BB_MIN_ANSWER_SAMPLE + '+ trades behind it.'}</div>
+    </details>
+  </div>`;
 }
 
 async function deleteSelectedNote(){
