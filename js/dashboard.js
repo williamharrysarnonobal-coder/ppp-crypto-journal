@@ -2949,6 +2949,15 @@ function _salTri(usd, opts){
     `<span class="sal-tri">${_salMoney(usd*aed,'AED')} · ${_salMoney(usd*php,'PHP')}</span>`;
 }
 
+// Just the AED/PHP pair, for places that already show the USD figure itself.
+function _salAltOnly(usd){
+  if(usd == null || !Number.isFinite(usd)) return '';
+  const v = _salaryInputValues();
+  const aed = Number(v.aed_per_usd) > 0 ? Number(v.aed_per_usd) : SALARY_DEFAULTS.aed_per_usd;
+  const php = Number(v.php_per_usd) > 0 ? Number(v.php_per_usd) : SALARY_DEFAULTS.php_per_usd;
+  return _salMoney(usd*aed,'AED') + ' · ' + _salMoney(usd*php,'PHP');
+}
+
 // Compact one-line variant for table cells, where a stacked block would make
 // the row too tall.
 function _salTriInline(usd){
@@ -3113,35 +3122,43 @@ function _salRenderMonths({ months, need, nowKey }){
     // just carries a red tint to mark it as a step backwards.
     const rawPct = (need != null && need > 0) ? m.net / need * 100 : null;
     const tone = m.net < 0 ? 'var(--loss)' : (covered ? 'var(--win)' : 'var(--accent)');
+    // The percentage sits at the end of the fill rather than pinned to the
+    // far right — a number stranded across a gap of empty track reads as
+    // unrelated to the bar it belongs to.
     const bar = rawPct == null ? '' :
-      '<div class="sal-month-track' + (m.net < 0 ? ' sal-month-track-neg' : '') + '">' +
-        '<div class="sal-month-fill" style="width:' + Math.max(0, Math.min(100, rawPct)).toFixed(0) + '%;background:' + tone + ';"></div>' +
-      '</div>' +
-      '<span class="sal-month-pct" style="color:' + tone + ';">' +
-        (m.net < 0 ? 'nothing covered' : fmtNum(Math.max(0, rawPct), 0) + '% of a month') +
-      '</span>';
+      '<div class="sal-month-bar">' +
+        '<div class="sal-month-track">' +
+          '<div class="sal-month-fill" style="width:' + Math.max(2, Math.min(100, rawPct)).toFixed(0) + '%;"></div>' +
+        '</div>' +
+        '<span class="sal-month-pct">' +
+          (m.net < 0 ? 'nothing covered' : fmtNum(Math.max(0, rawPct), 0) + '% of a month') +
+        '</span>' +
+      '</div>';
 
     const wrTone = m.winRate == null ? 'var(--muted)'
       : (m.winRate >= 60 ? 'var(--win)' : (m.winRate >= 40 ? 'var(--accent)' : 'var(--loss)'));
     const stats = m.trades
       ? '<div class="sal-month-stats">' +
-          '<span><strong>' + m.trades + '</strong> trade' + (m.trades===1?'':'s') + '</span>' +
-          '<span><strong style="color:var(--win);">' + m.wins + 'W</strong> / <strong style="color:var(--loss);">' + m.losses + 'L</strong></span>' +
+          '<span><strong>' + m.trades + '</strong> trades</span>' +
+          '<span><strong style="color:var(--win);">' + m.wins + 'W</strong> <span class="sal-month-slash">/</span> <strong style="color:var(--loss);">' + m.losses + 'L</strong></span>' +
           (m.winRate == null ? '' : '<span><strong style="color:' + wrTone + ';">' + fmtNum(m.winRate,0) + '%</strong> win rate</span>') +
-          '<span>' + m.days + ' trading day' + (m.days===1?'':'s') + '</span>' +
+          '<span><strong>' + m.days + '</strong> trading days</span>' +
         '</div>'
       : '';
 
-    return '<div class="sal-month">' +
-        '<div class="sal-month-top">' +
-          '<span class="sal-month-mark ' + markCls + '">' + mark + '</span>' +
-          '<span class="sal-month-name">' + m.label +
-            (status ? '<span class="sal-month-days">' + status + '</span>' : '') +
-          '</span>' +
-          '<span class="sal-month-amt" style="color:' + (m.net >= 0 ? 'var(--win)' : 'var(--loss)') + ';">' + _salTriInline(m.net) + '</span>' +
+    return '<div class="sal-month" style="--m-tone:' + tone + ';">' +
+        '<div class="sal-month-head">' +
+          '<div class="sal-month-id">' +
+            '<span class="sal-month-mark ' + markCls + '">' + mark + '</span>' +
+            '<span>' + m.label + '<span class="sal-month-status">' + status + '</span></span>' +
+          '</div>' +
+          '<div class="sal-month-money">' +
+            '<span class="sal-month-amt" style="color:' + (m.net >= 0 ? 'var(--win)' : 'var(--loss)') + ';">' + _salMoney(m.net,'USD') + '</span>' +
+            '<span class="sal-month-alt">' + _salAltOnly(m.net) + '</span>' +
+          '</div>' +
         '</div>' +
+        bar +
         stats +
-        (bar ? '<div class="sal-month-bottom">' + bar + '</div>' : '') +
       '</div>';
   }).join('');
 }
