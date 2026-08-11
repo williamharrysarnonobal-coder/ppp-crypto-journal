@@ -10918,14 +10918,32 @@ function renderEconSyncLabel(){
   if(el) el.textContent = lastEconSyncAt ? `Last synced: ${timeAgo(lastEconSyncAt)}` : '';
 }
 
+// US-only is a separate axis from impact — you can want High-impact events
+// AND only American ones, so it toggles independently rather than joining the
+// impact chips. Matched loosely because feeds label the same country as "US",
+// "USA", "United States" or the currency "USD" depending on the source.
+let econUSOnly = false;
+function _econIsUS(e){
+  return /^(us|usa|u\.?s\.?a?\.?|united states|usd)$/i.test((e.country || '').trim());
+}
+
+function toggleEconUSOnly(){
+  econUSOnly = !econUSOnly;
+  renderEconImpactFilterRow();
+  renderEconCalGrid();
+}
+
 function renderEconImpactFilterRow(){
   const row = document.getElementById('econImpactFilterRow');
   if(!row) return;
   const allActive = ECON_IMPACT_LEVELS.every(l => activeEconImpactFilters.has(l));
+  const usCount = ECON_EVENTS.filter(_econIsUS).length;
   const tags = [`<span class="tag-filter ${allActive?'active':''}" onclick="setEconImpactFilterAll()">All</span>`]
     .concat(ECON_IMPACT_LEVELS.map(l =>
       `<span class="tag-filter ${activeEconImpactFilters.has(l)?'active':''}" onclick="toggleEconImpactFilter('${l}')">${l}</span>`
-    ));
+    ))
+    // Separated visually so it doesn't read as a fifth impact level.
+    .concat([`<span class="tag-filter tag-filter-sep ${econUSOnly?'active':''}" onclick="toggleEconUSOnly()" title="${usCount} US event${usCount===1?'':'s'} loaded">🇺🇸 US Only</span>`]);
   row.innerHTML = tags.join('');
 }
 
@@ -10942,12 +10960,14 @@ function toggleEconImpactFilter(level){
 
 function setEconImpactFilterAll(){
   activeEconImpactFilters = new Set(ECON_IMPACT_LEVELS);
+  econUSOnly = false;   // "Clear Filter" has to clear this one too
   renderEconImpactFilterRow();
   renderEconCalGrid();
 }
 
 function filteredEconEvents(){
   return ECON_EVENTS.filter(e => {
+    if(econUSOnly && !_econIsUS(e)) return false;
     const level = ECON_IMPACT_LEVELS.find(l => l.toLowerCase() === (e.impact||'').toLowerCase());
     return level && activeEconImpactFilters.has(level);
   });
@@ -15401,6 +15421,55 @@ function renderMoodCalendar(){
   if(remainder !== 0) for(let i=0; i<7-remainder; i++) html += `<div class="cal-cell empty"></div>`;
 
   grid.innerHTML = html;
+  // Called from here rather than from each of the five places that redraw the
+  // calendar (load, month shift, save, delete) — cheap enough at a dozen rows,
+  // and it can't be forgotten when a sixth call site appears.
+  renderMoodRecent();
+}
+
+// Recent written entries, newest first. The calendar answers "how was the
+// month"; this answers "what did I actually write", which needed a click per
+// day to find out before. Only entries with text appear — a mood on its own
+// has nothing to read.
+const MOOD_RECENT_LIMIT = 12;
+function renderMoodRecent(){
+  const list = document.getElementById('moodRecentList');
+  if(!list) return;
+  const filter = document.getElementById('moodRecentFilter')?.value || 'all';
+
+  const rows = MOOD_ENTRIES
+    .filter(e => e.entry_date && (filter === 'all' ? _moodEntryHasText(e) : (e[filter] || '').trim()))
+    .sort((a,b) => (a.entry_date < b.entry_date ? 1 : -1))
+    .slice(0, MOOD_RECENT_LIMIT);
+
+  if(!rows.length){
+    list.innerHTML = `<div class="empty-state">${filter === 'all'
+      ? 'Nothing written yet — pick a day on the calendar and jot something down.'
+      : 'No entries with anything under that section yet.'}</div>`;
+    return;
+  }
+
+  list.innerHTML = rows.map(e => {
+    const mood = MOOD_OPTIONS.find(o => o.key === e.mood);
+    const d = new Date(e.entry_date + 'T00:00:00');
+    // When a section is picked, show only that section's text — otherwise the
+    // preview would be dominated by whichever section happened to be longest.
+    const shown = filter === 'all'
+      ? MOOD_SECTIONS.filter(s => (e[s.key] || '').trim())
+      : MOOD_SECTIONS.filter(s => s.key === filter);
+    return `
+      <div class="mood-recent" onclick="openMoodModal('${e.entry_date}')">
+        <div class="mood-recent-top">
+          <span class="mood-recent-date">${d.toLocaleDateString('en-US',{weekday:'short', month:'short', day:'numeric'})}</span>
+          ${mood ? `<span class="mood-recent-mood mood-view-badge-${mood.sentiment}">${mood.emoji} ${escapeHtml(mood.label)}</span>` : ''}
+        </div>
+        ${shown.map(s => `
+          <div class="mood-recent-line">
+            ${s.icon ? `<span class="mood-recent-tag">${s.icon} ${s.label}</span>` : `<span class="mood-recent-tag">${s.label}</span>`}
+            <span class="mood-recent-text">${escapeHtml(e[s.key].trim())}</span>
+          </div>`).join('')}
+      </div>`;
+  }).join('');
 }
 
 // One tidy row of circular emoji dots (instead of 7 bordered boxes each
@@ -15436,12 +15505,35 @@ function openMoodModal(dateStr){
   else enterMoodEditMode();
 }
 
+// The diary's sections, in the order they're written and read. `note` is the
+// original single field — kept last as a catch-all so entries written before
+// the split still have somewhere to live without being migrated or guessed at.
+const MOOD_SECTIONS = [
+  { key: 'note_trading', label: 'Trading', icon: '📈' },
+  { key: 'note_work',    label: 'Work',    icon: '💼' },
+  { key: 'note_life',    label: 'Life',    icon: '🌱' },
+  { key: 'note',         label: 'Anything else', icon: '' }
+];
+
+function _moodEntryHasText(e){
+  return MOOD_SECTIONS.some(s => (e[s.key] || '').trim());
+}
+
 function renderMoodViewMode(entry){
   const mood = MOOD_OPTIONS.find(o => o.key === entry.mood);
   document.getElementById('moodViewEmoji').textContent = mood?.emoji || '';
   document.getElementById('moodViewLabel').textContent = mood?.label || entry.mood;
   document.getElementById('moodViewBadge').className = `mood-view-badge mood-view-badge-${mood?.sentiment || 'neutral'}`;
-  document.getElementById('moodViewNote').textContent = entry.note || 'No notes for this day.';
+  // Only sections with something in them are shown — empty headings would make
+  // a short entry look unfinished.
+  const filled = MOOD_SECTIONS.filter(s => (entry[s.key] || '').trim());
+  document.getElementById('moodViewNote').innerHTML = filled.length
+    ? filled.map(s => `
+        <div class="mood-sec">
+          <div class="mood-sec-head">${s.icon ? s.icon + ' ' : ''}${s.label}</div>
+          <div class="mood-sec-body">${escapeHtml(entry[s.key].trim())}</div>
+        </div>`).join('')
+    : '<span style="color:var(--muted);">No notes for this day.</span>';
   document.getElementById('moodViewWrap').style.display = 'block';
   document.getElementById('moodEditWrap').style.display = 'none';
 }
@@ -15449,6 +15541,9 @@ function renderMoodViewMode(entry){
 function enterMoodEditMode(){
   const entry = MOOD_ENTRIES.find(e => e.entry_date === editingMoodDate);
   selectedMoodKey = entry?.mood || null;
+  document.getElementById('moodNoteTrading').value = entry?.note_trading || '';
+  document.getElementById('moodNoteWork').value = entry?.note_work || '';
+  document.getElementById('moodNoteLife').value = entry?.note_life || '';
   document.getElementById('moodNote').value = entry?.note || '';
   document.getElementById('moodModalError').textContent = '';
   renderMoodPicker();
@@ -15482,6 +15577,9 @@ async function saveMoodEntry(){
       body: JSON.stringify([{
         entry_date: editingMoodDate,
         mood: selectedMoodKey,
+        note_trading: document.getElementById('moodNoteTrading').value.trim() || null,
+        note_work: document.getElementById('moodNoteWork').value.trim() || null,
+        note_life: document.getElementById('moodNoteLife').value.trim() || null,
         note: document.getElementById('moodNote').value.trim() || null
       }])
     });
@@ -15573,16 +15671,24 @@ function _reportGetRange(){
   return { start, end, label: now.toLocaleDateString('en-US',{month:'long',year:'numeric'}) };
 }
 
-function _reportPrimaryCurrency(){
+// Whatever currency most of the period's own transactions are in. The old
+// version took FIN_ACCOUNTS[0].currency — whichever account happened to load
+// first — so the figures could be labelled AED while being mostly PHP.
+function _reportPrimaryCurrency(txns){
+  if(Array.isArray(txns) && txns.length) return _finPrimaryCurrencyForTxns(txns);
   return FIN_ACCOUNTS[0]?.currency || 'PHP';
 }
 
 function _reportTradingStats(start, end){
   const trades = ALL_TRADES.filter(t => t.close_date && t.close_date >= start && t.close_date <= end);
   const total = trades.length;
-  const wins = trades.filter(t => (t.profit_loss||0) > 0).length;
+  // netPnl, not the gross profit_loss: a trade that made $5 and paid $8 in
+  // fees is not a win. And breakevens leave the denominator entirely — they're
+  // neither won nor lost, and counting them as losses drags the rate down.
+  const wins = trades.filter(t => (t.win_loss||'').toLowerCase() === 'win' && netPnl(t) > 0).length;
+  const decided = trades.filter(t => ['win','loss','liquidated'].includes((t.win_loss||'').toLowerCase())).length;
   const totalPnl = trades.reduce((s,t) => s + netPnl(t), 0);
-  const winRate = total ? Math.round(wins/total*100) : 0;
+  const winRate = decided ? Math.round(wins/decided*100) : 0;
   const rrVals = trades.map(t => t.rr).filter(v => v !== null && !isNaN(v));
   const avgRR = rrVals.length ? (rrVals.reduce((s,v)=>s+v,0)/rrVals.length) : null;
   let bestTrade = null, worstTrade = null;
@@ -15594,14 +15700,25 @@ function _reportTradingStats(start, end){
 }
 
 function _reportFinanceStats(start, end){
-  const txns = FIN_TXNS.filter(t => t.tx_date && new Date(t.tx_date + 'T00:00:00') >= start && new Date(t.tx_date + 'T00:00:00') <= end);
+  const inPeriod = FIN_TXNS.filter(t => t.tx_date && new Date(t.tx_date + 'T00:00:00') >= start && new Date(t.tx_date + 'T00:00:00') <= end);
+  // Transfers move money between your own accounts — they're neither income
+  // nor expense, and counting them made the section render for a period that
+  // had nothing but transfers in it, showing 0 / 0 / 0.
+  const real = inPeriod.filter(t => t.tx_type !== 'Transfer');
+  const currency = _reportPrimaryCurrency(real);
+  // ONE currency only. Adding 500 dirhams to 500 pesos as bare numbers gives
+  // 1000 of nothing, and the total was then labelled with a single currency
+  // symbol as though it meant something. Same fix as the Discipline radar.
+  const txns = real.filter(t => _finTxCurrency(t) === currency);
+  const skipped = real.length - txns.length;
+
   const income = txns.filter(t => t.tx_type === 'Income').reduce((s,t) => s + (Number(t.amount)||0), 0);
   const expense = txns.filter(t => t.tx_type === 'Expense').reduce((s,t) => s + (Number(t.amount)||0), 0);
   const byCat = {};
   txns.filter(t => t.tx_type === 'Expense' && t.category).forEach(t => { byCat[t.category] = (byCat[t.category]||0) + (Number(t.amount)||0); });
   const topCatEntries = Object.entries(byCat).sort((a,b) => b[1]-a[1]);
   const topCategory = topCatEntries.length ? { name: topCatEntries[0][0], amount: topCatEntries[0][1] } : null;
-  return { income, expense, net: income - expense, topCategory, txCount: txns.length };
+  return { income, expense, net: income - expense, topCategory, txCount: txns.length, currency, skipped };
 }
 
 function _reportMoodStats(start, end){
@@ -15654,7 +15771,7 @@ function renderReportPreview(){
   const finance = _reportFinanceStats(start, end);
   const mood = _reportMoodStats(start, end);
   const insight = _reportMoodInsightData(_reportMoodPnlBreakdown(trading, mood));
-  const cur = _reportPrimaryCurrency();
+  const cur = finance.currency;
 
   wrap.innerHTML = `
     <div class="report-section">
@@ -15682,7 +15799,8 @@ function renderReportPreview(){
           <div class="kpi"><div class="label">Net</div><div class="value ${finance.net>=0?'pos':'neg'}">${finMoney(finance.net, cur)}</div></div>
         </div>
         ${finance.topCategory ? `<div style="margin-top:14px;font-size:12.5px;color:var(--muted);">Top category: <span style="color:var(--ink);font-weight:600;">${escapeHtml(finance.topCategory.name)}</span> — ${finMoney(finance.topCategory.amount, cur)}</div>` : ''}
-      ` : `<div class="report-empty">No transactions in this period.</div>`}
+        ${finance.skipped ? `<div style="margin-top:8px;font-size:11.5px;color:var(--muted);">${finance.skipped} transaction${finance.skipped===1?'':'s'} in another currency ${finance.skipped===1?'is':'are'} left out — mixing currencies in one total would make it meaningless.</div>` : ''}
+      ` : `<div class="report-empty">No ${cur} income or expenses in this period.</div>`}
     </div>
 
     <div class="report-section">
@@ -15734,7 +15852,7 @@ function downloadReportPDF(){
   const finance = _reportFinanceStats(start, end);
   const mood = _reportMoodStats(start, end);
   const insight = _reportMoodInsightData(_reportMoodPnlBreakdown(trading, mood));
-  const cur = _reportPrimaryCurrency();
+  const cur = finance.currency;
 
   function ensureSpace(needed){
     if(y + needed > pageHeight - 50){ doc.addPage(); y = 56; }

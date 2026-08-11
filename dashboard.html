@@ -17,7 +17,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<link rel="stylesheet" href="css/style.css?v=196">
+<link rel="stylesheet" href="css/style.css?v=198">
 </head>
 <body>
 
@@ -277,6 +277,20 @@
         </span>
       </h2>
       <div class="cal-grid mood-cal-grid" id="moodCalGrid"></div>
+    </div>
+
+    <div class="panel" style="margin-top:20px;">
+      <h2 style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+        <span>Recent logs</span>
+        <select id="moodRecentFilter" onchange="renderMoodRecent()" style="max-width:180px;font-size:11.5px;padding:4px 8px;">
+          <option value="all">All sections</option>
+          <option value="note_trading">📈 Trading</option>
+          <option value="note_work">💼 Work</option>
+          <option value="note_life">🌱 Life</option>
+        </select>
+      </h2>
+      <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">Your latest written entries, newest first — click one to open that day.</div>
+      <div id="moodRecentList"></div>
     </div>
   </div>
 
@@ -1929,8 +1943,20 @@
     <div id="moodEditWrap">
       <div class="mood-picker" id="moodPicker"></div>
       <div class="field-row" style="margin-top:18px;">
-        <label>What happened? (optional)</label>
-        <textarea id="moodNote" rows="4" placeholder="Write about your day..."></textarea>
+        <label>📈 Trading</label>
+        <textarea id="moodNoteTrading" rows="3" placeholder="How did the session go? What did you see, take, or skip?"></textarea>
+      </div>
+      <div class="field-row">
+        <label>💼 Work</label>
+        <textarea id="moodNoteWork" rows="3" placeholder="The job — what happened, what drained you, what went well."></textarea>
+      </div>
+      <div class="field-row">
+        <label>🌱 Life</label>
+        <textarea id="moodNoteLife" rows="3" placeholder="Family, health, rest, everything outside the screens."></textarea>
+      </div>
+      <div class="field-row">
+        <label>Anything else</label>
+        <textarea id="moodNote" rows="2" placeholder="Whatever doesn't fit above."></textarea>
       </div>
       <div class="sub" id="moodModalError" style="color:var(--loss);margin-top:6px;"></div>
       <div style="display:flex;justify-content:flex-end;align-items:center;margin-top:16px;">
@@ -2002,6 +2028,6 @@
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=2"></script>
-<script src="js/dashboard.js?v=308"></script>
+<script src="js/dashboard.js?v=310"></script>
 </body>
 </html>

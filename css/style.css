@@ -718,6 +718,9 @@
   .tag-filter-row{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px;}
   .tag-filter{font-size:10.5px;font-weight:600;padding:4px 10px;border-radius:20px;cursor:pointer;background:var(--surface-2);color:var(--muted);border:1px solid transparent;}
   .tag-filter.active{background:color-mix(in srgb, var(--accent) 16%, transparent);color:var(--accent);border-color:color-mix(in srgb, var(--accent) 35%, transparent);}
+  /* A filter on a different axis from the ones before it (impact vs country) —
+     the rule keeps it from reading as one more impact level. */
+  .tag-filter-sep{margin-left:10px;padding-left:14px;border-left:1px solid var(--rule);border-radius:0 20px 20px 0;}
   .note-item{padding:12px 10px;border-radius:6px;cursor:pointer;margin-bottom:2px;border:1px solid transparent;}
   .note-item:hover{background:var(--surface-2);}
   .note-item.selected{background:var(--surface-2);border-color:var(--rule);}
@@ -1415,6 +1418,49 @@
   .be-verdict-note{font-size:11.5px;color:var(--muted);line-height:1.55;margin-top:7px;}
   @media (max-width: 560px){
     .be-verdict-mid{border-left:none;border-right:none;}
+  }
+
+  /* Diary — a day's entry is now several short sections rather than one block,
+     so each needs a quiet heading that doesn't compete with the writing. */
+  .mood-sec{margin-bottom:14px;}
+  .mood-sec:last-child{margin-bottom:0;}
+  .mood-sec-head{
+    font-size:10.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
+    color:var(--muted);margin-bottom:4px;
+  }
+  .mood-sec-body{font-size:13px;color:var(--ink);line-height:1.65;white-space:pre-wrap;}
+
+  /* Recent logs — the calendar says how the month went, this says what was
+     actually written. Scannable, one card per day. */
+  .mood-recent{
+    border:1px solid var(--rule);border-radius:8px;padding:11px 13px;margin-bottom:9px;
+    background:var(--surface-2);cursor:pointer;transition:border-color .15s ease;
+  }
+  .mood-recent:last-child{margin-bottom:0;}
+  .mood-recent:hover{border-color:var(--accent);}
+  .mood-recent-top{
+    display:flex;align-items:center;justify-content:space-between;gap:10px;
+    margin-bottom:7px;flex-wrap:wrap;
+  }
+  .mood-recent-date{font-size:12px;font-weight:700;color:var(--ink);}
+  .mood-recent-mood{
+    font-size:11px;padding:2px 9px;border-radius:20px;flex-shrink:0;
+  }
+  .mood-recent-line{display:flex;gap:9px;font-size:12px;line-height:1.55;margin-bottom:4px;}
+  .mood-recent-line:last-child{margin-bottom:0;}
+  .mood-recent-tag{
+    flex-shrink:0;font-size:10.5px;color:var(--muted);min-width:74px;
+    padding-top:1px;
+  }
+  /* Clamped so one long entry can't push the rest of the list off the screen —
+     the full text is one click away in the day's own view. */
+  .mood-recent-text{
+    color:var(--ink);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;
+    overflow:hidden;
+  }
+  @media (max-width: 520px){
+    .mood-recent-line{flex-direction:column;gap:1px;}
+    .mood-recent-tag{min-width:0;}
   }
 
   /* Confluence Edge + Breakeven Protection dashboard panels */
