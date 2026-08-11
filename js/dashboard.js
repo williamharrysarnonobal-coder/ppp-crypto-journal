@@ -2612,27 +2612,128 @@ function renderBEProtection(){
   const protectedTotal = good.reduce((s,r) => s + r.calc.value, 0);
   const canShowProtected = good.length > 0;
 
+  // Deliberately hedged. This is NOT a measurement: the trade stopped at
+  // breakeven, so whether price would have carried on to the original stop is
+  // unknowable. The old copy said "what your original stop would really have
+  // cost", and that "really" claimed certainty the data can't support.
   const protectedNote = !canShowProtected
     ? `Not measurable yet — none of these ${slAfter.length} trade${slAfter.length===1?'':'s'} carry a usable entry, SL and quantity.`
     : notCounted === 0
-      ? `Measured from all ${good.length} BE-stopped trade${good.length===1?'':'s'} — what your original stop would really have cost.`
-      : `Measured from ${good.length} of ${rows.length} BE-stopped trades. The other ${notCounted} ${notCounted===1?'is':'are'} not counted (see below).`;
+      ? `The risk you had on, across all ${good.length} BE-stopped trade${good.length===1?'':'s'}. What you'd have lost IF price had carried on to your original stop — it stopped at breakeven, so that part is an assumption, not a measurement.`
+      : `From ${good.length} of ${rows.length} BE-stopped trades — the other ${notCounted} ${notCounted===1?'is':'are'} not counted (see below). This is the risk you had on, not a measured saving: price stopped at breakeven, so it never reached the original stop.`;
+
+  // The risk you PLANNED in the calculator, for trades journaled from a Pending
+  // Setup. The trade itself has no risk_amount column — it's recomputed from
+  // the logged prices — so this is the only place the two can be compared, and
+  // the gap between them is the interesting part: it's the difference between
+  // the size you decided on and the size you actually ended up with.
+  const plannedRiskFor = t => {
+    if(!t.linked_setup_id) return null;
+    const s = SAVED_SETUPS.find(x => x.id === t.linked_setup_id);
+    const v = s ? Number(s.risk_amount) : NaN;
+    return Number.isFinite(v) && v > 0 ? v : null;
+  };
 
   // Per-trade working, so the headline number is never a black box.
   const workingRows = rows.map(r => {
     const sym = escapeHtml(r.t.symbol || '—');
     const when = r.t.close_date ? r.t.close_date.toLocaleDateString(undefined,{day:'numeric',month:'short'}) : '—';
-    if(!r.calc) return `<tr><td>${sym}</td><td>${when}</td><td colspan="3" style="color:var(--muted);">missing entry / SL / quantity</td><td style="color:var(--muted);">not counted</td></tr>`;
+    if(!r.calc) return `<tr><td>${sym}</td><td>${when}</td><td colspan="4" style="color:var(--muted);">missing entry / SL / quantity</td><td style="color:var(--muted);">not counted</td></tr>`;
     const c = r.calc;
+    const planned = plannedRiskFor(r.t);
+    let plannedCell = '<span style="color:var(--muted);">—</span>';
+    if(planned !== null){
+      const diff = c.value - planned;
+      const off = Math.abs(diff) / planned > 0.1;   // more than 10% adrift
+      plannedCell = `$${planned.toLocaleString(undefined,{maximumFractionDigits:2})}` +
+        (off ? ` <span style="color:var(--warn);font-size:11px;">${diff > 0 ? '+' : ''}${(diff/planned*100).toFixed(0)}%</span>` : '');
+    }
     return `<tr>
       <td>${sym}</td>
       <td>${when}</td>
       <td>${Number(r.t.entry_price).toLocaleString(undefined,{maximumFractionDigits:2})} → ${Number(r.t.sl_price).toLocaleString(undefined,{maximumFractionDigits:2})}</td>
       <td>${fmtNum(c.stopPct,2)}%</td>
       <td>${Number(r.t.position_size).toLocaleString(undefined,{maximumFractionDigits:6})}</td>
+      <td>${plannedCell}</td>
       <td class="${c.suspect ? '' : 'pos'}" style="${c.suspect ? 'color:var(--loss);' : ''}">$${c.value.toLocaleString(undefined,{maximumFractionDigits:2})}${c.suspect ? ' ⚠' : ''}</td>
     </tr>`;
   }).join('');
+
+  // ---- Was moving to breakeven worth it? ----
+  // A BE-stopped trade ended at $0. Without the BE stop it could only have
+  // finished at TP or at the original SL, and both of those prices are on the
+  // trade — so the two ends of the range ARE measurable even though which one
+  // would have happened is not.
+  //   without BE = p x reward - (1-p) x risk,  where p = share that recover
+  //   with BE    = 0
+  // Setting them equal gives the break-even recovery rate: p = risk/(risk+reward).
+  // Below that rate the BE stop pays for itself; above it, it's cutting
+  // winners. That single percentage is the whole "worth it?" question.
+  const beReward = t => {
+    if(t.entry_price == null || t.tp_price == null || t.position_size == null) return null;
+    const entry = Number(t.entry_price), tp = Number(t.tp_price), qty = Number(t.position_size);
+    if(![entry, tp, qty].every(Number.isFinite) || !qty || entry === tp) return null;
+    return Math.abs(tp - entry) * qty;
+  };
+  const bounded = good.map(r => ({ risk: r.calc.value, reward: beReward(r.t) })).filter(x => x.reward !== null);
+  const riskSum = bounded.reduce((s,x) => s + x.risk, 0);
+  const rewardSum = bounded.reduce((s,x) => s + x.reward, 0);
+  const breakEvenRate = (riskSum + rewardSum) > 0 ? riskSum / (riskSum + rewardSum) * 100 : null;
+  // The closest measured analogue: of the trades that DID reach breakeven, how
+  // many carried on to TP. Not the same population as "would the stopped ones
+  // have recovered", so it's labelled as a reference, not an answer.
+  const reachedBE = tpAfter.length + slAfter.length;
+  const survivedRate = reachedBE ? tpAfter.length / reachedBE * 100 : null;
+
+  let verdictHtml = '';
+  if(bounded.length && breakEvenRate !== null){
+    const worthIt = survivedRate === null ? null : survivedRate < breakEvenRate;
+    const tone = worthIt === null ? 'neutral' : (worthIt ? 'good' : 'bad');
+    const verdictWord = worthIt === null ? 'NOT ENOUGH DATA' : (worthIt ? 'EFFECTIVE' : 'COSTING YOU');
+    verdictHtml = `
+      <div class="be-verdict be-verdict-${tone}">
+        <div class="be-verdict-head">
+          <span>Moving your stop to breakeven</span>
+          <span class="be-verdict-word">${verdictWord}</span>
+        </div>
+        <div class="be-verdict-range">
+          <div class="be-verdict-side">
+            <div class="be-verdict-num" style="color:var(--loss);">−$${riskSum.toLocaleString(undefined,{maximumFractionDigits:0})}</div>
+            <div class="be-verdict-lbl">if every one had run to your original stop</div>
+          </div>
+          <div class="be-verdict-mid">
+            <div class="be-verdict-num">$0</div>
+            <div class="be-verdict-lbl">what actually happened, across ${bounded.length} BE-stopped trade${bounded.length===1?'':'s'}</div>
+          </div>
+          <div class="be-verdict-side">
+            <div class="be-verdict-num" style="color:var(--win);">+$${rewardSum.toLocaleString(undefined,{maximumFractionDigits:0})}</div>
+            <div class="be-verdict-lbl">if every one had recovered and hit TP</div>
+          </div>
+        </div>
+        <div class="be-verdict-line">
+          Moving to breakeven pays for itself as long as fewer than
+          <strong>${breakEvenRate.toFixed(0)}%</strong> of these would have come back and reached TP.
+        </div>
+        ${survivedRate !== null ? `<div class="be-verdict-note">
+          For reference, <strong>${survivedRate.toFixed(0)}%</strong> of the ${reachedBE} trades that reached breakeven went on to TP anyway${worthIt ? ` — below ${breakEvenRate.toFixed(0)}%, so the BE stop looks like it's earning its place.` : ` — above ${breakEvenRate.toFixed(0)}%, which hints the BE stop may be cutting winners short.`}
+          That's a different set of trades from the ones that stopped out, so read it as a pointer, not proof.
+        </div>` : ''}
+      </div>`;
+  }
+
+  // One line on whether you actually size the way you planned to.
+  const planPairs = good
+    .map(r => ({ planned: plannedRiskFor(r.t), actual: r.calc.value }))
+    .filter(x => x.planned !== null);
+  let planInsight = '';
+  if(planPairs.length >= 3){
+    const offBy = planPairs.map(x => (x.actual - x.planned) / x.planned);
+    const drifted = offBy.filter(v => Math.abs(v) > 0.1).length;
+    const avg = offBy.reduce((s,v) => s + v, 0) / offBy.length * 100;
+    planInsight = drifted === 0
+      ? `You sized every one of these ${planPairs.length} trades within 10% of the risk you set in the calculator. The plan and the position are the same thing.`
+      : `${drifted} of ${planPairs.length} of these trades ended up more than 10% away from the risk you planned in the calculator (${avg >= 0 ? '+' : ''}${avg.toFixed(0)}% on average). Worth checking whether it's fills drifting or the size being changed at entry.`;
+  }
 
   const insights = [];
   const total = tpAfter.length + slAfter.length;
@@ -2644,7 +2745,7 @@ function renderBEProtection(){
     insights.push(`Only ${total} trade${total===1?'':'s'} with Post-BE data so far — this verdict gets reliable around 10+.`);
   }
   if(canShowProtected && capturedTotal > 0){
-    insights.push(`Moving to breakeven has been net positive: ${fmtMoney(capturedTotal)} captured on winners that survived it, plus $${protectedTotal.toLocaleString(undefined,{maximumFractionDigits:0})} of real losses avoided.`);
+    insights.push(`Moving to breakeven has been net positive: ${fmtMoney(capturedTotal)} genuinely captured on winners that survived it, and $${protectedTotal.toLocaleString(undefined,{maximumFractionDigits:0})} of risk taken off the table on the ones that didn't. The captured figure is real money; the risk figure is what was exposed, not a proven saving.`);
   }
   if(capturedTotal < 0){
     insights.push(`Your "TP After BE" trades add up to ${fmtMoney(capturedTotal)} — negative, which shouldn't happen if they truly ran to take-profit. Check whether one of them is tagged "TP After BE" but actually closed at a loss.`);
@@ -2669,17 +2770,18 @@ function renderBEProtection(){
         <div class="be-stat-note">Stopped out at breakeven — $0 instead of a full loss.</div>
       </div>
       <div class="be-stat">
-        <div class="be-stat-label">Loss Avoided</div>
+        <div class="be-stat-label">Risk Amount at stake</div>
         <div class="be-stat-value" style="color:var(--win);">${!canShowProtected ? '—' : '$' + protectedTotal.toLocaleString(undefined,{maximumFractionDigits:0})}</div>
         <div class="be-stat-note">${protectedNote}</div>
       </div>
     </div>
-    ${insights.map(i => `<div class="cfe-insight">💡 ${i}</div>`).join('')}
+    ${verdictHtml}
+    ${[...insights, planInsight].filter(Boolean).map(i => `<div class="cfe-insight">💡 ${i}</div>`).join('')}
     ${workingRows ? `
       <div class="cfe-subhead">How that was worked out — per BE-stopped trade</div>
       <div style="overflow-x:auto;">
         <table class="breakdown">
-          <tr><th>Symbol</th><th>Closed</th><th>Entry → SL</th><th>Stop distance</th><th>Position size</th><th>Loss avoided</th></tr>
+          <tr><th>Symbol</th><th>Closed</th><th>Entry → SL</th><th>Stop distance</th><th>Quantity</th><th>Planned risk</th><th>Risk amount</th></tr>
           ${workingRows}
         </table>
       </div>` : ''}
@@ -8547,9 +8649,6 @@ function renderFinanceRankLadder(totalPoints){
   const wrap = document.getElementById('financeRankLadder');
   if(!wrap) return;
   const { current } = rankForFinancePoints(totalPoints);
-  const n = FINANCE_CHALLENGE_RANKS.length;
-  const maxMin = FINANCE_CHALLENGE_RANKS[n - 1].min;
-  const overallPct = Math.min(100, (totalPoints / maxMin) * 100);
   const rankIcons = ['star', 'flame', 'trending-up', 'shield-check', 'medal', 'trophy'];
 
   const medals = FINANCE_CHALLENGE_RANKS.map((r, i) => {
@@ -8566,10 +8665,11 @@ function renderFinanceRankLadder(totalPoints){
 
   wrap.innerHTML = `
     <div class="rank-track">
-      <div class="rank-track-bar"><div class="rank-track-fill" style="width:${overallPct}%;"></div></div>
+      <div class="rank-track-bar"><div class="rank-track-fill" style="width:0;"></div></div>
       <div class="rank-medals">${medals}</div>
     </div>
   `;
+  requestAnimationFrame(() => _alignRankFill(wrap, FINANCE_CHALLENGE_RANKS, totalPoints));
 }
 
 function openFinanceRankDetail(label, totalPoints){
@@ -9320,6 +9420,31 @@ function closeDrawer(){
   document.getElementById('drawer').classList.remove('open');
 }
 
+// Infers Exit Type from price alone, for the four outcomes price can
+// actually prove: TP Hit, SL Hit, Stop Profit (a stop that closed in profit
+// — moved to breakeven or trailing, same nuance the Upscale paste-parser
+// already uses), and BE Hit. "Manual Early TP - Valid/Invalid" and "Cut
+// Loss" require a judgment call about WHY the trade was closed early, so
+// those are deliberately left alone — never guessed at.
+function _autoExitType(patch){
+  const entry = Number(patch.entry_price), close = Number(patch.close_price);
+  if(!Number.isFinite(entry) || !Number.isFinite(close)) return null;
+  const tp = patch.tp_price != null ? Number(patch.tp_price) : null;
+  const sl = patch.sl_price != null ? Number(patch.sl_price) : null;
+  const pnl = patch.profit_loss != null ? Number(patch.profit_loss) : null;
+
+  // Tolerance scales with price — 0.15% of entry — so this works the same
+  // on a fraction-of-a-dollar altcoin and a $60k BTC print, covering normal
+  // fill slippage/rounding without needing an exact match.
+  const tol = Math.abs(entry) * 0.0015;
+  const near = (level) => level != null && Number.isFinite(level) && Math.abs(close - level) <= tol;
+
+  if(near(tp)) return 'TP Hit';
+  if(near(sl)) return (pnl != null && pnl < 0) ? 'SL Hit' : 'Stop Profit';
+  if(Math.abs(close - entry) <= tol) return 'BE Hit';
+  return null;
+}
+
 function _collectDrawerPatch(){
   const patch = {};
 
@@ -9338,6 +9463,14 @@ function _collectDrawerPatch(){
     const checked = [...document.querySelectorAll(`#drawerBody [data-checklist="${key}"]:checked`)].map(el => el.value);
     patch[key] = checked.join(', ');
   });
+
+  // Only fills in a blank Exit Type — never overrides one the trader
+  // already picked, since "TP Hit" vs "Manual Early TP - Valid" at the same
+  // price is exactly the kind of judgment call this can't make for them.
+  if(patch.exit_type == null){
+    const auto = _autoExitType(patch);
+    if(auto) patch.exit_type = auto;
+  }
 
   return patch;
 }
@@ -11081,7 +11214,13 @@ const CHALLENGE_ICONS = {
   flame: '<path d="M12 2c-2 4-6 6-6 11a6 6 0 0 0 12 0c0-2-1-3-2-4 0 2-1 3-2 3-1.5 0-2-1.5-1-3 1-2 0-5-1-7z"/>', // forge fire
   'trending-up': '<path d="M15 4l5 5-3 3-5-5 3-3z"/><path d="M13 8 4 17l3 3 9-9"/>', // hammer striking up
   'trending-down': '<path d="M9 20l-5-5 3-3 5 5-3 3z"/><path d="M11 16 20 7l-3-3-9 9"/>', // hammer striking down
-  octagon: '<polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86"/><path d="M9 12l2 2 4-4"/>', // maker's stamp
+  // NOTE on fill: challengeIconSVG sets fill="currentColor" on the whole <svg>,
+  // which is deliberate — the forge marks below (anvil, flame, ingot, chisel)
+  // are solid silhouettes. The icons carrying fill="none" are the leftover
+  // outline-style ones that were never redrawn for that theme; without it a
+  // <circle> or <rect> renders as a solid blob instead of an icon, which is
+  // exactly what the Master Forger medal on the rank ladder was showing.
+  octagon: '<polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86" fill="none"/><path d="M9 12l2 2 4-4" fill="none"/>', // maker's stamp
   'bar-chart': '<path d="M4 18l1-3h6l1 3-2 2H6l-2-2z"/><path d="M4 12l1-3h6l1 3-2 2H6l-2-2z"/>', // stacked ingots
   compass: '<path d="M12 2 9 14h6L12 2z"/><path d="M9 14l-2 8h10l-2-8"/>', // chisel
   star: '<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>',
@@ -11089,20 +11228,20 @@ const CHALLENGE_ICONS = {
   dollar: '<path d="M5 16 7 8h10l2 8-4 3H9l-4-3z"/>', // ingot
   trophy: '<path d="M8 21V11a4 4 0 0 1 8 0v10"/><circle cx="8" cy="21" r="1.3" fill="currentColor" stroke="none"/><circle cx="16" cy="21" r="1.3" fill="currentColor" stroke="none"/>', // horseshoe
   percent: '<path d="M12 2v5M12 17v5M2 12h5M17 12h5"/><path d="M5 5l3.5 3.5M15.5 15.5 19 19M19 5l-3.5 3.5M8.5 15.5 5 19"/>', // hammer sparks
-  target: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/>', // anvil face rings
+  target: '<circle cx="12" cy="12" r="9" fill="none"/><circle cx="12" cy="12" r="5" fill="none"/><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/>', // anvil face rings
   ban: '<path d="M8 3 5 9l2 1 3-6"/><path d="M16 3l3 6-2 1-3-6"/><path d="M7 10l5 4 5-4"/>', // tongs shut
-  search: '<circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>',
-  clock: '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
-  calendar: '<rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>',
+  search: '<circle cx="11" cy="11" r="8" fill="none"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>',
+  clock: '<circle cx="12" cy="12" r="10" fill="none"/><polyline points="12 6 12 12 16 14" fill="none"/>',
+  calendar: '<rect x="3" y="4" width="18" height="18" rx="2" fill="none"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>',
   medal: '<path d="M8 21V13a4 4 0 0 1 8 0v8"/><circle cx="8" cy="21" r="1.3" fill="currentColor" stroke="none"/><circle cx="16" cy="21" r="1.3" fill="currentColor" stroke="none"/><path d="M9 13a3 3 0 0 1 6 0"/>', // horseshoe, hung
-  lock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
-  globe: '<circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>',
-  shuffle: '<rect x="3" y="8" width="8" height="10" rx="4"/><rect x="13" y="8" width="8" height="10" rx="4"/>', // forged chain link
+  lock: '<rect x="5" y="11" width="14" height="10" rx="2" fill="none"/><path d="M8 11V7a4 4 0 0 1 8 0v4" fill="none"/>',
+  globe: '<circle cx="12" cy="12" r="10" fill="none"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" fill="none"/>',
+  shuffle: '<rect x="3" y="8" width="8" height="10" rx="4" fill="none"/><rect x="13" y="8" width="8" height="10" rx="4" fill="none"/>', // forged chain link
   hash: '<circle cx="7" cy="7" r="1.6" fill="currentColor" stroke="none"/><circle cx="17" cy="7" r="1.6" fill="currentColor" stroke="none"/><circle cx="7" cy="17" r="1.6" fill="currentColor" stroke="none"/><circle cx="17" cy="17" r="1.6" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/>', // rivets
   book: '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V4a1 1 0 0 0-1-1H6.5A2.5 2.5 0 0 0 4 5.5v14z"/><path d="M4 19.5A2.5 2.5 0 0 0 6.5 22H20"/>',
   list: '<line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>',
-  image: '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>',
-  'check-circle': '<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>',
+  image: '<rect x="3" y="3" width="18" height="18" rx="2" fill="none"/><circle cx="8.5" cy="8.5" r="1.5" fill="currentColor" stroke="none"/><polyline points="21 15 16 10 5 21" fill="none"/>',
+  'check-circle': '<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" fill="none"/><polyline points="22 4 12 14.01 9 11.01" fill="none"/>',
   zap: '<path d="M15 4l5 5-3 3-5-5 3-3z"/><path d="M13 8 7 14"/><path d="M3 17l2-1M3 20h3M2 14l2 1"/>' // hammer strike
 };
 function challengeIconSVG(name){
@@ -11262,25 +11401,36 @@ function computeChallenges(trades, achRows){
   // shown underneath so the record isn't lost.
   const DD_WINDOW = 100;
   const _maxDrawdown = arr => {
-    let pk = 0, dd = 0, run = 0;
+    let pk = 0, ddAbs = 0, ddPct = 0, run = 0;
     arr.forEach(t => {
       run += netPnl(t);
       pk = Math.max(pk, run);
-      if(pk > 0) dd = Math.max(dd, (pk - run) / pk * 100);
+      const drop = pk - run;
+      if(drop > ddAbs) ddAbs = drop;
+      // Measured against the peak AS IT STOOD at the trough, which is what max
+      // drawdown means — comparing against the final peak would forgive a dip
+      // simply because the curve later climbed higher.
+      // Two fixes over the previous version:
+      //   - it guarded the whole calculation on `pk > 0`, so a window that
+      //     never went into profit recorded NO drawdown at all and the worst
+      //     possible stretch scored as a clean sheet;
+      //   - the peak here is cumulative P/L, not account equity, so being up
+      //     $10 and then down $990 produced a "10,000% drawdown".
+      if(drop > 0) ddPct = Math.max(ddPct, pk > 0 ? Math.min(100, drop / pk * 100) : 100);
     });
-    return { peak: pk, maxDD: dd };
+    return { peak: pk, ddAbs, maxDD: ddPct, n: arr.length };
   };
   const ddAll = _maxDrawdown(closed);
   const ddWindow = _maxDrawdown(closed.slice(-DD_WINDOW));
-  const ddSafety = ddWindow.peak > 0 ? Math.max(0, 100 - ddWindow.maxDD) : 0;
+  const ddSafety = ddWindow.n ? Math.max(0, 100 - ddWindow.maxDD) : 0;
   const c7 = {
     icon:'octagon', title:'Drawdown Guard', points:90,
     desc:'Keep your max drawdown tight against peak equity.',
-    howTo:`Built from your cumulative equity curve — the biggest drop from any peak to the lowest point after it, as a percentage of that peak. Measured over your most recent ${DD_WINDOW} closed trades, so improving your risk control actually moves this. Levels: staying under 50%, 40%, 30%, 20%, 10% max drawdown.`,
-    current: ddSafety, tiers: [50, 60, 70, 80, 90], target: 90, done: ddWindow.peak > 0 && ddWindow.maxDD < 10,
-    statOverride: ddWindow.peak > 0
-      ? `Last ${Math.min(closed.length, DD_WINDOW)} trades: ${ddWindow.maxDD.toFixed(1)}% · all-time worst: ${ddAll.maxDD.toFixed(1)}%`
-      : 'Not enough data yet.'
+    howTo:`Built from your cumulative P/L curve — the biggest drop from any peak to the lowest point after it, as a percentage of that peak. Measured over your most recent ${DD_WINDOW} closed trades, so improving your risk control actually moves this. A stretch that never gets into profit counts as a full drawdown, and the figure is capped at 100%. This is your overall curve, not a prop firm rule — Account Drawdown Guard below checks the real per-account limits. Levels: staying under 50%, 40%, 30%, 20%, 10%.`,
+    current: ddSafety, tiers: [50, 60, 70, 80, 90], target: 90, done: ddWindow.n > 0 && ddWindow.maxDD < 10,
+    statOverride: ddWindow.n
+      ? `Last ${Math.min(closed.length, DD_WINDOW)} trades: ${ddWindow.maxDD.toFixed(1)}% (${fmtMoney(-ddWindow.ddAbs)}) · all-time worst: ${ddAll.maxDD.toFixed(1)}%`
+      : 'No closed trades yet.'
   };
 
   // 8. Consistent Volume — trades logged this month
@@ -11724,13 +11874,46 @@ function switchChallengeFilter(f){
   renderChallengeGrid();
 }
 
+// The bar and the medals were drawn on two different scales: the fill used a
+// points-linear percentage (500 of 1850 = 27%) while the medals are laid out
+// with justify-content:space-between, putting Hammered at 2/6 = 33%. The fill
+// therefore stopped short of the very medal it was meant to reach.
+//
+// Rather than reproduce the flex maths in calc() — which would also have to
+// account for the current medal being rendered larger than the rest, shifting
+// everything around it — this measures where the medals actually landed and
+// interpolates between the current one and the next.
+function _alignRankFill(wrap, ranks, points){
+  const bar = wrap.querySelector('.rank-track-bar');
+  const fill = wrap.querySelector('.rank-track-fill');
+  const medals = [...wrap.querySelectorAll('.rank-medal')];
+  if(!bar || !fill || medals.length !== ranks.length) return;
+
+  const barRect = bar.getBoundingClientRect();
+  if(!barRect.width) return;   // laid out inside a hidden panel — nothing to measure
+  const centreOf = el => {
+    const r = el.getBoundingClientRect();
+    return r.left + r.width / 2 - barRect.left;
+  };
+
+  let idx = 0;
+  ranks.forEach((r, i) => { if(points >= r.min) idx = i; });
+
+  let px;
+  if(idx >= ranks.length - 1){
+    px = centreOf(medals[medals.length - 1]);
+  }else{
+    const span = ranks[idx + 1].min - ranks[idx].min;
+    const t = span > 0 ? Math.max(0, Math.min(1, (points - ranks[idx].min) / span)) : 0;
+    px = centreOf(medals[idx]) + t * (centreOf(medals[idx + 1]) - centreOf(medals[idx]));
+  }
+  fill.style.width = Math.max(0, Math.min(barRect.width, px)) + 'px';
+}
+
 function renderRankLadder(totalPoints){
   const wrap = document.getElementById('rankLadder');
   if(!wrap) return;
   const { current } = rankForPoints(totalPoints);
-  const n = CHALLENGE_RANKS.length;
-  const maxMin = CHALLENGE_RANKS[n - 1].min;
-  const overallPct = Math.min(100, (totalPoints / maxMin) * 100);
   const rankIcons = ['star', 'flame', 'shield-check', 'trending-up', 'medal', 'octagon', 'trophy'];
 
   const medals = CHALLENGE_RANKS.map((r, i) => {
@@ -11747,10 +11930,13 @@ function renderRankLadder(totalPoints){
 
   wrap.innerHTML = `
     <div class="rank-track">
-      <div class="rank-track-bar"><div class="rank-track-fill" style="width:${overallPct}%;"></div></div>
+      <div class="rank-track-bar"><div class="rank-track-fill" style="width:0;"></div></div>
       <div class="rank-medals">${medals}</div>
     </div>
   `;
+  // Next frame, so the flex row has actually been laid out and the medals have
+  // real positions to read.
+  requestAnimationFrame(() => _alignRankFill(wrap, CHALLENGE_RANKS, totalPoints));
 }
 
 const RANK_DESCRIPTIONS = {
@@ -11912,6 +12098,11 @@ async function renderLeaderboard(){
 async function renderChallenges(){
   const grid = document.getElementById('challengesGrid');
   if(grid) grid.innerHTML = `<div class="empty-state">Loading…</div>`;
+
+  // Position setups are otherwise fetched only by the Calculator view, so
+  // opening Challenges directly used to score Setup Follow-Through off an
+  // empty list. Fetched once here, then reused.
+  if(!SAVED_SETUPS_LOADED) await loadSavedSetups();
 
   const achRows = await loadAchievementSummaryForChallenges();
   COMPUTED_CHALLENGES = computeChallenges(ALL_TRADES, achRows);
@@ -13318,6 +13509,10 @@ async function tradeThisSetup(accountId){
 }
 
 let SAVED_SETUPS = [];
+// Distinguishes "fetched, and there are none" from "never fetched" — the
+// Setup Follow-Through challenge counted an unfetched list as zero setups,
+// which is why it never moved unless you'd opened the Calculator first.
+let SAVED_SETUPS_LOADED = false;
 let editingSetupNotesId = null;
 
 async function loadSavedSetups(){
@@ -13327,6 +13522,7 @@ async function loadSavedSetups(){
     });
     if(!res.ok) throw new Error(await res.text());
     SAVED_SETUPS = await res.json();
+    SAVED_SETUPS_LOADED = true;
   }catch(e){
     console.error("Couldn't load saved setups:", e);
     SAVED_SETUPS = [];
@@ -13378,6 +13574,7 @@ const CONFLUENCE_SETUPS = {
       {tag:'MACD · 1H', text:'1H MACD in Bull Territory (Green Histogram)?'},
       {tag:'MACD · 30M', text:'30M MACD far from the zero line?'},
       {tag:'BB50 · 2H', text:'2H BB50 far from price, or before your TP area?'},
+      {tag:'Sequence', text:'Which 15m HL is this?', select:['1st','2nd','3rd','4th','5th']},
       {tag:'Execution · 5min/3min BB50', text:'Did BB50 and the .382 Fib or MOBV align at your entry level?', exec:true},
       {tag:'Execution', text:'Did MACD cross the zero line upward when your order triggered?', exec:true},
     ],
@@ -13388,6 +13585,7 @@ const CONFLUENCE_SETUPS = {
       {tag:'MACD · 1H', text:'1H MACD in Bear Territory (Red Histogram)?'},
       {tag:'MACD · 30M', text:'30M MACD far from the zero line?'},
       {tag:'BB50 · 2H', text:'2H BB50 far from price, or before your TP area?'},
+      {tag:'Sequence', text:'Which 15m LH is this?', select:['1st','2nd','3rd','4th','5th']},
       {tag:'Execution · 5min/3min BB50', text:'Did BB50 and the .382 Fib or MOBV align at your entry level?', exec:true},
       {tag:'Execution', text:'Did MACD cross the zero line downward when your order triggered?', exec:true},
     ],
@@ -13398,6 +13596,7 @@ const CONFLUENCE_SETUPS = {
       {tag:'Divergence · 1H', text:'Righthand divergence? (price falling, but MACD rising)'},
       {tag:'MACD · 1H', text:'1H MACD in Bear Territory with a Green Histogram (weakening)?'},
       {tag:'BB50 · 1H', text:'1H BB50 far from price, for your TP area (upper or lower band)?'},
+      {tag:'Sequence', text:'Which 15m HL is this?', select:['1st','2nd','3rd','4th','5th']},
       {tag:'Execution · 5min/3min BB50', text:'Did BB50 and the .382 Fib or MOBV align at your entry level?', exec:true},
       {tag:'Execution', text:'Did MACD cross the zero line upward when your order triggered?', exec:true},
     ],
@@ -13408,6 +13607,7 @@ const CONFLUENCE_SETUPS = {
       {tag:'Divergence · 1H', text:'Lefthand divergence? (price rising, but MACD falling)'},
       {tag:'MACD · 1H', text:'1H MACD in Bull Territory with a Red Histogram (weakening)?'},
       {tag:'BB50 · 1H', text:'1H BB50 far from price, for your TP area (upper or lower band)?'},
+      {tag:'Sequence', text:'Which 15m LH is this?', select:['1st','2nd','3rd','4th','5th']},
       {tag:'Execution · 5min/3min BB50', text:'Did BB50 and the .382 Fib or MOBV align at your entry level?', exec:true},
       {tag:'Execution', text:'Did MACD cross the zero line downward when your order triggered?', exec:true},
     ],
@@ -13487,6 +13687,56 @@ function _confluenceProgress(items, answers, chartPatternPresent){
     else if(ans === 'almost') done += 0.5;
   });
   return { total: items.length + 1, done, unanswered: items.length - answeredValues.length };
+}
+
+// Auto-detects rule violations straight from the confluence checklist so
+// Rules Followed / Unfollowed Rules don't rely on remembering to fill them
+// in by hand. Matched by item TEXT, not index — item order/count differs
+// per Trade Type|Pattern Type key, and "30 mins Invalidation Play" uses
+// different wording entirely, so it's correctly untouched by this.
+//
+// The MACD-cross and 1H-territory checks are written as OR across the
+// up/down (or bull/bear) phrasing on purpose: a single checklist only ever
+// contains ONE of the two (Long has "upward"/"Bull", Short has
+// "downward"/"Bear") — requiring both to equal "no" could never fire.
+// Additive only: this only ADDS a "No" + checked reasons, it never clears
+// a value the trader already set (e.g. by fixing the confluence answers
+// after the fact) — undoing an auto-flag is a manual, deliberate action.
+function _autoUnfollowedRules(cfg, answers, chartPatternPresent){
+  const byText = (text) => {
+    const i = cfg.items.findIndex(it => it.text === text);
+    return i === -1 ? undefined : answers[i];
+  };
+  const reasons = new Set();
+
+  const { done } = _confluenceProgress(cfg.items, answers, chartPatternPresent);
+  if(done <= 5){
+    reasons.add('Lack of Confluence');
+    reasons.add('Non-BnB Setup');
+  }
+
+  const crossDown = byText('Did MACD cross the zero line downward when your order triggered?');
+  const crossUp = byText('Did MACD cross the zero line upward when your order triggered?');
+  if(crossDown === 'no' || crossUp === 'no'){
+    reasons.add('No Confirmation');
+    reasons.add('Entered Early');
+    reasons.add('FOMO Entry');
+  }
+
+  const bear1h = byText('1H MACD in Bear Territory (Red Histogram)?');
+  const bull1h = byText('1H MACD in Bull Territory (Green Histogram)?');
+  if(bear1h === 'no' || bull1h === 'no'){
+    reasons.add('Against Daily Bias / HTF Bias');
+    reasons.add('Ignored Trend');
+  }
+
+  const lateSequence = new Set(['3rd','4th','5th']);
+  ['Which 5m HL is this?','Which 5m LH is this?','Which 15m HL is this?','Which 15m LH is this?'].forEach(label => {
+    const v = byText(label);
+    if(v && lateSequence.has(v)) reasons.add('Ignored Trend');
+  });
+
+  return reasons;
 }
 
 let confluenceTarget = null;  // { type:'setup', id } | { type:'trade', positionId }
@@ -13661,6 +13911,24 @@ async function saveConfluenceModal(){
     confluence_answers: confluenceAnswers,
     chart_pattern: confluenceChartPattern
   };
+
+  // Auto-populate Rules Followed / Unfollowed Rules from the checklist just
+  // answered — only for an already-journaled trade (Pending Setups have no
+  // rules_followed/unfollowed_rules columns), and only additive: a clean
+  // checklist never resets an existing "No" back to blank.
+  if(confluenceTarget.type === 'trade' && tradeType && patternType){
+    const cfg = CONFLUENCE_SETUPS[`${tradeType}|${patternType}`];
+    if(cfg){
+      const autoReasons = _autoUnfollowedRules(cfg, confluenceAnswers, !!confluenceChartPattern);
+      if(autoReasons.size){
+        const existingRow = RAW_TRADES.find(r => r.position_id === confluenceTarget.positionId);
+        const existing = (existingRow?.unfollowed_rules || '').split(/[,;]/).map(s => s.trim()).filter(Boolean);
+        const merged = [...new Set([...existing, ...autoReasons])];
+        payload.rules_followed = 'No';
+        payload.unfollowed_rules = merged.join(', ');
+      }
+    }
+  }
 
   try{
     if(confluenceTarget.type === 'setup-bulk'){
