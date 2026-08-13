@@ -2842,7 +2842,8 @@ const FIELD_OPTIONS = {
 const UNFOLLOWED_RULES_OPTIONS = [
   'Rules Followed','Early TP','Entered Early','Overleveraged','No Confirmation','Moved Stop Loss',
   'Revenge Trade','Ignored Trend','FOMO Entry','No BE at Prev High/Low','Ignored No-Trade Decision',
-  'Non-BnB Setup','No Scalping Trade','Moved Take Profit','Lack of Confluence','BTC Only'
+  'Non-BnB Setup','No Scalping Trade','Moved Take Profit','Lack of Confluence','BTC Only',
+  'Changing Plan','No Cutloss 3mins Breakout'
 ];
 
 const OPTIONS_FIELD_META = [
@@ -2886,8 +2887,15 @@ function loadOptionsConfig(){
     }
     const savedUnfollowed = JSON.parse(localStorage.getItem('ledger-unfollowed-rules-options') || 'null');
     if(savedUnfollowed){
+      // Merge, don't replace. A saved copy predates any option added since,
+      // so a blind overwrite means new options never reach anyone who has
+      // ever opened the Options editor — and an auto-flag that references a
+      // missing option would silently fail to tick.
+      const missing = UNFOLLOWED_RULES_OPTIONS.filter(o =>
+        !savedUnfollowed.some(s => String(s).trim().toLowerCase() === o.toLowerCase())
+      );
       UNFOLLOWED_RULES_OPTIONS.length = 0;
-      UNFOLLOWED_RULES_OPTIONS.push(...savedUnfollowed);
+      UNFOLLOWED_RULES_OPTIONS.push(...savedUnfollowed, ...missing);
     }
   }catch(e){}
 }
@@ -9313,10 +9321,44 @@ function enterEditMode(){
   renderDrawerFields();
 }
 
+// Shared by the drawer's initial render and its live recompute — one wording
+// for the value and for every reason it can't be shown.
+function _drawerRiskAmountText(source){
+  const r = _beAvoidedLoss(source);
+  if(!r) return '<span style="color:var(--muted);">— needs entry, SL and quantity</span>';
+  const txt = fmtMoney(r.value).replace('+','');
+  return r.suspect
+    ? `${txt} <span style="color:var(--warn);font-size:11px;">— check the entry, SL and quantity</span>`
+    : txt;
+}
+
+// Reads the live inputs rather than the saved row, so the figure is correct
+// while a new trade is still being typed in.
+function _updateDrawerRiskAmount(){
+  const el = document.getElementById('drawerRiskAmount');
+  if(!el) return;
+  const val = k => {
+    const input = document.querySelector(`#drawerBody [data-field="${k}"]`);
+    const v = input ? input.value : '';
+    return v === '' ? null : parseFloat(v);
+  };
+  el.innerHTML = _drawerRiskAmountText({
+    entry_price: val('entry_price'),
+    sl_price: val('sl_price'),
+    position_size: val('position_size')
+  });
+}
+
 function _renderDrawerFieldRow(f, mode, row){
   if(f.key === 'objective' || f.key === 'duration'){
     const computed = f.key === 'objective' ? computeObjective(row) : computeDuration(row);
     return `<div class="field-row"><label>${f.label}</label><div class="field-static">${computed || '—'}</div></div>`;
+  }
+  if(f.key === 'risk_amount'){
+    // Computed, not stored — so it fell through to the generic path and
+    // rendered blank. Given an id here so it can recompute live while the
+    // entry, SL and quantity are still being typed.
+    return `<div class="field-row"><label>${f.label}</label><div class="field-static" id="drawerRiskAmount">${_drawerRiskAmountText(row)}</div></div>`;
   }
   if(f.key === 'trade_summary'){
     return `<div class="field-row">
@@ -9367,7 +9409,11 @@ function _renderDrawerFieldRow(f, mode, row){
     return `<div class="${rowCls}"><label>${f.label}</label><input type="datetime-local" data-field="${f.key}" value="${_toISODateInput(raw)}"></div>`;
   }
   if(f.widget === 'number'){
-    return `<div class="${rowCls}"><label>${f.label}</label><input type="number" step="any" data-field="${f.key}" value="${raw!==undefined&&raw!==null?raw:''}"></div>`;
+    // The three inputs Risk Amount is derived from nudge it as they're typed,
+    // so the number is right before the trade is saved rather than only after.
+    const oninput = ['entry_price','sl_price','position_size'].includes(f.key)
+      ? ' oninput="_updateDrawerRiskAmount()"' : '';
+    return `<div class="${rowCls}"><label>${f.label}</label><input type="number" step="any" data-field="${f.key}"${oninput} value="${raw!==undefined&&raw!==null?raw:''}"></div>`;
   }
   if(f.widget === 'textarea'){
     return `<div class="${rowCls}"><label>${f.label}</label><textarea data-field="${f.key}">${raw||''}</textarea></div>`;
@@ -9472,7 +9518,61 @@ function _collectDrawerPatch(){
     if(auto) patch.exit_type = auto;
   }
 
+  _applyMovedStopFlags(patch);
+
   return patch;
+}
+
+// A loss that closed WORSE than its own recorded stop means that stop wasn't
+// what got hit — it was moved, widened, or pulled. The prices needed to see
+// this were already on every trade; nothing was checking them.
+//
+// Deliberately conservative, because a false accusation here is worse than a
+// miss — this writes into the trader's own discipline record:
+//   - Losses only. A winner past its stop price is nonsense data, not a breach.
+//   - A tolerance of 10% of the stop distance, so ordinary slippage or a fast
+//     fill doesn't get called a moved stop.
+//   - "Cut Loss" is skipped: closing early by hand is a decision, not a
+//     widened stop, and it normally lands BEFORE the stop anyway.
+//   - Additive. It adds reasons and sets No; it never clears a reason or
+//     flips an existing "No" back to "Yes".
+// Two thresholds, and the wider of the two wins.
+//
+// A percentage alone can't serve both ends of the range: 5% of a 277-point
+// swing stop is a sane 14 points, but 5% of a 40-point scalp stop is 2 points —
+// tighter than ordinary fill slippage, so it would accuse you on the trades you
+// take most often. The floor is a fraction of the ENTRY price rather than a
+// fixed number of points, so it travels to any instrument: 0.02% is ~12.7
+// points on BTC at 63k, and scales down on a cheaper symbol.
+const MOVED_STOP_TOLERANCE = 0.05;      // of the stop distance
+const MOVED_STOP_FLOOR_PCT = 0.0002;    // of the entry price
+function _detectMovedStop(t){
+  // Absence checked BEFORE Number(), because Number(null) is 0 and 0 is
+  // finite — a trade with no close price would otherwise read as having
+  // closed at zero, i.e. catastrophically past its stop, and get accused.
+  if([t.entry_price, t.sl_price, t.close_price].some(v => v === null || v === undefined || v === '')) return false;
+  const entry = Number(t.entry_price), sl = Number(t.sl_price), close = Number(t.close_price);
+  if(![entry, sl, close].every(Number.isFinite) || entry === sl) return false;
+  if(!['loss','liquidated'].includes(String(t.win_loss || '').toLowerCase())) return false;
+  if(String(t.exit_type || '').toLowerCase() === 'cut loss') return false;
+
+  const stopDistance = Math.abs(entry - sl);
+  const slack = Math.max(stopDistance * MOVED_STOP_TOLERANCE, Math.abs(entry) * MOVED_STOP_FLOOR_PCT);
+  // Long stops sit below entry, short stops above — "worse than the stop"
+  // is therefore a different direction for each.
+  return sl < entry ? (close < sl - slack) : (close > sl + slack);
+}
+
+function _applyMovedStopFlags(patch){
+  if(!_detectMovedStop(patch)) return;
+  const existing = String(patch.unfollowed_rules || '')
+    .split(/[,;]/).map(s => s.trim()).filter(Boolean);
+  const merged = [...new Set([...existing, 'Moved Stop Loss', 'Changing Plan'])]
+    // "Rules Followed" is the sentinel for a clean trade — it can't stand
+    // alongside a breach.
+    .filter(r => r.toLowerCase() !== 'rules followed');
+  patch.unfollowed_rules = merged.join(', ');
+  patch.rules_followed = 'No';
 }
 
 async function saveDrawer(){
@@ -13369,6 +13469,10 @@ function onPsBbTypeChange(){
 function setPsBbAnswer(i, val){
   psBbAnswers[i] = (psBbAnswers[i] === val) ? undefined : val;
   if(psBbAnswers[i] === undefined) delete psBbAnswers[i];
+  const tt = document.getElementById('psBbTradeType')?.value;
+  const pt = document.getElementById('psBbPatternType')?.value;
+  const cfg = CONFLUENCE_SETUPS[`${tt}|${pt}`];
+  if(cfg) _applyConfluenceImplications(cfg.items, psBbAnswers, i);
   renderPsBbChecklist();
   _psBbQueueSave();
 }
@@ -13562,8 +13666,15 @@ function setupStatusPillClass(status){
    direction (HL=Long, LH=Short) but "30 mins Invalidation Play" is shared
    by both, with a genuinely different checklist per direction (divergence
    flips), so the full key is always Trade Type + Pattern Type together. */
+// The bar a setup must clear before its confluence counts as a real read.
+// Below it, the trade picks up "Lack of Confluence". Each setup names its own
+// (all currently 60%, which is four broken conditions on a 9-slot checklist);
+// this default only covers a setup added later that forgets to.
+const DEFAULT_MIN_CONFLUENCE_PCT = 60;
+
 const CONFLUENCE_SETUPS = {
   'Long|5 mins HL': {
+    minConfluencePct: 60,
     items: [
       {tag:'MACD · 1H', text:'1H MACD in Bull Territory (Green Histogram)?'},
       {tag:'MACD · 30M', text:'30M MACD in Bull Territory (Green Histogram)?'},
@@ -13577,6 +13688,7 @@ const CONFLUENCE_SETUPS = {
     patterns: ['Double Bottom', 'Triple Bottom', 'Inverse H&S']
   },
   'Short|5 mins LH': {
+    minConfluencePct: 60,
     items: [
       {tag:'MACD · 1H', text:'1H MACD in Bear Territory (Red Histogram)?'},
       {tag:'MACD · 30M', text:'30M MACD in Bear Territory (Red Histogram)?'},
@@ -13589,7 +13701,13 @@ const CONFLUENCE_SETUPS = {
     ],
     patterns: ['Double Top', 'Triple Top', 'H&S']
   },
+  // NOTE on ordering: answers are stored keyed by their POSITION in this array
+  // (confluence_answers = {0:'yes', 1:'no', ...}). Inserting an item in the
+  // middle would silently re-map every stored answer on every existing trade —
+  // a Sequence "1st" would start reading as an Execution answer. So new items
+  // are APPENDED, even when that puts them in a less natural reading order.
   'Long|15 mins HL': {
+    minConfluencePct: 60,
     items: [
       {tag:'MACD · 1H', text:'1H MACD in Bull Territory (Green Histogram)?'},
       {tag:'MACD · 30M', text:'30M MACD far from the zero line?'},
@@ -13597,10 +13715,12 @@ const CONFLUENCE_SETUPS = {
       {tag:'Sequence', text:'Which 15m HL is this?', select:['1st','2nd','3rd','4th','5th']},
       {tag:'Execution · 5min/3min BB50', text:'Did BB50 and the .382 Fib or MOBV align at your entry level?', exec:true},
       {tag:'Execution', text:'Did MACD cross the zero line upward when your order triggered?', exec:true},
+      {tag:'Divergence', text:'Left Hand Present?', invert:true},
     ],
     patterns: ['Double Bottom', 'Triple Bottom', 'Inverse H&S']
   },
   'Short|15 mins LH': {
+    minConfluencePct: 60,
     items: [
       {tag:'MACD · 1H', text:'1H MACD in Bear Territory (Red Histogram)?'},
       {tag:'MACD · 30M', text:'30M MACD far from the zero line?'},
@@ -13608,32 +13728,74 @@ const CONFLUENCE_SETUPS = {
       {tag:'Sequence', text:'Which 15m LH is this?', select:['1st','2nd','3rd','4th','5th']},
       {tag:'Execution · 5min/3min BB50', text:'Did BB50 and the .382 Fib or MOBV align at your entry level?', exec:true},
       {tag:'Execution', text:'Did MACD cross the zero line downward when your order triggered?', exec:true},
+      {tag:'Divergence', text:'Right Hand Present?', invert:true},
     ],
     patterns: ['Double Top', 'Triple Top', 'H&S']
   },
-  'Long|30 mins Invalidation Play': {
+  // 1 Hour setups. The sequence question counts 15m swings, not 1h ones —
+  // that's how the setup is actually read.
+  'Long|1 hour HL': {
+    minConfluencePct: 60,
     items: [
-      {tag:'Divergence · 1H', text:'Righthand divergence? (price falling, but MACD rising)'},
-      {tag:'MACD · 1H', text:'1H MACD in Bear Territory with a Green Histogram (weakening)?'},
-      {tag:'BB50 · 1H', text:'1H BB50 far from price, for your TP area (upper or lower band)?'},
+      {tag:'MACD · 4H', text:'4H MACD in Bull Territory (Green Histogram)?'},
+      {tag:'MACD · 2H', text:'2H MACD far from TP/Current Price?'},
+      // Only the BREAK is inverted. Breaking through zero counts against you
+      // ("No" scores, like the 3min-breakdown and Left-Hand questions); simply
+      // being far from zero is room to run and counts for you the normal way.
+      // Two different readings of the same indicator, which is why they're two
+      // questions rather than one.
+      //
+      // The break is asked FIRST because it settles the next question: a MACD
+      // that has just broken the zero line is sitting ON it, so "Break = Yes"
+      // fills in "far from the zero line = No". Answering No implies nothing —
+      // not having crossed says nothing about how far away it is.
+      //
+      // The implication is keyed by `id`, not by question text, so wording can
+      // be edited without silently breaking the link between the two.
+      {id:'m30-break', tag:'MACD · 30M', text:'30M MACD Break the zero line?', invert:true, impliesWhenYes:{'m30-far':'no'}},
+      {id:'m30-far', tag:'MACD · 30M', text:'30M MACD far from the zero line?'},
       {tag:'Sequence', text:'Which 15m HL is this?', select:['1st','2nd','3rd','4th','5th']},
+      {tag:'Divergence', text:'Left Hand Present?', invert:true},
       {tag:'Execution · 5min/3min BB50', text:'Did BB50 and the .382 Fib or MOBV align at your entry level?', exec:true},
       {tag:'Execution', text:'Did MACD cross the zero line upward when your order triggered?', exec:true},
     ],
-    patterns: ['Double Top', 'Triple Top', 'H&S']
+    patterns: ['Double Bottom', 'Triple Bottom', 'Inverse H&S']
   },
-  'Short|30 mins Invalidation Play': {
+  'Short|1 hour LH': {
+    minConfluencePct: 60,
     items: [
-      {tag:'Divergence · 1H', text:'Lefthand divergence? (price rising, but MACD falling)'},
-      {tag:'MACD · 1H', text:'1H MACD in Bull Territory with a Red Histogram (weakening)?'},
-      {tag:'BB50 · 1H', text:'1H BB50 far from price, for your TP area (upper or lower band)?'},
+      {tag:'MACD · 4H', text:'4H MACD in Bear Territory (Red Histogram)?'},
+      {tag:'MACD · 2H', text:'2H MACD far from TP/Current Price?'},
+      {id:'m30-break', tag:'MACD · 30M', text:'30M MACD Break the zero line?', invert:true, impliesWhenYes:{'m30-far':'no'}},
+      {id:'m30-far', tag:'MACD · 30M', text:'30M MACD far from the zero line?'},
       {tag:'Sequence', text:'Which 15m LH is this?', select:['1st','2nd','3rd','4th','5th']},
+      {tag:'Divergence', text:'Right Hand Present?', invert:true},
       {tag:'Execution · 5min/3min BB50', text:'Did BB50 and the .382 Fib or MOBV align at your entry level?', exec:true},
       {tag:'Execution', text:'Did MACD cross the zero line downward when your order triggered?', exec:true},
     ],
+    patterns: ['Double Top', 'Triple Top', 'H&S']
+  },
+  // The 30 mins Invalidation Play is read exactly like the 15 mins setup — the
+  // item list is assigned below rather than copied here, so the two can never
+  // drift apart again the way they already had.
+  //
+  // The chart patterns stay its own, and they are deliberately CROSSED: an
+  // invalidation trades a pattern that FAILED, so a Long invalidation is
+  // looking at a Double Top that broke upward instead of holding. Aliasing the
+  // whole setup would have quietly swapped these to the wrong direction.
+  'Long|30 mins Invalidation Play': {
+    minConfluencePct: 60,
+    items: null,
+    patterns: ['Double Top', 'Triple Top', 'H&S']
+  },
+  'Short|30 mins Invalidation Play': {
+    minConfluencePct: 60,
+    items: null,
     patterns: ['Double Bottom', 'Triple Bottom', 'Inverse H&S']
   },
 };
+CONFLUENCE_SETUPS['Long|30 mins Invalidation Play'].items  = CONFLUENCE_SETUPS['Long|15 mins HL'].items;
+CONFLUENCE_SETUPS['Short|30 mins Invalidation Play'].items = CONFLUENCE_SETUPS['Short|15 mins LH'].items;
 
 // Color tier for a "Sequence" pick (Which 5m HL/LH is this?) by its index in
 // the select list — 1st/2nd green, 3rd orange, 4th/5th red. Shared by the
@@ -13691,13 +13853,50 @@ function _renderConfluenceItemRow(it, i, ans, setAnswerFn){
 // Chart Pattern counts as one full point: an A+ setup has a recognisable
 // pattern behind it, so a checklist with every indicator answered but no
 // pattern should read 5/6, not 5/5 — the missing point is the signal.
+// Some checklist answers settle another question outright, so you aren't asked
+// to confirm something already known. A MACD that has just broken the zero
+// line is by definition sitting AT it — so "Break = Yes" means "far from the
+// zero line = No", not Yes.
+//
+// The map form ({ targetId: valueToSet }) rather than a plain list, because
+// the implied answer isn't always the same as the trigger — here Yes implies
+// No. Keyed by `id` so question wording can change without breaking the link.
+//
+// Deliberately one-directional and non-destructive: it only fills a BLANK, and
+// only fires on Yes. Answering No implies nothing (not having crossed says
+// nothing about distance), and taking a Yes back to No never wipes what was
+// filled — second-guessing an answer already on screen is worse than the
+// keystroke it saved.
+function _applyConfluenceImplications(items, answers, changedIdx){
+  const it = items[changedIdx];
+  if(!it || !it.impliesWhenYes || answers[changedIdx] !== 'yes') return;
+  Object.entries(it.impliesWhenYes).forEach(([id, value]) => {
+    const target = items.findIndex(x => x.id === id);
+    // An explicit answer stands — the trader looked at the chart, the tool
+    // did not.
+    if(target >= 0 && answers[target] === undefined) answers[target] = value;
+  });
+}
+
+// How much credit a multi-choice (Sequence) answer earns. Mirrors the chip
+// colours exactly — 1st/2nd green, 3rd orange, 4th/5th red — because until
+// now ANY answer scored a full point, so a 5th HL and a 1st HL came out
+// identical. The chip said red, the auto-flag said "Ignored Trend" and the
+// Trade Review said "missed", while the score said full marks; three of the
+// four agreed and the one that fed the Warning Signs and the Review did not.
+function _selectCredit(it, ans){
+  const idx = it.select.indexOf(ans);
+  if(idx < 0) return 0;
+  return idx <= 1 ? 1 : (idx === 2 ? 0.5 : 0);
+}
+
 function _confluenceProgress(items, answers, chartPatternPresent){
   const answeredValues = Object.values(answers);
   let done = chartPatternPresent ? 1 : 0;
   items.forEach((it, i) => {
     const ans = answers[i];
     if(ans === undefined) return;
-    if(it.select){ done += 1; return; }
+    if(it.select){ done += _selectCredit(it, ans); return; }
     if(it.invert){
       if(ans === 'no') done += 1;
       else if(ans === 'almost') done += 0.5;
@@ -13729,10 +13928,32 @@ function _autoUnfollowedRules(cfg, answers, chartPatternPresent){
   };
   const reasons = new Set();
 
-  const { done } = _confluenceProgress(cfg.items, answers, chartPatternPresent);
-  if(done <= 5){
+  // A PERCENTAGE, and set PER SETUP. Two separate reasons for that:
+  //
+  // The old rule was a raw "score <= 5", which meant something different on
+  // every checklist — 56% on a 9-slot list but 71% on the 7-slot Invalidation
+  // Play, so a 5/7 (the better read) was flagged while a 6/9 (the weaker one)
+  // was not. Every question added since made the bar quietly looser too,
+  // because the 5 never moved.
+  //
+  // And one shared percentage isn't right either: a 5-minute scalp and a
+  // 1-hour swing are different trades that deserve different bars. Each setup
+  // carries its own `minConfluencePct`; DEFAULT_MIN_CONFLUENCE_PCT only
+  // applies to a setup that hasn't named one.
+  const bar = Number.isFinite(cfg.minConfluencePct) ? cfg.minConfluencePct : DEFAULT_MIN_CONFLUENCE_PCT;
+  const { done, total } = _confluenceProgress(cfg.items, answers, chartPatternPresent);
+  if(total > 0 && (done / total * 100) < bar){
     reasons.add('Lack of Confluence');
     reasons.add('Non-BnB Setup');
+  }
+
+  // A 3min breakdown (Long) or breakout (Short) against the position is the
+  // signal to cut. Answering Yes means it happened and the trade was held.
+  // The question is inverted, so Yes is the breach.
+  const breakdown3m = byText('Did 3min MACD Breakdown?');
+  const breakout3m = byText('Did 3min MACD Breakout?');
+  if(breakdown3m === 'yes' || breakout3m === 'yes'){
+    reasons.add('No Cutloss 3mins Breakout');
   }
 
   const crossDown = byText('Did MACD cross the zero line downward when your order triggered?');
@@ -13743,10 +13964,26 @@ function _autoUnfollowedRules(cfg, answers, chartPatternPresent){
     reasons.add('FOMO Entry');
   }
 
+  // Higher-timeframe bias. The 1 hour setups ask this on the 4H instead of the
+  // 1H, so both wordings are checked — a checklist only ever contains one of
+  // them, and missing the 4H version left the entire 1 hour setup with no
+  // bias rule at all.
   const bear1h = byText('1H MACD in Bear Territory (Red Histogram)?');
   const bull1h = byText('1H MACD in Bull Territory (Green Histogram)?');
-  if(bear1h === 'no' || bull1h === 'no'){
+  const bear4h = byText('4H MACD in Bear Territory (Red Histogram)?');
+  const bull4h = byText('4H MACD in Bull Territory (Green Histogram)?');
+  if([bear1h, bull1h, bear4h, bull4h].includes('no')){
     reasons.add('Against Daily Bias / HTF Bias');
+    reasons.add('Ignored Trend');
+  }
+
+  // Divergence. These questions are INVERTED — a hand being present is the
+  // warning — so "yes" is the breach, not "no". This had no rule anywhere,
+  // including the 5 mins and 15 mins setups where the question has existed
+  // all along.
+  const leftHand = byText('Left Hand Present?');
+  const rightHand = byText('Right Hand Present?');
+  if(leftHand === 'yes' || rightHand === 'yes'){
     reasons.add('Ignored Trend');
   }
 
@@ -13907,12 +14144,15 @@ function renderConfluenceChecklist(){
       </div>
       <div class="cfl-pattern-chips">${chipsHtml}</div>
     </div>
+    ${_bbWarningSignsHtml(key, cfg, done, total, confluenceAnswers)}
   `;
 }
 
 function setConfluenceAnswer(i, val){
   confluenceAnswers[i] = (confluenceAnswers[i] === val) ? undefined : val;
   if(confluenceAnswers[i] === undefined) delete confluenceAnswers[i];
+  const cfg = CONFLUENCE_SETUPS[_confluenceKey()];
+  if(cfg) _applyConfluenceImplications(cfg.items, confluenceAnswers, i);
   renderConfluenceChecklist();
 }
 
@@ -15099,6 +15339,10 @@ function onBbTypeChange(){
 function setBbAnswer(i, val){
   bbAnswers[i] = (bbAnswers[i] === val) ? undefined : val;
   if(bbAnswers[i] === undefined) delete bbAnswers[i];
+  const tt = document.getElementById('bbTradeType')?.value;
+  const pt = document.getElementById('bbPatternType')?.value;
+  const cfg = CONFLUENCE_SETUPS[`${tt}|${pt}`];
+  if(cfg) _applyConfluenceImplications(cfg.items, bbAnswers, i);
   renderBbChecklist();
 }
 
