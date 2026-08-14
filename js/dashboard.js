@@ -8918,14 +8918,50 @@ let drawerJournalSetupId = null;
 function openEasyAddModal(){
   document.getElementById('easyAddBroker').value = 'upscale';
   document.getElementById('easyAddError').textContent = '';
+  _renderEasyAddTarget();
   document.getElementById('easyAddModal').classList.add('open');
   switchEasyAddBroker();
 }
 
-function closeEasyAddModal(){
+// Names the account this paste is expected for. Every order ticket looks
+// alike apart from the numbers, so with several accounts queued the easy
+// mistake is pasting the wrong one — and it would parse cleanly and save
+// wrong. Shown for a single Journal too, where it costs nothing.
+function _renderEasyAddTarget(){
+  const el = document.getElementById('easyAddTarget');
+  if(!el) return;
+  const s = pendingJournalSetupId ? SAVED_SETUPS.find(x => x.id === pendingJournalSetupId) : null;
+  if(!s){
+    el.style.display = 'none';
+    el.innerHTML = '';
+    return;
+  }
+
+  const queued = journalQueueTotal > 1;
+  const step = journalQueueTotal - journalQueue.length + 1;
+  const rest = journalQueue.slice(1)
+    .map(id => SAVED_SETUPS.find(x => x.id === id)?.account_name)
+    .filter(Boolean);
+  const meta = [s.symbol, s.trade_type, s.pattern_type].filter(Boolean).join(' · ');
+
+  el.style.display = '';
+  el.innerHTML = `
+    ${queued ? `<div class="ea-target-step">Journal ${step} of ${journalQueueTotal}</div>` : ''}
+    <div class="ea-target-label">Paste the order ticket for</div>
+    <div class="ea-target-account">${escapeHtml(s.account_name || 'No account')}</div>
+    ${meta ? `<div class="ea-target-meta">${escapeHtml(meta)}</div>` : ''}
+    ${rest.length ? `<div class="ea-target-rest">Then: ${escapeHtml(rest.join(' → '))}</div>` : ''}
+  `;
+}
+
+// `keepQueue` is set only by parseEasyAddText, which closes this modal on its
+// way to the drawer — every other close is the user backing out, which
+// abandons the rest of the run.
+function closeEasyAddModal(keepQueue){
   document.getElementById('easyAddModal').classList.remove('open');
   pendingJournalPrefill = null;
   pendingJournalSetupId = null;
+  if(!keepQueue) _cancelJournalQueue();
 }
 
 function switchEasyAddBroker(){
@@ -9098,7 +9134,7 @@ function parseEasyAddText(){
   }
 
   drawerJournalSetupId = pendingJournalSetupId;
-  closeEasyAddModal();
+  closeEasyAddModal(true);
   openDrawer('create', null, parsed);
 }
 
@@ -9464,6 +9500,10 @@ function renderDrawerFields(){
 function closeDrawer(){
   document.getElementById('drawerOverlay').classList.remove('open');
   document.getElementById('drawer').classList.remove('open');
+  // Dismissing the drawer abandons a multi-account run. Without this a queue
+  // left alive here would silently resume weeks later, the next time that
+  // same setup happened to be journaled on its own.
+  if(!_journalQueueHandoff) _cancelJournalQueue();
 }
 
 // Infers Exit Type from price alone, for the four outcomes price can
@@ -9582,6 +9622,9 @@ async function saveDrawer(){
   saveBtn.disabled = true;
   saveBtn.textContent = 'Saving…';
   let justJournaledSetup = false;
+  // drawerJournalSetupId is cleared as soon as the insert lands, so hold on to
+  // it here — the journal queue needs to know which setup this save completed.
+  let savedSetupId = null;
 
   try{
     const patch = _collectDrawerPatch();
@@ -9619,6 +9662,7 @@ async function saveDrawer(){
       if(drawerJournalSetupId){
         setSetupStatus(drawerJournalSetupId, 'Journaled');
         justJournaledSetup = true;
+        savedSetupId = drawerJournalSetupId;
         drawerJournalSetupId = null;
       }
 
@@ -9658,7 +9702,15 @@ async function saveDrawer(){
       if(newAccount) await adjustAccountBalance(newAccount, newNet);
     }
 
+    // Hand off before closing so closeDrawer's cancel doesn't wipe the queue
+    // that was just advanced. Easy Add is a separate overlay, so it stays up
+    // while the drawer slides shut behind it.
+    if(savedSetupId){
+      _journalQueueHandoff = true;
+      _advanceJournalQueue(savedSetupId);
+    }
     closeDrawer();
+    _journalQueueHandoff = false;
 
   }catch(e){
     errEl.textContent = "Couldn't save: " + e.message + ". Make sure your Supabase table has INSERT/UPDATE policies enabled for this key.";
@@ -14292,6 +14344,68 @@ function renderSetupBulkBar(){
   const n = SELECTED_SETUP_IDS.size;
   bar.style.display = n ? 'flex' : 'none';
   count.textContent = `${n} setup${n===1?'':'s'} selected`;
+}
+
+// Confluence can be written to every ticked setup at once because it really
+// is identical across accounts. A journal can't: the realized P&L and the fee
+// on each order ticket are that account's own numbers, and nothing on another
+// account's card can produce them. So this walks the ticked setups one at a
+// time, naming the account it's waiting on, instead of writing them together.
+let journalQueue = [];        // setup ids still to journal; [0] is the current one
+let journalQueueTotal = 0;    // fixed at the start, for the "x of y" counter
+// Set only across the save -> next-setup handoff, so closeDrawer() can tell a
+// user dismissing the drawer from the drawer closing itself mid-run.
+let _journalQueueHandoff = false;
+
+async function journalSelectedSetups(){
+  const pending = SAVED_SETUPS.filter(s => (s.status || 'Pending') !== 'Journaled');
+  const picked = pending.filter(s => SELECTED_SETUP_IDS.has(s.id));
+  if(!picked.length) return;
+
+  // Same gate as the per-row Journal button, which sits disabled until a
+  // confluence exists — enforced again here so ticking a row can't route
+  // around it.
+  const ready = picked.filter(s => s.pattern_type);
+  const missing = picked.filter(s => !s.pattern_type);
+  if(!ready.length){
+    await customAlert('Fill in Confluence first — none of the selected setups have one yet.');
+    return;
+  }
+  if(missing.length){
+    const names = missing.map(s => s.account_name || 'unnamed').join(', ');
+    // customConfirm writes with textContent and defaults its OK button to
+    // "Delete", so: one flowing line, and an explicit label.
+    const ok = await customConfirm(
+      `${missing.length} selected setup${missing.length===1?' has':'s have'} no Confluence yet (${names}) and will be skipped. Journal the other ${ready.length}?`,
+      `Journal ${ready.length}`
+    );
+    if(!ok) return;
+  }
+
+  journalQueue = ready.map(s => s.id);
+  journalQueueTotal = journalQueue.length;
+  journalFromSetup(journalQueue[0]);
+}
+
+function _cancelJournalQueue(){
+  journalQueue = [];
+  journalQueueTotal = 0;
+}
+
+// Called once a queued trade has actually saved — drops the head and opens
+// the next account's paste box. Guarded on the head matching so an unrelated
+// save can never advance someone else's run.
+function _advanceJournalQueue(savedSetupId){
+  if(!journalQueue.length || journalQueue[0] !== savedSetupId) return;
+  journalQueue.shift();
+  if(!journalQueue.length){
+    const n = journalQueueTotal;
+    _cancelJournalQueue();
+    clearSetupSelection();
+    showToast(`Journaled ${n} setup${n===1?'':'s'}`);
+    return;
+  }
+  journalFromSetup(journalQueue[0]);
 }
 
 // Leverage tint: the higher the leverage, the tighter the margin and the

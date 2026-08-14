@@ -17,7 +17,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<link rel="stylesheet" href="css/style.css?v=198">
+<link rel="stylesheet" href="css/style.css?v=199">
 </head>
 <body>
 
@@ -580,6 +580,7 @@
       <div id="setupBulkBar" style="display:none;align-items:center;gap:10px;margin-bottom:12px;font-size:12.5px;">
         <span id="setupBulkCount"></span>
         <button class="poscalc-accent-btn" onclick="openConfluenceModalBulk()">Add Confluence to selected</button>
+        <button class="poscalc-accent-btn" onclick="journalSelectedSetups()">Add Journal to selected</button>
         <button class="drawer-secondary-btn" onclick="clearSetupSelection()">Clear</button>
       </div>
       <div style="overflow-x:auto;">
@@ -1229,6 +1230,7 @@
     <button class="modal-close" onclick="closeEasyAddModal()">✕</button>
     <h3>Easy Add</h3>
     <div class="modal-sub">Copy the position card from your exchange (select the text and copy) and paste it below.</div>
+    <div id="easyAddTarget" class="ea-target" style="display:none;"></div>
     <div class="field-row" style="margin-top:12px;">
       <label>Broker / Format</label>
       <select id="easyAddBroker" onchange="switchEasyAddBroker()">
@@ -2028,6 +2030,6 @@
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=2"></script>
-<script src="js/dashboard.js?v=326"></script>
+<script src="js/dashboard.js?v=327"></script>
 </body>
 </html>
