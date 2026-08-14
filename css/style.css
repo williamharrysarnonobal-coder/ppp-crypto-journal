@@ -858,6 +858,13 @@
   .ea-target-rest{
     font-size:11px;color:var(--muted);margin-top:8px;padding-top:8px;border-top:1px solid var(--rule);
   }
+  /* Accounts the bulk note is about to land on — listed rather than counted,
+     since "3 setups" doesn't tell you WHICH three. */
+  .bulk-note-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:7px;}
+  .bulk-note-chip{
+    font-size:11.5px;font-weight:600;color:var(--ink);background:var(--surface);
+    border:1px solid var(--rule);border-radius:20px;padding:3px 10px;
+  }
   .modal-close{position:absolute;top:16px;right:20px;background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;}
   .modal-icon-btn{background:none;border:none;color:var(--muted);cursor:pointer;padding:5px;border-radius:6px;display:flex;align-items:center;justify-content:center;}
   .modal-icon-btn:hover{color:var(--accent);background:var(--surface-2);}

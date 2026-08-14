@@ -14392,6 +14392,100 @@ function _cancelJournalQueue(){
   journalQueueTotal = 0;
 }
 
+function _bulkNoteTargets(){
+  const pending = SAVED_SETUPS.filter(s => (s.status || 'Pending') !== 'Journaled');
+  return pending.filter(s => SELECTED_SETUP_IDS.has(s.id));
+}
+
+function openBulkNotesModal(){
+  const targets = _bulkNoteTargets();
+  if(!targets.length) return;
+  document.getElementById('bulkNotesEntry').value = '';
+  document.getElementById('bulkNotesError').textContent = '';
+  document.getElementById('bulkNotesCount').textContent =
+    `Goes to ${targets.length} setup${targets.length===1?'':'s'}:`;
+  document.getElementById('bulkNotesTargets').innerHTML = targets
+    .map(s => `<span class="bulk-note-chip">${escapeHtml(s.account_name || 'No account')}</span>`)
+    .join('');
+  document.getElementById('bulkNotesModal').classList.add('open');
+  document.getElementById('bulkNotesEntry').focus();
+}
+
+function closeBulkNotesModal(){
+  document.getElementById('bulkNotesModal').classList.remove('open');
+}
+
+// One note appended to every ticked setup. Unlike the confluence bulk write
+// this can't be a single request: each setup's notes_log is its own array, so
+// there's no one payload that fits them all. An upsert would have collapsed it
+// into one call, but position_setups.id is `generated always as identity` and
+// leverage is NOT NULL — Postgres rejects that INSERT tuple before it ever
+// reaches the ON CONFLICT clause. So: one PATCH each, fired together.
+async function saveBulkNotes(){
+  const errEl = document.getElementById('bulkNotesError');
+  const btn = document.getElementById('bulkNotesSaveBtn');
+  errEl.textContent = '';
+
+  const text = document.getElementById('bulkNotesEntry').value.trim();
+  if(!text){ errEl.textContent = 'Write the note first.'; return; }
+
+  const targets = _bulkNoteTargets();
+  if(!targets.length){
+    errEl.textContent = 'Nothing is selected any more — close this and tick some setups.';
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Saving…';
+  // One timestamp for the whole batch, so the same note reads as a single
+  // moment across every account instead of drifting by however long the
+  // requests happened to take.
+  const entry = { ts: new Date().toISOString(), text };
+
+  try{
+    const results = await Promise.all(targets.map(async s => {
+      const log = [...(Array.isArray(s.notes_log) ? s.notes_log : []), entry];
+      try{
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/position_setups?id=eq.${s.id}`, {
+          method: 'PATCH',
+          headers: {
+            "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}`,
+            "Content-Type": "application/json", "Prefer": "return=representation"
+          },
+          body: JSON.stringify({ notes_log: log })
+        });
+        if(!res.ok) return { s, ok:false };
+        const rows = await res.json();
+        return rows.length ? { s, ok:true, log } : { s, ok:false };
+      }catch(e){
+        return { s, ok:false };
+      }
+    }));
+
+    // Local state moves only for the ones that actually landed — a partial
+    // failure must not leave the table showing a note the database refused.
+    results.filter(r => r.ok).forEach(r => { r.s.notes_log = r.log; });
+    const failed = results.filter(r => !r.ok);
+
+    if(failed.length){
+      const names = failed.map(r => r.s.account_name || 'unnamed').join(', ');
+      errEl.textContent = `Saved to ${results.length - failed.length} of ${results.length}. Failed: ${names}. If this keeps happening, run supabase_position_setups_add_update_policy.sql in Supabase.`;
+      renderSavedSetups();
+      return;
+    }
+
+    closeBulkNotesModal();
+    clearSetupSelection();
+    showToast(`Note added to ${results.length} setup${results.length===1?'':'s'}`);
+  }catch(e){
+    console.error("Couldn't save bulk notes:", e);
+    errEl.textContent = "Couldn't save — " + e.message;
+  }finally{
+    btn.disabled = false;
+    btn.textContent = 'Add note';
+  }
+}
+
 // Called once a queued trade has actually saved — drops the head and opens
 // the next account's paste box. Guarded on the head matching so an unrelated
 // save can never advance someone else's run.

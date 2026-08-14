@@ -17,7 +17,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<link rel="stylesheet" href="css/style.css?v=199">
+<link rel="stylesheet" href="css/style.css?v=200">
 </head>
 <body>
 
@@ -579,8 +579,9 @@
       <div class="empty-state" id="pendingSetupsEmptyState" style="display:none;">No pending setups yet — use "Trade This Setup" above to save one.</div>
       <div id="setupBulkBar" style="display:none;align-items:center;gap:10px;margin-bottom:12px;font-size:12.5px;">
         <span id="setupBulkCount"></span>
-        <button class="poscalc-accent-btn" onclick="openConfluenceModalBulk()">Add Confluence to selected</button>
-        <button class="poscalc-accent-btn" onclick="journalSelectedSetups()">Add Journal to selected</button>
+        <button class="poscalc-accent-btn" onclick="openConfluenceModalBulk()">Add Confluence</button>
+        <button class="poscalc-accent-btn" onclick="journalSelectedSetups()">Add Journal</button>
+        <button class="poscalc-accent-btn" onclick="openBulkNotesModal()">Add New Notes</button>
         <button class="drawer-secondary-btn" onclick="clearSetupSelection()">Clear</button>
       </div>
       <div style="overflow-x:auto;">
@@ -1554,6 +1555,21 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="bulkNotesModal" onclick="if(event.target===this) closeBulkNotesModal()">
+  <div class="modal-box" style="position:relative;">
+    <button class="modal-close" onclick="closeBulkNotesModal()">✕</button>
+    <h3>Add New Notes</h3>
+    <div class="modal-sub">One note, timestamped once, appended to every ticked setup.</div>
+    <div class="ea-target">
+      <div class="ea-target-label" id="bulkNotesCount"></div>
+      <div class="bulk-note-chips" id="bulkNotesTargets"></div>
+    </div>
+    <textarea id="bulkNotesEntry" placeholder="What's happening with this setup?" style="width:100%;min-height:110px;padding:10px 12px;background:var(--surface-2);border:1px solid var(--rule);border-radius:6px;color:var(--ink);font-size:13px;font-family:var(--font-ui);resize:vertical;"></textarea>
+    <div id="bulkNotesError" class="auth-error"></div>
+    <button class="ai-btn" id="bulkNotesSaveBtn" style="margin-top:14px;width:100%;" onclick="saveBulkNotes()">Add note</button>
+  </div>
+</div>
+
 <div class="modal-overlay" id="confluenceModal" onclick="if(event.target===this) closeConfluenceModal()">
   <div class="modal-box" style="position:relative;max-width:640px;width:92vw;max-height:92vh;display:flex;flex-direction:column;overflow-y:auto;">
     <button class="modal-close" onclick="closeConfluenceModal()">✕</button>
@@ -2030,6 +2046,6 @@
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=2"></script>
-<script src="js/dashboard.js?v=327"></script>
+<script src="js/dashboard.js?v=328"></script>
 </body>
 </html>
