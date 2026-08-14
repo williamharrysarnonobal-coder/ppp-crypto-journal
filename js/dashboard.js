@@ -13710,8 +13710,13 @@ const CONFLUENCE_SETUPS = {
     minConfluencePct: 60,
     items: [
       {tag:'MACD · 1H', text:'1H MACD in Bull Territory (Green Histogram)?'},
-      {tag:'MACD · 30M', text:'30M MACD far from the zero line?'},
-      {tag:'BB50 · 2H', text:'2H BB50 far from price, or before your TP area?'},
+      // `almost` where the question asks HOW FAR rather than whether something
+      // is there. "Far from the zero line" has a middle; "in Bull Territory"
+      // does not — the histogram is green or it isn't. Note that none of the
+      // questions carrying an Almost has an auto-rule attached, so the middle
+      // answer can't be used to slip past a flag.
+      {tag:'MACD · 30M', text:'30M MACD far from the zero line?', almost:true},
+      {tag:'BB50 · 2H', text:'2H BB50 far from price, or before your TP area?', almost:true},
       {tag:'Sequence', text:'Which 15m HL is this?', select:['1st','2nd','3rd','4th','5th']},
       {tag:'Execution · 5min/3min BB50', text:'Did BB50 and the .382 Fib or MOBV align at your entry level?', exec:true},
       {tag:'Execution', text:'Did MACD cross the zero line upward when your order triggered?', exec:true},
@@ -13723,8 +13728,13 @@ const CONFLUENCE_SETUPS = {
     minConfluencePct: 60,
     items: [
       {tag:'MACD · 1H', text:'1H MACD in Bear Territory (Red Histogram)?'},
-      {tag:'MACD · 30M', text:'30M MACD far from the zero line?'},
-      {tag:'BB50 · 2H', text:'2H BB50 far from price, or before your TP area?'},
+      // `almost` where the question asks HOW FAR rather than whether something
+      // is there. "Far from the zero line" has a middle; "in Bull Territory"
+      // does not — the histogram is green or it isn't. Note that none of the
+      // questions carrying an Almost has an auto-rule attached, so the middle
+      // answer can't be used to slip past a flag.
+      {tag:'MACD · 30M', text:'30M MACD far from the zero line?', almost:true},
+      {tag:'BB50 · 2H', text:'2H BB50 far from price, or before your TP area?', almost:true},
       {tag:'Sequence', text:'Which 15m LH is this?', select:['1st','2nd','3rd','4th','5th']},
       {tag:'Execution · 5min/3min BB50', text:'Did BB50 and the .382 Fib or MOBV align at your entry level?', exec:true},
       {tag:'Execution', text:'Did MACD cross the zero line downward when your order triggered?', exec:true},
@@ -13738,7 +13748,7 @@ const CONFLUENCE_SETUPS = {
     minConfluencePct: 60,
     items: [
       {tag:'MACD · 4H', text:'4H MACD in Bull Territory (Green Histogram)?'},
-      {tag:'MACD · 2H', text:'2H MACD far from TP/Current Price?'},
+      {tag:'MACD · 2H', text:'2H MACD far from TP/Current Price?', almost:true},
       // Only the BREAK is inverted. Breaking through zero counts against you
       // ("No" scores, like the 3min-breakdown and Left-Hand questions); simply
       // being far from zero is room to run and counts for you the normal way.
@@ -13753,7 +13763,7 @@ const CONFLUENCE_SETUPS = {
       // The implication is keyed by `id`, not by question text, so wording can
       // be edited without silently breaking the link between the two.
       {id:'m30-break', tag:'MACD · 30M', text:'30M MACD Break the zero line?', invert:true, impliesWhenYes:{'m30-far':'no'}},
-      {id:'m30-far', tag:'MACD · 30M', text:'30M MACD far from the zero line?'},
+      {id:'m30-far', tag:'MACD · 30M', text:'30M MACD far from the zero line?', almost:true},
       {tag:'Sequence', text:'Which 15m HL is this?', select:['1st','2nd','3rd','4th','5th']},
       {tag:'Divergence', text:'Left Hand Present?', invert:true},
       {tag:'Execution · 5min/3min BB50', text:'Did BB50 and the .382 Fib or MOBV align at your entry level?', exec:true},
@@ -13765,9 +13775,9 @@ const CONFLUENCE_SETUPS = {
     minConfluencePct: 60,
     items: [
       {tag:'MACD · 4H', text:'4H MACD in Bear Territory (Red Histogram)?'},
-      {tag:'MACD · 2H', text:'2H MACD far from TP/Current Price?'},
+      {tag:'MACD · 2H', text:'2H MACD far from TP/Current Price?', almost:true},
       {id:'m30-break', tag:'MACD · 30M', text:'30M MACD Break the zero line?', invert:true, impliesWhenYes:{'m30-far':'no'}},
-      {id:'m30-far', tag:'MACD · 30M', text:'30M MACD far from the zero line?'},
+      {id:'m30-far', tag:'MACD · 30M', text:'30M MACD far from the zero line?', almost:true},
       {tag:'Sequence', text:'Which 15m LH is this?', select:['1st','2nd','3rd','4th','5th']},
       {tag:'Divergence', text:'Right Hand Present?', invert:true},
       {tag:'Execution · 5min/3min BB50', text:'Did BB50 and the .382 Fib or MOBV align at your entry level?', exec:true},
@@ -13837,7 +13847,7 @@ function _renderConfluenceItemRow(it, i, ans, setAnswerFn){
       <span class="cfl-yn-buttons">
         <button type="button" class="cfl-yn-btn ${it.invert?'cfl-no':'cfl-yes'} ${ans==='yes'?'active':''}" onclick="${setAnswerFn}(${i},'yes')">Yes</button>
         ${it.retest ? `<button type="button" class="cfl-yn-btn cfl-retest ${ans==='retest'?'active':''}" onclick="${setAnswerFn}(${i},'retest')">Retest</button>` : ''}
-        ${it.exec ? `<button type="button" class="cfl-yn-btn cfl-almost ${ans==='almost'?'active':''}" onclick="${setAnswerFn}(${i},'almost')">Almost</button>` : ''}
+        ${(it.exec || it.almost) ? `<button type="button" class="cfl-yn-btn cfl-almost ${ans==='almost'?'active':''}" onclick="${setAnswerFn}(${i},'almost')">Almost</button>` : ''}
         <button type="button" class="cfl-yn-btn ${it.invert?'cfl-yes':'cfl-no'} ${ans==='no'?'active':''}" onclick="${setAnswerFn}(${i},'no')">No</button>
       </span>
     </div>
