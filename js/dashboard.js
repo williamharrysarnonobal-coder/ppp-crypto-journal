@@ -13742,8 +13742,7 @@ const CONFLUENCE_SETUPS = {
     ],
     patterns: ['Double Top', 'Triple Top', 'H&S']
   },
-  // 1 Hour setups. The sequence question counts 15m swings, not 1h ones —
-  // that's how the setup is actually read.
+  // 1 Hour setups.
   'Long|1 hour HL': {
     minConfluencePct: 60,
     items: [
@@ -13764,7 +13763,7 @@ const CONFLUENCE_SETUPS = {
       // be edited without silently breaking the link between the two.
       {id:'m30-break', tag:'MACD · 30M', text:'30M MACD Break the zero line?', invert:true, impliesWhenYes:{'m30-far':'no'}},
       {id:'m30-far', tag:'MACD · 30M', text:'30M MACD far from the zero line?', almost:true},
-      {tag:'Sequence', text:'Which 15m HL is this?', select:['1st','2nd','3rd','4th','5th']},
+      {tag:'Sequence', text:'Which 1h HL is this?', select:['1st','2nd','3rd','4th','5th']},
       {tag:'Divergence', text:'Left Hand Present?', invert:true},
       {tag:'Execution · 5min/3min BB50', text:'Did BB50 and the .382 Fib or MOBV align at your entry level?', exec:true},
       {tag:'Execution', text:'Did MACD cross the zero line upward when your order triggered?', exec:true},
@@ -13778,7 +13777,7 @@ const CONFLUENCE_SETUPS = {
       {tag:'MACD · 2H', text:'2H MACD far from TP/Current Price?', almost:true},
       {id:'m30-break', tag:'MACD · 30M', text:'30M MACD Break the zero line?', invert:true, impliesWhenYes:{'m30-far':'no'}},
       {id:'m30-far', tag:'MACD · 30M', text:'30M MACD far from the zero line?', almost:true},
-      {tag:'Sequence', text:'Which 15m LH is this?', select:['1st','2nd','3rd','4th','5th']},
+      {tag:'Sequence', text:'Which 1h LH is this?', select:['1st','2nd','3rd','4th','5th']},
       {tag:'Divergence', text:'Right Hand Present?', invert:true},
       {tag:'Execution · 5min/3min BB50', text:'Did BB50 and the .382 Fib or MOBV align at your entry level?', exec:true},
       {tag:'Execution', text:'Did MACD cross the zero line downward when your order triggered?', exec:true},
@@ -13997,10 +13996,13 @@ function _autoUnfollowedRules(cfg, answers, chartPatternPresent){
     reasons.add('Ignored Trend');
   }
 
+  // Matched on the item being a `select`, not on its wording. The old version
+  // listed the four question texts by hand, so renaming one — say from "Which
+  // 15m HL is this?" to "Which 1h HL is this?" — would have quietly stopped
+  // the rule firing on that setup with nothing to show it had broken.
   const lateSequence = new Set(['3rd','4th','5th']);
-  ['Which 5m HL is this?','Which 5m LH is this?','Which 15m HL is this?','Which 15m LH is this?'].forEach(label => {
-    const v = byText(label);
-    if(v && lateSequence.has(v)) reasons.add('Ignored Trend');
+  cfg.items.forEach((it, i) => {
+    if(it.select && lateSequence.has(answers[i])) reasons.add('Ignored Trend');
   });
 
   return reasons;
