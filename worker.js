@@ -23,6 +23,18 @@ export default {
 };
 
 async function handleTranscribe(request, env) {
+  // Open /api/transcribe in a browser to see whether this Worker can actually
+  // see the key. "I set the secret but it still says not configured" is almost
+  // always a name that doesn't match, or a secret added to a different Worker
+  // than the one serving the site — and neither is visible from the outside.
+  // Binding NAMES only; no value, no length, nothing derived from the key.
+  if (request.method === 'GET') {
+    return json({
+      configured: Boolean(env.GROQ_API_KEY),
+      expecting: 'GROQ_API_KEY',
+      bindings: Object.keys(env).sort()
+    });
+  }
   if (request.method !== 'POST') return json({ error: 'POST only.' }, 405);
   if (!env.GROQ_API_KEY) {
     return json({ error: 'Transcription is not set up on the server yet.' }, 500);
