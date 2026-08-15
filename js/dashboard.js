@@ -9837,107 +9837,28 @@ function showToast(msg){
   toastTimer = setTimeout(() => el.classList.remove('show'), 2600);
 }
 
-/* ---------------- Voice input (Web Speech API) ---------------- */
-// Two different jobs, so two different languages: a price is dictated as
-// digits and reads best as en-US, while the notes and diary fields are
-// Tagalog/Taglish and ask for fil-PH — falling back per VOICE_LANG_CHAIN when
-// the device hasn't got it.
+/* ---------------- Voice input (record + transcribe) ---------------- */
+// The browser's own SpeechRecognition was a dead end for this app. Android
+// plays a system tone every time the recognizer opens and again when it
+// closes, and a web page has no way to silence it; worse, Samsung's recognizer
+// has no Filipino at all, which was the whole point of the feature.
 //
-// This needs a secure context. On file:// the browser won't hand out
-// microphone permission, so it's a deployed-site feature — onerror says that
-// in as many words instead of failing silently and looking broken.
-let _activeRecognition = null;
-let _activeRecognitionTarget = null;
-let _activeRecognitionBtn = null;
+// So this records audio instead. Capturing the microphone makes no sound, and
+// the recording goes to Whisper through this site's own Cloudflare Worker,
+// which holds the API key. Whisper handles Tagalog and Taglish properly, and
+// because none of it depends on the device's speech engine it behaves the same
+// on Android and iPhone.
 
-// Hold to talk, release to stop — a walkie-talkie, not a switch.
-//
-// The tap-to-toggle version had to reopen the session every time the browser
-// timed out on silence, and Android plays its start/stop chime on every one of
-// those. Holding removes the problem rather than working around it: you only
-// hold while actually speaking, so there's no silence to time out on, and the
-// thinking happens with the mic closed.
-function voiceHoldStart(ev, targetId, mode, btn){
-  // Stops the press turning into a text selection, a long-press menu, or a
-  // scroll on a phone.
-  if(ev && ev.preventDefault) ev.preventDefault();
-  if(btn._voiceHolding) return;
-  btn._voiceHolding = true;
-  // Keeps the release event coming to this button even if your finger drifts
-  // off it mid-sentence, which otherwise cuts the recording short.
-  if(ev && ev.pointerId != null && btn.setPointerCapture){
-    try{ btn.setPointerCapture(ev.pointerId); }catch(err){}
-  }
-  startVoiceInput(targetId, mode, btn);
-}
-
-function voiceHoldEnd(ev, btn){
-  if(!btn._voiceHolding) return;
-  btn._voiceHolding = false;
-  if(ev && ev.pointerId != null && btn.releasePointerCapture){
-    try{ btn.releasePointerCapture(ev.pointerId); }catch(err){}
-  }
-  stopVoiceInput();
-}
-
-function stopVoiceInput(){
-  const rec = _activeRecognition;
-  if(!rec) return;
-  const btn = _activeRecognitionBtn;
-  // Cleared before stop() so onend sees it no longer owns the slot and won't
-  // reopen the session.
-  _activeRecognition = null;
-  _activeRecognitionTarget = null;
-  _activeRecognitionBtn = null;
-  if(btn){
-    btn._voiceHolding = false;
-    btn.classList.remove('mic-live');
-  }
-  try{ rec.stop(); }catch(err){}
-}
+let _voiceRecorder = null;
+let _voiceStream = null;
+let _voiceChunks = [];
+let _voiceBtn = null;
+let _voiceTarget = null;
+let _voiceMode = 'text';
+let _voiceBusy = false;
 
 function micIconSVG(){
   return `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="9" y1="21" x2="15" y2="21"/></svg>`;
-}
-
-function _speechCtor(){
-  return window.SpeechRecognition || window.webkitSpeechRecognition || null;
-}
-
-// Whether Filipino is available depends on the device, not the site: Android
-// delegates recognition to whatever language packs the phone has installed, so
-// fil-PH throws service-not-allowed on a handset without it while en-US works
-// fine. Fall down the chain until one is accepted.
-//
-// tl-PH is the older Tagalog tag — some backends still answer to it and not to
-// fil-PH, and an unsupported tag costs nothing but one failed attempt.
-const VOICE_LANG_CHAIN = ['fil-PH', 'tl-PH', 'en-PH', 'en-US'];
-// Deliberately plain localStorage and NOT ui_prefs: this is a fact about the
-// device, so syncing the phone's answer to the desktop would be wrong.
-const VOICE_LANG_KEY = 'voiceTextLang';
-
-// Remembering what worked stops the fallback dance repeating on every press.
-// Remembering it forever would be a trap though: install the Filipino pack
-// later and the app would never try it again. So the preferred language is
-// re-probed weekly — one wasted attempt, in exchange for the feature fixing
-// itself the moment the phone does.
-const VOICE_LANG_RECHECK_DAYS = 7;
-
-function _voiceTextLang(){
-  const raw = localStorage.getItem(VOICE_LANG_KEY);
-  if(!raw) return VOICE_LANG_CHAIN[0];
-  const [lang, stamp] = String(raw).split('|');
-  if(!VOICE_LANG_CHAIN.includes(lang)) return VOICE_LANG_CHAIN[0];
-  const ageDays = (Date.now() - Number(stamp)) / 86400000;
-  return (Number.isFinite(ageDays) && ageDays < VOICE_LANG_RECHECK_DAYS) ? lang : VOICE_LANG_CHAIN[0];
-}
-
-function _rememberVoiceLang(lang){
-  localStorage.setItem(VOICE_LANG_KEY, lang + '|' + Date.now());
-}
-
-function _voiceLangLabel(code){
-  return ({ 'fil-PH':'Filipino', 'tl-PH':'Tagalog', 'en-PH':'English (PH)', 'en-US':'English' })[code] || code;
 }
 
 // Digits only, and never a guess. "63,040.20", "63040 point 20" and
@@ -9955,206 +9876,164 @@ function _parseSpokenNumber(text){
   return Number.isFinite(Number(s)) ? s : null;
 }
 
-// `langOverride` is only passed by the fallback retry below — every button
-// calls this with three arguments.
-function startVoiceInput(targetId, mode, btn, langOverride){
+// Android Chrome records webm/opus; iOS Safari only does mp4. Whisper accepts
+// both, so take whichever the device actually offers.
+function _voiceMimeType(){
+  if(!window.MediaRecorder || !MediaRecorder.isTypeSupported) return '';
+  const candidates = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus'];
+  for(const t of candidates){
+    if(MediaRecorder.isTypeSupported(t)) return t;
+  }
+  return '';
+}
+
+// Hold to record, release to transcribe.
+async function voiceHoldStart(ev, targetId, mode, btn){
+  // Stops the press turning into a text selection, a long-press menu, or a
+  // scroll on a phone.
+  if(ev && ev.preventDefault) ev.preventDefault();
+  if(btn._voiceHolding || _voiceBusy) return;
+  btn._voiceHolding = true;
+  // Keeps the release event coming to this button even if your finger drifts
+  // off it mid-sentence, which otherwise cuts the recording short.
+  if(ev && ev.pointerId != null && btn.setPointerCapture){
+    try{ btn.setPointerCapture(ev.pointerId); }catch(err){}
+  }
+
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder){
+    btn._voiceHolding = false;
+    showToast('This browser cannot record audio.');
+    return;
+  }
+
+  btn.classList.add('mic-live');
+  let stream;
+  try{
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  }catch(err){
+    btn._voiceHolding = false;
+    btn.classList.remove('mic-live');
+    showToast(location.protocol === 'file:'
+      ? 'Voice needs the deployed https site — the browser blocks the mic on a local file.'
+      : 'Microphone blocked — allow mic access for this site.');
+    return;
+  }
+
+  // Let go while the permission prompt was up, or while the mic was opening.
+  // Releasing the tracks here matters: an abandoned stream leaves the phone's
+  // recording indicator on.
+  if(!btn._voiceHolding){
+    stream.getTracks().forEach(t => t.stop());
+    btn.classList.remove('mic-live');
+    return;
+  }
+
+  const mime = _voiceMimeType();
+  let rec;
+  try{
+    rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+  }catch(err){
+    stream.getTracks().forEach(t => t.stop());
+    btn._voiceHolding = false;
+    btn.classList.remove('mic-live');
+    showToast('Could not start recording.');
+    return;
+  }
+
+  _voiceChunks = [];
+  _voiceStream = stream;
+  _voiceRecorder = rec;
+  _voiceBtn = btn;
+  _voiceTarget = targetId;
+  _voiceMode = mode;
+
+  rec.ondataavailable = (e) => { if(e.data && e.data.size) _voiceChunks.push(e.data); };
+  rec.onstop = () => _voiceFinish(mime);
+  rec.start();
+}
+
+function voiceHoldEnd(ev, btn){
+  if(!btn._voiceHolding) return;
+  btn._voiceHolding = false;
+  if(ev && ev.pointerId != null && btn.releasePointerCapture){
+    try{ btn.releasePointerCapture(ev.pointerId); }catch(err){}
+  }
+  if(_voiceRecorder && _voiceRecorder.state === 'recording'){
+    // onstop does the rest, including releasing the microphone.
+    try{ _voiceRecorder.stop(); }catch(err){}
+  }else{
+    btn.classList.remove('mic-live');
+  }
+}
+
+async function _voiceFinish(mime){
+  const btn = _voiceBtn;
+  const targetId = _voiceTarget;
+  const mode = _voiceMode;
+  const chunks = _voiceChunks;
+
+  if(_voiceStream) _voiceStream.getTracks().forEach(t => t.stop());
+  _voiceStream = null;
+  _voiceRecorder = null;
+  _voiceChunks = [];
+  _voiceBtn = null;
+  if(btn) btn.classList.remove('mic-live');
+
+  const blob = new Blob(chunks, { type: mime || 'audio/webm' });
+  // A tap rather than a hold. Sending this would cost a request and return
+  // nothing, or worse, return a hallucinated word from a fragment of noise.
+  if(blob.size < 1200){
+    showToast('Too short — hold the mic while you speak.');
+    return;
+  }
+
   const el = document.getElementById(targetId);
   if(!el) return;
 
-  // Another field's mic is still winding down — close it first. The hardware
-  // needs a moment to be released before it can be opened again, so retry
-  // after a beat, and only if the button is still being held by then.
-  if(_activeRecognition){
-    stopVoiceInput();
-    setTimeout(() => { if(btn._voiceHolding) startVoiceInput(targetId, mode, btn, langOverride); }, 250);
-    return;
+  _voiceBusy = true;
+  if(btn) btn.classList.add('mic-working');
+  try{
+    const form = new FormData();
+    form.append('audio', blob, 'note.' + (String(mime).includes('mp4') ? 'mp4' : 'webm'));
+    // Tagalog for the written fields, English for a dictated price — the
+    // numbers come out as digits that way instead of as Filipino words.
+    form.append('language', mode === 'number' ? 'en' : 'tl');
+
+    const res = await fetch('/api/transcribe', { method: 'POST', body: form });
+    const data = await res.json().catch(() => ({}));
+    if(!res.ok || !data.text){
+      showToast(data.error || "Couldn't transcribe that — try again.");
+      return;
+    }
+    _voiceInsert(el, mode, data.text);
+  }catch(err){
+    console.error("Couldn't transcribe:", err);
+    showToast("Couldn't reach the transcription service.");
+  }finally{
+    _voiceBusy = false;
+    if(btn) btn.classList.remove('mic-working');
   }
+}
 
-  const Ctor = _speechCtor();
-  if(!Ctor){
-    showToast('Voice input needs Chrome, Edge, or Safari.');
-    return;
-  }
-
-  const rec = new Ctor();
-  // A price is dictated as digits and reads best as en-US regardless of what
-  // language the notes end up in.
-  rec.lang = (mode === 'number') ? 'en-US' : (langOverride || _voiceTextLang());
-  // Interim results are not a nicety here, they're the whole thing working on
-  // a phone. On Android, stopping the mic by hand routinely ends the session
-  // without ever emitting a final result. Listening only for finals — which
-  // is what this did first — threw the entire utterance away and looked like
-  // nothing had happened. Interim text is kept and committed on end.
-  rec.interimResults = true;
-  rec.maxAlternatives = 1;
-  // Never continuous, on any field.
-  //
-  // This was `mode !== 'number'`, and that one line was the whole difference
-  // between the price fields (fine) and the notes and diary fields (chiming
-  // on and off constantly). Android's continuous mode cycles the underlying
-  // recognizer repeatedly inside a single session, and each cycle plays the
-  // system tone — nothing in this file was reopening anything. One utterance
-  // per hold is the quiet option, and it matches how the button is used:
-  // hold, say a sentence, let go.
-  rec.continuous = false;
-
-  let transcript = '';
-  let erred = false;
-  // Deliberately no auto-restart. Android plays a system tone every time the
-  // recognizer opens and again when it closes, and a web page cannot silence
-  // it. Reopening the session mid-hold kept the recording alive across pauses
-  // but chimed on every reopen, which was worse than the problem it solved.
-  // One open and one close per hold is the fewest sounds achievable; if the
-  // browser drops the session early, the button stops pulsing so it's visible
-  // rather than silent.
-  let fatal = false;
-  let heardAnything = false;
-  // What this session last wrote into the field. Repainting strips exactly
-  // that and nothing else, so the growing transcript never duplicates itself
-  // AND anything typed on the keyboard mid-dictation survives — the first
-  // version snapshotted the field once and rewrote from the snapshot, which
-  // silently wiped whatever you typed while the mic was open.
-  let lastPainted = '';
-
-  const heardSoFar = () => transcript.replace(/\s+/g, ' ').trim();
-
-  const paintText = () => {
-    const heard = heardSoFar();
-    if(!heard) return;
-    const current = el.value;
-    const base = (lastPainted && current.endsWith(lastPainted))
-      ? current.slice(0, current.length - lastPainted.length)
-      : current;
-    lastPainted = ((base && !/\s$/.test(base)) ? ' ' : '') + heard;
-    el.value = base + lastPainted;
-    el.dispatchEvent(new Event('input', { bubbles:true }));
-  };
-
-  const commitNumber = () => {
-    const heard = heardSoFar();
-    if(!heard) return;
+function _voiceInsert(el, mode, text){
+  const heard = String(text).trim();
+  if(!heard) return;
+  if(mode === 'number'){
     const num = _parseSpokenNumber(heard);
     if(num === null){
       showToast(`Heard "${heard}" — say it as digits, e.g. "63040 point 20".`);
       return;
     }
     el.value = num;
-    // Let whatever is wired to the field react — the calculator recomputes
-    // everything off this event.
-    el.dispatchEvent(new Event('input', { bubbles:true }));
-  };
-
-  rec.onresult = (e) => {
-    // Rebuilt from index 0 every time, never accumulated across events, and
-    // de-duplicated by prefix.
-    //
-    // Android reports each update as a NEW entry whose text already contains
-    // everything said so far. Concatenating that list repeats every word —
-    // "medyo Medyo Medyo alanganin Medyo alanganin itong..." — which is
-    // exactly what this produced before. So: walk the list, and when an entry
-    // simply continues what has been built up, replace instead of append.
-    // Genuinely separate utterances don't share that prefix and still append,
-    // so a browser that reports them properly is unaffected. Compared
-    // case-insensitively because the engine re-capitalises as it revises.
-    let text = '';
-    for(let i = 0; i < e.results.length; i++){
-      const t = String(e.results[i][0].transcript || '').trim();
-      if(!t) continue;
-      if(text && t.toLowerCase().startsWith(text.toLowerCase())) text = t;
-      else text = text ? text + ' ' + t : t;
-    }
-    transcript = text;
-    if(text) heardAnything = true;
-    // Text appears as you speak, so you can see it's actually hearing you.
-    // A price waits for the end — half a number in the field would be read
-    // as a real one by the calculator.
-    if(mode !== 'number') paintText();
-  };
-
-  rec.onerror = (e) => {
-    // Silence is now the normal case — it's you thinking, and onend reopens
-    // the mic. Treating it as an error would mean a toast every few seconds,
-    // and would also suppress the genuine "didn't catch anything" message at
-    // the end. 'aborted' is what stopping by hand reports, equally harmless.
-    if(e.error === 'no-speech' || e.error === 'aborted') return;
-
-    erred = true;
-    const onFile = location.protocol === 'file:';
-
-    // A language the device doesn't have reports as service-not-allowed on
-    // Chrome (language-not-supported is the newer spelling). That is not a
-    // broken microphone — the same button works in en-US — so step down the
-    // chain and remember the answer instead of showing a dead end.
-    const langRejected = (e.error === 'service-not-allowed' || e.error === 'language-not-supported');
-    if(mode !== 'number' && langRejected && !onFile){
-      const next = VOICE_LANG_CHAIN[VOICE_LANG_CHAIN.indexOf(rec.lang) + 1];
-      if(next){
-        _rememberVoiceLang(next);
-        showToast(`${_voiceLangLabel(rec.lang)} isn't available on this device — trying ${_voiceLangLabel(next)}.`);
-        // Only if you're still holding. Letting go during the probe just means
-        // pressing again — by then the working language has been remembered.
-        setTimeout(() => { if(btn._voiceHolding) startVoiceInput(targetId, mode, btn, next); }, 300);
-        return;
-      }
-    }
-
-    // Everything below is a reason not to reopen: reopening on a blocked
-    // microphone would just spin.
-    fatal = true;
-    const localNote = 'Voice needs the deployed https site — the browser blocks the mic on a local file.';
-    const msg = ({
-      'not-allowed': onFile ? localNote : 'Microphone blocked — allow mic access for this site.',
-      'service-not-allowed': onFile ? localNote : 'No speech language available on this device.',
-      'language-not-supported': 'No speech language available on this device.',
-      'audio-capture': 'No microphone found.',
-      'network': 'Voice input needs a network connection.'
-    })[e.error] || `Voice input failed (${e.error}).`;
-    showToast(msg);
-  };
-
-  rec.onend = () => {
-    // Commit this leg before deciding anything: whatever is still interim when
-    // the mic closes is the tail of the sentence, and dropping it is what made
-    // stopping by hand lose the whole utterance in the first place.
-    if(mode === 'number') commitNumber();
-    else paintText();
-
-    // The session is finished; a late result arriving now would repaint the
-    // field from a transcript nobody is adding to any more.
-    rec.onresult = null;
-
-    if(_activeRecognition === rec){
-      _activeRecognition = null;
-      _activeRecognitionTarget = null;
-      _activeRecognitionBtn = null;
-    }
-    btn.classList.remove('mic-live');
-
-    if(!heardAnything && !erred){
-      showToast("Didn't catch anything — hold the mic while you speak.");
-    }else if(btn._voiceHolding && !fatal){
-      // Still held, but the browser closed the session anyway. Say so, because
-      // the alternative — reopening it — is the chiming this was built to stop.
-      showToast('Mic closed on its own — let go and hold again to carry on.');
-    }
-  };
-
-  try{
-    rec.start();
-    _activeRecognition = rec;
-    _activeRecognitionTarget = targetId;
-    _activeRecognitionBtn = btn;
-    btn.classList.add('mic-live');
-  }catch(err){
-    if(_activeRecognition === rec){
-      _activeRecognition = null;
-      _activeRecognitionTarget = null;
-      _activeRecognitionBtn = null;
-    }
-    btn.classList.remove('mic-live');
-    showToast('Could not start voice input.');
+  }else{
+    // Appended, so a second hold continues the note instead of replacing it.
+    el.value += (el.value && !/\s$/.test(el.value) ? ' ' : '') + heard;
   }
+  // Let whatever is wired to the field react — the calculator recomputes
+  // everything off this event.
+  el.dispatchEvent(new Event('input', { bubbles:true }));
 }
+
 
 /* ---------------- Sidebar notification badges + notification center ---------------- */
 

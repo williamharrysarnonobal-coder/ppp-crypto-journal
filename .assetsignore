@@ -1,7 +1,5 @@
-.git
-.wrangler
+# Kept out of the public asset bundle. These are build/server files, not part
+# of the site, and there is no reason for a browser to be able to fetch them.
+worker.js
 wrangler.toml
 .assetsignore
-*.py
-*.log
-*.sql

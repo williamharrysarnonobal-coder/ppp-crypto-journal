@@ -1397,8 +1397,18 @@
   .mic-btn:hover{color:var(--accent);border-color:var(--accent);}
   .mic-btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
   .mic-btn.mic-live{color:var(--loss);border-color:var(--loss);animation:mic-pulse 1.1s ease-in-out infinite;}
+  /* Recording has stopped and the audio is being transcribed — a second or so
+     where the button must not look idle, or you'd press it again. */
+  .mic-btn.mic-working{
+    color:var(--accent);border-color:var(--accent);cursor:default;
+    animation:mic-working 0.9s linear infinite;
+  }
   @keyframes mic-pulse{50%{opacity:.4;}}
-  @media (prefers-reduced-motion: reduce){ .mic-btn.mic-live{animation:none;} }
+  @keyframes mic-working{100%{transform:rotate(360deg);}}
+  @media (prefers-reduced-motion: reduce){
+    .mic-btn.mic-live, .mic-btn.mic-working{animation:none;}
+    .mic-btn.mic-working{opacity:.6;}
+  }
   .ps-input-row .mic-btn{padding:8px 10px;}
   /* A wrapper, not the label itself. A <button> is a labelable element, so a
      mic button nested inside a <label> becomes that label's labeled control —

@@ -1,5 +1,8 @@
 name = "ppp-crypto-journal"
+main = "worker.js"
 compatibility_date = "2026-07-18"
 
 [assets]
 directory = "./"
+# Lets worker.js hand every non-API request straight back to the static site.
+binding = "ASSETS"
