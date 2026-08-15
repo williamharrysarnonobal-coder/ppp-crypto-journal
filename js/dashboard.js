@@ -9846,6 +9846,7 @@ function showToast(msg){
 // microphone permission, so it's a deployed-site feature — onerror says that
 // in as many words instead of failing silently and looking broken.
 let _activeRecognition = null;
+let _activeRecognitionTarget = null;
 
 function micIconSVG(){
   return `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="9" y1="21" x2="15" y2="21"/></svg>`;
@@ -9874,10 +9875,19 @@ function startVoiceInput(targetId, mode, btn){
   const el = document.getElementById(targetId);
   if(!el) return;
 
-  // A second press stops it — same button, so there's nothing else to hunt
-  // for when you're halfway through a sentence.
+  // Pressing the same mic again stops it. Pressing a different field's mic
+  // hands over: the diary has four stacked fields, and the first version only
+  // stopped the running one and returned, so the button you actually pressed
+  // did nothing and read as broken. The mic needs a moment to be released
+  // before it can be opened again, hence the deferral rather than an
+  // immediate restart.
   if(_activeRecognition){
-    _activeRecognition.stop();
+    const sameField = (_activeRecognitionTarget === targetId);
+    const previous = _activeRecognition;
+    _activeRecognition = null;
+    _activeRecognitionTarget = null;
+    previous.stop();
+    if(!sameField) setTimeout(() => startVoiceInput(targetId, mode, btn), 250);
     return;
   }
 
@@ -9889,35 +9899,69 @@ function startVoiceInput(targetId, mode, btn){
 
   const rec = new Ctor();
   rec.lang = (mode === 'number') ? 'en-US' : 'fil-PH';
-  rec.interimResults = false;
+  // Interim results are not a nicety here, they're the whole thing working on
+  // a phone. On Android, stopping the mic by hand routinely ends the session
+  // without ever emitting a final result. Listening only for finals — which
+  // is what this did first — threw the entire utterance away and looked like
+  // nothing had happened. Interim text is kept and committed on end.
+  rec.interimResults = true;
   rec.maxAlternatives = 1;
   // A price is one short utterance. A diary entry is not.
   rec.continuous = (mode !== 'number');
 
-  rec.onresult = (e) => {
-    let heard = '';
-    for(let i = e.resultIndex; i < e.results.length; i++){
-      if(e.results[i].isFinal) heard += e.results[i][0].transcript;
-    }
-    heard = heard.trim();
-    if(!heard) return;
+  let finalText = '';
+  let interimText = '';
+  let erred = false;
+  // What this session last wrote into the field. Repainting strips exactly
+  // that and nothing else, so the growing transcript never duplicates itself
+  // AND anything typed on the keyboard mid-dictation survives — the first
+  // version snapshotted the field once and rewrote from the snapshot, which
+  // silently wiped whatever you typed while the mic was open.
+  let lastPainted = '';
 
-    if(mode === 'number'){
-      const num = _parseSpokenNumber(heard);
-      if(num === null){
-        showToast(`Heard "${heard}" — say it as digits, e.g. "63040 point 20".`);
-        return;
-      }
-      el.value = num;
-    }else{
-      el.value += (el.value && !/\s$/.test(el.value) ? ' ' : '') + heard;
+  const heardSoFar = () => (finalText + interimText).replace(/\s+/g, ' ').trim();
+
+  const paintText = () => {
+    const heard = heardSoFar();
+    if(!heard) return;
+    const current = el.value;
+    const base = (lastPainted && current.endsWith(lastPainted))
+      ? current.slice(0, current.length - lastPainted.length)
+      : current;
+    lastPainted = ((base && !/\s$/.test(base)) ? ' ' : '') + heard;
+    el.value = base + lastPainted;
+    el.dispatchEvent(new Event('input', { bubbles:true }));
+  };
+
+  const commitNumber = () => {
+    const heard = heardSoFar();
+    if(!heard) return;
+    const num = _parseSpokenNumber(heard);
+    if(num === null){
+      showToast(`Heard "${heard}" — say it as digits, e.g. "63040 point 20".`);
+      return;
     }
+    el.value = num;
     // Let whatever is wired to the field react — the calculator recomputes
     // everything off this event.
     el.dispatchEvent(new Event('input', { bubbles:true }));
   };
 
+  rec.onresult = (e) => {
+    interimText = '';
+    for(let i = e.resultIndex; i < e.results.length; i++){
+      const t = e.results[i][0].transcript;
+      if(e.results[i].isFinal) finalText += t + ' ';
+      else interimText += t;
+    }
+    // Text appears as you speak, so you can see it's actually hearing you.
+    // A price waits for the end — half a number in the field would be read
+    // as a real one by the calculator.
+    if(mode !== 'number') paintText();
+  };
+
   rec.onerror = (e) => {
+    erred = true;
     const onFile = location.protocol === 'file:';
     const localNote = 'Voice needs the deployed https site — the browser blocks the mic on a local file.';
     const msg = ({
@@ -9930,19 +9974,32 @@ function startVoiceInput(targetId, mode, btn){
     showToast(msg);
   };
 
-  // Clears every live button rather than just this one: the field may have
-  // been re-rendered since it started, leaving a stale element pulsing.
   rec.onend = () => {
-    _activeRecognition = null;
-    document.querySelectorAll('.mic-btn.mic-live').forEach(b => b.classList.remove('mic-live'));
+    // Only clear the shared slot if this session still owns it — during a
+    // hand-off to another field the next session has already claimed it, and
+    // nulling it here would leave that one untracked.
+    if(_activeRecognition === rec){
+      _activeRecognition = null;
+      _activeRecognitionTarget = null;
+    }
+    btn.classList.remove('mic-live');
+    // Whatever is still interim when the mic closes is the tail of the
+    // sentence. Keeping it here is what makes stopping the mic by hand work.
+    if(mode === 'number') commitNumber();
+    else paintText();
+    if(!heardSoFar() && !erred) showToast("Didn't catch anything — try again.");
   };
 
   try{
     rec.start();
     _activeRecognition = rec;
+    _activeRecognitionTarget = targetId;
     btn.classList.add('mic-live');
   }catch(err){
-    _activeRecognition = null;
+    if(_activeRecognition === rec){
+      _activeRecognition = null;
+      _activeRecognitionTarget = null;
+    }
     btn.classList.remove('mic-live');
     showToast('Could not start voice input.');
   }

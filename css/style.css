@@ -1396,9 +1396,13 @@
   @keyframes mic-pulse{50%{opacity:.4;}}
   @media (prefers-reduced-motion: reduce){ .mic-btn.mic-live{animation:none;} }
   .ps-input-row .mic-btn{padding:8px 10px;}
-  /* The label owns the row so the mic can sit at its right edge; .field-row
-     label is display:block, which would otherwise drop the button below. */
-  .field-row label.label-with-mic{display:flex;align-items:center;justify-content:space-between;gap:8px;}
+  /* A wrapper, not the label itself. A <button> is a labelable element, so a
+     mic button nested inside a <label> becomes that label's labeled control —
+     the click then activates it twice, starting and immediately stopping the
+     recognition. Keeping them siblings also lets one rule handle the mic rows
+     everywhere, including outside .field-row. */
+  .label-with-mic{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:5px;}
+  .label-with-mic label{margin-bottom:0;}
   .ps-risk-input{
     width:90px;padding:7px 9px;background:var(--surface-2);border:1px solid var(--rule);
     border-radius:6px;color:var(--ink);font-size:13px;font-family:'IBM Plex Mono',monospace;
