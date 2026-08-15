@@ -17,7 +17,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<link rel="stylesheet" href="css/style.css?v=204">
+<link rel="stylesheet" href="css/style.css?v=205">
 </head>
 <body>
 
@@ -1532,8 +1532,9 @@
       <div id="setupNotesLog" style="min-height:100px;max-height:30vh;overflow-y:auto;background:var(--surface-2);border:1px solid var(--rule);border-radius:6px;padding:12px 14px;"></div>
     </div>
     <div class="field-row" style="flex-shrink:0;">
-      <div class="label-with-mic"><label>New Note</label><button type="button" class="mic-btn" title="Hold to speak" onpointerdown="voiceHoldStart(event,'setupNotesNewEntry','text',this)" onpointerup="voiceHoldEnd(event,this)" onpointercancel="voiceHoldEnd(event,this)" onpointerleave="voiceHoldEnd(event,this)" oncontextmenu="return false"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="9" y1="21" x2="15" y2="21"/></svg></button></div>
+      <label>New Note</label>
       <textarea id="setupNotesNewEntry" placeholder="What are you feeling right now?" style="width:100%;min-height:80px;padding:10px 12px;background:var(--surface-2);border:1px solid var(--rule);border-radius:6px;color:var(--ink);font-size:13px;font-family:var(--font-ui);resize:vertical;"></textarea>
+      <button type="button" class="mic-bar" onpointerdown="voiceHoldStart(event,'setupNotesNewEntry','text',this)" onpointerup="voiceHoldEnd(event,this)" onpointercancel="voiceHoldEnd(event,this)" onpointerleave="voiceHoldEnd(event,this)" oncontextmenu="return false"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="9" y1="21" x2="15" y2="21"/></svg><span class="mic-bar-idle">Hold to speak</span><span class="mic-bar-live">Listening — let go when done</span><span class="mic-bar-busy">Transcribing…</span></button>
     </div>
     <div class="field-row" style="flex-shrink:0;">
       <label>Screenshots</label>
@@ -1568,8 +1569,9 @@
       <div class="bulk-note-chips" id="bulkNotesTargets"></div>
     </div>
     <div class="field-row">
-    <div class="label-with-mic"><label>Note</label><button type="button" class="mic-btn" title="Hold to speak" onpointerdown="voiceHoldStart(event,'bulkNotesEntry','text',this)" onpointerup="voiceHoldEnd(event,this)" onpointercancel="voiceHoldEnd(event,this)" onpointerleave="voiceHoldEnd(event,this)" oncontextmenu="return false"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="9" y1="21" x2="15" y2="21"/></svg></button></div>
+    <label>Note</label>
     <textarea id="bulkNotesEntry" placeholder="What's happening with this setup?" style="width:100%;min-height:110px;padding:10px 12px;background:var(--surface-2);border:1px solid var(--rule);border-radius:6px;color:var(--ink);font-size:13px;font-family:var(--font-ui);resize:vertical;"></textarea>
+    <button type="button" class="mic-bar" onpointerdown="voiceHoldStart(event,'bulkNotesEntry','text',this)" onpointerup="voiceHoldEnd(event,this)" onpointercancel="voiceHoldEnd(event,this)" onpointerleave="voiceHoldEnd(event,this)" oncontextmenu="return false"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="9" y1="21" x2="15" y2="21"/></svg><span class="mic-bar-idle">Hold to speak</span><span class="mic-bar-live">Listening — let go when done</span><span class="mic-bar-busy">Transcribing…</span></button>
     </div>
     <div id="bulkNotesError" class="auth-error"></div>
     <button class="ai-btn" id="bulkNotesSaveBtn" style="margin-top:14px;width:100%;" onclick="saveBulkNotes()">Add note</button>
@@ -1967,20 +1969,24 @@
     <div id="moodEditWrap">
       <div class="mood-picker" id="moodPicker"></div>
       <div class="field-row" style="margin-top:18px;">
-        <div class="label-with-mic"><label>📈 Trading</label><button type="button" class="mic-btn" title="Hold to speak" onpointerdown="voiceHoldStart(event,'moodNoteTrading','text',this)" onpointerup="voiceHoldEnd(event,this)" onpointercancel="voiceHoldEnd(event,this)" onpointerleave="voiceHoldEnd(event,this)" oncontextmenu="return false"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="9" y1="21" x2="15" y2="21"/></svg></button></div>
+        <label>📈 Trading</label>
         <textarea id="moodNoteTrading" rows="3" placeholder="How did the session go? What did you see, take, or skip?"></textarea>
+        <button type="button" class="mic-bar" onpointerdown="voiceHoldStart(event,'moodNoteTrading','text',this)" onpointerup="voiceHoldEnd(event,this)" onpointercancel="voiceHoldEnd(event,this)" onpointerleave="voiceHoldEnd(event,this)" oncontextmenu="return false"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="9" y1="21" x2="15" y2="21"/></svg><span class="mic-bar-idle">Hold to speak</span><span class="mic-bar-live">Listening — let go when done</span><span class="mic-bar-busy">Transcribing…</span></button>
       </div>
       <div class="field-row">
-        <div class="label-with-mic"><label>💼 Work</label><button type="button" class="mic-btn" title="Hold to speak" onpointerdown="voiceHoldStart(event,'moodNoteWork','text',this)" onpointerup="voiceHoldEnd(event,this)" onpointercancel="voiceHoldEnd(event,this)" onpointerleave="voiceHoldEnd(event,this)" oncontextmenu="return false"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="9" y1="21" x2="15" y2="21"/></svg></button></div>
+        <label>💼 Work</label>
         <textarea id="moodNoteWork" rows="3" placeholder="The job — what happened, what drained you, what went well."></textarea>
+        <button type="button" class="mic-bar" onpointerdown="voiceHoldStart(event,'moodNoteWork','text',this)" onpointerup="voiceHoldEnd(event,this)" onpointercancel="voiceHoldEnd(event,this)" onpointerleave="voiceHoldEnd(event,this)" oncontextmenu="return false"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="9" y1="21" x2="15" y2="21"/></svg><span class="mic-bar-idle">Hold to speak</span><span class="mic-bar-live">Listening — let go when done</span><span class="mic-bar-busy">Transcribing…</span></button>
       </div>
       <div class="field-row">
-        <div class="label-with-mic"><label>🌱 Life</label><button type="button" class="mic-btn" title="Hold to speak" onpointerdown="voiceHoldStart(event,'moodNoteLife','text',this)" onpointerup="voiceHoldEnd(event,this)" onpointercancel="voiceHoldEnd(event,this)" onpointerleave="voiceHoldEnd(event,this)" oncontextmenu="return false"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="9" y1="21" x2="15" y2="21"/></svg></button></div>
+        <label>🌱 Life</label>
         <textarea id="moodNoteLife" rows="3" placeholder="Family, health, rest, everything outside the screens."></textarea>
+        <button type="button" class="mic-bar" onpointerdown="voiceHoldStart(event,'moodNoteLife','text',this)" onpointerup="voiceHoldEnd(event,this)" onpointercancel="voiceHoldEnd(event,this)" onpointerleave="voiceHoldEnd(event,this)" oncontextmenu="return false"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="9" y1="21" x2="15" y2="21"/></svg><span class="mic-bar-idle">Hold to speak</span><span class="mic-bar-live">Listening — let go when done</span><span class="mic-bar-busy">Transcribing…</span></button>
       </div>
       <div class="field-row">
-        <div class="label-with-mic"><label>Anything else</label><button type="button" class="mic-btn" title="Hold to speak" onpointerdown="voiceHoldStart(event,'moodNote','text',this)" onpointerup="voiceHoldEnd(event,this)" onpointercancel="voiceHoldEnd(event,this)" onpointerleave="voiceHoldEnd(event,this)" oncontextmenu="return false"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="9" y1="21" x2="15" y2="21"/></svg></button></div>
+        <label>Anything else</label>
         <textarea id="moodNote" rows="2" placeholder="Whatever doesn't fit above."></textarea>
+        <button type="button" class="mic-bar" onpointerdown="voiceHoldStart(event,'moodNote','text',this)" onpointerup="voiceHoldEnd(event,this)" onpointercancel="voiceHoldEnd(event,this)" onpointerleave="voiceHoldEnd(event,this)" oncontextmenu="return false"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="9" y1="21" x2="15" y2="21"/></svg><span class="mic-bar-idle">Hold to speak</span><span class="mic-bar-live">Listening — let go when done</span><span class="mic-bar-busy">Transcribing…</span></button>
       </div>
       <div class="sub" id="moodModalError" style="color:var(--loss);margin-top:6px;"></div>
       <div style="display:flex;justify-content:flex-end;align-items:center;margin-top:16px;">
@@ -2052,6 +2058,6 @@
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=2"></script>
-<script src="js/dashboard.js?v=337"></script>
+<script src="js/dashboard.js?v=339"></script>
 </body>
 </html>

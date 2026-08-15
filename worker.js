@@ -73,6 +73,24 @@ async function handleTranscribe(request, env) {
     return json({ error: 'Could not reach the transcription service.' }, 502);
   }
 
+  // Out of quota. Worth naming plainly and with a time, because "failed (429)"
+  // reads like a bug when it is simply the free tier doing what it says.
+  if (res.status === 429) {
+    const header = res.headers.get('retry-after');
+    const secs = header ? Math.ceil(Number(header)) : NaN;
+    return json({
+      error: Number.isFinite(secs) && secs > 0
+        ? `Free-tier limit reached — try again in about ${humanWait(secs)}.`
+        : 'Free-tier limit reached — try again in a little while.',
+      retryAfter: Number.isFinite(secs) ? secs : null
+    }, 429);
+  }
+
+  if (res.status === 401 || res.status === 403) {
+    console.error('groq rejected the API key', res.status);
+    return json({ error: 'The transcription key was rejected — check GROQ_API_KEY.' }, 502);
+  }
+
   if (!res.ok) {
     // The upstream body can carry request ids and account detail. Log it,
     // don't hand it to the browser.
@@ -84,6 +102,17 @@ async function handleTranscribe(request, env) {
   const data = await res.json().catch(() => null);
   const text = data && typeof data.text === 'string' ? data.text.trim() : '';
   return json({ text });
+}
+
+// "about 40 seconds" / "about 6 minutes" / "about 2 hours" — enough to tell a
+// per-minute limit apart from a daily one, which is the only decision the
+// number actually informs.
+function humanWait(seconds) {
+  if (seconds < 90) return `${seconds} second${seconds === 1 ? '' : 's'}`;
+  const mins = Math.round(seconds / 60);
+  if (mins < 90) return `${mins} minute${mins === 1 ? '' : 's'}`;
+  const hours = Math.round(seconds / 3600);
+  return `${hours} hour${hours === 1 ? '' : 's'}`;
 }
 
 function json(body, status = 200) {

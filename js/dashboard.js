@@ -245,7 +245,14 @@ const UI_PREF_LS_KEYS = {
   unfollowed_rules_options: 'ledger-unfollowed-rules-options',
   form_field_config: 'ledger-form-field-config',
   column_config: 'ledger-column-config',
-  finance_options: 'ledger-finance-options'
+  finance_options: 'ledger-finance-options',
+  // The calculator: the setup you're part-way through (symbol, direction,
+  // entry/TP/SL) and the per-account Risk Amounts. Both were device-local, so
+  // planning a trade on the phone and then opening the laptop showed an empty
+  // calculator. The setup being planned belongs to you, not to the browser
+  // you happened to type it in.
+  poscalc_draft: 'poscalc-draft',
+  poscalc_risk_amounts: 'possize-risk-amounts'
 };
 
 let _uiPrefsSyncTimer = null;
@@ -310,6 +317,14 @@ function applyUIPrefsFromProfile(){
     if(changedKeys.includes('finance_options')) loadFinanceOptions();
     if(changedKeys.includes('form_field_config')) loadFormFieldConfig();
     if(changedKeys.includes('column_config')){ loadColumnConfig(); renderJournalTable(); }
+    // Only when nothing has been typed into the calculator yet on this device.
+    // The profile arrives after the page is already interactive, so pulling
+    // the account's copy over a half-entered setup would delete work in
+    // progress — and re-rendering the table would drop the caret besides.
+    if((changedKeys.includes('poscalc_draft') || changedKeys.includes('poscalc_risk_amounts')) && !_posCalcTouched){
+      calcDraftLoaded = false;
+      refreshPosSizeCalculator();
+    }
     if(currentView === 'settings') renderSettingsPage();
     if(currentView === 'config'){ renderColumnConfigUI(); renderOptionsEditor(); renderFormFieldConfigUI(); }
   }finally{
@@ -3216,7 +3231,11 @@ function _psRiskAmounts(){
 function _psSetRiskAmount(accountId, value){
   const all = _psRiskAmounts();
   all[accountId] = value;
-  try{ localStorage.setItem('possize-risk-amounts', JSON.stringify(all)); }catch(e){}
+  try{
+    localStorage.setItem('possize-risk-amounts', JSON.stringify(all));
+    // Risk per account follows the account, not the browser.
+    syncUIPrefsToProfile();
+  }catch(e){}
 }
 // Updates only the row being typed in — re-rendering the whole tbody on
 // every keystroke would destroy and recreate the very input holding focus,
@@ -9837,17 +9856,21 @@ function showToast(msg){
   toastTimer = setTimeout(() => el.classList.remove('show'), 2600);
 }
 
-/* ---------------- Voice input (record + transcribe) ---------------- */
-// The browser's own SpeechRecognition was a dead end for this app. Android
-// plays a system tone every time the recognizer opens and again when it
-// closes, and a web page has no way to silence it; worse, Samsung's recognizer
-// has no Filipino at all, which was the whole point of the feature.
+/* ---------------- Voice input ---------------- */
+// Two paths, because the two jobs are genuinely different.
 //
-// So this records audio instead. Capturing the microphone makes no sound, and
-// the recording goes to Whisper through this site's own Cloudflare Worker,
-// which holds the API key. Whisper handles Tagalog and Taglish properly, and
-// because none of it depends on the device's speech engine it behaves the same
-// on Android and iPhone.
+// PRICES (Entry / TP / SL) use the browser's own SpeechRecognition. They never
+// had the trouble the written fields did: English digits, one short utterance,
+// so the recogniser opens and closes exactly once per hold. It is instant and
+// free, and dictating a price costs no transcription quota.
+//
+// NOTES AND DIARY record audio and send it to Whisper through this site's
+// Cloudflare Worker. SpeechRecognition was a dead end there: Android plays a
+// system tone every time the recogniser cycles and a page cannot silence it,
+// and Samsung's recogniser has no Filipino at all — which was the whole point.
+// Capturing the microphone makes no sound, Whisper handles Tagalog and
+// Taglish, and none of it depends on the device's speech engine, so it behaves
+// the same on Android and iPhone.
 
 let _voiceRecorder = null;
 let _voiceStream = null;
@@ -9876,6 +9899,106 @@ function _parseSpokenNumber(text){
   return Number.isFinite(Number(s)) ? s : null;
 }
 
+/* ---- Prices: the browser's own recogniser ---- */
+
+let _speechRec = null;
+
+function _speechCtor(){
+  return window.SpeechRecognition || window.webkitSpeechRecognition || null;
+}
+
+function _startPriceSpeech(targetId, btn){
+  const el = document.getElementById(targetId);
+  const Ctor = _speechCtor();
+  if(!el) return;
+  if(!Ctor){
+    btn._voiceHolding = false;
+    showToast('Voice input needs Chrome, Edge, or Safari.');
+    return;
+  }
+
+  const rec = new Ctor();
+  rec.lang = 'en-US';
+  // Stopping the mic by hand often ends the session on Android without ever
+  // emitting a final result. Interim text is kept and read on end, which is
+  // what makes releasing the button work at all.
+  rec.interimResults = true;
+  rec.maxAlternatives = 1;
+  // One utterance per hold. Continuous mode is what made the written fields
+  // chime on and off; a price doesn't need it.
+  rec.continuous = false;
+
+  let transcript = '';
+  let erred = false;
+
+  rec.onresult = (e) => {
+    // Rebuilt from index 0 and de-duplicated by prefix: Android reports each
+    // update as a new entry that already contains everything said so far, so
+    // concatenating the list would repeat every word.
+    let text = '';
+    for(let i = 0; i < e.results.length; i++){
+      const t = String(e.results[i][0].transcript || '').trim();
+      if(!t) continue;
+      if(text && t.toLowerCase().startsWith(text.toLowerCase())) text = t;
+      else text = text ? text + ' ' + t : t;
+    }
+    transcript = text;
+  };
+
+  rec.onerror = (e) => {
+    // Silence and a deliberate stop are both normal here.
+    if(e.error === 'no-speech' || e.error === 'aborted') return;
+    erred = true;
+    showToast(({
+      'not-allowed': location.protocol === 'file:'
+        ? 'Voice needs the deployed https site — the browser blocks the mic on a local file.'
+        : 'Microphone blocked — allow mic access for this site.',
+      'audio-capture': 'No microphone found.',
+      'network': 'Voice input needs a network connection.'
+    })[e.error] || `Voice input failed (${e.error}).`);
+  };
+
+  rec.onend = () => {
+    rec.onresult = null;
+    if(_speechRec === rec) _speechRec = null;
+    btn.classList.remove('mic-live');
+
+    const heard = transcript.replace(/\s+/g, ' ').trim();
+    if(!heard){
+      if(!erred) showToast("Didn't catch anything — hold the mic while you speak.");
+      return;
+    }
+    const num = _parseSpokenNumber(heard);
+    if(num === null){
+      showToast(`Heard "${heard}" — say it as digits, e.g. "63040 point 20".`);
+      return;
+    }
+    el.value = num;
+    // Let whatever is wired to the field react — the calculator recomputes
+    // everything off this event.
+    el.dispatchEvent(new Event('input', { bubbles:true }));
+  };
+
+  try{
+    rec.start();
+    _speechRec = rec;
+    btn.classList.add('mic-live');
+  }catch(err){
+    btn._voiceHolding = false;
+    showToast('Could not start voice input.');
+  }
+}
+
+function _stopPriceSpeech(){
+  const rec = _speechRec;
+  if(!rec) return;
+  _speechRec = null;
+  // onend clears the pulsing and reads the transcript.
+  try{ rec.stop(); }catch(err){}
+}
+
+/* ---- Notes and diary: record, then transcribe ---- */
+
 // Android Chrome records webm/opus; iOS Safari only does mp4. Whisper accepts
 // both, so take whichever the device actually offers.
 function _voiceMimeType(){
@@ -9898,6 +10021,13 @@ async function voiceHoldStart(ev, targetId, mode, btn){
   // off it mid-sentence, which otherwise cuts the recording short.
   if(ev && ev.pointerId != null && btn.setPointerCapture){
     try{ btn.setPointerCapture(ev.pointerId); }catch(err){}
+  }
+
+  // Prices never leave the device: instant, free, and no quota spent on a
+  // number the browser can already hear perfectly well in English.
+  if(mode === 'number'){
+    _startPriceSpeech(targetId, btn);
+    return;
   }
 
   if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder){
@@ -9957,6 +10087,10 @@ function voiceHoldEnd(ev, btn){
   btn._voiceHolding = false;
   if(ev && ev.pointerId != null && btn.releasePointerCapture){
     try{ btn.releasePointerCapture(ev.pointerId); }catch(err){}
+  }
+  if(_speechRec){
+    _stopPriceSpeech();
+    return;
   }
   if(_voiceRecorder && _voiceRecorder.state === 'recording'){
     // onstop does the rest, including releasing the microphone.
@@ -13563,11 +13697,15 @@ function accountCardHTML(a){
     `;
 }
 
-// Manual "Save" draft — kept in localStorage (not the database) since it's
-// just scratch state while waiting for a price to confirm before actually
-// trading, so a page refresh doesn't wipe the prices you'd already typed in.
-// (Risk Amounts persist separately and always, see _psRiskAmounts.)
+// The setup you're part-way through. localStorage is the instant local copy —
+// it's applied before login even resolves — and it's mirrored to the account
+// through UI_PREF_LS_KEYS, so planning a trade on the phone and then opening
+// the laptop shows the same calculator.
 let calcDraftLoaded = false;
+// Set the moment anything is typed here. Guards the pull in
+// applyUIPrefsFromProfile from landing on top of a setup being entered right
+// now, since the profile arrives after the page is already usable.
+let _posCalcTouched = false;
 
 function loadCalculatorDraft(){
   try{
@@ -13585,6 +13723,7 @@ let POSCALC_SAVE_TIMER = null;
 // manual Save button was the odd one out, and a half-typed setup lost to a
 // refresh is exactly what this draft exists to prevent.
 function onPosSizeInput(){
+  _posCalcTouched = true;
   renderPosSizeCalculator();
   const stateEl = document.getElementById('posCalcSaveState');
   if(stateEl) stateEl.textContent = 'Saving…';
@@ -13592,9 +13731,6 @@ function onPosSizeInput(){
   POSCALC_SAVE_TIMER = setTimeout(saveCalculatorDraft, 600);
 }
 
-// Device-local on purpose: this is scratch state while you wait for a price
-// to confirm. The cross-device artefact is the Pending Setup you create with
-// "Trade This Setup", which does live in the database.
 function saveCalculatorDraft(){
   const draft = {
     symbol: document.getElementById('psSymbol').value || null,
@@ -13606,6 +13742,8 @@ function saveCalculatorDraft(){
   const stateEl = document.getElementById('posCalcSaveState');
   try{
     localStorage.setItem('poscalc-draft', JSON.stringify(draft));
+    // Debounced inside, so typing collapses into one write to the account.
+    syncUIPrefsToProfile();
     if(stateEl){
       stateEl.textContent = 'Saved';
       setTimeout(() => { if(stateEl.textContent === 'Saved') stateEl.textContent = ''; }, 1800);
@@ -13757,6 +13895,10 @@ async function clearPsBbCheck(){
 
 function clearCalculatorDraft(){
   try{ localStorage.removeItem('poscalc-draft'); }catch(e){}
+  // Clearing has to reach the account too, or the next load pulls the setup
+  // straight back down from the profile.
+  _posCalcTouched = true;
+  syncUIPrefsToProfile();
   document.getElementById('psSymbol').value = '';
   document.getElementById('psDirection').value = 'Long';
   document.getElementById('psEntry').value = '';
