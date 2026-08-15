@@ -9987,25 +9987,28 @@ function startVoiceInput(targetId, mode, btn, langOverride){
   // nothing had happened. Interim text is kept and committed on end.
   rec.interimResults = true;
   rec.maxAlternatives = 1;
-  // A price is one short utterance; a diary entry is not. Either way the
-  // session gets reopened in onend, so this only decides how the engine
-  // segments what it hears, not how long the mic stays on.
-  rec.continuous = (mode !== 'number');
+  // Never continuous, on any field.
+  //
+  // This was `mode !== 'number'`, and that one line was the whole difference
+  // between the price fields (fine) and the notes and diary fields (chiming
+  // on and off constantly). Android's continuous mode cycles the underlying
+  // recognizer repeatedly inside a single session, and each cycle plays the
+  // system tone — nothing in this file was reopening anything. One utterance
+  // per hold is the quiet option, and it matches how the button is used:
+  // hold, say a sentence, let go.
+  rec.continuous = false;
 
   let transcript = '';
   let erred = false;
-  // The browser can still close the session mid-hold — a long pause between
-  // clauses is enough. While the button is held that's reopened silently, so
-  // the recording survives it. These track when reopening would be wrong: a
-  // permanent failure, or a restart loop.
+  // Deliberately no auto-restart. Android plays a system tone every time the
+  // recognizer opens and again when it closes, and a web page cannot silence
+  // it. Reopening the session mid-hold kept the recording alive across pauses
+  // but chimed on every reopen, which was worse than the problem it solved.
+  // One open and one close per hold is the fewest sounds achievable; if the
+  // browser drops the session early, the button stops pulsing so it's visible
+  // rather than silent.
   let fatal = false;
   let heardAnything = false;
-  let restarts = 0;
-  let quickEnds = 0;
-  let legStartedAt = Date.now();
-  const RESTART_CAP = 240;   // ~20 min of silence at the usual timeout
-  const QUICK_END_MS = 400;
-  const QUICK_END_CAP = 4;
   // What this session last wrote into the field. Repainting strips exactly
   // that and nothing else, so the growing transcript never duplicates itself
   // AND anything typed on the keyboard mid-dictation survives — the first
@@ -10116,31 +10119,9 @@ function startVoiceInput(targetId, mode, btn, langOverride){
     if(mode === 'number') commitNumber();
     else paintText();
 
-    // Reopen only while the button is still down. Releasing it clears the flag
-    // and the shared slot, so a release always ends the recording.
-    const ranBriefly = (Date.now() - legStartedAt) < QUICK_END_MS;
-    if(ranBriefly) quickEnds++; else quickEnds = 0;
-    const looping = quickEnds >= QUICK_END_CAP || restarts >= RESTART_CAP;
-    // offsetParent goes null once an ancestor is display:none — i.e. the modal
-    // this field lives in was closed. Nothing should still be listening for a
-    // field nobody can see.
-    const visible = btn.offsetParent !== null || btn === document.activeElement;
-
-    if(btn._voiceHolding && !fatal && !looping && visible && _activeRecognition === rec){
-      restarts++;
-      legStartedAt = Date.now();
-      // A reopened session starts its results list from scratch. Clearing both
-      // makes paintText append to whatever is already in the field rather than
-      // try to rewrite the previous leg's text.
-      transcript = '';
-      lastPainted = '';
-      try{
-        rec.start();
-        return;
-      }catch(err){
-        // Fall through and shut down properly.
-      }
-    }
+    // The session is finished; a late result arriving now would repaint the
+    // field from a transcript nobody is adding to any more.
+    rec.onresult = null;
 
     if(_activeRecognition === rec){
       _activeRecognition = null;
@@ -10148,8 +10129,14 @@ function startVoiceInput(targetId, mode, btn, langOverride){
       _activeRecognitionBtn = null;
     }
     btn.classList.remove('mic-live');
-    if(!heardAnything && !erred) showToast("Didn't catch anything — hold the mic while you speak.");
-    else if(looping && !fatal) showToast('Voice input kept dropping — hold the mic again to retry.');
+
+    if(!heardAnything && !erred){
+      showToast("Didn't catch anything — hold the mic while you speak.");
+    }else if(btn._voiceHolding && !fatal){
+      // Still held, but the browser closed the session anyway. Say so, because
+      // the alternative — reopening it — is the chiming this was built to stop.
+      showToast('Mic closed on its own — let go and hold again to carry on.');
+    }
   };
 
   try{
