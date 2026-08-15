@@ -17,7 +17,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<link rel="stylesheet" href="css/style.css?v=202">
+<link rel="stylesheet" href="css/style.css?v=203">
 </head>
 <body>
 
@@ -522,7 +522,7 @@
           <input id="psEntry" type="text" inputmode="decimal" placeholder="e.g. 63040.20" oninput="onPosSizeInput()" style="color:var(--accent);font-weight:600;">
           <button type="button" class="poscalc-accent-btn" onclick="pasteIntoField('psEntry')">Paste</button>
           <button type="button" class="poscalc-accent-btn" onclick="copyFieldValue('psEntry', this)">Copy</button>
-          <button type="button" class="mic-btn" title="Speak the price" onclick="startVoiceInput('psEntry','number',this)"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="9" y1="21" x2="15" y2="21"/></svg></button>
+          <button type="button" class="mic-btn" title="Hold to speak the price" onpointerdown="voiceHoldStart(event,'psEntry','number',this)" onpointerup="voiceHoldEnd(event,this)" onpointercancel="voiceHoldEnd(event,this)" onpointerleave="voiceHoldEnd(event,this)" oncontextmenu="return false"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="9" y1="21" x2="15" y2="21"/></svg></button>
         </div>
       </div>
       <div class="field-row">
@@ -531,7 +531,7 @@
           <input id="psTP" type="text" inputmode="decimal" placeholder="e.g. 63455.00" oninput="onPosSizeInput()" style="color:var(--win);font-weight:600;">
           <button type="button" class="poscalc-accent-btn" onclick="pasteIntoField('psTP')">Paste</button>
           <button type="button" class="poscalc-accent-btn" onclick="copyFieldValue('psTP', this)">Copy</button>
-          <button type="button" class="mic-btn" title="Speak the price" onclick="startVoiceInput('psTP','number',this)"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="9" y1="21" x2="15" y2="21"/></svg></button>
+          <button type="button" class="mic-btn" title="Hold to speak the price" onpointerdown="voiceHoldStart(event,'psTP','number',this)" onpointerup="voiceHoldEnd(event,this)" onpointercancel="voiceHoldEnd(event,this)" onpointerleave="voiceHoldEnd(event,this)" oncontextmenu="return false"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="9" y1="21" x2="15" y2="21"/></svg></button>
         </div>
       </div>
       <div class="field-row">
@@ -540,7 +540,7 @@
           <input id="psSL" type="text" inputmode="decimal" placeholder="e.g. 62900.00" oninput="onPosSizeInput()" style="color:var(--loss);font-weight:600;">
           <button type="button" class="poscalc-accent-btn" onclick="pasteIntoField('psSL')">Paste</button>
           <button type="button" class="poscalc-accent-btn" onclick="copyFieldValue('psSL', this)">Copy</button>
-          <button type="button" class="mic-btn" title="Speak the price" onclick="startVoiceInput('psSL','number',this)"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="9" y1="21" x2="15" y2="21"/></svg></button>
+          <button type="button" class="mic-btn" title="Hold to speak the price" onpointerdown="voiceHoldStart(event,'psSL','number',this)" onpointerup="voiceHoldEnd(event,this)" onpointercancel="voiceHoldEnd(event,this)" onpointerleave="voiceHoldEnd(event,this)" oncontextmenu="return false"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="9" y1="21" x2="15" y2="21"/></svg></button>
         </div>
       </div>
 
@@ -1532,7 +1532,7 @@
       <div id="setupNotesLog" style="min-height:100px;max-height:30vh;overflow-y:auto;background:var(--surface-2);border:1px solid var(--rule);border-radius:6px;padding:12px 14px;"></div>
     </div>
     <div class="field-row" style="flex-shrink:0;">
-      <div class="label-with-mic"><label>New Note</label><button type="button" class="mic-btn" title="Speak in Tagalog" onclick="startVoiceInput('setupNotesNewEntry','text',this)"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="9" y1="21" x2="15" y2="21"/></svg></button></div>
+      <div class="label-with-mic"><label>New Note</label><button type="button" class="mic-btn" title="Hold to speak" onpointerdown="voiceHoldStart(event,'setupNotesNewEntry','text',this)" onpointerup="voiceHoldEnd(event,this)" onpointercancel="voiceHoldEnd(event,this)" onpointerleave="voiceHoldEnd(event,this)" oncontextmenu="return false"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="9" y1="21" x2="15" y2="21"/></svg></button></div>
       <textarea id="setupNotesNewEntry" placeholder="What are you feeling right now?" style="width:100%;min-height:80px;padding:10px 12px;background:var(--surface-2);border:1px solid var(--rule);border-radius:6px;color:var(--ink);font-size:13px;font-family:var(--font-ui);resize:vertical;"></textarea>
     </div>
     <div class="field-row" style="flex-shrink:0;">
@@ -1568,7 +1568,7 @@
       <div class="bulk-note-chips" id="bulkNotesTargets"></div>
     </div>
     <div class="field-row">
-    <div class="label-with-mic"><label>Note</label><button type="button" class="mic-btn" title="Speak in Tagalog" onclick="startVoiceInput('bulkNotesEntry','text',this)"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="9" y1="21" x2="15" y2="21"/></svg></button></div>
+    <div class="label-with-mic"><label>Note</label><button type="button" class="mic-btn" title="Hold to speak" onpointerdown="voiceHoldStart(event,'bulkNotesEntry','text',this)" onpointerup="voiceHoldEnd(event,this)" onpointercancel="voiceHoldEnd(event,this)" onpointerleave="voiceHoldEnd(event,this)" oncontextmenu="return false"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="9" y1="21" x2="15" y2="21"/></svg></button></div>
     <textarea id="bulkNotesEntry" placeholder="What's happening with this setup?" style="width:100%;min-height:110px;padding:10px 12px;background:var(--surface-2);border:1px solid var(--rule);border-radius:6px;color:var(--ink);font-size:13px;font-family:var(--font-ui);resize:vertical;"></textarea>
     </div>
     <div id="bulkNotesError" class="auth-error"></div>
@@ -1967,19 +1967,19 @@
     <div id="moodEditWrap">
       <div class="mood-picker" id="moodPicker"></div>
       <div class="field-row" style="margin-top:18px;">
-        <div class="label-with-mic"><label>📈 Trading</label><button type="button" class="mic-btn" title="Speak in Tagalog" onclick="startVoiceInput('moodNoteTrading','text',this)"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="9" y1="21" x2="15" y2="21"/></svg></button></div>
+        <div class="label-with-mic"><label>📈 Trading</label><button type="button" class="mic-btn" title="Hold to speak" onpointerdown="voiceHoldStart(event,'moodNoteTrading','text',this)" onpointerup="voiceHoldEnd(event,this)" onpointercancel="voiceHoldEnd(event,this)" onpointerleave="voiceHoldEnd(event,this)" oncontextmenu="return false"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="9" y1="21" x2="15" y2="21"/></svg></button></div>
         <textarea id="moodNoteTrading" rows="3" placeholder="How did the session go? What did you see, take, or skip?"></textarea>
       </div>
       <div class="field-row">
-        <div class="label-with-mic"><label>💼 Work</label><button type="button" class="mic-btn" title="Speak in Tagalog" onclick="startVoiceInput('moodNoteWork','text',this)"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="9" y1="21" x2="15" y2="21"/></svg></button></div>
+        <div class="label-with-mic"><label>💼 Work</label><button type="button" class="mic-btn" title="Hold to speak" onpointerdown="voiceHoldStart(event,'moodNoteWork','text',this)" onpointerup="voiceHoldEnd(event,this)" onpointercancel="voiceHoldEnd(event,this)" onpointerleave="voiceHoldEnd(event,this)" oncontextmenu="return false"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="9" y1="21" x2="15" y2="21"/></svg></button></div>
         <textarea id="moodNoteWork" rows="3" placeholder="The job — what happened, what drained you, what went well."></textarea>
       </div>
       <div class="field-row">
-        <div class="label-with-mic"><label>🌱 Life</label><button type="button" class="mic-btn" title="Speak in Tagalog" onclick="startVoiceInput('moodNoteLife','text',this)"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="9" y1="21" x2="15" y2="21"/></svg></button></div>
+        <div class="label-with-mic"><label>🌱 Life</label><button type="button" class="mic-btn" title="Hold to speak" onpointerdown="voiceHoldStart(event,'moodNoteLife','text',this)" onpointerup="voiceHoldEnd(event,this)" onpointercancel="voiceHoldEnd(event,this)" onpointerleave="voiceHoldEnd(event,this)" oncontextmenu="return false"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="9" y1="21" x2="15" y2="21"/></svg></button></div>
         <textarea id="moodNoteLife" rows="3" placeholder="Family, health, rest, everything outside the screens."></textarea>
       </div>
       <div class="field-row">
-        <div class="label-with-mic"><label>Anything else</label><button type="button" class="mic-btn" title="Speak in Tagalog" onclick="startVoiceInput('moodNote','text',this)"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="9" y1="21" x2="15" y2="21"/></svg></button></div>
+        <div class="label-with-mic"><label>Anything else</label><button type="button" class="mic-btn" title="Hold to speak" onpointerdown="voiceHoldStart(event,'moodNote','text',this)" onpointerup="voiceHoldEnd(event,this)" onpointercancel="voiceHoldEnd(event,this)" onpointerleave="voiceHoldEnd(event,this)" oncontextmenu="return false"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="9" y1="21" x2="15" y2="21"/></svg></button></div>
         <textarea id="moodNote" rows="2" placeholder="Whatever doesn't fit above."></textarea>
       </div>
       <div class="sub" id="moodModalError" style="color:var(--loss);margin-top:6px;"></div>
@@ -2052,6 +2052,6 @@
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=2"></script>
-<script src="js/dashboard.js?v=333"></script>
+<script src="js/dashboard.js?v=334"></script>
 </body>
 </html>

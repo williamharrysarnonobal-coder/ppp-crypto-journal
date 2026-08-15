@@ -1389,6 +1389,10 @@
     display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;
     background:none;border:1px solid var(--rule);border-radius:6px;
     color:var(--muted);cursor:pointer;padding:4px 7px;line-height:0;
+    /* Held down, not tapped. Without these a press on a phone starts a scroll,
+       selects the icon, or opens the long-press menu — all of which interrupt
+       the recording. */
+    touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;
   }
   .mic-btn:hover{color:var(--accent);border-color:var(--accent);}
   .mic-btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}

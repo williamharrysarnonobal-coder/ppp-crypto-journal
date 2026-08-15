@@ -9848,6 +9848,53 @@ function showToast(msg){
 // in as many words instead of failing silently and looking broken.
 let _activeRecognition = null;
 let _activeRecognitionTarget = null;
+let _activeRecognitionBtn = null;
+
+// Hold to talk, release to stop — a walkie-talkie, not a switch.
+//
+// The tap-to-toggle version had to reopen the session every time the browser
+// timed out on silence, and Android plays its start/stop chime on every one of
+// those. Holding removes the problem rather than working around it: you only
+// hold while actually speaking, so there's no silence to time out on, and the
+// thinking happens with the mic closed.
+function voiceHoldStart(ev, targetId, mode, btn){
+  // Stops the press turning into a text selection, a long-press menu, or a
+  // scroll on a phone.
+  if(ev && ev.preventDefault) ev.preventDefault();
+  if(btn._voiceHolding) return;
+  btn._voiceHolding = true;
+  // Keeps the release event coming to this button even if your finger drifts
+  // off it mid-sentence, which otherwise cuts the recording short.
+  if(ev && ev.pointerId != null && btn.setPointerCapture){
+    try{ btn.setPointerCapture(ev.pointerId); }catch(err){}
+  }
+  startVoiceInput(targetId, mode, btn);
+}
+
+function voiceHoldEnd(ev, btn){
+  if(!btn._voiceHolding) return;
+  btn._voiceHolding = false;
+  if(ev && ev.pointerId != null && btn.releasePointerCapture){
+    try{ btn.releasePointerCapture(ev.pointerId); }catch(err){}
+  }
+  stopVoiceInput();
+}
+
+function stopVoiceInput(){
+  const rec = _activeRecognition;
+  if(!rec) return;
+  const btn = _activeRecognitionBtn;
+  // Cleared before stop() so onend sees it no longer owns the slot and won't
+  // reopen the session.
+  _activeRecognition = null;
+  _activeRecognitionTarget = null;
+  _activeRecognitionBtn = null;
+  if(btn){
+    btn._voiceHolding = false;
+    btn.classList.remove('mic-live');
+  }
+  try{ rec.stop(); }catch(err){}
+}
 
 function micIconSVG(){
   return `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="9" y1="21" x2="15" y2="21"/></svg>`;
@@ -9914,23 +9961,12 @@ function startVoiceInput(targetId, mode, btn, langOverride){
   const el = document.getElementById(targetId);
   if(!el) return;
 
-  // Pressing the same mic again stops it. Pressing a different field's mic
-  // hands over: the diary has four stacked fields, and the first version only
-  // stopped the running one and returned, so the button you actually pressed
-  // did nothing and read as broken. The mic needs a moment to be released
-  // before it can be opened again, hence the deferral rather than an
-  // immediate restart.
+  // Another field's mic is still winding down — close it first. The hardware
+  // needs a moment to be released before it can be opened again, so retry
+  // after a beat, and only if the button is still being held by then.
   if(_activeRecognition){
-    const sameField = (_activeRecognitionTarget === targetId);
-    const previous = _activeRecognition;
-    // Marks this as a deliberate stop so onend doesn't restart it. Lives on
-    // the object rather than in the closure because the press that stops a
-    // session comes from a different call than the one that started it.
-    previous._userStopped = true;
-    _activeRecognition = null;
-    _activeRecognitionTarget = null;
-    previous.stop();
-    if(!sameField) setTimeout(() => startVoiceInput(targetId, mode, btn), 250);
+    stopVoiceInput();
+    setTimeout(() => { if(btn._voiceHolding) startVoiceInput(targetId, mode, btn, langOverride); }, 250);
     return;
   }
 
@@ -9958,10 +9994,10 @@ function startVoiceInput(targetId, mode, btn, langOverride){
 
   let transcript = '';
   let erred = false;
-  // The browser closes the mic after a few seconds of silence — which is
-  // exactly when you're still thinking. onend reopens it, so the only thing
-  // that actually ends a session is pressing the mic again. These track when
-  // reopening would be wrong: a permanent failure, or a restart loop.
+  // The browser can still close the session mid-hold — a long pause between
+  // clauses is enough. While the button is held that's reopened silently, so
+  // the recording survives it. These track when reopening would be wrong: a
+  // permanent failure, or a restart loop.
   let fatal = false;
   let heardAnything = false;
   let restarts = 0;
@@ -10052,7 +10088,9 @@ function startVoiceInput(targetId, mode, btn, langOverride){
       if(next){
         _rememberVoiceLang(next);
         showToast(`${_voiceLangLabel(rec.lang)} isn't available on this device — trying ${_voiceLangLabel(next)}.`);
-        setTimeout(() => startVoiceInput(targetId, mode, btn, next), 300);
+        // Only if you're still holding. Letting go during the probe just means
+        // pressing again — by then the working language has been remembered.
+        setTimeout(() => { if(btn._voiceHolding) startVoiceInput(targetId, mode, btn, next); }, 300);
         return;
       }
     }
@@ -10078,8 +10116,8 @@ function startVoiceInput(targetId, mode, btn, langOverride){
     if(mode === 'number') commitNumber();
     else paintText();
 
-    // The browser ends the session on its own after a few seconds of quiet.
-    // Reopen it, so the mic stays on until the button is pressed again.
+    // Reopen only while the button is still down. Releasing it clears the flag
+    // and the shared slot, so a release always ends the recording.
     const ranBriefly = (Date.now() - legStartedAt) < QUICK_END_MS;
     if(ranBriefly) quickEnds++; else quickEnds = 0;
     const looping = quickEnds >= QUICK_END_CAP || restarts >= RESTART_CAP;
@@ -10088,7 +10126,7 @@ function startVoiceInput(targetId, mode, btn, langOverride){
     // field nobody can see.
     const visible = btn.offsetParent !== null || btn === document.activeElement;
 
-    if(!rec._userStopped && !fatal && !looping && visible && _activeRecognition === rec){
+    if(btn._voiceHolding && !fatal && !looping && visible && _activeRecognition === rec){
       restarts++;
       legStartedAt = Date.now();
       // A reopened session starts its results list from scratch. Clearing both
@@ -10107,21 +10145,24 @@ function startVoiceInput(targetId, mode, btn, langOverride){
     if(_activeRecognition === rec){
       _activeRecognition = null;
       _activeRecognitionTarget = null;
+      _activeRecognitionBtn = null;
     }
     btn.classList.remove('mic-live');
-    if(!heardAnything && !erred) showToast("Didn't catch anything — try again.");
-    else if(looping && !fatal) showToast('Voice input kept dropping — press the mic to try again.');
+    if(!heardAnything && !erred) showToast("Didn't catch anything — hold the mic while you speak.");
+    else if(looping && !fatal) showToast('Voice input kept dropping — hold the mic again to retry.');
   };
 
   try{
     rec.start();
     _activeRecognition = rec;
     _activeRecognitionTarget = targetId;
+    _activeRecognitionBtn = btn;
     btn.classList.add('mic-live');
   }catch(err){
     if(_activeRecognition === rec){
       _activeRecognition = null;
       _activeRecognitionTarget = null;
+      _activeRecognitionBtn = null;
     }
     btn.classList.remove('mic-live');
     showToast('Could not start voice input.');
