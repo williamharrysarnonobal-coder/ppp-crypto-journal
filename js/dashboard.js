@@ -9840,7 +9840,8 @@ function showToast(msg){
 /* ---------------- Voice input (Web Speech API) ---------------- */
 // Two different jobs, so two different languages: a price is dictated as
 // digits and reads best as en-US, while the notes and diary fields are
-// Tagalog/Taglish and need fil-PH.
+// Tagalog/Taglish and ask for fil-PH — falling back per VOICE_LANG_CHAIN when
+// the device hasn't got it.
 //
 // This needs a secure context. On file:// the browser won't hand out
 // microphone permission, so it's a deployed-site feature — onerror says that
@@ -9854,6 +9855,42 @@ function micIconSVG(){
 
 function _speechCtor(){
   return window.SpeechRecognition || window.webkitSpeechRecognition || null;
+}
+
+// Whether Filipino is available depends on the device, not the site: Android
+// delegates recognition to whatever language packs the phone has installed, so
+// fil-PH throws service-not-allowed on a handset without it while en-US works
+// fine. Fall down the chain until one is accepted.
+//
+// tl-PH is the older Tagalog tag — some backends still answer to it and not to
+// fil-PH, and an unsupported tag costs nothing but one failed attempt.
+const VOICE_LANG_CHAIN = ['fil-PH', 'tl-PH', 'en-PH', 'en-US'];
+// Deliberately plain localStorage and NOT ui_prefs: this is a fact about the
+// device, so syncing the phone's answer to the desktop would be wrong.
+const VOICE_LANG_KEY = 'voiceTextLang';
+
+// Remembering what worked stops the fallback dance repeating on every press.
+// Remembering it forever would be a trap though: install the Filipino pack
+// later and the app would never try it again. So the preferred language is
+// re-probed weekly — one wasted attempt, in exchange for the feature fixing
+// itself the moment the phone does.
+const VOICE_LANG_RECHECK_DAYS = 7;
+
+function _voiceTextLang(){
+  const raw = localStorage.getItem(VOICE_LANG_KEY);
+  if(!raw) return VOICE_LANG_CHAIN[0];
+  const [lang, stamp] = String(raw).split('|');
+  if(!VOICE_LANG_CHAIN.includes(lang)) return VOICE_LANG_CHAIN[0];
+  const ageDays = (Date.now() - Number(stamp)) / 86400000;
+  return (Number.isFinite(ageDays) && ageDays < VOICE_LANG_RECHECK_DAYS) ? lang : VOICE_LANG_CHAIN[0];
+}
+
+function _rememberVoiceLang(lang){
+  localStorage.setItem(VOICE_LANG_KEY, lang + '|' + Date.now());
+}
+
+function _voiceLangLabel(code){
+  return ({ 'fil-PH':'Filipino', 'tl-PH':'Tagalog', 'en-PH':'English (PH)', 'en-US':'English' })[code] || code;
 }
 
 // Digits only, and never a guess. "63,040.20", "63040 point 20" and
@@ -9871,7 +9908,9 @@ function _parseSpokenNumber(text){
   return Number.isFinite(Number(s)) ? s : null;
 }
 
-function startVoiceInput(targetId, mode, btn){
+// `langOverride` is only passed by the fallback retry below — every button
+// calls this with three arguments.
+function startVoiceInput(targetId, mode, btn, langOverride){
   const el = document.getElementById(targetId);
   if(!el) return;
 
@@ -9898,7 +9937,9 @@ function startVoiceInput(targetId, mode, btn){
   }
 
   const rec = new Ctor();
-  rec.lang = (mode === 'number') ? 'en-US' : 'fil-PH';
+  // A price is dictated as digits and reads best as en-US regardless of what
+  // language the notes end up in.
+  rec.lang = (mode === 'number') ? 'en-US' : (langOverride || _voiceTextLang());
   // Interim results are not a nicety here, they're the whole thing working on
   // a phone. On Android, stopping the mic by hand routinely ends the session
   // without ever emitting a final result. Listening only for finals — which
@@ -9963,10 +10004,27 @@ function startVoiceInput(targetId, mode, btn){
   rec.onerror = (e) => {
     erred = true;
     const onFile = location.protocol === 'file:';
+
+    // A language the device doesn't have reports as service-not-allowed on
+    // Chrome (language-not-supported is the newer spelling). That is not a
+    // broken microphone — the same button works in en-US — so step down the
+    // chain and remember the answer instead of showing a dead end.
+    const langRejected = (e.error === 'service-not-allowed' || e.error === 'language-not-supported');
+    if(mode !== 'number' && langRejected && !onFile){
+      const next = VOICE_LANG_CHAIN[VOICE_LANG_CHAIN.indexOf(rec.lang) + 1];
+      if(next){
+        _rememberVoiceLang(next);
+        showToast(`${_voiceLangLabel(rec.lang)} isn't available on this device — trying ${_voiceLangLabel(next)}.`);
+        setTimeout(() => startVoiceInput(targetId, mode, btn, next), 300);
+        return;
+      }
+    }
+
     const localNote = 'Voice needs the deployed https site — the browser blocks the mic on a local file.';
     const msg = ({
       'not-allowed': onFile ? localNote : 'Microphone blocked — allow mic access for this site.',
-      'service-not-allowed': onFile ? localNote : 'Voice service unavailable.',
+      'service-not-allowed': onFile ? localNote : 'No speech language available on this device.',
+      'language-not-supported': 'No speech language available on this device.',
       'no-speech': "Didn't catch that — try again.",
       'audio-capture': 'No microphone found.',
       'network': 'Voice input needs a network connection.'
