@@ -9923,6 +9923,10 @@ function startVoiceInput(targetId, mode, btn, langOverride){
   if(_activeRecognition){
     const sameField = (_activeRecognitionTarget === targetId);
     const previous = _activeRecognition;
+    // Marks this as a deliberate stop so onend doesn't restart it. Lives on
+    // the object rather than in the closure because the press that stops a
+    // session comes from a different call than the one that started it.
+    previous._userStopped = true;
     _activeRecognition = null;
     _activeRecognitionTarget = null;
     previous.stop();
@@ -9947,11 +9951,25 @@ function startVoiceInput(targetId, mode, btn, langOverride){
   // nothing had happened. Interim text is kept and committed on end.
   rec.interimResults = true;
   rec.maxAlternatives = 1;
-  // A price is one short utterance. A diary entry is not.
+  // A price is one short utterance; a diary entry is not. Either way the
+  // session gets reopened in onend, so this only decides how the engine
+  // segments what it hears, not how long the mic stays on.
   rec.continuous = (mode !== 'number');
 
   let transcript = '';
   let erred = false;
+  // The browser closes the mic after a few seconds of silence — which is
+  // exactly when you're still thinking. onend reopens it, so the only thing
+  // that actually ends a session is pressing the mic again. These track when
+  // reopening would be wrong: a permanent failure, or a restart loop.
+  let fatal = false;
+  let heardAnything = false;
+  let restarts = 0;
+  let quickEnds = 0;
+  let legStartedAt = Date.now();
+  const RESTART_CAP = 240;   // ~20 min of silence at the usual timeout
+  const QUICK_END_MS = 400;
+  const QUICK_END_CAP = 4;
   // What this session last wrote into the field. Repainting strips exactly
   // that and nothing else, so the growing transcript never duplicates itself
   // AND anything typed on the keyboard mid-dictation survives — the first
@@ -10007,6 +10025,7 @@ function startVoiceInput(targetId, mode, btn, langOverride){
       else text = text ? text + ' ' + t : t;
     }
     transcript = text;
+    if(text) heardAnything = true;
     // Text appears as you speak, so you can see it's actually hearing you.
     // A price waits for the end — half a number in the field would be read
     // as a real one by the calculator.
@@ -10014,6 +10033,12 @@ function startVoiceInput(targetId, mode, btn, langOverride){
   };
 
   rec.onerror = (e) => {
+    // Silence is now the normal case — it's you thinking, and onend reopens
+    // the mic. Treating it as an error would mean a toast every few seconds,
+    // and would also suppress the genuine "didn't catch anything" message at
+    // the end. 'aborted' is what stopping by hand reports, equally harmless.
+    if(e.error === 'no-speech' || e.error === 'aborted') return;
+
     erred = true;
     const onFile = location.protocol === 'file:';
 
@@ -10032,12 +10057,14 @@ function startVoiceInput(targetId, mode, btn, langOverride){
       }
     }
 
+    // Everything below is a reason not to reopen: reopening on a blocked
+    // microphone would just spin.
+    fatal = true;
     const localNote = 'Voice needs the deployed https site — the browser blocks the mic on a local file.';
     const msg = ({
       'not-allowed': onFile ? localNote : 'Microphone blocked — allow mic access for this site.',
       'service-not-allowed': onFile ? localNote : 'No speech language available on this device.',
       'language-not-supported': 'No speech language available on this device.',
-      'no-speech': "Didn't catch that — try again.",
       'audio-capture': 'No microphone found.',
       'network': 'Voice input needs a network connection.'
     })[e.error] || `Voice input failed (${e.error}).`;
@@ -10045,19 +10072,45 @@ function startVoiceInput(targetId, mode, btn, langOverride){
   };
 
   rec.onend = () => {
-    // Only clear the shared slot if this session still owns it — during a
-    // hand-off to another field the next session has already claimed it, and
-    // nulling it here would leave that one untracked.
+    // Commit this leg before deciding anything: whatever is still interim when
+    // the mic closes is the tail of the sentence, and dropping it is what made
+    // stopping by hand lose the whole utterance in the first place.
+    if(mode === 'number') commitNumber();
+    else paintText();
+
+    // The browser ends the session on its own after a few seconds of quiet.
+    // Reopen it, so the mic stays on until the button is pressed again.
+    const ranBriefly = (Date.now() - legStartedAt) < QUICK_END_MS;
+    if(ranBriefly) quickEnds++; else quickEnds = 0;
+    const looping = quickEnds >= QUICK_END_CAP || restarts >= RESTART_CAP;
+    // offsetParent goes null once an ancestor is display:none — i.e. the modal
+    // this field lives in was closed. Nothing should still be listening for a
+    // field nobody can see.
+    const visible = btn.offsetParent !== null || btn === document.activeElement;
+
+    if(!rec._userStopped && !fatal && !looping && visible && _activeRecognition === rec){
+      restarts++;
+      legStartedAt = Date.now();
+      // A reopened session starts its results list from scratch. Clearing both
+      // makes paintText append to whatever is already in the field rather than
+      // try to rewrite the previous leg's text.
+      transcript = '';
+      lastPainted = '';
+      try{
+        rec.start();
+        return;
+      }catch(err){
+        // Fall through and shut down properly.
+      }
+    }
+
     if(_activeRecognition === rec){
       _activeRecognition = null;
       _activeRecognitionTarget = null;
     }
     btn.classList.remove('mic-live');
-    // Whatever is still interim when the mic closes is the tail of the
-    // sentence. Keeping it here is what makes stopping the mic by hand work.
-    if(mode === 'number') commitNumber();
-    else paintText();
-    if(!heardSoFar() && !erred) showToast("Didn't catch anything — try again.");
+    if(!heardAnything && !erred) showToast("Didn't catch anything — try again.");
+    else if(looping && !fatal) showToast('Voice input kept dropping — press the mic to try again.');
   };
 
   try{
