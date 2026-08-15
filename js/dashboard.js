@@ -9837,6 +9837,117 @@ function showToast(msg){
   toastTimer = setTimeout(() => el.classList.remove('show'), 2600);
 }
 
+/* ---------------- Voice input (Web Speech API) ---------------- */
+// Two different jobs, so two different languages: a price is dictated as
+// digits and reads best as en-US, while the notes and diary fields are
+// Tagalog/Taglish and need fil-PH.
+//
+// This needs a secure context. On file:// the browser won't hand out
+// microphone permission, so it's a deployed-site feature — onerror says that
+// in as many words instead of failing silently and looking broken.
+let _activeRecognition = null;
+
+function micIconSVG(){
+  return `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="9" y1="21" x2="15" y2="21"/></svg>`;
+}
+
+function _speechCtor(){
+  return window.SpeechRecognition || window.webkitSpeechRecognition || null;
+}
+
+// Digits only, and never a guess. "63,040.20", "63040 point 20" and
+// "63040.20" all reduce to the same number; anything that doesn't reduce
+// cleanly returns null so the caller can show what it heard rather than
+// writing a wrong price into a field the position size is computed from.
+function _parseSpokenNumber(text){
+  let s = String(text).toLowerCase().trim();
+  s = s.replace(/\s*(point|tuldok|dot)\s*/g, '.')
+       .replace(/[,\s]/g, '')
+       .replace(/[^0-9.]/g, '');
+  if(!s || s === '.') return null;
+  if((s.match(/\./g) || []).length > 1) return null;
+  if(s.startsWith('.')) s = '0' + s;
+  return Number.isFinite(Number(s)) ? s : null;
+}
+
+function startVoiceInput(targetId, mode, btn){
+  const el = document.getElementById(targetId);
+  if(!el) return;
+
+  // A second press stops it — same button, so there's nothing else to hunt
+  // for when you're halfway through a sentence.
+  if(_activeRecognition){
+    _activeRecognition.stop();
+    return;
+  }
+
+  const Ctor = _speechCtor();
+  if(!Ctor){
+    showToast('Voice input needs Chrome, Edge, or Safari.');
+    return;
+  }
+
+  const rec = new Ctor();
+  rec.lang = (mode === 'number') ? 'en-US' : 'fil-PH';
+  rec.interimResults = false;
+  rec.maxAlternatives = 1;
+  // A price is one short utterance. A diary entry is not.
+  rec.continuous = (mode !== 'number');
+
+  rec.onresult = (e) => {
+    let heard = '';
+    for(let i = e.resultIndex; i < e.results.length; i++){
+      if(e.results[i].isFinal) heard += e.results[i][0].transcript;
+    }
+    heard = heard.trim();
+    if(!heard) return;
+
+    if(mode === 'number'){
+      const num = _parseSpokenNumber(heard);
+      if(num === null){
+        showToast(`Heard "${heard}" — say it as digits, e.g. "63040 point 20".`);
+        return;
+      }
+      el.value = num;
+    }else{
+      el.value += (el.value && !/\s$/.test(el.value) ? ' ' : '') + heard;
+    }
+    // Let whatever is wired to the field react — the calculator recomputes
+    // everything off this event.
+    el.dispatchEvent(new Event('input', { bubbles:true }));
+  };
+
+  rec.onerror = (e) => {
+    const onFile = location.protocol === 'file:';
+    const localNote = 'Voice needs the deployed https site — the browser blocks the mic on a local file.';
+    const msg = ({
+      'not-allowed': onFile ? localNote : 'Microphone blocked — allow mic access for this site.',
+      'service-not-allowed': onFile ? localNote : 'Voice service unavailable.',
+      'no-speech': "Didn't catch that — try again.",
+      'audio-capture': 'No microphone found.',
+      'network': 'Voice input needs a network connection.'
+    })[e.error] || `Voice input failed (${e.error}).`;
+    showToast(msg);
+  };
+
+  // Clears every live button rather than just this one: the field may have
+  // been re-rendered since it started, leaving a stale element pulsing.
+  rec.onend = () => {
+    _activeRecognition = null;
+    document.querySelectorAll('.mic-btn.mic-live').forEach(b => b.classList.remove('mic-live'));
+  };
+
+  try{
+    rec.start();
+    _activeRecognition = rec;
+    btn.classList.add('mic-live');
+  }catch(err){
+    _activeRecognition = null;
+    btn.classList.remove('mic-live');
+    showToast('Could not start voice input.');
+  }
+}
+
 /* ---------------- Sidebar notification badges + notification center ---------------- */
 
 // Admin-only: pending signups waiting for approval. Populated eagerly at

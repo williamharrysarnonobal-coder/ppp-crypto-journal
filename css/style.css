@@ -1381,6 +1381,24 @@
   .ps-input-row{display:flex;gap:8px;}
   .ps-input-row input{flex:1;min-width:0;}
   .ps-input-row .poscalc-accent-btn{flex-shrink:0;padding:9px 12px;}
+  /* Voice input. Outlined rather than filled so it reads as a tool sitting
+     beside the field, not as the field's primary action — typing and pasting
+     stay the main paths in. Turns red and pulses while listening, which is
+     the only signal that the mic is actually live. */
+  .mic-btn{
+    display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;
+    background:none;border:1px solid var(--rule);border-radius:6px;
+    color:var(--muted);cursor:pointer;padding:4px 7px;line-height:0;
+  }
+  .mic-btn:hover{color:var(--accent);border-color:var(--accent);}
+  .mic-btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+  .mic-btn.mic-live{color:var(--loss);border-color:var(--loss);animation:mic-pulse 1.1s ease-in-out infinite;}
+  @keyframes mic-pulse{50%{opacity:.4;}}
+  @media (prefers-reduced-motion: reduce){ .mic-btn.mic-live{animation:none;} }
+  .ps-input-row .mic-btn{padding:8px 10px;}
+  /* The label owns the row so the mic can sit at its right edge; .field-row
+     label is display:block, which would otherwise drop the button below. */
+  .field-row label.label-with-mic{display:flex;align-items:center;justify-content:space-between;gap:8px;}
   .ps-risk-input{
     width:90px;padding:7px 9px;background:var(--surface-2);border:1px solid var(--rule);
     border-radius:6px;color:var(--ink);font-size:13px;font-family:'IBM Plex Mono',monospace;
