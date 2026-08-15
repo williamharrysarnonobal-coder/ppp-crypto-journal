@@ -9950,8 +9950,7 @@ function startVoiceInput(targetId, mode, btn, langOverride){
   // A price is one short utterance. A diary entry is not.
   rec.continuous = (mode !== 'number');
 
-  let finalText = '';
-  let interimText = '';
+  let transcript = '';
   let erred = false;
   // What this session last wrote into the field. Repainting strips exactly
   // that and nothing else, so the growing transcript never duplicates itself
@@ -9960,7 +9959,7 @@ function startVoiceInput(targetId, mode, btn, langOverride){
   // silently wiped whatever you typed while the mic was open.
   let lastPainted = '';
 
-  const heardSoFar = () => (finalText + interimText).replace(/\s+/g, ' ').trim();
+  const heardSoFar = () => transcript.replace(/\s+/g, ' ').trim();
 
   const paintText = () => {
     const heard = heardSoFar();
@@ -9989,12 +9988,25 @@ function startVoiceInput(targetId, mode, btn, langOverride){
   };
 
   rec.onresult = (e) => {
-    interimText = '';
-    for(let i = e.resultIndex; i < e.results.length; i++){
-      const t = e.results[i][0].transcript;
-      if(e.results[i].isFinal) finalText += t + ' ';
-      else interimText += t;
+    // Rebuilt from index 0 every time, never accumulated across events, and
+    // de-duplicated by prefix.
+    //
+    // Android reports each update as a NEW entry whose text already contains
+    // everything said so far. Concatenating that list repeats every word —
+    // "medyo Medyo Medyo alanganin Medyo alanganin itong..." — which is
+    // exactly what this produced before. So: walk the list, and when an entry
+    // simply continues what has been built up, replace instead of append.
+    // Genuinely separate utterances don't share that prefix and still append,
+    // so a browser that reports them properly is unaffected. Compared
+    // case-insensitively because the engine re-capitalises as it revises.
+    let text = '';
+    for(let i = 0; i < e.results.length; i++){
+      const t = String(e.results[i][0].transcript || '').trim();
+      if(!t) continue;
+      if(text && t.toLowerCase().startsWith(text.toLowerCase())) text = t;
+      else text = text ? text + ' ' + t : t;
     }
+    transcript = text;
     // Text appears as you speak, so you can see it's actually hearing you.
     // A price waits for the end — half a number in the field would be read
     // as a real one by the calculator.
