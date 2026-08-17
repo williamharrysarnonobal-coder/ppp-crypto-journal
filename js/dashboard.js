@@ -8933,6 +8933,10 @@ let pendingJournalPrefill = null;
 // Status to "Journaled" once the trade is truly saved (not just prefilled).
 let pendingJournalSetupId = null;
 let drawerJournalSetupId = null;
+// Set only while the drawer is standing in for a whole multi-account run:
+// one array entry per pasted ticket. Null the rest of the time, which is what
+// every "is this a bulk save" check reads.
+let drawerBulkTargets = null;
 
 function openEasyAddModal(){
   document.getElementById('easyAddBroker').value = 'upscale';
@@ -9149,6 +9153,22 @@ function parseEasyAddText(){
 
   if(!Object.keys(parsed).length){
     errEl.textContent = "Couldn't recognize any fields in that text. Make sure you copied the full position card.";
+    return;
+  }
+
+  // Part-way through a multi-account run: bank this ticket and go straight to
+  // the next account's paste box. The drawer opens once, at the end, instead
+  // of once per account — the trade is the same trade, so Trade Setup, AOF
+  // Phase, Rules Followed and the rest only need answering a single time.
+  if(journalQueue.length){
+    journalBulkPastes.push({ setupId: pendingJournalSetupId, parsed });
+    journalQueue.shift();
+    closeEasyAddModal(true);
+    if(journalQueue.length){
+      journalFromSetup(journalQueue[0]);
+    }else{
+      _openBulkJournalDrawer();
+    }
     return;
   }
 
@@ -9476,12 +9496,30 @@ function _renderDrawerFieldRow(f, mode, row){
   return `<div class="${rowCls}"><label>${f.label}</label><input type="text" data-field="${f.key}" value="${raw!==undefined&&raw!==null?raw:''}"></div>`;
 }
 
+// Names the accounts these answers are about to be written to. Without it the
+// drawer looks like an ordinary single trade with most of its fields missing.
+function _bulkDrawerBannerHtml(){
+  if(!drawerBulkTargets || drawerBulkTargets.length < 2) return '';
+  const names = drawerBulkTargets
+    .map(t => SAVED_SETUPS.find(s => s.id === t.setupId)?.account_name)
+    .filter(Boolean);
+  const sym = drawerBulkTargets[0].parsed.symbol;
+  return `
+    <div class="ea-target">
+      <div class="ea-target-label">Answered once, saved to ${drawerBulkTargets.length} trades</div>
+      <div class="bulk-note-chips">${names.map(n => `<span class="bulk-note-chip">${escapeHtml(n)}</span>`).join('')}</div>
+      <div class="ea-target-rest">Each keeps its own numbers from the ticket you pasted for it${sym ? ` · ${escapeHtml(sym)}` : ''}</div>
+    </div>`;
+}
+
 function renderDrawerFields(){
   const mode = drawerMode;
   const row = drawerRowData;
 
+  const bulkCount = drawerBulkTargets ? drawerBulkTargets.length : 0;
+
   document.getElementById('drawerTitle').textContent = mode === 'create'
-    ? 'Add trade'
+    ? (bulkCount > 1 ? `Add ${bulkCount} trades` : 'Add trade')
     : (row.symbol || 'Trade') + (row.no ? ` · #${row.no}` : '');
   document.getElementById('drawerDeleteBtn').style.display = mode === 'view' ? 'inline-block' : 'none';
   document.getElementById('drawerEditBtn').style.display = (mode === 'view' && !drawerEditing) ? 'inline-block' : 'none';
@@ -9490,7 +9528,9 @@ function renderDrawerFields(){
   // new trade it should already have come in from the Setup stage instead.
   document.getElementById('drawerConfluenceBtn').style.display = mode === 'view' ? 'inline-block' : 'none';
   document.getElementById('drawerSaveBtn').style.display = (mode === 'create' || drawerEditing) ? 'inline-block' : 'none';
-  document.getElementById('drawerSaveBtn').textContent = mode === 'create' ? 'Add trade' : 'Save changes';
+  document.getElementById('drawerSaveBtn').textContent = mode === 'create'
+    ? (bulkCount > 1 ? `Add ${bulkCount} trades` : 'Add trade')
+    : 'Save changes';
   document.getElementById('drawerError').textContent = '';
 
   const body = document.getElementById('drawerBody');
@@ -9498,12 +9538,18 @@ function renderDrawerFields(){
   DRAWER_FIELDS.forEach(f => { fieldByKey[f.key] = f; });
 
   const renderGroup = g => {
-    const fields = g.keys.map(k => fieldByKey[k]).filter(Boolean);
+    // In a multi-account run only the unanswered fields are shown. Everything
+    // hidden is either already in from the ticket or differs per account and
+    // has no single correct value — showing it would invite editing one number
+    // into all three rows.
+    const keys = drawerBulkTargets ? g.keys.filter(k => !BULK_HIDDEN_KEYS.has(k)) : g.keys;
+    const fields = keys.map(k => fieldByKey[k]).filter(Boolean);
     if(!fields.length) return '';
     return `<div class="field-group-title">${g.title}</div>` +
       fields.map(f => _renderDrawerFieldRow(f, mode, row)).join('');
   };
-  body.innerHTML = JOURNAL_FIELD_GROUPS.map(renderGroup).join('') + renderGroup(NOTES_LINKS_GROUP);
+  body.innerHTML = _bulkDrawerBannerHtml() +
+    JOURNAL_FIELD_GROUPS.map(renderGroup).join('') + renderGroup(NOTES_LINKS_GROUP);
 
   // Prefilled values (Easy Add / Journal from a saved setup) set the
   // select's initial value directly, which doesn't fire "change" — so the
@@ -9519,10 +9565,10 @@ function renderDrawerFields(){
 function closeDrawer(){
   document.getElementById('drawerOverlay').classList.remove('open');
   document.getElementById('drawer').classList.remove('open');
-  // Dismissing the drawer abandons a multi-account run. Without this a queue
-  // left alive here would silently resume weeks later, the next time that
-  // same setup happened to be journaled on its own.
-  if(!_journalQueueHandoff) _cancelJournalQueue();
+  // Dismissing the drawer abandons a multi-account run — including the tickets
+  // already pasted into it. Without this they would sit in memory and reappear
+  // attached to whatever was journaled next.
+  _cancelJournalQueue();
 }
 
 // Infers Exit Type from price alone, for the four outcomes price can
@@ -9648,6 +9694,11 @@ async function saveDrawer(){
   try{
     const patch = _collectDrawerPatch();
 
+    if(drawerBulkTargets){
+      await _saveBulkJournal(patch);
+      return;
+    }
+
     if(drawerMode === 'create'){
       const maxNo = RAW_TRADES.reduce((m,r) => { const n = parseFloat(r.no); return !isNaN(n) && n>m ? n : m; }, 0);
       patch.no = patch.no || (maxNo + 1);
@@ -9721,15 +9772,7 @@ async function saveDrawer(){
       if(newAccount) await adjustAccountBalance(newAccount, newNet);
     }
 
-    // Hand off before closing so closeDrawer's cancel doesn't wipe the queue
-    // that was just advanced. Easy Add is a separate overlay, so it stays up
-    // while the drawer slides shut behind it.
-    if(savedSetupId){
-      _journalQueueHandoff = true;
-      _advanceJournalQueue(savedSetupId);
-    }
     closeDrawer();
-    _journalQueueHandoff = false;
 
   }catch(e){
     errEl.textContent = "Couldn't save: " + e.message + ". Make sure your Supabase table has INSERT/UPDATE policies enabled for this key.";
@@ -14693,10 +14736,21 @@ function renderSetupBulkBar(){
 // time, naming the account it's waiting on, instead of writing them together.
 let journalQueue = [];        // setup ids still to journal; [0] is the current one
 let journalQueueTotal = 0;    // fixed at the start, for the "x of y" counter
-// Set only across the save -> next-setup handoff, so closeDrawer() can tell a
-// user dismissing the drawer from the drawer closing itself mid-run.
-let _journalQueueHandoff = false;
+// Each account's pasted ticket, banked while the run collects them. Emptied
+// when the single drawer at the end is saved or abandoned.
+let journalBulkPastes = [];
 
+// Everything that differs per account and is already known — from the ticket
+// just pasted or from the setup itself. Hidden in the bulk drawer, because
+// there is no single value for them and filling one in for all three would be
+// wrong by definition, not merely unhelpful.
+const BULK_HIDDEN_KEYS = new Set([
+  'account','account_type','position_size','risk_amount','quantity',
+  'tp_price','sl_price','entry_price','close_price',
+  'profit_loss','pnl_percent','fee','rr','win_loss',
+  'symbol','open_date','close_date','duration','day_of_week',
+  'trade_type','pattern_type'
+]);
 async function journalSelectedSetups(){
   const pending = SAVED_SETUPS.filter(s => (s.status || 'Pending') !== 'Journaled');
   const picked = pending.filter(s => SELECTED_SETUP_IDS.has(s.id));
@@ -14724,12 +14778,68 @@ async function journalSelectedSetups(){
 
   journalQueue = ready.map(s => s.id);
   journalQueueTotal = journalQueue.length;
+  journalBulkPastes = [];
   journalFromSetup(journalQueue[0]);
+}
+
+// One insert for the whole run, then the follow-up work each row needs. Rows
+// go up together so a dropped connection can't leave two of three trades
+// saved with no sign that the third is missing.
+async function _saveBulkJournal(shared){
+  const rows = _bulkJournalRows(shared);
+  const setupIds = drawerBulkTargets.map(t => t.setupId);
+
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${TABLE_NAME}`, {
+    method: 'POST',
+    headers: {
+      'apikey': SUPABASE_KEY,
+      'Authorization': `Bearer ${USER_ACCESS_TOKEN}`,
+      'Content-Type': 'application/json',
+      'Prefer': 'return=representation'
+    },
+    body: JSON.stringify(rows)
+  });
+  if(!res.ok) throw new Error(await res.text());
+  const inserted = await res.json();
+  (inserted.length ? inserted : rows).forEach(r => RAW_TRADES.push(r));
+
+  ALL_TRADES = RAW_TRADES.map(normalizeTrade);
+  populateAccountFilter();
+  populateJournalFilters();
+  applyFilters();
+  renderJournalTable();
+  refreshAllNavBadges();
+
+  // Each account moves by its own net, so these are separate adjustments even
+  // when every row came from the same setup.
+  for(const r of rows){
+    if(!r.account) continue;
+    await adjustAccountBalance(r.account, (parseFloat(r.profit_loss) || 0) - (parseFloat(r.fee) || 0));
+  }
+  await Promise.all(setupIds.map(id => setSetupStatus(id, 'Journaled')));
+
+  const n = rows.length;
+  _cancelJournalQueue();
+  clearSetupSelection();
+  loadLinkedSetupScreenshots().then(renderJournalTable);
+  closeDrawer();
+  showToast(`Journaled ${n} trade${n===1?'':'s'}`);
 }
 
 function _cancelJournalQueue(){
   journalQueue = [];
   journalQueueTotal = 0;
+  journalBulkPastes = [];
+  drawerBulkTargets = null;
+}
+
+// Every ticket is in. One drawer now, seeded from the first one so the
+// auto-filled values are there to save, but rendering only the fields that
+// still need an answer — not repeating those is the whole point of the run.
+function _openBulkJournalDrawer(){
+  if(!journalBulkPastes.length) return;
+  drawerBulkTargets = journalBulkPastes.slice();
+  openDrawer('create', null, { ...drawerBulkTargets[0].parsed });
 }
 
 function _bulkNoteTargets(){
@@ -14829,17 +14939,44 @@ async function saveBulkNotes(){
 // Called once a queued trade has actually saved — drops the head and opens
 // the next account's paste box. Guarded on the head matching so an unrelated
 // save can never advance someone else's run.
-function _advanceJournalQueue(savedSetupId){
-  if(!journalQueue.length || journalQueue[0] !== savedSetupId) return;
-  journalQueue.shift();
-  if(!journalQueue.length){
-    const n = journalQueueTotal;
-    _cancelJournalQueue();
-    clearSetupSelection();
-    showToast(`Journaled ${n} setup${n===1?'':'s'}`);
-    return;
-  }
-  journalFromSetup(journalQueue[0]);
+// Builds one journal row per pasted ticket: that account's own numbers, plus
+// the answers given once in the drawer. Anything left blank in the drawer is
+// dropped rather than written, so an unanswered field can't wipe a value the
+// ticket already supplied.
+function _bulkJournalRows(shared){
+  const answered = Object.fromEntries(
+    Object.entries(shared).filter(([, v]) => v !== null && v !== '')
+  );
+  const maxNo = RAW_TRADES.reduce((m, r) => {
+    const n = parseFloat(r.no);
+    return !isNaN(n) && n > m ? n : m;
+  }, 0);
+
+  return drawerBulkTargets.map((t, i) => {
+    const patch = { ...t.parsed, ...answered };
+    patch.no = maxNo + 1 + i;
+    // Index in the id so three rows created in the same millisecond can't
+    // collide on the position_id.
+    patch.position_id = 'WEB-' + Date.now().toString(36).toUpperCase() + '-' + (i + 1);
+    patch.linked_setup_id = t.setupId;
+
+    const setup = SAVED_SETUPS.find(s => s.id === t.setupId);
+    if(setup){
+      // Filled in on the Setup itself and never rendered in the drawer, so it
+      // has to be carried across explicitly or it is simply lost.
+      if(setup.confluence_answers) patch.confluence_answers = setup.confluence_answers;
+      if(setup.chart_pattern) patch.chart_pattern = setup.chart_pattern;
+    }
+
+    // Per row, not once for the batch: exit type and a moved stop are both
+    // read off that account's own prices.
+    if(patch.exit_type == null){
+      const auto = _autoExitType(patch);
+      if(auto) patch.exit_type = auto;
+    }
+    _applyMovedStopFlags(patch);
+    return patch;
+  });
 }
 
 // Leverage tint: the higher the leverage, the tighter the margin and the
