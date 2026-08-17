@@ -1409,28 +1409,6 @@
     .mic-btn.mic-live, .mic-btn.mic-working{animation:none;}
     .mic-btn.mic-working{opacity:.6;}
   }
-  /* The price mic is held too — the same mistake as the written fields, just
-     less obvious because the row looks like a row of taps. Compact beside the
-     input where there's width for it, its own full-width line once the row
-     wraps: a 28px icon wedged between Paste and Copy is covered entirely by
-     the finger holding it. */
-  .mic-bar-inline{
-    width:auto;flex:0 0 auto;min-width:46px;min-height:42px;margin-top:0;padding:0 12px;
-  }
-  .mic-bar-inline span{display:none;}
-  /* Once it has a line of its own there is room to say what it does, so the
-     state labels come back — same three states as the written fields. */
-  body.mobile-mode .ps-input-row .mic-bar-inline{flex:1 1 100%;min-height:46px;}
-  body.mobile-mode .ps-input-row .mic-bar-inline .mic-bar-idle{display:inline;}
-  body.mobile-mode .ps-input-row .mic-bar-inline.mic-live .mic-bar-idle{display:none;}
-  body.mobile-mode .ps-input-row .mic-bar-inline.mic-live .mic-bar-live{display:inline;}
-  @media (max-width: 620px){
-    .ps-input-row{flex-wrap:wrap;}
-    .ps-input-row .mic-bar-inline{flex:1 1 100%;min-height:46px;}
-    .ps-input-row .mic-bar-inline .mic-bar-idle{display:inline;}
-    .ps-input-row .mic-bar-inline.mic-live .mic-bar-idle{display:none;}
-    .ps-input-row .mic-bar-inline.mic-live .mic-bar-live{display:inline;}
-  }
   /* A wrapper, not the label itself. A <button> is a labelable element, so a
      mic button nested inside a <label> becomes that label's labeled control —
      the click then activates it twice, starting and immediately stopping the
@@ -1469,6 +1447,36 @@
   .mic-bar.mic-live svg{animation:mic-pulse 1.1s ease-in-out infinite;}
   .mic-bar.mic-working svg{animation:mic-working 0.9s linear infinite;}
   @media (prefers-reduced-motion: reduce){ .mic-bar svg{animation:none !important;} }
+
+  /* The price mic is held too — the same mistake as the written fields, just
+     less obvious because that row looks like a row of taps. It is the same
+     button, narrowed to sit beside the input where there's width for it, and
+     given its own full-width line once the row wraps: a 28px icon wedged
+     between Paste and Copy is covered entirely by the finger holding it.
+
+     Written as `.mic-bar.mic-bar-inline`, not `.mic-bar-inline`. A single
+     class ties with `.mic-bar`, so which one won came down to source order —
+     and it lost, handing the price button width:100% and a dashed border
+     inside a flex row, which is what broke the calculator layout. Two classes
+     beat one wherever this block ends up sitting. */
+  .mic-bar.mic-bar-inline{
+    width:auto;flex:0 0 auto;min-width:46px;min-height:42px;margin-top:0;padding:0 12px;
+  }
+  .mic-bar.mic-bar-inline span{display:none;}
+  /* Once it has a line of its own there is room to say what it does, so the
+     state labels come back — same states as the written fields. */
+  body.mobile-mode .ps-input-row .mic-bar.mic-bar-inline{flex:1 1 100%;min-height:46px;}
+  body.mobile-mode .ps-input-row .mic-bar.mic-bar-inline .mic-bar-idle{display:inline;}
+  body.mobile-mode .ps-input-row .mic-bar.mic-bar-inline.mic-live .mic-bar-idle{display:none;}
+  body.mobile-mode .ps-input-row .mic-bar.mic-bar-inline.mic-live .mic-bar-live{display:inline;}
+  @media (max-width: 620px){
+    .ps-input-row{flex-wrap:wrap;}
+    .ps-input-row .mic-bar.mic-bar-inline{flex:1 1 100%;min-height:46px;}
+    .ps-input-row .mic-bar.mic-bar-inline .mic-bar-idle{display:inline;}
+    .ps-input-row .mic-bar.mic-bar-inline.mic-live .mic-bar-idle{display:none;}
+    .ps-input-row .mic-bar.mic-bar-inline.mic-live .mic-bar-live{display:inline;}
+  }
+
   .ps-risk-input{
     width:90px;padding:7px 9px;background:var(--surface-2);border:1px solid var(--rule);
     border-radius:6px;color:var(--ink);font-size:13px;font-family:'IBM Plex Mono',monospace;
