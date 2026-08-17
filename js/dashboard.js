@@ -13255,13 +13255,21 @@ async function adjustAccountBalance(accountName, delta){
 
 // Auto-fills the Journal's "Account Type" (Demo/Evaluation/Funded) from the
 // selected account's Phase, so it doesn't need to be typed twice.
-function syncAccountTypeFromAccount(accountName){
+// The Account Type an account implies. Split out from the drawer write below
+// so a bulk save can work it out per row: there, both `account` and
+// `account_type` are hidden fields, so the drawer sync had nothing to write
+// into and every row was saved with a blank Account Type.
+function _accountTypeFor(accountName){
   const acc = TRADING_ACCOUNTS.find(a => a.account_name === accountName);
-  if(!acc) return;
-  let mapped = null;
-  if(acc.phase === 'Funded') mapped = 'Funded';
-  else if(acc.phase && acc.phase.startsWith('Evaluation')) mapped = 'Evaluation';
-  else if(acc.account_type === 'Exchange') mapped = 'Demo';
+  if(!acc) return null;
+  if(acc.phase === 'Funded') return 'Funded';
+  if(acc.phase && acc.phase.startsWith('Evaluation')) return 'Evaluation';
+  if(acc.account_type === 'Exchange') return 'Demo';
+  return null;
+}
+
+function syncAccountTypeFromAccount(accountName){
+  const mapped = _accountTypeFor(accountName);
   if(!mapped) return;
   const sel = document.querySelector('#drawerBody [data-field="account_type"]');
   if(sel){
@@ -14744,6 +14752,15 @@ let journalBulkPastes = [];
 // just pasted or from the setup itself. Hidden in the bulk drawer, because
 // there is no single value for them and filling one in for all three would be
 // wrong by definition, not merely unhelpful.
+// Shown in the drawer as read-only computed text, never as inputs — they are
+// worked out from other fields at display time and have no column on the
+// journal table. _collectDrawerPatch never returns them because it only reads
+// inputs, so a single trade is safe by accident. A bulk row is assembled from
+// the setup prefill as well as the form, so they have to be stripped on
+// purpose: PostgREST rejects the WHOLE batch over one unknown column, not just
+// that field, so a stray key here means nothing gets journaled at all.
+const JOURNAL_COMPUTED_KEYS = new Set(['objective', 'duration', 'risk_amount', 'trade_summary']);
+
 const BULK_HIDDEN_KEYS = new Set([
   'account','account_type','position_size','risk_amount','quantity',
   'tp_price','sl_price','entry_price','close_price',
@@ -14985,6 +15002,14 @@ function _bulkJournalRows(shared){
       }
     }
 
+    // Derived here rather than in the drawer, because the field it would
+    // normally be written into isn't rendered in a bulk run — and it differs
+    // per account anyway, since each one has its own phase.
+    if(!patch.account_type && patch.account){
+      const accType = _accountTypeFor(patch.account);
+      if(accType) patch.account_type = accType;
+    }
+
     // Per row, not once for the batch: exit type and a moved stop are both
     // read off that account's own prices.
     if(patch.exit_type == null){
@@ -14992,6 +15017,7 @@ function _bulkJournalRows(shared){
       if(auto) patch.exit_type = auto;
     }
     _applyMovedStopFlags(patch);
+    JOURNAL_COMPUTED_KEYS.forEach(k => delete patch[k]);
     return patch;
   });
 
@@ -15407,6 +15433,12 @@ function journalFromSetup(id){
     position_size: s.quantity != null ? Number(s.quantity) : undefined,
     symbol: s.symbol || undefined,
     notes: notesText || undefined,
+    // Deliberately NOT risk_amount. That column exists on position_setups but
+    // not on the journal: there it is derived from entry, SL and quantity and
+    // rendered read-only. Putting it in the prefill is harmless for a single
+    // trade — _collectDrawerPatch only reads inputs, and this one isn't — but
+    // a bulk save merges the prefill straight into the insert, and Postgres
+    // rejects the whole batch over a column that doesn't exist.
     rr: rr,
     trade_type: s.trade_type || undefined,
     pattern_type: s.pattern_type || undefined,
