@@ -14749,7 +14749,10 @@ const BULK_HIDDEN_KEYS = new Set([
   'tp_price','sl_price','entry_price','close_price',
   'profit_loss','pnl_percent','fee','rr','win_loss',
   'symbol','open_date','close_date','duration','day_of_week',
-  'trade_type','pattern_type'
+  'trade_type'
+  // pattern_type is deliberately NOT hidden. It arrives from the Setup, but
+  // the wrong one does get picked there, and this is the last point before
+  // three rows are written with it.
 ]);
 async function journalSelectedSetups(){
   const pending = SAVED_SETUPS.filter(s => (s.status || 'Pending') !== 'Journaled');
@@ -14786,7 +14789,7 @@ async function journalSelectedSetups(){
 // go up together so a dropped connection can't leave two of three trades
 // saved with no sign that the third is missing.
 async function _saveBulkJournal(shared){
-  const rows = _bulkJournalRows(shared);
+  const { rows, confluenceDropped } = _bulkJournalRows(shared);
   const setupIds = drawerBulkTargets.map(t => t.setupId);
 
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${TABLE_NAME}`, {
@@ -14823,7 +14826,9 @@ async function _saveBulkJournal(shared){
   clearSetupSelection();
   loadLinkedSetupScreenshots().then(renderJournalTable);
   closeDrawer();
-  showToast(`Journaled ${n} trade${n===1?'':'s'}`);
+  showToast(confluenceDropped
+    ? `Journaled ${n} trade${n===1?'':'s'} — confluence cleared on ${confluenceDropped}, pattern type changed. Re-run it from the trade.`
+    : `Journaled ${n} trade${n===1?'':'s'}`);
 }
 
 function _cancelJournalQueue(){
@@ -14951,8 +14956,9 @@ function _bulkJournalRows(shared){
     const n = parseFloat(r.no);
     return !isNaN(n) && n > m ? n : m;
   }, 0);
+  let confluenceDropped = 0;
 
-  return drawerBulkTargets.map((t, i) => {
+  const rows = drawerBulkTargets.map((t, i) => {
     const patch = { ...t.parsed, ...answered };
     patch.no = maxNo + 1 + i;
     // Index in the id so three rows created in the same millisecond can't
@@ -14962,10 +14968,21 @@ function _bulkJournalRows(shared){
 
     const setup = SAVED_SETUPS.find(s => s.id === t.setupId);
     if(setup){
-      // Filled in on the Setup itself and never rendered in the drawer, so it
-      // has to be carried across explicitly or it is simply lost.
-      if(setup.confluence_answers) patch.confluence_answers = setup.confluence_answers;
-      if(setup.chart_pattern) patch.chart_pattern = setup.chart_pattern;
+      // Confluence answers are stored by their position in that pattern's
+      // checklist. Correcting the Pattern Type here means a different
+      // checklist, so those answers would now point at different questions —
+      // carrying them would produce confidently wrong data. Dropped instead,
+      // and said out loud rather than silently.
+      const patternChanged = patch.pattern_type && setup.pattern_type
+        && patch.pattern_type !== setup.pattern_type;
+      if(patternChanged){
+        if(setup.confluence_answers || setup.chart_pattern) confluenceDropped++;
+      }else{
+        // Filled in on the Setup itself and never rendered in the drawer, so
+        // it has to be carried across explicitly or it is simply lost.
+        if(setup.confluence_answers) patch.confluence_answers = setup.confluence_answers;
+        if(setup.chart_pattern) patch.chart_pattern = setup.chart_pattern;
+      }
     }
 
     // Per row, not once for the batch: exit type and a moved stop are both
@@ -14977,6 +14994,8 @@ function _bulkJournalRows(shared){
     _applyMovedStopFlags(patch);
     return patch;
   });
+
+  return { rows, confluenceDropped };
 }
 
 // Leverage tint: the higher the leverage, the tighter the margin and the
