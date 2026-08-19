@@ -252,7 +252,10 @@ const UI_PREF_LS_KEYS = {
   // calculator. The setup being planned belongs to you, not to the browser
   // you happened to type it in.
   poscalc_draft: 'poscalc-draft',
-  poscalc_risk_amounts: 'possize-risk-amounts'
+  poscalc_risk_amounts: 'possize-risk-amounts',
+  // Which dashboard groups you keep open — a working preference, not a
+  // per-device one.
+  dash_groups: 'dash-groups'
 };
 
 let _uiPrefsSyncTimer = null;
@@ -321,6 +324,7 @@ function applyUIPrefsFromProfile(){
     // The profile arrives after the page is already interactive, so pulling
     // the account's copy over a half-entered setup would delete work in
     // progress — and re-rendering the table would drop the caret besides.
+    if(changedKeys.includes('dash_groups')) applyDashGroups();
     if((changedKeys.includes('poscalc_draft') || changedKeys.includes('poscalc_risk_amounts')) && !_posCalcTouched){
       calcDraftLoaded = false;
       refreshPosSizeCalculator();
@@ -1161,6 +1165,7 @@ function applyFilters(){
   renderBreakdown();
   renderConfluenceEdge();
   renderBEProtection();
+  applyDashGroups();
   renderAccountCompare();
   renderAfterLoss();
   renderStopReality();
@@ -2514,17 +2519,6 @@ function _weekReviewHtml(trades, label, periodName){
     mistakesHtml + ruleHtml + more;
 }
 
-// Which journal control can express a given breakdown field. Symbol and
-// Pattern have no dedicated select, so they fall back to the search box —
-// which already matches on symbol, setup, pattern, session and account.
-const JOURNAL_DRILL_SELECT = {
-  session: 'filterSession',
-  trade_setup: 'filterSetup',
-  day_of_week: 'filterDay',
-  win_loss: 'filterWinLoss',
-  account: 'filterAccount'
-};
-
 // What the open modal is showing, so "View Trades" knows what to filter by.
 let _journalDrill = null;
 
@@ -2551,9 +2545,12 @@ function journalDrillFromModal(){
     return;
   }
 
-  const sel = document.getElementById(JOURNAL_DRILL_SELECT[field] || '');
-  if(sel && [...sel.options].some(o => o.value === key)){
-    sel.value = key;
+  // Adds the filter as a chip on the exact column, which is now possible for
+  // every column. This used to hunt for a fixed <select> and fall back to the
+  // search box when it couldn't find one — and the search box doesn't look at
+  // Day or Win/Loss at all, so those drills quietly returned the wrong rows.
+  if(_journalFilterValues(field).includes(String(key))){
+    JOURNAL_ACTIVE_FILTERS = [{ key: field, value: String(key) }];
   }else{
     document.getElementById('journalSearch').value = key;
   }
@@ -2773,6 +2770,40 @@ function renderStopReality(){
     </table></div>
     <div style="margin-top:8px;font-size:10.5px;color:var(--muted);line-height:1.5;">Counted only on trades with an Exit Type recorded. The indented rows split a pattern by how complete its confluence was — they appear once a pattern has trades in more than one band.</div>`;
 }
+
+/* ---------------- Collapsible dashboard groups ----------------
+   Sixteen panels is more than anyone scrolls through looking for one number.
+   Which groups you keep open is a working preference, so it rides in
+   UI_PREF_LS_KEYS with the rest and follows the account, not the browser. */
+const DASH_GROUP_DEFAULTS = { prop: true, discipline: true, timing: false };
+
+function _dashGroupState(){
+  try{
+    const raw = localStorage.getItem('dash-groups');
+    return raw ? { ...DASH_GROUP_DEFAULTS, ...JSON.parse(raw) } : { ...DASH_GROUP_DEFAULTS };
+  }catch(e){ return { ...DASH_GROUP_DEFAULTS }; }
+}
+
+function applyDashGroups(){
+  const state = _dashGroupState();
+  Object.entries(state).forEach(([key, open]) => {
+    const el = document.getElementById('dashGroup-' + key);
+    if(el) el.classList.toggle('collapsed', !open);
+  });
+}
+
+function toggleDashGroup(key){
+  const state = _dashGroupState();
+  state[key] = !state[key];
+  try{
+    localStorage.setItem('dash-groups', JSON.stringify(state));
+    syncUIPrefsToProfile();
+  }catch(e){}
+  applyDashGroups();
+}
+
+
+
 
 /* ---------------- Hour of day ----------------
    Session is eight hours wide, which is too coarse to act on. This is the
@@ -8689,24 +8720,238 @@ async function deleteFinRec(id){
   }
 }
 
-const JOURNAL_FILTER_FIELDS = [
-  {key:'win_loss', selectId:'filterWinLoss', prefix:'Win/Loss'},
-  {key:'trade_setup', selectId:'filterSetup', prefix:'Setup'},
-  {key:'session', selectId:'filterSession', prefix:'Session'},
-  {key:'account', selectId:'filterAccount', prefix:'Account'},
-  {key:'day_of_week', selectId:'filterDay', prefix:'Day'}
-];
+/* ---- Journal filters ----
+   Pick a column, then a value. Only the filters actually in use take up any
+   room, and every column is reachable — a fixed row of dropdowns could only
+   ever cover the ones somebody thought of in advance.
 
-function populateJournalFilters(){
-  JOURNAL_FILTER_FIELDS.forEach(f => {
-    const sel = document.getElementById(f.selectId);
-    if(!sel) return;
-    const current = sel.value;
-    const values = [...new Set(RAW_TRADES.map(r => r[f.key]).filter(Boolean))].sort();
-    sel.innerHTML = `<option value="all">${f.prefix}: All</option>` +
-      values.map(v => `<option value="${v}">${v}</option>`).join('');
-    if(values.includes(current)) sel.value = current;
+   Numbers and free text are deliberately not offered: "Profit/Loss equals
+   -22.36" is not a filter anyone wants, and a dropdown of every distinct note
+   would be one row per trade. */
+const JOURNAL_FILTER_EXCLUDE = new Set([
+  'no','position_id','linked_setup_id','notes','link','trade_summary',
+  'objective','duration','risk_amount','confluence_score',
+  'open_date','close_date','profit_loss','pnl_percent','fee','rr',
+  'entry_price','close_price','tp_price','sl_price','position_size',
+  'screenshot_before','screenshot_after'
+]);
+// Held as a comma-separated list on each trade, so it matches by membership:
+// picking "Moved Stop Loss" has to find trades that broke it alongside others.
+const JOURNAL_MULTI_KEYS = new Set(['unfollowed_rules']);
+// [{key, value}] — the filters currently on, in the order they were added.
+let JOURNAL_ACTIVE_FILTERS = [];
+
+function _journalFilterValues(key){
+  if(JOURNAL_MULTI_KEYS.has(key)){
+    const set = new Set();
+    RAW_TRADES.forEach(r => (r[key] || '').split(/[,;]/)
+      .map(s => s.trim())
+      .filter(s => s && s.toLowerCase() !== 'rules followed')
+      .forEach(s => set.add(s)));
+    return [...set].sort();
+  }
+  return [...new Set(RAW_TRADES.map(r => r[key]).filter(v => v !== null && v !== undefined && String(v).trim() !== ''))]
+    .map(String).sort();
+}
+
+// Every column that has values worth picking from. Driven by the data, so a
+// field you have never filled in simply isn't offered.
+function _journalFilterableColumns(){
+  const labelOf = k => (ALL_DRAWER_FIELDS.find(f => f.key === k) || {}).label || k;
+  return ALL_DRAWER_FIELDS
+    .map(f => f.key)
+    .filter(k => !JOURNAL_FILTER_EXCLUDE.has(k))
+    .map(k => ({ key:k, label:labelOf(k), values:_journalFilterValues(k) }))
+    .filter(c => c.values.length > 0);
+}
+
+function toggleJournalColumnMenu(ev){
+  if(ev) ev.stopPropagation();
+  const menu = document.getElementById('journalColumnMenu');
+  if(!menu) return;
+  if(menu.style.display !== 'none'){ menu.style.display = 'none'; return; }
+
+  const used = new Set(JOURNAL_ACTIVE_FILTERS.map(f => f.key));
+  const cols = _journalFilterableColumns().filter(c => !used.has(c.key));
+  menu.innerHTML = cols.length
+    ? cols.map(c => `<button type="button" class="jf-menu-item" onclick="addJournalFilter('${c.key}')">${escapeHtml(c.label)}<span class="jf-menu-count">${c.values.length}</span></button>`).join('')
+    : `<div class="jf-menu-empty">Every column is already filtered.</div>`;
+  menu.style.display = 'block';
+}
+
+// One listener, bound once: clicking anywhere else closes whichever menu is up.
+document.addEventListener('click', () => {
+  const menu = document.getElementById('journalColumnMenu');
+  if(menu) menu.style.display = 'none';
+  if(_openChipMenu){
+    _openChipMenu = null;
+    renderJournalFilterChips();
+  }
+});
+// Escape closes them too — a dropdown you can't dismiss with the keyboard is
+// a trap once it's covering the row you were reading.
+document.addEventListener('keydown', (e) => {
+  if(e.key !== 'Escape') return;
+  const menu = document.getElementById('journalColumnMenu');
+  if(menu) menu.style.display = 'none';
+  if(_openChipMenu){
+    _openChipMenu = null;
+    renderJournalFilterChips();
+  }
+});
+
+function addJournalFilter(key){
+  if(JOURNAL_ACTIVE_FILTERS.some(f => f.key === key)) return;
+  JOURNAL_ACTIVE_FILTERS.push({ key, value:'all' });
+  document.getElementById('journalColumnMenu').style.display = 'none';
+  renderJournalTable();
+}
+
+function removeJournalFilter(key){
+  JOURNAL_ACTIVE_FILTERS = JOURNAL_ACTIVE_FILTERS.filter(f => f.key !== key);
+  renderJournalTable();
+}
+
+function setJournalFilterValue(key, value){
+  const f = JOURNAL_ACTIVE_FILTERS.find(x => x.key === key);
+  if(f) f.value = value;
+  renderJournalTable();
+}
+
+// Which chip's value list is open. A native <select> was used first, but its
+// popup is drawn by the operating system — the white sheet and blue highlight
+// can't be themed, and only the option background responds to CSS at all.
+let _openChipMenu = null;
+
+function toggleChipMenu(key, ev){
+  if(ev) ev.stopPropagation();
+  _openChipMenu = (_openChipMenu === key) ? null : key;
+  renderJournalFilterChips();
+  if(_openChipMenu){
+    // Long lists get a search box; put the caret in it straight away.
+    const input = document.querySelector('.jf-chip-menu .jf-chip-search');
+    if(input) input.focus();
+  }
+}
+
+function pickChipValue(key, value){
+  _openChipMenu = null;
+  setJournalFilterValue(key, value);
+}
+
+function filterChipMenu(inputEl){
+  const q = inputEl.value.trim().toLowerCase();
+  inputEl.closest('.jf-chip-menu').querySelectorAll('.jf-chip-opt').forEach(el => {
+    el.style.display = el.dataset.v.toLowerCase().includes(q) ? '' : 'none';
   });
+}
+
+// How many rows each value would leave, given everything else that's on.
+function _journalValueCounts(key){
+  const rows = getFilteredJournalRows(key);
+  const counts = {};
+  if(JOURNAL_MULTI_KEYS.has(key)){
+    rows.forEach(r => (r[key] || '').split(/[,;]/).map(s => s.trim()).filter(Boolean)
+      .forEach(v => { counts[v] = (counts[v] || 0) + 1; }));
+  }else{
+    rows.forEach(r => {
+      const v = String(r[key] ?? '');
+      if(v.trim()) counts[v] = (counts[v] || 0) + 1;
+    });
+  }
+  return { counts, total: rows.length };
+}
+
+function renderJournalFilterChips(){
+  const host = document.getElementById('journalFilterChips');
+  if(!host) return;
+  const labelOf = k => (ALL_DRAWER_FIELDS.find(f => f.key === k) || {}).label || k;
+
+  host.innerHTML = JOURNAL_ACTIVE_FILTERS.map(f => {
+    const values = _journalFilterValues(f.key);
+    const open = _openChipMenu === f.key;
+    // Only worth computing while the list is actually on screen.
+    const { counts, total } = open ? _journalValueCounts(f.key) : { counts:{}, total:0 };
+    const opt = (v, label, n) => {
+      const dim = n === 0 ? ' none' : '';
+      return `<button type="button" class="jf-chip-opt${f.value===v?' sel':''}${dim}" data-v="${escapeHtml(label)}" onclick="pickChipValue('${f.key}', ${escapeHtml(JSON.stringify(v))})"><span class="jf-opt-text">${escapeHtml(label)}</span><span class="jf-opt-n">${n}</span></button>`;
+    };
+
+    return `<span class="jf-chip${open?' open':''}">
+      <span class="jf-chip-label">${escapeHtml(labelOf(f.key))}</span>
+      <button type="button" class="jf-chip-value" onclick="toggleChipMenu('${f.key}', event)">
+        ${escapeHtml(f.value === 'all' ? 'Any' : f.value)}
+        <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+      <button type="button" class="jf-chip-x" title="Remove this filter" onclick="removeJournalFilter('${f.key}')">✕</button>
+      ${open ? `<div class="jf-chip-menu" onclick="event.stopPropagation();">
+        ${values.length > 10 ? `<input class="jf-chip-search" placeholder="Search…" oninput="filterChipMenu(this)">` : ''}
+        <div class="jf-chip-opts">${opt('all','Any',total)}${values.map(v => opt(v, v, counts[v] || 0)).join('')}</div>
+      </div>` : ''}
+    </span>`;
+  }).join('');
+  host.style.display = JOURNAL_ACTIVE_FILTERS.length ? 'flex' : 'none';
+
+  const clearBtn = document.getElementById('journalClearBtn');
+  if(clearBtn){
+    const period = (document.getElementById('journalYearFilter')?.value ?? 'all') !== 'all' ||
+                   (document.getElementById('journalMonthFilter')?.value ?? 'all') !== 'all';
+    const anything = JOURNAL_ACTIVE_FILTERS.length || JOURNAL_BLANK_FILTER || period ||
+      JOURNAL_INCOMPLETE_ONLY || (document.getElementById('journalSearch')?.value || '').trim();
+    clearBtn.style.display = anything ? '' : 'none';
+  }
+}
+
+/* ---- Year + Month ----
+   Kept as permanent controls rather than chips: narrowing to a period is the
+   thing you do before anything else, on nearly every visit. Keyed on close
+   date, matching the dashboard and the rest of the app. */
+function _journalTradeYears(){
+  return [...new Set(RAW_TRADES
+    .map(r => r.close_date && new Date(r.close_date).getFullYear())
+    .filter(Boolean))].sort((a,b) => b - a);
+}
+
+function populateJournalPeriodFilters(){
+  const yearSel = document.getElementById('journalYearFilter');
+  const monthSel = document.getElementById('journalMonthFilter');
+  if(!yearSel || !monthSel) return;
+
+  const years = _journalTradeYears();
+  const prevYear = yearSel.value;
+  yearSel.innerHTML = `<option value="all">All years</option>` +
+    years.map(y => `<option value="${y}">${y}</option>`).join('');
+  yearSel.value = (prevYear && [...yearSel.options].some(o => o.value === prevYear)) ? prevYear : 'all';
+
+  _renderJournalMonthOptions();
+}
+
+function _renderJournalMonthOptions(){
+  const yearSel = document.getElementById('journalYearFilter');
+  const monthSel = document.getElementById('journalMonthFilter');
+  if(!yearSel || !monthSel) return;
+
+  const year = yearSel.value;
+  const months = [...new Set(RAW_TRADES
+    .filter(r => r.close_date && (year === 'all' || new Date(r.close_date).getFullYear() === Number(year)))
+    .map(r => new Date(r.close_date).getMonth()))].sort((a,b) => a - b);
+
+  const prev = monthSel.value;
+  monthSel.innerHTML = `<option value="all">All months</option>` +
+    months.map(m => `<option value="${m}">${MONTH_NAMES[m]}</option>`).join('');
+  monthSel.value = (prev && [...monthSel.options].some(o => o.value === prev)) ? prev : 'all';
+}
+
+function onJournalYearChange(){
+  _renderJournalMonthOptions();
+  renderJournalTable();
+}
+
+// Called after trades load or change.
+function populateJournalFilters(){
+  // A chip whose column no longer has any values would be a dead control.
+  JOURNAL_ACTIVE_FILTERS = JOURNAL_ACTIVE_FILTERS.filter(f => _journalFilterValues(f.key).length);
+  populateJournalPeriodFilters();
 }
 
 // "Unspecified" in the breakdown is a label for an EMPTY field, not a value
@@ -8734,10 +8979,11 @@ function setJournalBlankFilter(field, label){
 
 function clearJournalFilters(){
   document.getElementById('journalSearch').value = '';
-  JOURNAL_FILTER_FIELDS.forEach(f => {
-    const sel = document.getElementById(f.selectId);
-    if(sel) sel.value = 'all';
-  });
+  JOURNAL_ACTIVE_FILTERS = [];
+  const y = document.getElementById('journalYearFilter');
+  const mo = document.getElementById('journalMonthFilter');
+  if(y) y.value = 'all';
+  if(mo){ _renderJournalMonthOptions(); mo.value = 'all'; }
   setJournalBlankFilter(null);
   JOURNAL_INCOMPLETE_ONLY = false;
   renderJournalTable();
@@ -8853,7 +9099,11 @@ function _journalColoredCell(key, row, plainVal){
   return null;
 }
 
-function getFilteredJournalRows(){
+// `exceptKey` leaves one chip out of the filtering. That's what makes the
+// counts in a chip's dropdown mean "how many you'd get if you picked this" —
+// counting with the chip still applied would show the value you already have
+// and zero for everything else.
+function getFilteredJournalRows(exceptKey){
   const query = (document.getElementById('journalSearch')?.value || '').trim().toLowerCase();
 
   let rows = RAW_TRADES;
@@ -8864,12 +9114,23 @@ function getFilteredJournalRows(){
     });
   }
 
-  JOURNAL_FILTER_FIELDS.forEach(f => {
-    const sel = document.getElementById(f.selectId);
-    const val = sel ? sel.value : 'all';
-    if(val && val !== 'all'){
-      rows = rows.filter(r => r[f.key] === val);
-    }
+  const jYear = document.getElementById('journalYearFilter')?.value ?? 'all';
+  const jMonth = document.getElementById('journalMonthFilter')?.value ?? 'all';
+  if(jYear !== 'all' || jMonth !== 'all'){
+    rows = rows.filter(r => {
+      if(!r.close_date) return false;   // no close date means no month to be in
+      const d = new Date(r.close_date);
+      if(jYear !== 'all' && d.getFullYear() !== Number(jYear)) return false;
+      if(jMonth !== 'all' && d.getMonth() !== Number(jMonth)) return false;
+      return true;
+    });
+  }
+
+  JOURNAL_ACTIVE_FILTERS.forEach(f => {
+    if(!f.value || f.value === 'all' || f.key === exceptKey) return;
+    rows = JOURNAL_MULTI_KEYS.has(f.key)
+      ? rows.filter(r => (r[f.key] || '').split(/[,;]/).map(s => s.trim()).includes(f.value))
+      : rows.filter(r => String(r[f.key] ?? '') === f.value);
   });
 
   if(JOURNAL_BLANK_FILTER){
@@ -8933,6 +9194,8 @@ function renderJournalTable(){
   if(!table) return;
 
   const rows = getFilteredJournalRows();
+
+  renderJournalFilterChips();
 
   const incomplete = rows.filter(r => _journalMissingFields(r).length).length;
   document.getElementById('journalCountLabel').innerHTML =

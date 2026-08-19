@@ -876,6 +876,107 @@
   .panel-info-btn:hover{color:var(--accent);}
   .panel-info-btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:50%;}
 
+  /* Journal filters: pick a column, then a value. Only the filters in use
+     take up space, so the toolbar stays the same size no matter how many
+     columns the journal has. */
+  .jf-add-wrap{position:relative;}
+  .jf-menu{
+    position:absolute;top:calc(100% + 6px);left:0;z-index:60;min-width:190px;max-height:320px;overflow-y:auto;
+    background:var(--surface);border:1px solid var(--rule);border-radius:8px;
+    box-shadow:0 8px 24px rgba(0,0,0,.35);padding:5px;
+  }
+  .jf-menu-item{
+    display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;
+    background:none;border:none;border-radius:5px;padding:7px 9px;cursor:pointer;
+    font-family:var(--font-ui);font-size:12.5px;color:var(--ink);text-align:left;
+  }
+  .jf-menu-item:hover{background:var(--surface-2);color:var(--accent);}
+  /* How many distinct values that column has — tells you whether it's worth
+     filtering on before you pick it. */
+  .jf-menu-count{font-size:10.5px;color:var(--muted);font-family:'IBM Plex Mono',monospace;}
+  .jf-menu-empty{padding:10px;font-size:12px;color:var(--muted);}
+
+  .jf-chips{display:flex;flex-wrap:wrap;gap:8px;padding:0 20px 12px;}
+  .jf-chip{
+    display:inline-flex;align-items:center;gap:7px;
+    background:var(--surface-2);border:1px solid var(--rule);border-radius:20px;padding:4px 6px 4px 12px;
+  }
+  .jf-chip-label{
+    font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);white-space:nowrap;
+  }
+  /* Own dropdown rather than a native <select>: the OS draws that popup as a
+     white sheet with a blue highlight and only its option background responds
+     to CSS, so it could never match the rest of the app. */
+  .jf-chip{position:relative;}
+  .jf-chip.open{border-color:var(--accent);}
+  .jf-chip-value{
+    display:inline-flex;align-items:center;gap:6px;
+    background:none;border:none;color:var(--ink);cursor:pointer;
+    font-family:var(--font-ui);font-size:12.5px;padding:0 2px;
+    max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  }
+  .jf-chip-value:hover{color:var(--accent);}
+  .jf-chip-value svg{flex-shrink:0;opacity:.7;transition:transform .15s ease;}
+  .jf-chip.open .jf-chip-value svg{transform:rotate(180deg);}
+
+  .jf-chip-menu{
+    position:absolute;top:calc(100% + 6px);left:0;z-index:70;min-width:190px;max-width:280px;
+    background:var(--surface);border:1px solid var(--rule);border-radius:8px;
+    box-shadow:0 8px 24px rgba(0,0,0,.35);padding:5px;
+  }
+  .jf-chip-opts{max-height:260px;overflow-y:auto;}
+  .jf-chip-search{
+    width:100%;margin-bottom:5px;padding:6px 8px;font-size:12px;
+    background:var(--surface-2);border:1px solid var(--rule);border-radius:5px;
+    color:var(--ink);font-family:var(--font-ui);
+  }
+  .jf-chip-opt{
+    display:flex;align-items:center;justify-content:space-between;gap:14px;
+    width:100%;text-align:left;background:none;border:none;border-radius:5px;
+    padding:7px 9px;cursor:pointer;color:var(--ink);
+    font-family:var(--font-ui);font-size:12.5px;white-space:nowrap;
+  }
+  .jf-opt-text{overflow:hidden;text-overflow:ellipsis;}
+  /* How many trades that value would leave, with the other filters still on. */
+  .jf-opt-n{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted);flex-shrink:0;}
+  /* Nothing behind it — still selectable, but it shouldn't read as a live
+     option the way the others do. */
+  .jf-chip-opt.none{opacity:.4;}
+  .jf-chip-opt:hover{background:var(--surface-2);color:var(--accent);}
+  /* The chosen one keeps a mark rather than a full highlight — the highlight
+     belongs to whatever the pointer is on. */
+  .jf-chip-opt.sel{color:var(--accent);font-weight:600;}
+  .jf-chip-opt.sel::after{content:' ✓';}
+  @media (prefers-reduced-motion: reduce){ .jf-chip-value svg{transition:none;} }
+  .jf-chip-x{
+    background:none;border:none;color:var(--muted);cursor:pointer;font-size:12px;line-height:1;padding:3px 5px;
+  }
+  .jf-chip-x:hover{color:var(--loss);}
+
+  /* Collapsible dashboard groups. The header is a full-width button rather
+     than a heading with a small toggle — the whole bar is the target, which
+     matters on a phone. */
+  .dash-group{margin-bottom:20px;}
+  .dash-group-head{
+    display:flex;align-items:center;gap:9px;width:100%;
+    background:none;border:none;border-bottom:1px solid var(--rule);
+    padding:0 0 8px;margin-bottom:14px;cursor:pointer;
+    font-family:var(--font-ui);font-size:11px;font-weight:600;
+    text-transform:uppercase;letter-spacing:.07em;color:var(--muted);
+  }
+  .dash-group-head:hover{color:var(--accent);border-color:var(--accent);}
+  .dash-group-head:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+  .dash-group-caret{transition:transform .15s ease;flex-shrink:0;}
+  .dash-group-count{
+    margin-left:auto;font-size:10px;letter-spacing:0;
+    background:var(--surface-2);border-radius:20px;padding:2px 8px;
+  }
+  .dash-group.collapsed .dash-group-caret{transform:rotate(0deg);}
+  .dash-group:not(.collapsed) .dash-group-caret{transform:rotate(90deg);}
+  .dash-group.collapsed .dash-group-body{display:none;}
+  .dash-group.collapsed .dash-group-head{margin-bottom:0;}
+  @media (prefers-reduced-motion: reduce){ .dash-group-caret{transition:none;} }
+
   /* Confluence bands nested under a pattern — indented and dimmer so the
      pattern rows still read as the list and these as its working. */
   table.breakdown tr.sr-sub{cursor:default;}
