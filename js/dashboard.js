@@ -684,6 +684,7 @@ async function initApp(){
     document.getElementById('app').style.display = 'block';
 
     populateAccountFilter();
+  populateDashPeriodFilters();
     applyFilters();
     populateJournalFilters();
     loadLinkedSetupScreenshots().then(renderJournalTable);
@@ -1063,27 +1064,89 @@ function populateAccountFilter(){
   });
 }
 
-function applyFilters(){
-  const range = document.getElementById('rangeFilter').value;
-  const acct = document.getElementById('accountFilter').value;
+/* ---- Year + Month filters ----
+   Replaced the rolling "last 30 / last 90 days" ranges. A rolling window moves
+   under you: the same page shows different trades tomorrow, so nothing on it
+   can be compared with what you looked at last week. A named month doesn't
+   move, which is what makes month-on-month comparison possible at all.
+   Both are keyed on close date, like everything else on this page. */
+const MONTH_NAMES = ['January','February','March','April','May','June',
+                     'July','August','September','October','November','December'];
+
+// Built from the trades themselves — an empty year in the list would just be a
+// dead end. Newest first, since that is what gets looked at.
+function populateDashPeriodFilters(){
+  const yearSel = document.getElementById('yearFilter');
+  const monthSel = document.getElementById('monthFilter');
+  if(!yearSel || !monthSel) return;
+
+  const years = [...new Set(ALL_TRADES.map(t => t.close_date && t.close_date.getFullYear()).filter(Boolean))]
+    .sort((a,b) => b - a);
   const now = new Date();
+  if(!years.length) years.push(now.getFullYear());
+
+  const prevYear = yearSel.value;
+  yearSel.innerHTML = `<option value="all">All years</option>` +
+    years.map(y => `<option value="${y}">${y}</option>`).join('');
+  // Default to the current year when there is one, so the page opens on
+  // something relevant rather than on everything ever traded.
+  yearSel.value = (prevYear && [...yearSel.options].some(o => o.value === prevYear))
+    ? prevYear
+    : (years.includes(now.getFullYear()) ? String(now.getFullYear()) : 'all');
+
+  _renderDashMonthOptions();
+}
+
+// Only the months that actually have trades in the chosen year — an empty
+// month in the list is a dead end. The calendar arrows stay in step with this
+// by moving between the months in THIS list rather than by adding a month at
+// a time; see shiftMonth.
+function _renderDashMonthOptions(){
+  const yearSel = document.getElementById('yearFilter');
+  const monthSel = document.getElementById('monthFilter');
+  if(!yearSel || !monthSel) return;
+
+  const year = yearSel.value;
+  const months = [...new Set(ALL_TRADES
+    .filter(t => t.close_date && (year === 'all' || t.close_date.getFullYear() === Number(year)))
+    .map(t => t.close_date.getMonth()))].sort((a,b) => a - b);
+
+  const prev = monthSel.value;
+  monthSel.innerHTML = `<option value="all">All months</option>` +
+    months.map(m => `<option value="${m}">${MONTH_NAMES[m]}</option>`).join('');
+  monthSel.value = (prev && [...monthSel.options].some(o => o.value === prev)) ? prev : 'all';
+}
+
+function onDashYearChange(){
+  _renderDashMonthOptions();
+  applyFilters();
+}
+
+function applyFilters(){
+  const year = document.getElementById('yearFilter')?.value ?? 'all';
+  const month = document.getElementById('monthFilter')?.value ?? 'all';
+  const acct = document.getElementById('accountFilter').value;
 
   FILTERED = ALL_TRADES.filter(t => {
     if(acct !== 'all' && t.account !== acct) return false;
-    if(!t.close_date) return range === 'all';
-    if(range === '30'){
-      const cutoff = new Date(); cutoff.setDate(now.getDate()-30);
-      return t.close_date >= cutoff;
-    }
-    if(range === '90'){
-      const cutoff = new Date(); cutoff.setDate(now.getDate()-90);
-      return t.close_date >= cutoff;
-    }
-    if(range === 'month'){
-      return t.close_date.getMonth() === now.getMonth() && t.close_date.getFullYear() === now.getFullYear();
-    }
+    if(year === 'all' && month === 'all') return true;
+    // A trade with no close date has no month to belong to.
+    if(!t.close_date) return false;
+    if(year !== 'all' && t.close_date.getFullYear() !== Number(year)) return false;
+    if(month !== 'all' && t.close_date.getMonth() !== Number(month)) return false;
     return true;
   });
+
+  // The calendar keeps its own month, moved by its ‹ › arrows. Picking a month
+  // in the filter has to move it too, or the page shows August's numbers above
+  // a calendar still sitting on September.
+  if(month !== 'all'){
+    const yr = year !== 'all' ? Number(year) : calMonth.getFullYear();
+    calMonth = new Date(yr, Number(month), 1);
+  }else if(year !== 'all' && calMonth.getFullYear() !== Number(year)){
+    // Year alone: keep the month you were looking at, move to that year.
+    calMonth = new Date(Number(year), calMonth.getMonth(), 1);
+  }
 
   document.getElementById('tradeCountLabel').textContent = `${FILTERED.length} trade${FILTERED.length===1?'':'s'} in view`;
 
@@ -1098,6 +1161,11 @@ function applyFilters(){
   renderBreakdown();
   renderConfluenceEdge();
   renderBEProtection();
+  renderAccountCompare();
+  renderAfterLoss();
+  renderStopReality();
+  renderHourOfDay();
+  renderHoldTime();
   document.getElementById('aiOutput').style.display = 'none';
 }
 
@@ -1161,12 +1229,37 @@ function sparklineSVG(values, color){
   </svg>`;
 }
 
+// Win rate over DECIDED trades only — wins and losses. A breakeven neither won
+// nor lost, so counting it in the denominator drags the percentage down as
+// though it had lost; "Liquidated" is a loss and has to count as one or it
+// quietly disappears from both sides. Returns null when nothing was decided,
+// so a caller can tell "no result yet" from "0%".
+//
+// This matches _wrStats, which the Trade Review already used — four places on
+// the dashboard were each dividing by the full trade count instead.
+// A liquidation IS a loss — the largest kind there is. Testing only for 'loss'
+// drops them out of average loss, profit factor, the risk-consistency spread
+// and every count that pairs against wins, which flatters all of them.
+const LOSS_RESULTS = new Set(['loss', 'liquidated']);
+const _isLoss = t => LOSS_RESULTS.has(String(t.win_loss || '').toLowerCase());
+const _isWin  = t => String(t.win_loss || '').toLowerCase() === 'win';
+
+function _winRateOf(trades){
+  let wins = 0, decided = 0;
+  trades.forEach(t => {
+    const wl = String(t.win_loss || '').toLowerCase();
+    if(wl === 'win'){ wins++; decided++; }
+    else if(wl === 'loss' || wl === 'liquidated') decided++;
+  });
+  return decided ? (wins / decided * 100) : null;
+}
+
 function renderKPIs(){
   const t = FILTERED;
-  const wins = t.filter(x => x.win_loss.toLowerCase() === 'win');
-  const losses = t.filter(x => x.win_loss.toLowerCase() === 'loss');
+  const wins = t.filter(_isWin);
+  const losses = t.filter(_isLoss);
   const totalPnl = t.reduce((s,x) => s + netPnl(x), 0);
-  const winRate = t.length ? (wins.length / t.length * 100) : 0;
+  const winRate = _winRateOf(t) ?? 0;
   // Gross (fee not yet subtracted) — kept specifically for the "Fees paid
   // as % of gross win" KPI below, which needs the pre-fee number to mean
   // anything. Profit Factor / Avg Win / Avg Loss use the net (real) figures
@@ -1231,6 +1324,25 @@ function renderKPIs(){
 
 /* ---------------- Calendar ---------------- */
 function shiftMonth(dir){
+  const monthSel = document.getElementById('monthFilter');
+
+  // Filtered to one month: the arrows move between the months that HAVE
+  // trades, which is exactly what the dropdown offers. Stepping a plain
+  // calendar month instead would land on months the filter can't select, and
+  // the two would drift apart — the calendar showing June while every panel
+  // still described July.
+  if(monthSel && monthSel.value !== 'all'){
+    const months = [...monthSel.options].map(o => o.value).filter(v => v !== 'all');
+    const i = months.indexOf(monthSel.value);
+    const next = months[i + dir];
+    // Already at the first or last month with data — nothing to move to.
+    if(i === -1 || next === undefined) return;
+    monthSel.value = next;
+    applyFilters();   // moves calMonth to match
+    return;
+  }
+
+  // Unfiltered: browsing, so step month by month as before.
   calMonth.setMonth(calMonth.getMonth() + dir);
   renderCalendar();
 }
@@ -1264,9 +1376,9 @@ function renderCalendar(){
     if(!monthTrades.length){
       summaryEl.innerHTML = '';
     }else{
-      const winTrades = monthTrades.filter(t => (t.win_loss||'').toLowerCase() === 'win').length;
-      const lossTrades = monthTrades.filter(t => (t.win_loss||'').toLowerCase() === 'loss').length;
-      const winPct = Math.round(winTrades / monthTrades.length * 100);
+      const winTrades = monthTrades.filter(_isWin).length;
+      const lossTrades = monthTrades.filter(_isLoss).length;
+      const winPct = Math.round(_winRateOf(monthTrades) ?? 0);
       const monthPnl = monthTrades.reduce((s,t) => s + netPnl(t), 0);
       summaryEl.innerHTML = `
         <span class="${monthPnl>=0?'pos':'neg'}">${fmtMoney(monthPnl)}</span>
@@ -1489,8 +1601,11 @@ function renderDisciplineRadar(){
     return;
   }
 
+  // Kept for the tooltip, which shows the working behind the score. Decided =
+  // wins + losses + liquidations; breakevens are excluded from both sides.
   const wins = t.filter(x => x.win_loss.toLowerCase() === 'win').length;
-  const winRate = t.length ? (wins/t.length*100) : 0;
+  const decided = t.filter(x => ['win','loss','liquidated'].includes(String(x.win_loss||'').toLowerCase())).length;
+  const winRate = _winRateOf(t) ?? 0;
 
   const followed = t.filter(x => x.unfollowed_rules.trim().toLowerCase() === 'rules followed').length;
   const broken = t.filter(x => x.unfollowed_rules.trim() !== '' && x.unfollowed_rules.trim().toLowerCase() !== 'rules followed').length;
@@ -1530,7 +1645,7 @@ function renderDisciplineRadar(){
     return lo === hi ? sortedArr[lo] : sortedArr[lo] + (sortedArr[hi]-sortedArr[lo])*(pos-lo);
   };
   const lossesByAccount = {};
-  t.filter(x => x.win_loss.toLowerCase() === 'loss').forEach(x => {
+  t.filter(_isLoss).forEach(x => {
     const grossLoss = Math.max(0, Math.abs(x.profit_loss||0) - Math.abs(x.fee||0));
     if(grossLoss <= 0) return;
     const acc = x.account || 'Unspecified';
@@ -1617,7 +1732,7 @@ function renderDisciplineRadar(){
           callbacks: {
             label: (ctx) => {
               const explanations = {
-                'Win Rate': `${wins} win${wins!==1?'s':''} out of ${t.length} trade${t.length!==1?'s':''} in view (wins ÷ total).`,
+                'Win Rate': `${wins} win${wins!==1?'s':''} out of ${decided} decided trade${decided!==1?'s':''} (wins ÷ wins+losses). ${t.length - decided} breakeven trade${t.length-decided!==1?'s are':' is'} excluded — neither won nor lost.`,
                 'Rule Compliance': disciplineTotal
                   ? `${followed} "Rules Followed" out of ${disciplineTotal} trade${disciplineTotal!==1?'s':''} with a discipline note logged.`
                   : 'No discipline notes logged yet — log "Rules Followed" or an unfollowed rule per trade to fill this in.',
@@ -1757,14 +1872,121 @@ function closeModal(){
   _setJournalDrill(null, null);
 }
 
+/* ---------------- Panel info ("i") ----------------
+   Every number here is derived, and which field it was derived FROM changes
+   what it means — a calendar keyed on close date answers a different question
+   from one keyed on open date. Written from the renderers themselves rather
+   than from memory. */
+const PANEL_INFO_COMMON =
+  `<p style="color:var(--muted);margin-top:14px;">Every panel on this page obeys the
+   <b>Range</b> and <b>Account</b> filters at the top. Range is measured on
+   <b>close date</b>, so a trade opened in one month and closed in the next
+   counts in the month it closed.</p>`;
+
+const PANEL_INFO = {
+  calendar: ['Calendar',
+    `Each cell is one day, coloured by that day's <b>net P&amp;L</b> — profit minus fee.
+     A trade lands on the day it <b>closed</b>, not the day it was opened.`],
+  equity: ['Equity curve',
+    `Running total of <b>net P&amp;L</b> (profit minus fee), trades ordered by
+     <b>close date</b>. It starts at zero — it's the change over the selected
+     range, not your account balance.`],
+  winloss: ['Win / Loss split',
+    `Counts the <b>Win/Loss</b> field. Breakeven trades are shown separately and
+     are left out of the win rate: a trade that neither won nor lost would drag
+     the percentage down as if it were a loss.`],
+  bestdays: ['Best days to trade',
+    `Total <b>net P&amp;L</b> per <b>day of week</b>, using the day the trade
+     closed. Bars are totals, not averages — one large trade can carry a day.`],
+  session: ['Session',
+    `<b>How many trades</b> you took per session, not how much you made. When the
+     Session field is blank it is worked out from the open time.`],
+  radar: ['Discipline radar',
+    `Scores built from <b>Unfollowed Rules</b>, <b>Win/Loss</b> and
+     <b>Profit/Loss</b> — how often you followed your own rules and what it cost
+     when you didn't. A trade with no rules recorded counts as unanswered, not
+     as clean.`],
+  breakdown: ['Breakdown',
+    `Groups your trades by whichever tab is selected and totals the
+     <b>net P&amp;L</b> of each group. <b>Unspecified</b> means that field is
+     empty on those trades — the warning icon in the Trade Journal marks them.`],
+  cfledge: ['Confluence Edge',
+    `Win rate and average net P&amp;L grouped by how much of the checklist you
+     had answered at entry, read from the saved <b>confluence answers</b>. Only
+     trades that actually have a checklist are counted.`],
+  beprotect: ['Breakeven Protection',
+    `Looks at trades whose stop was moved to breakeven, and asks what would have
+     happened if it hadn't been. Risk carried is worked out from entry, stop and
+     quantity; planned risk comes from the calculator setup the trade was
+     journaled from.`],
+  acccompare: ['Account comparison',
+    `Every trade grouped by <b>Account</b>. <b>Rules kept</b> is the share of
+     that account's trades marked "Rules Followed", counting only trades where
+     something was recorded. Click a row to see its trades.`],
+  afterloss: ['Trades after a loss',
+    `Trades are ordered <b>within each day</b> by open time. Each one is
+     labelled by what the trade before it did — so "After a loss" is the very
+     next trade you took that day. Needs at least 3 such trades to show, and 5
+     before it will offer a verdict.`],
+  stopreality: ['Where the stop gets hit',
+    `Reads <b>Exit Type</b>, which is filled in after the trade — so this is
+     what actually happened, not what the setup intended. Only trades that have
+     an Exit Type recorded are counted; the column shows how many that is.
+     <br><br>The indented rows split a pattern by how complete its confluence
+     was at entry (80%+, 60–79%, under 60%), so you can tell a pattern that
+     doesn't work from one you keep taking too early. They appear once a
+     pattern has trades in more than one band.`],
+  hourofday: ['Hour of day',
+    `Grouped by the hour on <b>Open Date</b> — the moment you decided, not the
+     exit — in your device's local time. The best/worst line ignores any hour
+     with fewer than 3 trades, since one trade is not an hour's worth of
+     evidence.`],
+  holdtime: ['How long you hold',
+    `Time between <b>Open Date</b> and <b>Close Date</b>, split into winners
+     and losers. Compared on the <b>median</b>, not the average: one position
+     left open overnight would drag a mean far enough to reverse the answer.
+     Needs at least 3 wins and 3 losses that have both timestamps.`],
+  ai: ['AI Insights',
+    `Sends a <b>summary</b> of the trades currently in view — totals, win rate,
+     setups, sessions, rule breaks — to Claude and asks for a read. No note text
+     or chart link is sent, and nothing is stored.`]
+};
+
+function infoIconSVG(){
+  return `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>`;
+}
+
+function openPanelInfo(key){
+  const entry = PANEL_INFO[key];
+  if(!entry) return;
+  document.getElementById('modalTitle').textContent = entry[0];
+  document.getElementById('modalSub').textContent = 'How this is worked out';
+  document.getElementById('modalBody').innerHTML =
+    `<div style="font-size:13px;line-height:1.7;color:var(--ink);">${entry[1]}${PANEL_INFO_COMMON}</div>`;
+  document.getElementById('tradeModal').classList.add('open');
+}
+
+// From a card in one of the dashboard drill-downs straight to that trade in
+// the Trade Journal — the journal is searched down to this one row so the
+// context is right if the detail popup is closed, and the popup is opened on
+// top so the details are there without a second click.
+function openTradeFromCard(positionId){
+  closeModal();
+  switchView('journal');
+  clearJournalFilters();
+  document.getElementById('journalSearch').value = positionId;
+  renderJournalTable();
+  openTradeViewModal(positionId);
+}
+
 function renderTradeCards(trades){
   if(!trades.length) return `<div class="empty-state">No trades here.</div>`;
 
   const sorted = [...trades].sort((a,b) => (b.close_date||0) - (a.close_date||0));
 
   return sorted.map(t => {
-    const isWin = t.win_loss.toLowerCase() === 'win';
-    const dotCls = isWin ? 'win' : (t.win_loss.toLowerCase()==='loss' ? 'loss' : 'be');
+    const isWin = _isWin(t);
+    const dotCls = isWin ? 'win' : (_isLoss(t) ? 'loss' : 'be');
     const dateStr = t.close_date ? t.close_date.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : '—';
     return `
       <div class="trade-card">
@@ -1781,7 +2003,10 @@ function renderTradeCards(trades){
         </div>
         ${t.unfollowed_rules ? `<div class="tc-notes" style="color:var(--loss);">${t.unfollowed_rules}</div>` : ''}
         ${t.notes ? `<div class="tc-notes">${t.notes}</div>` : ''}
-        ${t.link ? `<div style="margin-top:6px;"><a href="${t.link}" target="_blank" style="color:var(--accent);font-size:11.5px;">View →</a></div>` : ''}
+        <div class="tc-actions">
+          <button class="tc-details-btn" onclick='openTradeFromCard(${JSON.stringify(t.position_id)})'>More Details →</button>
+          ${t.link ? `<a href="${t.link}" target="_blank" class="tc-chart-link">Chart →</a>` : ''}
+        </div>
       </div>
     `;
   }).join('');
@@ -2346,6 +2571,318 @@ function showCategoryTrades(field, key){
   document.getElementById('tradeModal').classList.add('open');
 }
 
+/* ---------------- Account comparison ----------------
+   The same setup gets taken across several accounts, so the accounts are a
+   controlled experiment nobody was reading: same idea, different size, and
+   sometimes very different discipline. */
+function renderAccountCompare(){
+  const body = document.getElementById('accountCompareBody');
+  if(!body) return;
+
+  const groups = {};
+  FILTERED.forEach(t => {
+    const key = t.account || 'Unspecified';
+    (groups[key] = groups[key] || []).push(t);
+  });
+
+  const rows = Object.entries(groups).map(([account, trades]) => {
+    const net = trades.reduce((s,t) => s + netPnl(t), 0);
+    const followed = trades.filter(t => (t.unfollowed_rules||'').trim().toLowerCase() === 'rules followed').length;
+    const withRules = trades.filter(t => (t.unfollowed_rules||'').trim() !== '').length;
+    const rrs = trades.map(t => t.rr).filter(v => v !== null && v !== undefined && !isNaN(v));
+    return {
+      account, n: trades.length, net,
+      winRate: _winRateOf(trades),
+      discipline: withRules ? (followed / withRules * 100) : null,
+      avgRR: rrs.length ? rrs.reduce((a,b)=>a+b,0) / rrs.length : null,
+      avg: trades.length ? net / trades.length : 0
+    };
+  }).sort((a,b) => b.net - a.net);
+
+  if(rows.length < 2){
+    body.innerHTML = `<div class="empty-state">Needs trades on at least two accounts to compare.</div>`;
+    return;
+  }
+
+  const cell = (v, fmt) => v === null ? '—' : fmt(v);
+  body.innerHTML = `
+    <div style="overflow-x:auto;"><table class="breakdown">
+      <tr><th>Account</th><th>Trades</th><th>Net</th><th>Avg / trade</th><th>Win rate</th><th>Rules kept</th><th>Avg RR</th></tr>
+      ${rows.map(r => `
+        <tr onclick="showCategoryTrades('account', ${escapeHtml(JSON.stringify(r.account))})">
+          <td style="font-family:'Public Sans',sans-serif;">${escapeHtml(r.account)}</td>
+          <td>${r.n}</td>
+          <td class="${r.net>=0?'pos':'neg'}">${fmtMoney(r.net)}</td>
+          <td class="${r.avg>=0?'pos':'neg'}">${fmtMoney(r.avg)}</td>
+          <td>${cell(r.winRate, v => fmtNum(v,0)+'%')}</td>
+          <td>${cell(r.discipline, v => fmtNum(v,0)+'%')}</td>
+          <td>${cell(r.avgRR, v => fmtNum(v,2))}</td>
+        </tr>`).join('')}
+    </table></div>`;
+}
+
+/* ---------------- Trades after a loss ----------------
+   Sequence within the DAY, ordered by open time — the second trade after a
+   red one is where revenge trading lives, and nothing here measured it. */
+function renderAfterLoss(){
+  const body = document.getElementById('afterLossBody');
+  if(!body) return;
+
+  const byDay = {};
+  FILTERED.forEach(t => {
+    const d = t.open_date || t.close_date;
+    if(!d) return;
+    const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+    (byDay[key] = byDay[key] || []).push(t);
+  });
+
+  const buckets = { first: [], afterWin: [], afterLoss: [] };
+  Object.values(byDay).forEach(list => {
+    const ordered = [...list].sort((a,b) => {
+      const ad = a.open_date || a.close_date, bd = b.open_date || b.close_date;
+      return ad - bd;
+    });
+    ordered.forEach((t, i) => {
+      if(i === 0){ buckets.first.push(t); return; }
+      const prev = ordered[i-1];
+      if(_isLoss(prev)) buckets.afterLoss.push(t);
+      else if(_isWin(prev)) buckets.afterWin.push(t);
+    });
+  });
+
+  const stat = arr => ({
+    n: arr.length,
+    net: arr.reduce((s,t) => s + netPnl(t), 0),
+    winRate: _winRateOf(arr),
+    avg: arr.length ? arr.reduce((s,t) => s + netPnl(t), 0) / arr.length : 0
+  });
+  const first = stat(buckets.first), aw = stat(buckets.afterWin), al = stat(buckets.afterLoss);
+
+  if(al.n < 3){
+    body.innerHTML = `<div class="empty-state">Not enough back-to-back trades yet — needs at least 3 taken straight after a losing one.</div>`;
+    return;
+  }
+
+  const row = (label, s, cls) => `
+    <tr class="${cls||''}">
+      <td style="font-family:'Public Sans',sans-serif;">${label}</td>
+      <td>${s.n}</td>
+      <td class="${s.net>=0?'pos':'neg'}">${fmtMoney(s.net)}</td>
+      <td class="${s.avg>=0?'pos':'neg'}">${fmtMoney(s.avg)}</td>
+      <td>${s.winRate === null ? '—' : fmtNum(s.winRate,0)+'%'}</td>
+    </tr>`;
+
+  // Only worth a verdict when both sides have enough trades to mean anything.
+  let verdict = '';
+  if(al.n >= 5 && first.n >= 5){
+    const gap = al.avg - first.avg;
+    verdict = gap < 0
+      ? `Your next trade after a loss averages ${fmtMoney(Math.abs(gap))} worse than your first of the day. That is the cost of not stopping.`
+      : `Trades after a loss hold up — no sign of chasing.`;
+  }
+
+  body.innerHTML = `
+    <table class="breakdown">
+      <tr><th></th><th>Trades</th><th>Net</th><th>Avg / trade</th><th>Win rate</th></tr>
+      ${row('First of the day', first)}
+      ${row('After a win', aw)}
+      ${row('After a loss', al)}
+    </table>
+    ${verdict ? `<div style="margin-top:10px;font-size:11.5px;color:var(--muted);line-height:1.55;">${verdict}</div>` : ''}`;
+}
+
+/* ---------------- Where the stop actually gets hit ----------------
+   exit_type is filled in after the fact, so this is what really happened,
+   not what the setup was supposed to do. */
+function renderStopReality(){
+  const body = document.getElementById('stopRealityBody');
+  if(!body) return;
+
+  const groups = {};
+  FILTERED.forEach(t => {
+    const key = t.pattern_type || 'Unspecified';
+    (groups[key] = groups[key] || []).push(t);
+  });
+
+  const rows = Object.entries(groups).map(([pattern, trades]) => {
+    const withExit = trades.filter(t => (t.exit_type||'').trim() !== '');
+    const sl = withExit.filter(t => (t.exit_type||'').toLowerCase() === 'sl hit');
+    const tp = withExit.filter(t => (t.exit_type||'').toLowerCase() === 'tp hit');
+    return {
+      pattern, n: trades.length, known: withExit.length,
+      sl: sl.length, tp: tp.length,
+      slPct: withExit.length ? sl.length / withExit.length * 100 : null,
+      net: trades.reduce((s,t) => s + netPnl(t), 0)
+    };
+  }).filter(r => r.known > 0).sort((a,b) => (b.slPct ?? -1) - (a.slPct ?? -1));
+
+  if(!rows.length){
+    body.innerHTML = `<div class="empty-state">No trades with an Exit Type recorded yet.</div>`;
+    return;
+  }
+
+  // Pattern alone only ever says "avoid this pattern". Split each one by how
+  // complete the confluence was and the question changes to one you can act
+  // on: is the pattern broken, or is it fine and you keep taking it early?
+  const bandOf = (t) => {
+    const s = _confluenceScoreFor(t);
+    if(s === null) return null;
+    return s >= 0.8 ? 'high' : (s >= 0.6 ? 'mid' : 'low');
+  };
+  const BAND_LABEL = { high: 'confluence 80%+', mid: '60–79%', low: 'under 60%' };
+
+  const subRows = (trades) => {
+    const byBand = { high: [], mid: [], low: [] };
+    trades.forEach(t => {
+      const b = bandOf(t);
+      if(b) byBand[b].push(t);
+    });
+    // Nothing to compare against if only one band has trades.
+    const filled = Object.entries(byBand).filter(([, arr]) => arr.length);
+    if(filled.length < 2) return '';
+    return filled.map(([band, arr]) => {
+      const withExit = arr.filter(t => (t.exit_type||'').trim() !== '');
+      const sl = withExit.filter(t => (t.exit_type||'').toLowerCase() === 'sl hit').length;
+      const pct = withExit.length ? sl / withExit.length * 100 : null;
+      const net = arr.reduce((s,t) => s + netPnl(t), 0);
+      return `
+        <tr class="sr-sub">
+          <td style="font-family:'Public Sans',sans-serif;padding-left:22px;color:var(--muted);">${BAND_LABEL[band]}</td>
+          <td>${withExit.length}</td>
+          <td>${sl}</td>
+          <td>${withExit.length - sl}</td>
+          <td class="${pct !== null && pct >= 60 ? 'neg' : ''}">${pct === null ? '—' : fmtNum(pct,0)+'%'}</td>
+          <td class="${net>=0?'pos':'neg'}">${fmtMoney(net)}</td>
+        </tr>`;
+    }).join('');
+  };
+
+  body.innerHTML = `
+    <div style="overflow-x:auto;"><table class="breakdown">
+      <tr><th>Pattern</th><th>With exit type</th><th>SL hit</th><th>Other exits</th><th>SL rate</th><th>Net</th></tr>
+      ${rows.map(r => `
+        <tr onclick="showCategoryTrades('pattern_type', ${escapeHtml(JSON.stringify(r.pattern))})">
+          <td style="font-family:'Public Sans',sans-serif;">${escapeHtml(r.pattern)}</td>
+          <td>${r.known}${r.known < r.n ? ` <span style="color:var(--muted);">of ${r.n}</span>` : ''}</td>
+          <td>${r.sl}</td>
+          <td>${r.known - r.sl}</td>
+          <td class="${r.slPct >= 60 ? 'neg' : ''}">${r.slPct === null ? '—' : fmtNum(r.slPct,0)+'%'}</td>
+          <td class="${r.net>=0?'pos':'neg'}">${fmtMoney(r.net)}</td>
+        </tr>
+        ${subRows(groups[r.pattern])}`).join('')}
+    </table></div>
+    <div style="margin-top:8px;font-size:10.5px;color:var(--muted);line-height:1.5;">Counted only on trades with an Exit Type recorded. The indented rows split a pattern by how complete its confluence was — they appear once a pattern has trades in more than one band.</div>`;
+}
+
+/* ---------------- Hour of day ----------------
+   Session is eight hours wide, which is too coarse to act on. This is the
+   hour the trade was OPENED — the decision point, not the exit. */
+function renderHourOfDay(){
+  const body = document.getElementById('hourOfDayBody');
+  if(!body) return;
+
+  const hours = {};
+  FILTERED.forEach(t => {
+    if(!t.open_date) return;
+    const hr = t.open_date.getHours();
+    (hours[hr] = hours[hr] || []).push(t);
+  });
+
+  const entries = Object.entries(hours).map(([hr, arr]) => ({
+    hr: Number(hr), n: arr.length,
+    net: arr.reduce((s,t) => s + netPnl(t), 0),
+    winRate: _winRateOf(arr)
+  })).sort((a,b) => a.hr - b.hr);
+
+  if(entries.length < 2){
+    body.innerHTML = `<div class="empty-state">Needs trades opened in at least two different hours.</div>`;
+    return;
+  }
+
+  const worst = [...entries].filter(e => e.n >= 3).sort((a,b) => a.net - b.net)[0];
+  const best  = [...entries].filter(e => e.n >= 3).sort((a,b) => b.net - a.net)[0];
+  const label = hr => `${String(hr).padStart(2,'0')}:00`;
+  const max = Math.max(...entries.map(e => Math.abs(e.net)), 1);
+
+  body.innerHTML = `
+    <div style="overflow-x:auto;"><table class="breakdown">
+      <tr><th>Hour opened</th><th>Trades</th><th>Net</th><th>Win rate</th><th style="width:34%;"></th></tr>
+      ${entries.map(e => `
+        <tr>
+          <td style="font-family:'IBM Plex Mono',monospace;">${label(e.hr)}</td>
+          <td>${e.n}</td>
+          <td class="${e.net>=0?'pos':'neg'}">${fmtMoney(e.net)}</td>
+          <td>${e.winRate === null ? '—' : fmtNum(e.winRate,0)+'%'}</td>
+          <td><span class="hod-bar ${e.net>=0?'pos':'neg'}" style="width:${Math.abs(e.net)/max*100}%;"></span></td>
+        </tr>`).join('')}
+    </table></div>
+    ${(worst && best && worst.hr !== best.hr) ? `<div style="margin-top:10px;font-size:11.5px;color:var(--muted);line-height:1.55;">Best hour ${label(best.hr)} (${fmtMoney(best.net)} over ${best.n} trades) · worst ${label(worst.hr)} (${fmtMoney(worst.net)} over ${worst.n}). Hours with fewer than 3 trades are ignored for this line.</div>` : ''}
+    <div style="margin-top:6px;font-size:10.5px;color:var(--muted);">Your device's local time, taken from Open Date.</div>`;
+}
+
+/* ---------------- How long you hold ----------------
+   Held time against outcome. Cutting winners early and sitting in losers are
+   opposite mistakes with the same cause, and both show up here. */
+function renderHoldTime(){
+  const body = document.getElementById('holdTimeBody');
+  if(!body) return;
+
+  const mins = t => (t.open_date && t.close_date) ? (t.close_date - t.open_date) / 60000 : null;
+  const wins = [], losses = [];
+  FILTERED.forEach(t => {
+    const m = mins(t);
+    if(m === null || m < 0) return;
+    if(_isWin(t)) wins.push(m);
+    else if(_isLoss(t)) losses.push(m);
+  });
+
+  if(wins.length < 3 || losses.length < 3){
+    body.innerHTML = `<div class="empty-state">Needs at least 3 wins and 3 losses with both an open and a close time.</div>`;
+    return;
+  }
+
+  const median = arr => {
+    const s = [...arr].sort((a,b) => a-b);
+    const mid = Math.floor(s.length/2);
+    return s.length % 2 ? s[mid] : (s[mid-1] + s[mid]) / 2;
+  };
+  const fmtMins = m => m < 60 ? `${Math.round(m)} mins`
+    : `${Math.floor(m/60)}h ${Math.round(m%60)}m`;
+
+  const wMed = median(wins), lMed = median(losses);
+  const ratio = wMed > 0 ? lMed / wMed : null;
+
+  // Median, not mean — one trade left open overnight would drag an average
+  // far enough to invert the comparison.
+  let verdict;
+  if(ratio === null) verdict = '';
+  else if(ratio >= 1.5) verdict = `You hold losers about ${fmtNum(ratio,1)}× as long as winners. That is the shape of cutting winners early and hoping on losers.`;
+  else if(ratio <= 0.67) verdict = `You hold winners about ${fmtNum(1/ratio,1)}× as long as losers — losers are being cut quickly, which is what you want.`;
+  else verdict = `Winners and losers are held for a similar length of time — no obvious bias either way.`;
+
+  body.innerHTML = `
+    <table class="breakdown">
+      <tr><th></th><th>Trades</th><th>Median hold</th><th>Shortest</th><th>Longest</th></tr>
+      <tr><td style="font-family:'Public Sans',sans-serif;">Winners</td><td>${wins.length}</td><td>${fmtMins(wMed)}</td><td>${fmtMins(Math.min(...wins))}</td><td>${fmtMins(Math.max(...wins))}</td></tr>
+      <tr><td style="font-family:'Public Sans',sans-serif;">Losers</td><td>${losses.length}</td><td>${fmtMins(lMed)}</td><td>${fmtMins(Math.min(...losses))}</td><td>${fmtMins(Math.max(...losses))}</td></tr>
+    </table>
+    <div style="margin-top:10px;font-size:11.5px;color:var(--muted);line-height:1.55;">${verdict}</div>`;
+}
+
+// Every trade that lists this rule among its breaks.
+function showBrokenRuleTrades(rule){
+  const trades = FILTERED.filter(t =>
+    (t.unfollowed_rules || '').split(/[,;]/).map(s => s.trim().toLowerCase())
+      .includes(String(rule).toLowerCase()));
+  const pnl = trades.reduce((s,t) => s + netPnl(t), 0);
+
+  document.getElementById('modalTitle').textContent = rule;
+  document.getElementById('modalSub').textContent =
+    `${trades.length} trade${trades.length===1?'':'s'} · ${fmtMoney(pnl)}`;
+  document.getElementById('modalBody').innerHTML = renderTradeCards(trades);
+  document.getElementById('tradeModal').classList.add('open');
+}
+
 function showDisciplineTrades(kind){
   const trades = kind === 'followed'
     ? FILTERED.filter(t => t.unfollowed_rules.trim().toLowerCase() === 'rules followed')
@@ -2388,14 +2925,28 @@ function renderBreakdown(){
     const brokenPnl = broken.reduce((s,x)=>s+netPnl(x),0);
     const followedPnl = followed.reduce((s,x)=>s+netPnl(x),0);
 
-    // tally common broken-rule phrases (excludes the "Rules Followed" marker itself)
+    // Each broken rule with the money attached, not just how often it happened.
+    // "Moved Stop Loss 8x" is a fact you can shrug at; "Moved Stop Loss, -$412"
+    // is the one that stops you. A trade breaking three rules counts its full
+    // net against each of them — the loss can't be split between them, and
+    // ranking by "share of the damage" would understate every rule that tends
+    // to travel with others. Sorted by cost, so the expensive habit is top.
     const tally = {};
     broken.forEach(t => {
+      const net = netPnl(t);
       t.unfollowed_rules.split(/[,;]/).map(s=>s.trim()).filter(Boolean)
         .filter(r => r.toLowerCase() !== 'rules followed')
-        .forEach(rule => { tally[rule] = (tally[rule]||0) + 1; });
+        .forEach(rule => {
+          if(!tally[rule]) tally[rule] = { count:0, net:0, wins:0, decided:0 };
+          tally[rule].count++;
+          tally[rule].net += net;
+          if(_isWin(t)){ tally[rule].wins++; tally[rule].decided++; }
+          else if(_isLoss(t)) tally[rule].decided++;
+        });
     });
-    const topRules = Object.entries(tally).sort((a,b)=>b[1]-a[1]).slice(0,6);
+    const topRules = Object.entries(tally)
+      .sort((a,b) => a[1].net - b[1].net)
+      .slice(0, 8);
 
     renderBarChart(
       ['Rules followed','Rules broken'],
@@ -2411,17 +2962,28 @@ function renderBreakdown(){
           <td style="font-family:'Public Sans',sans-serif;">Rules followed</td>
           <td>${followed.length}</td>
           <td class="${followedPnl>=0?'pos':'neg'}">${fmtMoney(followedPnl)}</td>
-          <td>${followed.length ? fmtNum(followed.filter(t=>t.win_loss.toLowerCase()==='win').length/followed.length*100,1)+'%' : '—'}</td>
+          <td>${_winRateOf(followed) !== null ? fmtNum(_winRateOf(followed),1)+'%' : '—'}</td>
         </tr>
         <tr onclick="showDisciplineTrades('broken')">
           <td style="font-family:'Public Sans',sans-serif;">Rules broken</td>
           <td>${broken.length}</td>
           <td class="${brokenPnl>=0?'pos':'neg'}">${fmtMoney(brokenPnl)}</td>
-          <td>${broken.length ? fmtNum(broken.filter(t=>t.win_loss.toLowerCase()==='win').length/broken.length*100,1)+'%' : '—'}</td>
+          <td>${_winRateOf(broken) !== null ? fmtNum(_winRateOf(broken),1)+'%' : '—'}</td>
         </tr>
       </table>
-      ${topRules.length ? `<div style="margin-top:16px;font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">Most common breaks</div>
-      <table class="breakdown">${topRules.map(([rule,count])=>`<tr style="cursor:default;"><td style="font-family:'Public Sans',sans-serif;">${rule}</td><td>${count}×</td></tr>`).join('')}</table>` : ''}
+      ${topRules.length ? `<div style="margin-top:16px;font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">What each break costs you</div>
+      <table class="breakdown">
+        <tr><th>Rule broken</th><th>Times</th><th>Net</th><th>Avg</th><th>Win rate</th></tr>
+        ${topRules.map(([rule, s]) => `
+          <tr onclick="showBrokenRuleTrades(${escapeHtml(JSON.stringify(rule))})">
+            <td style="font-family:'Public Sans',sans-serif;">${escapeHtml(rule)}</td>
+            <td>${s.count}×</td>
+            <td class="${s.net>=0?'pos':'neg'}">${fmtMoney(s.net)}</td>
+            <td class="${s.net>=0?'pos':'neg'}">${fmtMoney(s.net / s.count)}</td>
+            <td>${s.decided ? fmtNum(s.wins / s.decided * 100, 0) + '%' : '—'}</td>
+          </tr>`).join('')}
+      </table>
+      <div style="margin-top:8px;font-size:10.5px;color:var(--muted);line-height:1.5;">A trade that broke several rules counts its full result against each one, so these don't add up to the total above.</div>` : ''}
     `;
     return;
   }
@@ -2435,8 +2997,7 @@ function renderBreakdown(){
 
   const rows = Object.entries(groups).map(([key, trades]) => {
     const pnl = trades.reduce((s,x)=>s+netPnl(x),0);
-    const wins = trades.filter(t=>t.win_loss.toLowerCase()==='win').length;
-    const winRate = trades.length ? (wins/trades.length*100) : 0;
+    const winRate = _winRateOf(trades) ?? 0;
     const rrVals = trades.map(t=>t.rr).filter(v=>v!==null && !isNaN(v));
     const avgRR = rrVals.length ? rrVals.reduce((a,b)=>a+b,0)/rrVals.length : null;
     return {key, count: trades.length, pnl, winRate, avgRR};
@@ -2460,7 +3021,7 @@ function renderBreakdown(){
     <table class="breakdown">
       <tr><th>${BREAKDOWN_FIELDS.find(f=>f.key===activeTab)?.label||''}</th><th>Trades</th><th>Win rate</th><th>Avg RR</th><th>Total PnL</th></tr>
       ${rows.map(r => `
-        <tr onclick="showCategoryTrades('${activeTab}', ${JSON.stringify(r.key)})">
+        <tr onclick="showCategoryTrades('${activeTab}', ${escapeHtml(JSON.stringify(r.key))})">
           <td style="font-family:'Public Sans',sans-serif;">${r.key}</td>
           <td>${r.count}</td>
           <td>${fmtNum(r.winRate,1)}%</td>
@@ -2486,11 +3047,10 @@ function _confluenceScoreFor(t){
 }
 
 function _cfeStats(trades){
-  const wins = trades.filter(t => t.win_loss.toLowerCase() === 'win').length;
   const pnl = trades.reduce((s,t) => s + netPnl(t), 0);
   return {
     count: trades.length,
-    winRate: trades.length ? wins / trades.length * 100 : null,
+    winRate: _winRateOf(trades),
     avgPnl: trades.length ? pnl / trades.length : null
   };
 }
@@ -8154,6 +8714,15 @@ function populateJournalFilters(){
 // search box can express it. This does.
 let JOURNAL_BLANK_FILTER = null;   // { field, label }
 
+// Toggled by clicking the "N incomplete" count — the fastest route from
+// noticing there are gaps to actually filling them.
+let JOURNAL_INCOMPLETE_ONLY = false;
+
+function toggleJournalIncompleteOnly(){
+  JOURNAL_INCOMPLETE_ONLY = !JOURNAL_INCOMPLETE_ONLY;
+  renderJournalTable();
+}
+
 function setJournalBlankFilter(field, label){
   JOURNAL_BLANK_FILTER = field ? { field, label } : null;
   const chip = document.getElementById('journalBlankChip');
@@ -8170,6 +8739,7 @@ function clearJournalFilters(){
     if(sel) sel.value = 'all';
   });
   setJournalBlankFilter(null);
+  JOURNAL_INCOMPLETE_ONLY = false;
   renderJournalTable();
 }
 
@@ -8307,6 +8877,8 @@ function getFilteredJournalRows(){
     rows = rows.filter(r => r[k] === null || r[k] === undefined || String(r[k]).trim() === '');
   }
 
+  if(JOURNAL_INCOMPLETE_ONLY) rows = rows.filter(r => _journalMissingFields(r).length);
+
   // sort by Close Date (most recent first) — matches the same field the
   // Calendar, Reports, and Discipline Radar all already use as the
   // "when did this happen" anchor; rows without a close_date fall to the end.
@@ -8365,7 +8937,9 @@ function renderJournalTable(){
   const incomplete = rows.filter(r => _journalMissingFields(r).length).length;
   document.getElementById('journalCountLabel').innerHTML =
     `${rows.length} trade${rows.length===1?'':'s'}` +
-    (incomplete ? ` · <span class="journal-warn-count">${incomplete} incomplete</span>` : '');
+    (JOURNAL_INCOMPLETE_ONLY
+      ? ` · <span class="journal-warn-count" onclick="toggleJournalIncompleteOnly()" title="Show all trades again">showing incomplete only ✕</span>`
+      : (incomplete ? ` · <span class="journal-warn-count" onclick="toggleJournalIncompleteOnly()" title="Show only these">${incomplete} incomplete</span>` : ''));
 
   if(rows.length === 0){
     table.innerHTML = `<tr><td colspan="99" style="padding:24px;color:var(--muted);">No trades found.</td></tr>`;
@@ -9899,6 +10473,7 @@ async function saveDrawer(){
 
     ALL_TRADES = RAW_TRADES.map(normalizeTrade);
     populateAccountFilter();
+  populateDashPeriodFilters();
     populateJournalFilters();
     applyFilters();
     renderJournalTable();
@@ -9948,6 +10523,7 @@ async function deleteDrawer(){
     RAW_TRADES = RAW_TRADES.filter(r => r.position_id !== drawerPositionId);
     ALL_TRADES = RAW_TRADES.map(normalizeTrade);
     populateAccountFilter();
+  populateDashPeriodFilters();
     populateJournalFilters();
     applyFilters();
     renderJournalTable();
@@ -10001,8 +10577,8 @@ async function generateInsights(){
 
 function buildSummaryForAI(){
   const t = FILTERED;
-  const wins = t.filter(x=>x.win_loss.toLowerCase()==='win');
-  const losses = t.filter(x=>x.win_loss.toLowerCase()==='loss');
+  const wins = t.filter(_isWin);
+  const losses = t.filter(_isLoss);
   const totalPnl = t.reduce((s,x)=>s+netPnl(x),0);
 
   function groupSummary(field){
@@ -14969,6 +15545,7 @@ async function _saveBulkJournal(shared){
 
   ALL_TRADES = RAW_TRADES.map(normalizeTrade);
   populateAccountFilter();
+  populateDashPeriodFilters();
   populateJournalFilters();
   applyFilters();
   renderJournalTable();

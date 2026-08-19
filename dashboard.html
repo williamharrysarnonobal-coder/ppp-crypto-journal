@@ -17,7 +17,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<link rel="stylesheet" href="css/style.css?v=208">
+<link rel="stylesheet" href="css/style.css?v=213">
 </head>
 <body>
 
@@ -91,12 +91,8 @@
       <div class="sub" id="tradeCountLabel">—</div>
     </div>
     <div class="filters">
-      <select id="rangeFilter" onchange="applyFilters()">
-        <option value="all">All time</option>
-        <option value="30">Last 30 days</option>
-        <option value="90">Last 90 days</option>
-        <option value="month">This month</option>
-      </select>
+      <select id="yearFilter" onchange="onDashYearChange()"></select>
+      <select id="monthFilter" onchange="applyFilters()"></select>
       <select id="accountFilter" onchange="applyFilters()">
         <option value="all">All accounts</option>
       </select>
@@ -107,7 +103,7 @@
 
   <div class="row chart-row-eq" style="grid-template-columns:1.3fr 1fr;align-items:stretch;">
     <div class="panel panel-fixed-h">
-      <h2>Calendar
+      <h2>Calendar<button type="button" class="panel-info-btn" title="How this is worked out" onclick="event.stopPropagation(); openPanelInfo('calendar')"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button>
         <span class="cal-head-actions">
           <button class="poscalc-accent-btn" id="monthReviewBtn" onclick="openMonthReview()">Review trades</button>
           <span class="nav">
@@ -122,31 +118,31 @@
     </div>
 
     <div class="panel panel-fixed-h">
-      <h2>Equity curve</h2>
+      <h2>Equity curve<button type="button" class="panel-info-btn" title="How this is worked out" onclick="event.stopPropagation(); openPanelInfo('equity')"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button></h2>
       <div class="chart-fill"><canvas id="equityChart"></canvas></div>
     </div>
   </div>
 
   <div class="row-3">
     <div class="panel panel-fixed-h-sm">
-      <h2>Win / Loss split</h2>
+      <h2>Win / Loss split<button type="button" class="panel-info-btn" title="How this is worked out" onclick="event.stopPropagation(); openPanelInfo('winloss')"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button></h2>
       <div class="chart-fill"><canvas id="winLossChart"></canvas></div>
       <div id="winLossLegend" style="font-size:11px;color:var(--muted);flex-shrink:0;"></div>
     </div>
 
     <div class="panel panel-fixed-h-sm">
-      <h2>Best days to trade</h2>
+      <h2>Best days to trade<button type="button" class="panel-info-btn" title="How this is worked out" onclick="event.stopPropagation(); openPanelInfo('bestdays')"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button></h2>
       <div class="chart-fill"><canvas id="dayOfWeekChart"></canvas></div>
     </div>
 
     <div class="panel panel-fixed-h-sm">
-      <h2>Session</h2>
+      <h2>Session<button type="button" class="panel-info-btn" title="How this is worked out" onclick="event.stopPropagation(); openPanelInfo('session')"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button></h2>
       <div class="chart-fill"><canvas id="sessionFrequencyChart"></canvas></div>
     </div>
   </div>
 
   <div class="panel discipline-panel" style="margin-bottom:20px;">
-    <h2>Discipline radar</h2>
+    <h2>Discipline radar<button type="button" class="panel-info-btn" title="How this is worked out" onclick="event.stopPropagation(); openPanelInfo('radar')"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button></h2>
     <div class="chart-fill" style="height:300px;"><canvas id="disciplineRadar"></canvas></div>
     <div class="discipline-score-row">
       <div>
@@ -159,7 +155,7 @@
   </div>
 
   <div class="panel" style="margin-bottom:20px;">
-    <h2>Breakdown — where you're actually effective</h2>
+    <h2>Breakdown — where you're actually effective<button type="button" class="panel-info-btn" title="How this is worked out" onclick="event.stopPropagation(); openPanelInfo('breakdown')"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button></h2>
     <div class="tabs" id="breakdownTabs"></div>
     <div class="row-2">
       <div><canvas id="breakdownChart" height="260"></canvas></div>
@@ -168,19 +164,49 @@
   </div>
 
   <div class="panel" style="margin-bottom:20px;">
-    <h2>Confluence Edge — does your checklist pay?</h2>
+    <h2>Confluence Edge — does your checklist pay?<button type="button" class="panel-info-btn" title="How this is worked out" onclick="event.stopPropagation(); openPanelInfo('cfledge')"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button></h2>
     <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:14px;">Win rate and average net P&amp;L grouped by how complete your confluence was at entry.</div>
     <div id="confluenceEdgeBody"></div>
   </div>
 
   <div class="panel" style="margin-bottom:20px;">
-    <h2>Breakeven Protection</h2>
+    <h2>Breakeven Protection<button type="button" class="panel-info-btn" title="How this is worked out" onclick="event.stopPropagation(); openPanelInfo('beprotect')"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button></h2>
     <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:14px;">How trades resolved after your stop moved to breakeven, whether you're moving it too early, and how the risk you actually carried compares with the risk you planned in the calculator.</div>
     <div id="beProtectionBody"></div>
   </div>
 
+  <div class="panel" style="margin-bottom:20px;">
+    <h2>Account comparison<button type="button" class="panel-info-btn" title="How this is worked out" onclick="event.stopPropagation(); openPanelInfo('acccompare')"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button></h2>
+    <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:14px;">The same setup taken on different accounts — where you actually run it better.</div>
+    <div id="accountCompareBody"></div>
+  </div>
+
+  <div class="panel" style="margin-bottom:20px;">
+    <h2>Trades after a loss<button type="button" class="panel-info-btn" title="How this is worked out" onclick="event.stopPropagation(); openPanelInfo('afterloss')"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button></h2>
+    <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:14px;">What the next trade of the day looks like after a red one, against your first trade of the day.</div>
+    <div id="afterLossBody"></div>
+  </div>
+
+  <div class="panel" style="margin-bottom:20px;">
+    <h2>Where the stop gets hit<button type="button" class="panel-info-btn" title="How this is worked out" onclick="event.stopPropagation(); openPanelInfo('stopreality')"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button></h2>
+    <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:14px;">How often each pattern ends on the stop rather than the target — measured from Exit Type, so it's what happened, not what was planned.</div>
+    <div id="stopRealityBody"></div>
+  </div>
+
+  <div class="panel" style="margin-bottom:20px;">
+    <h2>Hour of day<button type="button" class="panel-info-btn" title="How this is worked out" onclick="event.stopPropagation(); openPanelInfo('hourofday')"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button></h2>
+    <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:14px;">P&amp;L by the hour you opened the trade — narrower than Session, which covers eight hours at a time.</div>
+    <div id="hourOfDayBody"></div>
+  </div>
+
+  <div class="panel" style="margin-bottom:20px;">
+    <h2>How long you hold<button type="button" class="panel-info-btn" title="How this is worked out" onclick="event.stopPropagation(); openPanelInfo('holdtime')"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button></h2>
+    <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:14px;">How long winners are held against losers — cutting winners early and sitting in losers are opposite mistakes with the same cause.</div>
+    <div id="holdTimeBody"></div>
+  </div>
+
   <div class="ai-panel">
-    <h2>✦ AI Insights</h2>
+    <h2>✦ AI Insights<button type="button" class="panel-info-btn" title="How this is worked out" onclick="event.stopPropagation(); openPanelInfo('ai')"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button></h2>
     <div class="sub">Generates a short read on your recent performance and one or two concrete adjustments to try — based only on the trades currently in view.</div>
     <button class="ai-btn" id="aiBtn" onclick="generateInsights()">Generate insights</button>
     <div class="ai-output" id="aiOutput"></div>
@@ -2060,6 +2086,6 @@
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=2"></script>
-<script src="js/dashboard.js?v=349"></script>
+<script src="js/dashboard.js?v=359"></script>
 </body>
 </html>
