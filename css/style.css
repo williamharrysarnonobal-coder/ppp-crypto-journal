@@ -860,6 +860,10 @@
   }
   /* Accounts the bulk note is about to land on — listed rather than counted,
      since "3 setups" doesn't tell you WHICH three. */
+  /* Incomplete journal row. Amber, not red: the trade is saved and real, it
+     just has a gap the breakdowns will read as "Unspecified". */
+  .journal-warn{color:var(--warn);line-height:0;text-align:center;cursor:help;}
+  .journal-warn-count{color:var(--warn);font-weight:600;}
   .bulk-note-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:7px;}
   .bulk-note-chip{
     font-size:11.5px;font-weight:600;color:var(--ink);background:var(--surface);

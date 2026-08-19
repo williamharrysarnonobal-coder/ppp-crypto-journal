@@ -1024,8 +1024,24 @@ function computeTradeSummary(row){
     ``,
     `<b>Notes:</b>`,
     `<hr>`,
-    val(row.notes)
+    _allNotesText(row)
   ].join('<br>');
+}
+
+// The plain `notes` column and the timestamped `notes_log` are two different
+// places a note can live: Easy Add and the setup write the first, the "Add
+// Note" button writes the second. Anything showing "the notes" has to read
+// both — the summary read only `notes`, so a note added after the trade was
+// saved never appeared in it or in the copy button's text.
+function _allNotesText(row){
+  const parts = [];
+  if(row.notes && String(row.notes).trim()) parts.push(String(row.notes).trim());
+  (Array.isArray(row.notes_log) ? row.notes_log : []).forEach(e => {
+    if(!e || !e.text) return;
+    const when = new Date(e.ts).toLocaleString(undefined, { dateStyle:'medium', timeStyle:'short' });
+    parts.push(`${when}\n${e.text}`);
+  });
+  return parts.length ? parts.join('\n\n').replace(/\n/g, '<br>') : '—';
 }
 
 // Plain-text version of computeTradeSummary() for the copy button — strips
@@ -1736,6 +1752,9 @@ function closeModal(){
   const btn = document.getElementById('weekReviewBtn');
   if(btn) btn.style.display = 'none';
   WEEK_REVIEW_CONTEXT = null;
+  // Same reasoning for "View Trades": only the category drill-downs know what
+  // to filter the journal by, so it retires here instead of in every opener.
+  _setJournalDrill(null, null);
 }
 
 function renderTradeCards(trades){
@@ -2270,6 +2289,52 @@ function _weekReviewHtml(trades, label, periodName){
     mistakesHtml + ruleHtml + more;
 }
 
+// Which journal control can express a given breakdown field. Symbol and
+// Pattern have no dedicated select, so they fall back to the search box —
+// which already matches on symbol, setup, pattern, session and account.
+const JOURNAL_DRILL_SELECT = {
+  session: 'filterSession',
+  trade_setup: 'filterSetup',
+  day_of_week: 'filterDay',
+  win_loss: 'filterWinLoss',
+  account: 'filterAccount'
+};
+
+// What the open modal is showing, so "View Trades" knows what to filter by.
+let _journalDrill = null;
+
+function _setJournalDrill(field, key){
+  _journalDrill = (field && key) ? { field, key } : null;
+  const btn = document.getElementById('modalViewTradesBtn');
+  if(btn) btn.style.display = _journalDrill ? 'block' : 'none';
+}
+
+function journalDrillFromModal(){
+  if(!_journalDrill) return;
+  const { field, key } = _journalDrill;
+  closeModal();
+  switchView('journal');
+  clearJournalFilters();
+
+  // "Unspecified" is the breakdown's label for rows where this column is
+  // empty. Typing it into the search box matched nothing, which is why the
+  // journal came back with 0 trades.
+  if(String(key).toLowerCase() === 'unspecified'){
+    const label = (BREAKDOWN_FIELDS.find(f => f.key === field) || {}).label || field;
+    setJournalBlankFilter(field, label);
+    renderJournalTable();
+    return;
+  }
+
+  const sel = document.getElementById(JOURNAL_DRILL_SELECT[field] || '');
+  if(sel && [...sel.options].some(o => o.value === key)){
+    sel.value = key;
+  }else{
+    document.getElementById('journalSearch').value = key;
+  }
+  renderJournalTable();
+}
+
 function showCategoryTrades(field, key){
   const trades = FILTERED.filter(t => (t[field] || 'Unspecified').toString().toLowerCase() === key.toLowerCase());
   const pnl = trades.reduce((s,t)=>s+netPnl(t),0);
@@ -2277,6 +2342,7 @@ function showCategoryTrades(field, key){
   document.getElementById('modalTitle').textContent = key;
   document.getElementById('modalSub').textContent = `${trades.length} trade${trades.length===1?'':'s'} · ${fmtMoney(pnl)}`;
   document.getElementById('modalBody').innerHTML = renderTradeCards(trades);
+  _setJournalDrill(field, key);
   document.getElementById('tradeModal').classList.add('open');
 }
 
@@ -8083,12 +8149,27 @@ function populateJournalFilters(){
   });
 }
 
+// "Unspecified" in the breakdown is a label for an EMPTY field, not a value
+// anything is stored as — so neither a select (built from real values) nor the
+// search box can express it. This does.
+let JOURNAL_BLANK_FILTER = null;   // { field, label }
+
+function setJournalBlankFilter(field, label){
+  JOURNAL_BLANK_FILTER = field ? { field, label } : null;
+  const chip = document.getElementById('journalBlankChip');
+  if(chip){
+    chip.style.display = JOURNAL_BLANK_FILTER ? '' : 'none';
+    chip.textContent = JOURNAL_BLANK_FILTER ? `${label}: blank ✕` : '';
+  }
+}
+
 function clearJournalFilters(){
   document.getElementById('journalSearch').value = '';
   JOURNAL_FILTER_FIELDS.forEach(f => {
     const sel = document.getElementById(f.selectId);
     if(sel) sel.value = 'all';
   });
+  setJournalBlankFilter(null);
   renderJournalTable();
 }
 
@@ -8108,6 +8189,12 @@ function _journalCellValue(row, key){
   if(key === 'trade_summary'){
     const plain = computeTradeSummary(row).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
     return plain.length > 120 ? plain.slice(0, 120) + '…' : plain;
+  }
+  // Same reason as the summary: a note added afterwards lives in notes_log,
+  // so a column reading only `notes` shows "—" on a trade that has notes.
+  if(key === 'notes'){
+    const all = _allNotesText(row).replace(/<br>/g, ' ').replace(/\s+/g, ' ').trim();
+    return all === '—' ? '—' : (all.length > 120 ? all.slice(0, 120) + '…' : all);
   }
   if(key === 'session') return row.session || computeSession(row) || '—';
   if(key === 'day_of_week') return row.day_of_week || computeDayOfWeek(row) || '—';
@@ -8215,6 +8302,11 @@ function getFilteredJournalRows(){
     }
   });
 
+  if(JOURNAL_BLANK_FILTER){
+    const k = JOURNAL_BLANK_FILTER.field;
+    rows = rows.filter(r => r[k] === null || r[k] === undefined || String(r[k]).trim() === '');
+  }
+
   // sort by Close Date (most recent first) — matches the same field the
   // Calendar, Reports, and Discipline Radar all already use as the
   // "when did this happen" anchor; rows without a close_date fall to the end.
@@ -8228,22 +8320,67 @@ function getFilteredJournalRows(){
   });
 }
 
+// The fields the dashboard and the breakdowns are built on. Deliberately
+// short: notes, links, prices, fees and the derived numbers are all
+// legitimately blank on a normal trade, and flagging those would make the
+// warning constant and therefore ignorable.
+const JOURNAL_REQUIRED_KEYS = [
+  'symbol','open_date','close_date','win_loss','profit_loss','account',
+  'session','trade_setup','pattern_type','execution_tf','aof_phase',
+  'rules_followed','exit_type'
+];
+
+function warnIconSVG(){
+  return `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`;
+}
+
+function _journalMissingFields(r){
+  // Only fields kept visible in the form config count — hiding a field is a
+  // statement that it isn't part of how this journal is kept, so nagging
+  // about it would be arguing with a setting the user already made.
+  const visible = new Set(DRAWER_FIELDS.map(f => f.key));
+  const labelOf = k => (ALL_DRAWER_FIELDS.find(f => f.key === k) || {}).label || k;
+  const isBlank = k => {
+    const v = r[k];
+    return v === null || v === undefined || String(v).trim() === '';
+  };
+
+  const missing = JOURNAL_REQUIRED_KEYS
+    .filter(k => visible.has(k) && isBlank(k))
+    .map(labelOf);
+
+  // Only worth asking for once the rules were actually broken.
+  if(String(r.rules_followed || '').trim().toLowerCase() === 'no' && isBlank('unfollowed_rules')){
+    missing.push(labelOf('unfollowed_rules'));
+  }
+  return missing;
+}
+
 function renderJournalTable(){
   const table = document.getElementById('journalTable');
   if(!table) return;
 
   const rows = getFilteredJournalRows();
 
-  document.getElementById('journalCountLabel').textContent = `${rows.length} trade${rows.length===1?'':'s'}`;
+  const incomplete = rows.filter(r => _journalMissingFields(r).length).length;
+  document.getElementById('journalCountLabel').innerHTML =
+    `${rows.length} trade${rows.length===1?'':'s'}` +
+    (incomplete ? ` · <span class="journal-warn-count">${incomplete} incomplete</span>` : '');
 
   if(rows.length === 0){
-    table.innerHTML = `<tr><td style="padding:24px;color:var(--muted);">No trades found.</td></tr>`;
+    table.innerHTML = `<tr><td colspan="99" style="padding:24px;color:var(--muted);">No trades found.</td></tr>`;
     return;
   }
 
-  const thead = `<thead><tr>${JOURNAL_COLUMNS.map(c => `<th>${c.label}</th>`).join('')}</tr></thead>`;
+  const thead = `<thead><tr><th style="width:26px;"></th>${JOURNAL_COLUMNS.map(c => `<th>${c.label}</th>`).join('')}</tr></thead>`;
   const tbody = `<tbody>${rows.map(r => `
     <tr onclick='openTradeViewModal(${JSON.stringify(r.position_id)})' style="cursor:pointer;">
+      ${(() => {
+        const missing = _journalMissingFields(r);
+        return missing.length
+          ? `<td class="journal-warn" title="Missing: ${escapeHtml(missing.join(', '))}">${warnIconSVG()}</td>`
+          : '<td></td>';
+      })()}
       ${JOURNAL_COLUMNS.map(c => {
         if(c.key === 'link'){
           return r.link
@@ -9239,14 +9376,21 @@ function _renderTradeViewFieldRow(f, row){
     // notes_log, a separate timestamped-entries array — merge it in here
     // so a note you just added actually shows up in this view instead of
     // only being visible inside that popup.
-    const plainHtml = row.notes ? `<div style="white-space:pre-wrap;margin-bottom:10px;">${escapeHtml(row.notes)}</div>` : '';
+    // Built with NO whitespace between the tags. The container this lands in,
+    // .field-static, is itself white-space:pre-wrap — so every newline and
+    // indent written between these divs renders as real vertical space. That,
+    // not trailing newlines in the data, was the gap between the last note and
+    // the one added after it.
+    const plainText = String(row.notes || '').trim();
+    const plainHtml = plainText ? `<div style="margin-bottom:10px;">${escapeHtml(plainText)}</div>` : '';
     const log = Array.isArray(row.notes_log) ? row.notes_log : [];
-    const logHtml = log.map(entry => `
-      <div style="margin-bottom:10px;">
-        <div style="font-size:11px;color:var(--muted);font-family:'IBM Plex Mono',monospace;">${new Date(entry.ts).toLocaleString(undefined,{dateStyle:'medium',timeStyle:'short'})}</div>
-        <div style="white-space:pre-wrap;">${escapeHtml(entry.text)}</div>
-      </div>
-    `).join('');
+    const logHtml = log.map(entry => {
+      const when = new Date(entry.ts).toLocaleString(undefined, { dateStyle:'medium', timeStyle:'short' });
+      return `<div style="margin-bottom:10px;">`
+        + `<div style="font-size:11px;color:var(--muted);font-family:'IBM Plex Mono',monospace;">${when}</div>`
+        + `<div>${escapeHtml(String(entry.text || '').trim())}</div>`
+        + `</div>`;
+    }).join('');
     const combined = plainHtml + logHtml;
     return `<div class="field-row${spanCls}"><label>${f.label}</label><div class="field-static">${combined || '—'}</div></div>`;
   }
@@ -14162,7 +14306,7 @@ const CONFLUENCE_SETUPS = {
       {tag:'BB50 · 2H', text:'2H BB50 far from price, or before your TP area?', almost:true},
       {tag:'Sequence', text:'Which 15m HL is this?', select:['1st','2nd','3rd','4th','5th']},
       {tag:'Execution · 5min/3min BB50', text:'Did BB50 and the .382 Fib or MOBV align at your entry level?', exec:true},
-      {tag:'Execution', text:'Did MACD cross the zero line upward when your order triggered?', exec:true},
+      {tag:'Execution', text:'Did MACD cross the zero line upward when your order triggered?', exec:true, retest:true},
       {tag:'Divergence', text:'Left Hand Present?', invert:true},
     ],
     patterns: ['Double Bottom', 'Triple Bottom', 'Inverse H&S']
@@ -14180,7 +14324,7 @@ const CONFLUENCE_SETUPS = {
       {tag:'BB50 · 2H', text:'2H BB50 far from price, or before your TP area?', almost:true},
       {tag:'Sequence', text:'Which 15m LH is this?', select:['1st','2nd','3rd','4th','5th']},
       {tag:'Execution · 5min/3min BB50', text:'Did BB50 and the .382 Fib or MOBV align at your entry level?', exec:true},
-      {tag:'Execution', text:'Did MACD cross the zero line downward when your order triggered?', exec:true},
+      {tag:'Execution', text:'Did MACD cross the zero line downward when your order triggered?', exec:true, retest:true},
       {tag:'Divergence', text:'Right Hand Present?', invert:true},
     ],
     patterns: ['Double Top', 'Triple Top', 'H&S']
@@ -14209,7 +14353,7 @@ const CONFLUENCE_SETUPS = {
       {tag:'Sequence', text:'Which 1h HL is this?', select:['1st','2nd','3rd','4th','5th']},
       {tag:'Divergence', text:'Left Hand Present?', invert:true},
       {tag:'Execution · 5min/3min BB50', text:'Did BB50 and the .382 Fib or MOBV align at your entry level?', exec:true},
-      {tag:'Execution', text:'Did MACD cross the zero line upward when your order triggered?', exec:true},
+      {tag:'Execution', text:'Did MACD cross the zero line upward when your order triggered?', exec:true, retest:true},
     ],
     patterns: ['Double Bottom', 'Triple Bottom', 'Inverse H&S']
   },
@@ -14223,7 +14367,7 @@ const CONFLUENCE_SETUPS = {
       {tag:'Sequence', text:'Which 1h LH is this?', select:['1st','2nd','3rd','4th','5th']},
       {tag:'Divergence', text:'Right Hand Present?', invert:true},
       {tag:'Execution · 5min/3min BB50', text:'Did BB50 and the .382 Fib or MOBV align at your entry level?', exec:true},
-      {tag:'Execution', text:'Did MACD cross the zero line downward when your order triggered?', exec:true},
+      {tag:'Execution', text:'Did MACD cross the zero line downward when your order triggered?', exec:true, retest:true},
     ],
     patterns: ['Double Top', 'Triple Top', 'H&S']
   },
@@ -15256,7 +15400,7 @@ function renderSetupNotesLog(log){
   el.innerHTML = log.map(entry => `
     <div style="margin-bottom:10px;">
       <div style="font-size:11px;color:var(--muted);font-family:'IBM Plex Mono',monospace;">${new Date(entry.ts).toLocaleString(undefined,{dateStyle:'medium',timeStyle:'short'})}</div>
-      <div style="font-size:13px;color:var(--ink);white-space:pre-wrap;">${escapeHtml(entry.text)}</div>
+      <div style="font-size:13px;color:var(--ink);white-space:pre-wrap;">${escapeHtml(String(entry.text || '').trim())}</div>
     </div>
   `).join('');
 }
@@ -15365,7 +15509,7 @@ function renderTradeNoteLog(log){
   el.innerHTML = log.map(entry => `
     <div style="margin-bottom:10px;">
       <div style="font-size:11px;color:var(--muted);font-family:'IBM Plex Mono',monospace;">${new Date(entry.ts).toLocaleString(undefined,{dateStyle:'medium',timeStyle:'short'})}</div>
-      <div style="font-size:13px;color:var(--ink);white-space:pre-wrap;">${escapeHtml(entry.text)}</div>
+      <div style="font-size:13px;color:var(--ink);white-space:pre-wrap;">${escapeHtml(String(entry.text || '').trim())}</div>
     </div>
   `).join('');
 }
