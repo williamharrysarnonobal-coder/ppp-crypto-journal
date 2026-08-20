@@ -14422,7 +14422,15 @@ function computeAccountStats(acc){
   const sortedTrades = [...phaseTrades].sort((a,b) => a.close_date - b.close_date);
   let cum = 0;
   const series = sortedTrades.map(t => { cum += netPnl(t); return { date: t.close_date, cum }; });
-  const totalEarn = acc.phase_start_balance != null ? (currentBalance - Number(acc.phase_start_balance)) : cum;
+  // Always measured from the balance, never from the sum of journalled trades.
+  // The fallback used to be `cum`, which meant that on an account with no
+  // Phase Start Balance set, Total Earn came from the journal while the Trade
+  // Balance right above it came from the manually-kept Current Balance — two
+  // numbers on one card, sourced differently, quietly disagreeing by whatever
+  // hadn't been journalled. A phase always begins at the account's own size,
+  // so that is the baseline when nothing else is recorded.
+  const earnBaseline = acc.phase_start_balance != null ? Number(acc.phase_start_balance) : accountSize;
+  const totalEarn = currentBalance - earnBaseline;
   const targetEarn = accountSize * (Number(acc.profit_target_pct) || 0) / 100;
 
   // Trading day resets at midnight UTC (crypto market, 24/7) — ms left
@@ -14504,6 +14512,23 @@ function openAccountDetail(id){
 
   document.getElementById('accDetailBalance').textContent = `$${s.currentBalance.toLocaleString(undefined,{maximumFractionDigits:2})}`;
   document.getElementById('accDetailBalanceFill').style.width = `${(s.balanceRangeFraction*100).toFixed(1)}%`;
+
+  // A tick where the phase began. This bar runs from the drawdown floor to the
+  // profit goal, so an untouched account already shows two-thirds full — it
+  // reads as "80% of the way there" when nothing has been earned at all. The
+  // mark is the zero line: fill to its right is profit, to its left is loss.
+  const startMark = document.getElementById('accDetailBalanceStart');
+  if(startMark){
+    const span = s.profitGoal - s.drawdownFloor;
+    const startBal = a.phase_start_balance != null ? Number(a.phase_start_balance) : s.accountSize;
+    const pos = span > 0 ? (startBal - s.drawdownFloor) / span * 100 : null;
+    if(pos !== null && pos > 0 && pos < 100){
+      startMark.style.display = '';
+      startMark.style.left = `${pos.toFixed(1)}%`;
+    }else{
+      startMark.style.display = 'none';
+    }
+  }
   document.getElementById('accDetailBalanceRange').innerHTML = s.profitGoal
     ? `<span>🔴 stop ${s.drawdownFloor.toLocaleString(undefined,{maximumFractionDigits:0})}</span><span>🎯 goal ${s.profitGoal.toLocaleString(undefined,{maximumFractionDigits:0})}</span>`
     : '';

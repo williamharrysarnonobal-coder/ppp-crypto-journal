@@ -1640,6 +1640,15 @@
   /* The typed amount is more than the account can margin — the row below is
      computed from the capped figure, and this says so rather than letting
      the two silently disagree. */
+  /* The zero line on the balance bar — where the phase started. Without it a
+     bar spanning floor-to-goal looks two-thirds complete before you have made
+     a cent. */
+  .acc-balance-bar{position:relative;}
+  .acc-balance-start{
+    position:absolute;top:-3px;bottom:-3px;width:2px;
+    background:var(--ink);opacity:.55;border-radius:1px;pointer-events:none;
+  }
+
   .ps-risk-capped{border-color:var(--warn);}
   /* Over the per-trade ceiling. Red, not amber: the margin cap is the account
      protecting itself, this is you choosing to exceed your own rule. */

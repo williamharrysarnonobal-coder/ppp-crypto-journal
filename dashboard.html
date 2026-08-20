@@ -17,7 +17,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<link rel="stylesheet" href="css/style.css?v=225">
+<link rel="stylesheet" href="css/style.css?v=226">
 </head>
 <body>
 
@@ -1849,7 +1849,7 @@
       <div class="acc-stat-box">
         <div class="acc-stat-label">Trade Balance</div>
         <div class="acc-stat-value" id="accDetailBalance">—</div>
-        <div class="account-progress-bar" style="margin-top:8px;"><div class="account-progress-fill" id="accDetailBalanceFill" style="width:0%;"></div></div>
+        <div class="account-progress-bar acc-balance-bar" style="margin-top:8px;"><div class="account-progress-fill" id="accDetailBalanceFill" style="width:0%;"></div><span class="acc-balance-start" id="accDetailBalanceStart" title="Where this phase started" style="display:none;"></span></div>
         <div class="acc-stat-range" id="accDetailBalanceRange"></div>
       </div>
       <div class="acc-stat-box">
@@ -2131,6 +2131,6 @@
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=2"></script>
-<script src="js/dashboard.js?v=372"></script>
+<script src="js/dashboard.js?v=374"></script>
 </body>
 </html>
