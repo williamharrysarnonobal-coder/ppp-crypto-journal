@@ -3952,6 +3952,27 @@ function _psCappedNote(c){
   return `<span class="ps-risk-note">Adjusted down from $${c.requested.toLocaleString(undefined,{maximumFractionDigits:2})} — more than this account can margin</span>`;
 }
 
+// The account's own per-trade risk ceiling. Uses the account's Risk Per Trade %
+// when it's set, and 0.5% otherwise — the figure the Upscale accounts run at.
+function _psRiskCeiling(acc){
+  const size = Number(acc.account_size ?? acc.current_balance ?? 0);
+  if(!(size > 0)) return null;
+  const pct = acc.risk_per_trade_pct != null ? Number(acc.risk_per_trade_pct) : 0.5;
+  if(!(pct > 0)) return null;
+  return { pct, amount: size * pct / 100 };
+}
+
+// Over the per-trade ceiling. Kept separate from the margin cap: that one is
+// about what the account CAN carry, this one about what it SHOULD. The number
+// is left exactly as typed — sizing it down silently would hide the decision
+// being made, and this is the decision worth seeing.
+function _psRiskCeilingNote(acc, riskAmount){
+  const ceiling = _psRiskCeiling(acc);
+  if(!ceiling || !(riskAmount > ceiling.amount)) return '';
+  const over = riskAmount - ceiling.amount;
+  return `<span class="ps-risk-over">Over your ${fmtNum(ceiling.pct,2).replace(/\.?0+$/,'')}% limit by $${over.toLocaleString(undefined,{maximumFractionDigits:2})} — the ceiling is $${ceiling.amount.toLocaleString(undefined,{maximumFractionDigits:2})}</span>`;
+}
+
 function _psComputeRow(acc, riskAmount, entry, riskPerUnit){
   const available = Number(acc.current_balance ?? acc.account_size ?? 0);
   const cap = Number(acc.max_leverage) > 0 ? Math.floor(Number(acc.max_leverage)) : 5;
@@ -4079,7 +4100,7 @@ function renderPosSizeCalculator(){
 
     return `<tr>
       <td>${escapeHtml(acc.account_name)}</td>
-      <td><input class="ps-risk-input${c.capped ? ' ps-risk-capped' : ''}" type="number" step="0.01" value="${shown}" oninput="onPsRiskInput('${acc.id}', this.value, this)" onblur="onPsRiskBlur('${acc.id}', this)">${_psCappedNote(c)}</td>
+      <td><input class="ps-risk-input${c.capped ? ' ps-risk-capped' : ''}${_psRiskCeilingNote(acc, Number(shown)) ? ' ps-risk-over-input' : ''}" type="number" step="0.01" value="${shown}" oninput="onPsRiskInput('${acc.id}', this.value, this)" onblur="onPsRiskBlur('${acc.id}', this)">${_psCappedNote(c)}${_psRiskCeilingNote(acc, Number(shown))}</td>
       <td class="ps-qty-cell" data-qty="${c.qtyData}">${c.qtyText}</td>
       <td>${c.levHtml}</td>
       <td>${c.marginText}</td>
@@ -13821,9 +13842,14 @@ function renderProfileRules(rules){
     return;
   }
 
+  // Tolerates an object as well as a string. Nothing writes objects any more,
+  // but a list saved while the adherence experiment was in the build would
+  // otherwise render as "[object Object]".
+  const textOf = r => typeof r === 'string' ? r : String(r?.text ?? '');
+
   wrap.innerHTML = profileRulesArr.map((rule, i) => profileEditing
-    ? `<div class="config-option-row"><span>${escapeHtml(rule)}</span><button onclick="removeProfileRule(${i})">✕</button></div>`
-    : `<div class="profile-rule-static">${escapeHtml(rule)}</div>`
+    ? `<div class="config-option-row"><span>${escapeHtml(textOf(rule))}</span><button onclick="removeProfileRule(${i})">✕</button></div>`
+    : `<div class="profile-rule-static">${escapeHtml(textOf(rule))}</div>`
   ).join('');
 }
 
@@ -14137,10 +14163,17 @@ async function _autoAdvanceAccountPhases(){
         : nextPhase === 'Evaluation Phase 1' ? preset.phase1TargetPct
         : null; // Funded has no percentage target
     }
+    // Passing a phase resets the account to its original size — the firm does
+    // not let the previous phase's profit ride into the next one. Carrying
+    // currentBalance forward left the app tracking a balance the firm had
+    // already reset, so every figure derived from it (drawdown floor, daily
+    // stop, profit target) was measured against money that isn't there.
+    const resetBalance = Number(acc.account_size) || s.currentBalance;
     const patch = {
       phase: nextPhase,
       phase_start_date: new Date().toISOString().slice(0,10),
-      phase_start_balance: s.currentBalance,
+      phase_start_balance: resetBalance,
+      current_balance: resetBalance,
       profit_target_pct: nextTargetPct,
       // Reaching Funded means every evaluation phase got passed — flip Status
       // automatically instead of leaving it on a manual dropdown.
@@ -14673,11 +14706,18 @@ function accountCardHTML(a){
 
     let balanceHTML = '';
     if(a.current_balance != null && a.account_size){
-      const pl = a.current_balance - a.account_size;
+      // Measured from the balance the CURRENT phase began at, matching the
+      // Account Detail view. Using account_size here meant that the moment an
+      // account advanced to Phase 2, the profit it made in Phase 1 was counted
+      // again toward the new target — a freshly started phase could show as
+      // already passed.
+      const baseline = a.phase_start_balance != null ? Number(a.phase_start_balance) : Number(a.account_size);
+      const pl = a.current_balance - baseline;
       const plPct = (pl / a.account_size) * 100;
       const plClass = pl >= 0 ? 'account-pl-pos' : 'account-pl-neg';
       const sign = pl >= 0 ? '+' : '';
-      balanceHTML += `<div class="account-card-balance">$${Number(a.current_balance).toLocaleString()} <span class="${plClass}">(${sign}$${Math.abs(pl).toLocaleString()} · ${sign}${plPct.toFixed(1)}%)</span></div>`;
+      const fromPhase = a.phase_start_balance != null && Number(a.phase_start_balance) !== Number(a.account_size);
+      balanceHTML += `<div class="account-card-balance">$${Number(a.current_balance).toLocaleString()} <span class="${plClass}">(${sign}$${Math.abs(pl).toLocaleString()} · ${sign}${plPct.toFixed(1)}%)</span>${fromPhase ? `<span class="account-card-since">this phase</span>` : ''}</div>`;
 
       if(a.profit_target_pct){
         const progressFraction = Math.max(0, Math.min(1, plPct / a.profit_target_pct));

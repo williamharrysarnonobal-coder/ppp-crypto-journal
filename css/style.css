@@ -876,6 +876,12 @@
   .panel-info-btn:hover{color:var(--accent);}
   .panel-info-btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:50%;}
 
+  /* Says the figure beside it is this phase's profit, not the account's
+     lifetime — only shown once a phase has actually reset the baseline. */
+  .account-card-since{
+    font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-left:7px;
+  }
+
   /* Journal filters: pick a column, then a value. Only the filters in use
      take up space, so the toolbar stays the same size no matter how many
      columns the journal has. */
@@ -1635,6 +1641,13 @@
      computed from the capped figure, and this says so rather than letting
      the two silently disagree. */
   .ps-risk-capped{border-color:var(--warn);}
+  /* Over the per-trade ceiling. Red, not amber: the margin cap is the account
+     protecting itself, this is you choosing to exceed your own rule. */
+  .ps-risk-over-input{border-color:var(--loss);}
+  .ps-risk-over{
+    display:block;margin-top:5px;max-width:150px;
+    font-size:10px;line-height:1.4;color:var(--loss);
+  }
   .ps-risk-note{
     display:block;margin-top:5px;max-width:150px;
     font-size:10px;line-height:1.4;color:var(--warn);
