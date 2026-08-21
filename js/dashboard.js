@@ -1612,8 +1612,8 @@ function renderDisciplineRadar(){
   const decided = t.filter(x => ['win','loss','liquidated'].includes(String(x.win_loss||'').toLowerCase())).length;
   const winRate = _winRateOf(t) ?? 0;
 
-  const followed = t.filter(x => x.unfollowed_rules.trim().toLowerCase() === 'rules followed').length;
-  const broken = t.filter(x => x.unfollowed_rules.trim() !== '' && x.unfollowed_rules.trim().toLowerCase() !== 'rules followed').length;
+  const followed = t.filter(x => _isCleanRules(x.unfollowed_rules)).length;
+  const broken = t.filter(x => _brokenRuleTags(x.unfollowed_rules).length > 0).length;
   const disciplineTotal = followed + broken;
   const disciplinePct = disciplineTotal ? (followed/disciplineTotal*100) : 0;
 
@@ -2369,14 +2369,18 @@ function _weekReviewHtml(trades, label, periodName){
   }
 
   /* ---- Which rule broke most, and what it cost ---- */
-  // "Rules Followed" is a sentinel inside the same checklist field, meaning
-  // nothing was broken — it belongs at the bottom as the clean comparison,
-  // not listed among the breaches under a heading that says they cost you.
+  // The sentinels inside the same checklist field mean nothing was broken —
+  // they belong at the bottom as the clean comparison, not listed among the
+  // breaches under a heading that says they cost you.
   const ruleCost = {};
   let cleanEntry = null;
   closed.forEach(t => {
-    (t.unfollowed_rules||'').split(',').map(s => s.trim()).filter(Boolean).forEach(r => {
-      if(r.toLowerCase() === 'rules followed'){
+    let countedClean = false;
+    _ruleTags(t.unfollowed_rules).forEach(r => {
+      if(_RULES_POSITIVE_SET.has(r.toLowerCase())){
+        // Both sentinels on one trade still describe ONE clean trade.
+        if(countedClean) return;
+        countedClean = true;
         cleanEntry = cleanEntry || { n:0, net:0 };
         cleanEntry.n++; cleanEntry.net += netPnl(t);
         return;
@@ -2584,7 +2588,7 @@ function renderAccountCompare(){
 
   const rows = Object.entries(groups).map(([account, trades]) => {
     const net = trades.reduce((s,t) => s + netPnl(t), 0);
-    const followed = trades.filter(t => (t.unfollowed_rules||'').trim().toLowerCase() === 'rules followed').length;
+    const followed = trades.filter(t => _isCleanRules(t.unfollowed_rules)).length;
     const withRules = trades.filter(t => (t.unfollowed_rules||'').trim() !== '').length;
     const rrs = trades.map(t => t.rr).filter(v => v !== null && v !== undefined && !isNaN(v));
     return {
@@ -2916,8 +2920,8 @@ function showBrokenRuleTrades(rule){
 
 function showDisciplineTrades(kind){
   const trades = kind === 'followed'
-    ? FILTERED.filter(t => t.unfollowed_rules.trim().toLowerCase() === 'rules followed')
-    : FILTERED.filter(t => t.unfollowed_rules.trim() !== '' && t.unfollowed_rules.trim().toLowerCase() !== 'rules followed');
+    ? FILTERED.filter(t => _isCleanRules(t.unfollowed_rules))
+    : FILTERED.filter(t => _brokenRuleTags(t.unfollowed_rules).length > 0);
   const pnl = trades.reduce((s,t)=>s+netPnl(t),0);
 
   document.getElementById('modalTitle').textContent = kind === 'followed' ? 'Rules followed' : 'Rules broken';
@@ -2951,8 +2955,8 @@ function renderBreakdown(){
   const body = document.getElementById('breakdownBody');
 
   if(activeTab === 'discipline'){
-    const followed = FILTERED.filter(t => t.unfollowed_rules.trim().toLowerCase() === 'rules followed');
-    const broken = FILTERED.filter(t => t.unfollowed_rules.trim() !== '' && t.unfollowed_rules.trim().toLowerCase() !== 'rules followed');
+    const followed = FILTERED.filter(t => _isCleanRules(t.unfollowed_rules));
+    const broken = FILTERED.filter(t => _brokenRuleTags(t.unfollowed_rules).length > 0);
     const brokenPnl = broken.reduce((s,x)=>s+netPnl(x),0);
     const followedPnl = followed.reduce((s,x)=>s+netPnl(x),0);
 
@@ -2965,8 +2969,7 @@ function renderBreakdown(){
     const tally = {};
     broken.forEach(t => {
       const net = netPnl(t);
-      t.unfollowed_rules.split(/[,;]/).map(s=>s.trim()).filter(Boolean)
-        .filter(r => r.toLowerCase() !== 'rules followed')
+      _brokenRuleTags(t.unfollowed_rules)
         .forEach(rule => {
           if(!tally[rule]) tally[rule] = { count:0, net:0, wins:0, decided:0 };
           tally[rule].count++;
@@ -3512,11 +3515,52 @@ const FIELD_OPTIONS = {
 };
 
 const UNFOLLOWED_RULES_OPTIONS = [
-  'Rules Followed','Early TP','Entered Early','Overleveraged','No Confirmation','Moved Stop Loss',
+  'Rules Followed','Held Through Prev High/Low',
+  'Early TP','Entered Early','Overleveraged','No Confirmation','Moved Stop Loss',
   'Revenge Trade','Ignored Trend','FOMO Entry','No BE at Prev High/Low','Ignored No-Trade Decision',
   'Non-BnB Setup','No Scalping Trade','Moved Take Profit','Lack of Confluence','BTC Only',
   'Changing Plan','No Cutloss 3mins Breakout'
 ];
+
+// The two entries that describe a trade that went RIGHT. "Rules Followed? =
+// Yes" shows only these; "No" shows everything else. Held as its own list
+// rather than inferred from the wording, so an option added later in the
+// Options editor lands on the broken-rule side — which is where all but these
+// two belong.
+const RULES_FOLLOWED_POSITIVE = ['Rules Followed','Held Through Prev High/Low'];
+
+// unfollowed_rules is one comma-joined text column holding BOTH the breaches
+// and the sentinels that mean "nothing was broken". Every count of discipline
+// has to strip the sentinels first. Before "Held Through Prev High/Low"
+// existed there was only one, so the old checks compared the whole string to
+// "rules followed" — a clean trade carrying both sentinels no longer matches
+// that, and would be counted as a breach. These three are the shared answer.
+const _RULES_POSITIVE_SET = new Set(RULES_FOLLOWED_POSITIVE.map(s => s.toLowerCase()));
+const _ruleTags = v => String(v || '').split(/[,;]/).map(s => s.trim()).filter(Boolean);
+const _brokenRuleTags = v => _ruleTags(v).filter(r => !_RULES_POSITIVE_SET.has(r.toLowerCase()));
+// Answered, and nothing broken — a blank field is "not logged", not "clean".
+const _isCleanRules = v => {
+  const tags = _ruleTags(v);
+  return tags.length > 0 && tags.every(r => _RULES_POSITIVE_SET.has(r.toLowerCase()));
+};
+
+// `keepSelected` protects an already-saved row whose two fields disagree: a
+// legacy trade marked Yes but carrying a broken rule would otherwise have that
+// rule hidden, and a hidden checkbox is dropped on save — losing the value
+// silently. Shown instead, so the disagreement is visible and correctable.
+function _unfollowedOptionsFor(rulesFollowed, keepSelected){
+  const v = String(rulesFollowed || '').trim().toLowerCase();
+  const norm = s => String(s).trim().toLowerCase();
+  const isPositive = o => RULES_FOLLOWED_POSITIVE.some(p => norm(p) === norm(o));
+  // Unanswered shows the whole list rather than pre-emptively hiding half.
+  let opts = UNFOLLOWED_RULES_OPTIONS.slice();
+  if(v === 'yes') opts = opts.filter(isPositive);
+  else if(v === 'no') opts = opts.filter(o => !isPositive(o));
+  (keepSelected || []).forEach(s => {
+    if(!opts.some(o => norm(o) === norm(s))) opts.push(s);
+  });
+  return opts;
+}
 
 const OPTIONS_FIELD_META = [
   {key:'win_loss', label:'Win/Loss'},
@@ -10469,6 +10513,8 @@ function _renderDrawerFieldRow(f, mode, row){
     }
     const opts = selectOptions.map(o => `<option value="${o}" ${raw===o?'selected':''}>${o}</option>`).join('');
     const onchange = f.key === 'account' ? ` onchange="syncAccountTypeFromAccount(this.value)"`
+      : f.key === 'rules_followed' ? ` onchange="syncUnfollowedRulesFromFollowed(this.value)"`
+      : f.key === 'trade_type' ? ` onchange="syncTradeSetupFromType(this.value)"`
       : f.key === 'trade_setup' ? ` onchange="syncPatternTypeFromSetup(this.value)"`
       : f.key === 'pattern_type' ? ` onchange="syncExecutionFromPattern(this.value)"`
       : f.key === 'win_loss' ? ` onchange="syncPostBEFromWinLoss(this.value); syncExitTypeFromWinLoss(this.value);"`
@@ -10477,10 +10523,12 @@ function _renderDrawerFieldRow(f, mode, row){
   }
   if(f.widget === 'checklist'){
     const selected = (raw || '').split(/[,;]/).map(s=>s.trim()).filter(Boolean);
-    const boxes = f.options.map(o => `
-      <label><input type="checkbox" data-checklist="${f.key}" value="${o}" ${selected.includes(o)?'checked':''}> ${o}</label>
-    `).join('');
-    return `<div class="${rowCls}"><label>${f.label}</label><div class="checklist-box">${boxes}</div></div>`;
+    // Rules Followed? decides which half of this list even applies.
+    const listOptions = f.key === 'unfollowed_rules'
+      ? _unfollowedOptionsFor(row.rules_followed, selected)
+      : f.options;
+    const boxes = _checklistBoxesHtml(f.key, listOptions, selected);
+    return `<div class="${rowCls}"><label>${f.label}</label><div class="checklist-box" data-checklist-for="${f.key}">${boxes}</div></div>`;
   }
   if(f.widget === 'date'){
     return `<div class="${rowCls}"><label>${f.label}</label><input type="datetime-local" data-field="${f.key}" value="${_toISODateInput(raw)}"></div>`;
@@ -10559,7 +10607,19 @@ function renderDrawerFields(){
   // if the user had just picked them by hand.
   if(mode === 'create'){
     if(row.account) syncAccountTypeFromAccount(row.account);
+    // Direction first: it cascades into Trade Setup, which re-filters Pattern
+    // Type, before the pattern-driven fills below read their final values.
+    if(row.trade_type) syncTradeSetupFromType(row.trade_type);
+    // A Trade Setup that arrived already filled still needs its dependants:
+    // syncTradeSetupFromType returns early on a non-blank field, so without
+    // this the Invalidation Play chain would never fire on open. Read from the
+    // select, since the line above may have just set it.
+    const setupSel = document.querySelector('#drawerBody [data-field="trade_setup"]');
+    if(setupSel && setupSel.value) syncPatternTypeFromSetup(setupSel.value);
     if(row.pattern_type) syncExecutionFromPattern(row.pattern_type);
+    // Last, so the fixed "5 mins Scalping" above is already in place and this
+    // leaves it alone.
+    syncAofFromLinkedSetup(row);
     if(row.win_loss) syncPostBEFromWinLoss(row.win_loss);
   }
 }
@@ -10675,9 +10735,10 @@ function _applyMovedStopFlags(patch){
   const existing = String(patch.unfollowed_rules || '')
     .split(/[,;]/).map(s => s.trim()).filter(Boolean);
   const merged = [...new Set([...existing, 'Moved Stop Loss', 'Changing Plan'])]
-    // "Rules Followed" is the sentinel for a clean trade — it can't stand
-    // alongside a breach.
-    .filter(r => r.toLowerCase() !== 'rules followed');
+    // Both sentinels mean "nothing was broken" — neither can stand alongside a
+    // breach, and rules_followed is being set to No right below, which is the
+    // half of the checklist that no longer offers them at all.
+    .filter(r => !_RULES_POSITIVE_SET.has(r.toLowerCase()));
   patch.unfollowed_rules = merged.join(', ');
   patch.rules_followed = 'No';
 }
@@ -14315,27 +14376,135 @@ function syncPatternTypeFromSetup(setupValue){
   const opts = allowed.map(o => `<option value="${o}" ${current===o?'selected':''}>${o}</option>`).join('');
   sel.innerHTML = `<option value="">—</option>${opts}`;
   if(current && !allowed.includes(current)) sel.value = '';
+  // Invalidation Play leaves exactly one valid Pattern Type, so there is
+  // nothing left to choose — fill it, plus the AOF Phase that always goes with
+  // it. Set unconditionally: picking Invalidation Play is a deliberate act, so
+  // an AOF left over from the previous setup would be stale, not a preference.
+  if(setupValue === 'Invalidation Play' && allowed.length === 1){
+    sel.value = allowed[0];
+    const aofSel = document.querySelector('#drawerBody [data-field="aof_phase"]');
+    if(aofSel){
+      aofSel.value = 'Invalidation';
+      aofSel.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+  }
   // rebuilding innerHTML/setting .value doesn't fire "change" on its own —
   // dispatch it so the needs-input red flag stays in sync either way
   sel.dispatchEvent(new Event('change', { bubbles: true }));
 }
 
-// "5 mins HL"/"5 mins LH" are always executed on the 1 min chart as a
-// scalp — locks in the Execution TF and AOF Phase that go with them.
-// "15 mins HL"/"15 mins LH" are always executed on the 5 min chart, and
-// "1 hour HL"/"1 hour LH" on the 15 min chart — same idea, one tier up each
-// time, no fixed AOF Phase for either of these.
+// Each pattern is always executed one tier below the chart it is named after:
+// "5 mins HL" on the 1 min chart, "15 mins HL" on the 5 min, "1 hour HL" on
+// the 15 min. "4 Hour HL/LH" and the invalidation pattern are deliberately
+// absent — those are picked by hand.
+const PATTERN_EXEC_TF = {
+  '5 mins HL':'1 min',   '5 mins LH':'1 min',
+  '15 mins HL':'5 min',  '15 mins LH':'5 min',
+  '1 hour HL':'15 min',  '1 hour LH':'15 min'
+};
+// The 5 min plays are scalps, and that pins their AOF Phase outright. This is
+// the one pattern-driven AOF, and it deliberately outranks the Sequence
+// mapping below — a 5 min play is "5 mins Scalping" whichever HL it is.
+const PATTERN_FIXED_AOF = { '5 mins HL':'5 mins Scalping', '5 mins LH':'5 mins Scalping' };
+
+const _execTfFor = p => PATTERN_EXEC_TF[p] || null;
+
+// Writes a drawer field and fires "change" — setting .value in code doesn't,
+// and the needs-input red flag listens for it.
+function _setDrawerField(key, value){
+  if(!value) return;
+  const sel = document.querySelector(`#drawerBody [data-field="${key}"]`);
+  if(!sel) return;
+  sel.value = value;
+  sel.dispatchEvent(new Event('change', { bubbles: true }));
+}
+
 function syncExecutionFromPattern(patternValue){
-  const tfSel = document.querySelector('#drawerBody [data-field="execution_tf"]');
-  if(patternValue === '5 mins HL' || patternValue === '5 mins LH'){
-    if(tfSel){ tfSel.value = '1 min'; tfSel.dispatchEvent(new Event('change', { bubbles: true })); }
-    const aofSel = document.querySelector('#drawerBody [data-field="aof_phase"]');
-    if(aofSel){ aofSel.value = '5 mins Scalping'; aofSel.dispatchEvent(new Event('change', { bubbles: true })); }
-  }else if(patternValue === '15 mins HL' || patternValue === '15 mins LH'){
-    if(tfSel){ tfSel.value = '5 min'; tfSel.dispatchEvent(new Event('change', { bubbles: true })); }
-  }else if(patternValue === '1 hour HL' || patternValue === '1 hour LH'){
-    if(tfSel){ tfSel.value = '15 min'; tfSel.dispatchEvent(new Event('change', { bubbles: true })); }
-  }
+  _setDrawerField('execution_tf', _execTfFor(patternValue));
+  _setDrawerField('aof_phase', PATTERN_FIXED_AOF[patternValue]);
+}
+
+// Direction implies the play: a higher low is what Bounce Play trades, a lower
+// high is Rejection Play. Invalidation Play has no direction of its own, which
+// is why the sync below only ever fills a blank.
+const TRADE_TYPE_SETUP_MAP = { 'Long':'Bounce Play', 'Short':'Rejection Play' };
+
+function syncTradeSetupFromType(tradeTypeValue){
+  const sel = document.querySelector('#drawerBody [data-field="trade_setup"]');
+  if(!sel || sel.value) return;   // never overwrite a pick — Invalidation Play especially
+  const mapped = TRADE_TYPE_SETUP_MAP[tradeTypeValue];
+  if(!mapped) return;
+  sel.value = mapped;
+  sel.dispatchEvent(new Event('change', { bubbles: true }));  // cascades into Pattern Type
+}
+
+// The Confluence checklist asks "Which 15m HL is this?" — that answer is the
+// AOF Phase, one to one. 4th and 5th both mean the move has run past its
+// useful phases.
+const SEQUENCE_AOF_MAP = {
+  '1st':'IC', '2nd':'EM', '3rd':'LM',
+  '4th':'Extended Movement', '5th':'Extended Movement'
+};
+
+function _aofFromSequence(tradeType, patternType, answers){
+  if(!tradeType || !patternType || !answers) return null;
+  // A 5 min play keeps "5 mins Scalping" even though its checklist does carry
+  // a Sequence question.
+  if(PATTERN_FIXED_AOF[patternType]) return null;
+  const cfg = CONFLUENCE_SETUPS[`${tradeType}|${patternType}`];
+  if(!cfg || !cfg.items) return null;
+  // Located by tag, never by a hardcoded index: answers are stored by their
+  // POSITION in the checklist and that position differs per setup — 3 for the
+  // 15 min plays, 4 for the 1 hour ones.
+  const idx = cfg.items.findIndex(it => it.tag === 'Sequence');
+  if(idx === -1) return null;
+  return SEQUENCE_AOF_MAP[answers[idx]] || null;
+}
+
+// Confluence answers live on the linked Setup — they are only merged into the
+// journal row at save time, so the row being rendered doesn't carry them yet.
+function syncAofFromLinkedSetup(row){
+  const sel = document.querySelector('#drawerBody [data-field="aof_phase"]');
+  if(!sel || sel.value) return;   // "5 mins Scalping" and any manual pick win
+  const setup = drawerJournalSetupId ? SAVED_SETUPS.find(s => s.id === drawerJournalSetupId) : null;
+  const answers = (setup && setup.confluence_answers) || row.confluence_answers;
+  // Read from the selects, not from `row` — the cascade above may already have
+  // moved Trade Setup and Pattern Type on from what was prefilled.
+  const tt = document.querySelector('#drawerBody [data-field="trade_type"]');
+  const pt = document.querySelector('#drawerBody [data-field="pattern_type"]');
+  _setDrawerField('aof_phase', _aofFromSequence(
+    (tt && tt.value) || row.trade_type,
+    (pt && pt.value) || row.pattern_type,
+    answers
+  ));
+}
+
+// Shared by the initial drawer render and the live re-render below, so the
+// two can never drift into producing different markup for the same field.
+function _checklistBoxesHtml(key, options, selected){
+  const norm = s => String(s).trim().toLowerCase();
+  return options.map(o => `
+      <label><input type="checkbox" data-checklist="${escapeHtml(key)}" value="${escapeHtml(o)}" ${
+        selected.some(s => norm(s) === norm(o)) ? 'checked' : ''
+      }> ${escapeHtml(o)}</label>
+    `).join('');
+}
+
+// Rules Followed? flips which half of the Unfollowed Rules checklist applies.
+// Anything ticked on the half that just disappeared is dropped, not merely
+// hidden: _collectDrawerPatch reads the checkboxes still in the DOM, so a
+// hidden-but-checked box would be saved anyway and contradict the answer.
+function syncUnfollowedRulesFromFollowed(rulesFollowedValue){
+  const box = document.querySelector('#drawerBody [data-checklist-for="unfollowed_rules"]');
+  if(!box) return;
+  const checked = [...box.querySelectorAll('input[type="checkbox"]')]
+    .filter(cb => cb.checked).map(cb => cb.value);
+  // No keepSelected here — unlike the initial render, this is a deliberate
+  // answer change, so the other half's ticks are stale rather than history.
+  const opts = _unfollowedOptionsFor(rulesFollowedValue);
+  box.innerHTML = _checklistBoxesHtml('unfollowed_rules', opts, checked);
+  // the needs-input red flag listens for this
+  box.dispatchEvent(new Event('change', { bubbles: true }));
 }
 
 // Post-BE Result only means something when the trade actually reached
@@ -16057,6 +16226,29 @@ function _bulkJournalRows(shared){
     if(!patch.account_type && patch.account){
       const accType = _accountTypeFor(patch.account);
       if(accType) patch.account_type = accType;
+    }
+
+    // Trade Type is a BULK_HIDDEN_KEY, so its change event never fires here and
+    // the Trade Setup cascade the drawer relies on never runs. Repeat it.
+    if(!patch.trade_setup && patch.trade_type){
+      const mappedSetup = TRADE_TYPE_SETUP_MAP[patch.trade_type];
+      if(mappedSetup) patch.trade_setup = mappedSetup;
+    }
+    if(patch.trade_setup === 'Invalidation Play'){
+      if(!patch.pattern_type) patch.pattern_type = '30 mins Invalidation Play';
+      if(!patch.aof_phase) patch.aof_phase = 'Invalidation';
+    }
+    if(!patch.execution_tf){
+      const mappedTf = _execTfFor(patch.pattern_type);
+      if(mappedTf) patch.execution_tf = mappedTf;
+    }
+    // Per row, not once for the batch: the Sequence answer lives on each row's
+    // OWN setup, so three accounts sharing one drawer can still land on
+    // different AOF Phases. Uses the answers merged just above.
+    if(!patch.aof_phase){
+      const mappedAof = PATTERN_FIXED_AOF[patch.pattern_type]
+        || _aofFromSequence(patch.trade_type, patch.pattern_type, patch.confluence_answers);
+      if(mappedAof) patch.aof_phase = mappedAof;
     }
 
     // Per row, not once for the batch: exit type and a moved stop are both
