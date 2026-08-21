@@ -3515,7 +3515,7 @@ const FIELD_OPTIONS = {
 };
 
 const UNFOLLOWED_RULES_OPTIONS = [
-  'Rules Followed','Held Through Prev High/Low',
+  'Rules Followed',"Would Have BE'd Out",
   'Early TP','Entered Early','Overleveraged','No Confirmation','Moved Stop Loss',
   'Revenge Trade','Ignored Trend','FOMO Entry','No BE at Prev High/Low','Ignored No-Trade Decision',
   'Non-BnB Setup','No Scalping Trade','Moved Take Profit','Lack of Confluence','BTC Only',
@@ -3526,12 +3526,13 @@ const UNFOLLOWED_RULES_OPTIONS = [
 // Yes" shows only these; "No" shows everything else. Held as its own list
 // rather than inferred from the wording, so an option added later in the
 // Options editor lands on the broken-rule side — which is where all but these
-// two belong.
-const RULES_FOLLOWED_POSITIVE = ['Rules Followed','Held Through Prev High/Low'];
+// two belong. "Would Have BE'd Out" records that the trade would have stopped
+// at breakeven had the rule been applied, and it still counts as clean.
+const RULES_FOLLOWED_POSITIVE = ['Rules Followed',"Would Have BE'd Out"];
 
 // unfollowed_rules is one comma-joined text column holding BOTH the breaches
 // and the sentinels that mean "nothing was broken". Every count of discipline
-// has to strip the sentinels first. Before "Held Through Prev High/Low"
+// has to strip the sentinels first. Before "Would Have BE'd Out"
 // existed there was only one, so the old checks compared the whole string to
 // "rules followed" — a clean trade carrying both sentinels no longer matches
 // that, and would be counted as a breach. These three are the shared answer.
