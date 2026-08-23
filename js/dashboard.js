@@ -1358,6 +1358,13 @@ function renderCalendar(){
 
   const byDay = {};
   const monthTrades = [];
+  // CLOSE date, deliberately — this calendar answers "how much did I make that
+  // day", and money is only real once the position is closed. It is also what
+  // every other money figure keys on (Max Daily Loss, Profitable Days, Salary
+  // Goal), so the grid and those counts always agree. Entry-side questions —
+  // which hour, which weekday you take trades — are answered by the Hour of Day
+  // and Day of Week panels, which key on open_date instead. Was briefly switched
+  // to open_date; reverted, since it broke that agreement for no gain.
   FILTERED.forEach(t => {
     if(!t.close_date) return;
     if(t.close_date.getFullYear() !== y || t.close_date.getMonth() !== m) return;
