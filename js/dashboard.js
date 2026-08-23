@@ -10693,7 +10693,14 @@ function _collectDrawerPatch(){
     if(auto) patch.exit_type = auto;
   }
 
-  _applyMovedStopFlags(patch);
+  // Create only. This flag exists to catch a moved stop the trader didn't
+  // self-report on the way in — but it MERGES rather than filling a blank, and
+  // also forces Rules Followed? to No. Running it on an edit re-added both
+  // tags and flipped the answer back on every save, so a trade whose close
+  // sits past its stop could never have its Unfollowed Rules corrected: the
+  // edit saved, then immediately undid itself. Same principle the Exit Type
+  // fill above already follows — never silently rewrite an answered field.
+  if(drawerMode === 'create') _applyMovedStopFlags(patch);
 
   return patch;
 }
