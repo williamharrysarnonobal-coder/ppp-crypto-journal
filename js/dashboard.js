@@ -3524,7 +3524,8 @@ const FIELD_OPTIONS = {
 const UNFOLLOWED_RULES_OPTIONS = [
   'Rules Followed',"Would Have BE'd Out",
   'Early TP','Entered Early','Overleveraged','No Confirmation','Moved Stop Loss',
-  'Revenge Trade','Ignored Trend','FOMO Entry','No BE at Prev High/Low','Ignored No-Trade Decision',
+  'Revenge Trade','Ignored Trend','Against Daily Bias / HTF Bias',
+  'FOMO Entry','No BE at Prev High/Low','Ignored No-Trade Decision',
   'Non-BnB Setup','No Scalping Trade','Moved Take Profit','Lack of Confluence','BTC Only',
   'Changing Plan','No Cutloss 3mins Breakout'
 ];
@@ -15467,19 +15468,63 @@ const CONFLUENCE_SETUPS = {
   // invalidation trades a pattern that FAILED, so a Long invalidation is
   // looking at a Double Top that broke upward instead of holding. Aliasing the
   // whole setup would have quietly swapped these to the wrong direction.
+  // Invalidation Play has its OWN checklist now. It used to alias the 15 mins
+  // arrays (`items = CONFLUENCE_SETUPS['Long|15 mins HL'].items`), which is why
+  // any Invalidation trade answered before this carries answers keyed to that
+  // list. Positions 0 and 2..6 ask the same thing in the same order, so those
+  // answers still line up. Position 1 does NOT: it was "30M MACD far from the
+  // zero line?" (an `almost` question) and is now "30M MACD Break Zero Line?"
+  // (plain yes/no). An older answer of "almost" there is no longer a valid
+  // response and should be re-answered.
   'Long|30 mins Invalidation Play': {
     minConfluencePct: 60,
-    items: null,
-    patterns: ['Double Top', 'Triple Top', 'H&S']
+    // No auto-flagging on Invalidation Play, either direction. The checklist
+    // here reads a setup being invalidated, so the same answers that mean a
+    // breach on a trend setup are the whole point of this one — a 1H bias
+    // against you isn't a mistake here, it's the premise. Rules Followed /
+    // Unfollowed Rules stay entirely manual for this pattern.
+    noAutoRules: true,
+    items: [
+      {tag:'MACD · 1H', text:'1H MACD in Bull Territory (Green Histogram)?'},
+      // Plain yes/no, NOT inverted — unlike the 1 hour setups, where breaking
+      // the zero line counts against you. Here the break is the signal.
+      {tag:'MACD · 30M', text:'30M MACD Break Zero Line?'},
+      {tag:'BB50 · 2H', text:'2H BB50 far from price, or before your TP area?', almost:true},
+      {tag:'Sequence', text:'Which 15m HL is this?', select:['1st','2nd','3rd','4th','5th']},
+      {tag:'Execution · 5min/3min BB50', text:'Did BB50 and the .382 Fib or MOBV align at your entry level?', exec:true},
+      {tag:'Execution', text:'Did MACD cross the zero line upward when your order triggered?', exec:true, retest:true},
+      {tag:'Divergence', text:'Left Hand Present?', invert:true},
+    ],
+    // Same direction convention as every other setup: bullish reversal
+    // patterns on the Long side. These two lists were the wrong way round.
+    patterns: ['Double Bottom', 'Triple Bottom', 'Inverse H&S']
   },
   'Short|30 mins Invalidation Play': {
     minConfluencePct: 60,
-    items: null,
-    patterns: ['Double Bottom', 'Triple Bottom', 'Inverse H&S']
+    noAutoRules: true,   // see the Long entry above
+    items: [
+      {tag:'MACD · 1H', text:'1H MACD in Bull Territory (Red Histogram)?'},
+      {tag:'MACD · 30M', text:'30M MACD Break Zero Line?'},
+      {tag:'BB50 · 2H', text:'2H BB50 far from price, or before your TP area?', almost:true},
+      {tag:'Sequence', text:'Which 15m LH is this?', select:['1st','2nd','3rd','4th','5th']},
+      {tag:'Execution · 5min/3min BB50', text:'Did BB50 and the .382 Fib or MOBV align at your entry level?', exec:true},
+      {tag:'Execution', text:'Did MACD cross the zero line downward when your order triggered?', exec:true, retest:true},
+      {tag:'Divergence', text:'Right Hand Present?', invert:true},
+    ],
+    patterns: ['Double Top', 'Triple Top', 'H&S']
   },
 };
-CONFLUENCE_SETUPS['Long|30 mins Invalidation Play'].items  = CONFLUENCE_SETUPS['Long|15 mins HL'].items;
-CONFLUENCE_SETUPS['Short|30 mins Invalidation Play'].items = CONFLUENCE_SETUPS['Short|15 mins LH'].items;
+
+// A trade saved under the old (reversed) lists still holds a pattern that its
+// setup no longer offers. The chips render from cfg.patterns alone, so that
+// value would show nothing selected — present in the database, invisible on
+// screen, and impossible to correct. Appending it keeps it visible and
+// changeable; it drops out of the list the moment a listed one is picked.
+function _confluencePatternChoices(cfg, current){
+  const list = (cfg && cfg.patterns) ? cfg.patterns.slice() : [];
+  if(current && !list.includes(current)) list.push(current);
+  return list;
+}
 
 // Color tier for a "Sequence" pick (Which 5m HL/LH is this?) by its index in
 // the select list — 1st/2nd green, 3rd orange, 4th/5th red. Shared by the
@@ -15606,6 +15651,11 @@ function _confluenceProgress(items, answers, chartPatternPresent){
 // a value the trader already set (e.g. by fixing the confluence answers
 // after the fact) — undoing an auto-flag is a manual, deliberate action.
 function _autoUnfollowedRules(cfg, answers, chartPatternPresent){
+  // Opted out per setup — Invalidation Play carries this. Returned before any
+  // rule runs, so the confluence bar, the 3min break, the MACD cross, the
+  // divergence hand and the HTF bias are all skipped, not just some of them.
+  if(cfg.noAutoRules) return new Set();
+
   const byText = (text) => {
     const i = cfg.items.findIndex(it => it.text === text);
     return i === -1 ? undefined : answers[i];
@@ -15810,7 +15860,7 @@ function renderConfluenceChecklist(){
     _renderConfluenceItemRow(it, i, confluenceAnswers[i], 'setConfluenceAnswer')
   ).join('');
 
-  const chipsHtml = ['None', ...cfg.patterns].map(p => {
+  const chipsHtml = ['None', ..._confluencePatternChoices(cfg, confluenceChartPattern)].map(p => {
     const isActive = (p === 'None' && !confluenceChartPattern) || p === confluenceChartPattern;
     return `<span class="cfl-pattern-chip ${p==='None'?'cfl-none':''} ${isActive?'active':''}" onclick="selectConfluenceChartPattern('${p.replace(/'/g,"\\'")}')">${p}</span>`;
   }).join('');
@@ -17380,7 +17430,7 @@ function _bbRenderChecklist({ ttId, ptId, bodyId, answers, chartPattern, setAnsw
     _renderConfluenceItemRow(it, i, answers[i], setAnswerFn)
   ).join('');
 
-  const chipsHtml = ['None', ...cfg.patterns].map(p => {
+  const chipsHtml = ['None', ..._confluencePatternChoices(cfg, chartPattern)].map(p => {
     const isActive = (p === 'None' && !chartPattern) || p === chartPattern;
     return `<span class="cfl-pattern-chip ${p==='None'?'cfl-none':''} ${isActive?'active':''}" onclick="${setPatternFn}('${p.replace(/'/g,"\\'")}')">${p}</span>`;
   }).join('');
