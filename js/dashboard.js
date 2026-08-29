@@ -3235,17 +3235,33 @@ function _cfeSeqMatrixHTML(){
   const rows = patterns.map(p => {
     const cells = cols.map(o => {
       const arr = byPattern[p][o];
-      if(!arr) return `<td style="color:var(--muted);">—</td>`;
+      // Nothing was ever traded at this position. A bare dash, no count.
+      if(!arr) return `<td><span class="cfe-cell-none" title="No trades at this position">—</span></td>`;
+
       const s = _cfeStats(arr);
+      const count = `<span class="cfe-cell-n">${s.count}</span>`;
+      const avg = CFE_SEQ_PICK ? ` <span class="cfe-cell-n">· ${fmtMoney(s.avgPnl)}</span>` : '';
+
+      // Trades exist, but not one of them has a Win or a Loss — every one is
+      // breakeven or was never given a result. There is no win rate to show,
+      // which is NOT the same as having no trades, and a bare dash for both
+      // was the confusing part: "— 2" read as a contradiction.
+      if(s.winRate === null){
+        return `<td><span class="cfe-cell-na" title="${s.count} trade${s.count===1?'':'s'} here, none with a Win or Loss set — no win rate can be worked out">n/a</span> ${count}${avg}</td>`;
+      }
+
       // Tinted by the WIN RATE, not by the sequence position. The pooled table
       // tints by position because there the row IS the position; here the
       // position is already the column header, so tinting by it again made a 0%
       // in the 2nd column green and a 100% in the 3rd orange — the colour was
       // answering a question nobody asked of that cell.
+      const thin = s.count < WIN_RATE_MIN_N;
       const tint = _winRateTint(s.winRate, s.count);
-      return `<td><span style="color:${tint};font-weight:600;">${
-        s.winRate === null ? '—' : fmtNum(s.winRate,0) + '%'}</span> <span style="color:var(--muted);font-size:11px;">${s.count}</span>${
-        CFE_SEQ_PICK ? ` <span style="color:var(--muted);font-size:11px;">· ${fmtMoney(s.avgPnl)}</span>` : ''}</td>`;
+      const title = thin
+        ? `${fmtNum(s.winRate,0)}% off just ${s.count} trade${s.count===1?'':'s'} — too few to read as a rate`
+        : `${fmtNum(s.winRate,0)}% across ${s.count} trades`;
+      return `<td><span style="color:${tint};font-weight:600;" title="${title}">${fmtNum(s.winRate,0)}%${
+        thin ? '<span class="cfe-cell-thin">*</span>' : ''}</span> ${count}${avg}</td>`;
     }).join('');
     return `<tr><td style="white-space:nowrap;">${escapeHtml(p)}</td>${cells}</tr>`;
   }).join('');
@@ -3444,6 +3460,12 @@ function renderConfluenceEdge(){
               : `Click a row in the table above to narrow this to one position.`}</div>
           <div style="overflow-x:auto;">
             <table class="breakdown" id="cfeSeqMatrix">${seqMatrixHtml}</table>
+          </div>
+          <div class="cfe-legend">
+            <span><b>68%</b> <span class="cfe-cell-n">12</span> &mdash; win rate, then how many trades it came from</span>
+            <span><span class="cfe-cell-thin">*</span> fewer than ${WIN_RATE_MIN_N} trades, so the rate is shown grey rather than read as one</span>
+            <span><span class="cfe-cell-na">n/a</span> trades here, but none with a Win or Loss set</span>
+            <span><span class="cfe-cell-none">&mdash;</span> no trades at that position</span>
           </div>` : ''}
         ${trigRows ? `
           <div class="cfe-subhead">By entry trigger</div>
@@ -3666,6 +3688,19 @@ function renderBEProtection(){
   }
   if(capturedTotal < 0){
     insights.push(`Your "TP After BE" trades add up to ${fmtMoney(capturedTotal)} — negative, which shouldn't happen if they truly ran to take-profit. Check whether one of them is tagged "TP After BE" but actually closed at a loss.`);
+  }
+  // A trade cannot both have exited AT the breakeven stop and have carried on
+  // to take-profit. When Exit Type and Post-BE Result say exactly that, the
+  // stored Post-BE Result is kept — overwriting an answer the trader gave is
+  // not this panel's job — but the trade is named, because it is silently
+  // sitting in "Ran on to TP" and inflating the one number the verdict leans on.
+  const contradictory = tpAfter.filter(t =>
+    String(t.exit_type || '').trim().toLowerCase() === 'be hit');
+  if(contradictory.length){
+    const naming = contradictory.slice(0,4).map(t =>
+      `${escapeHtml(t.symbol || '—')} ${t.close_date ? t.close_date.toLocaleDateString(undefined,{day:'numeric',month:'short'}) : ''}`.trim()
+    ).join(', ');
+    insights.push(`${contradictory.length} trade${contradictory.length===1?' is':'s are'} tagged <strong>TP After BE</strong> but ${contradictory.length===1?'has':'have'} an Exit Type of <strong>BE Hit</strong> — a trade cannot stop at breakeven and also run on to take-profit. ${naming}${contradictory.length>4?', …':''}. ${contradictory.length===1?'It is':'They are'} being counted under "Ran on to TP", which is what the ${fmtNum(survivedRate ?? 0,0)}% above is built from. Open ${contradictory.length===1?'it':'them'} and set Post-BE Result to "SL After BE" if the stop was what closed ${contradictory.length===1?'it':'them'}.`);
   }
   if(suspect.length){
     insights.push(`${suspect.length} BE-stopped trade${suspect.length===1?' has':'s have'} numbers that can't be right (stop more than 25% from entry, or a position size implying a multi-million-dollar notional) — flagged ⚠ below and excluded. Usually a placeholder SL, or a Position Size holding dollars instead of a unit quantity. Fix the trade and this figure corrects itself.`);
