@@ -3364,10 +3364,16 @@ function renderRecommendations(){
 
   // Up to REC_TOP_N per dimension, best-first on the "look for" tab and
   // worst-first on "avoid". A group sitting near zero belongs on neither.
-  const picksFor = d => {
+  // Kept separate on purpose: `qualifying` is everything that actually makes
+  // or loses money, `picks` is the handful shown. The label below needs both —
+  // "top 2 of 5" read as "I am only showing you 2 of your 5 leaks" when what it
+  // meant was "2 of your 5 patterns lose money", and those are different
+  // answers to "is that really all of them?".
+  const qualifyingFor = d => {
     if(wantGood && d.avoidOnly) return [];
-    const sorted = [...d.groups].sort((a,b) => wantGood ? b.avg - a.avg : a.avg - b.avg);
-    return sorted.filter(g => wantGood ? g.avg > 0 : g.avg < 0).slice(0, REC_TOP_N);
+    return [...d.groups]
+      .sort((a,b) => wantGood ? b.avg - a.avg : a.avg - b.avg)
+      .filter(g => wantGood ? g.avg > 0 : g.avg < 0);
   };
 
   let anyRows = 0, best = null;
@@ -3375,15 +3381,21 @@ function renderRecommendations(){
     const blocks = grp.dims.map(label => {
       const d = byLabel[label];
       if(!d) return '';
-      const picks = picksFor(d);
+      const qualifying = qualifyingFor(d);
+      const picks = qualifying.slice(0, REC_TOP_N);
       if(!picks.length) return '';
       anyRows += picks.length;
       if(!best || (wantGood ? picks[0].avg > best.avg : picks[0].avg < best.avg)){
         best = { ...picks[0], dim: label };
       }
-      // How many it was actually chosen from — "best" out of one is just the
-      // only thing you did, and that has to be visible.
-      const pool = d.groups.length;
+      // Says how many of your groups fall on this side, and — only when there
+      // are more than fit — that the list is capped. Without the second half,
+      // a fourth leak could sit behind a "3" with nothing hinting it exists.
+      const total = d.groups.length;
+      const poolText =
+        `${qualifying.length} of ${total} ${wantGood ? 'make' : 'lose'} money` +
+        (qualifying.length > picks.length
+          ? ` · ${wantGood ? 'best' : 'worst'} ${picks.length} shown` : '');
       const lines = picks.map((r, i) => `
         <div class="rec-line">
           <div class="rec-rank">${i + 1}</div>
@@ -3393,8 +3405,7 @@ function renderRecommendations(){
             r.winRate !== null ? ` · ${fmtNum(r.winRate,0)}% win` : ''} · ${fmtMoney(r.net)} total</div>
         </div>`).join('');
       return `<div class="rec-dim-block">
-          <div class="rec-dim-head">${escapeHtml(label)}<span class="rec-pool">${
-            pool > picks.length ? `top ${picks.length} of ${pool}` : `${pool} in total`}</span></div>
+          <div class="rec-dim-head">${escapeHtml(label)}<span class="rec-pool">${poolText}</span></div>
           ${lines}
         </div>`;
     }).filter(Boolean).join('');
