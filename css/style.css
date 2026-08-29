@@ -1879,8 +1879,18 @@
 
   /* Confluence Edge + Breakeven Protection dashboard panels */
   .cfe-grid{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-bottom:16px;}
-  .cfe-subhead{font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:14px 0 8px;}
+  /* These were the same muted grey, the same size and the same casing as the
+     column labels directly beneath them, so a heading and a table header read
+     as one continuous run of small grey text — you couldn't tell where one
+     section stopped and the next began. Accent colour (which follows the theme),
+     a rule under it, and real space above: now it reads as a heading. */
+  .cfe-subhead{
+    font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;
+    color:var(--accent);margin:26px 0 10px;padding-bottom:6px;
+    border-bottom:1px solid color-mix(in srgb, var(--accent) 28%, var(--rule));
+  }
   .cfe-grid .cfe-subhead:first-child{margin-top:0;}
+  .panel-details-body > .cfe-subhead:first-child{margin-top:0;}
   .cfe-bar-wrap{display:flex;align-items:center;gap:8px;font-family:'IBM Plex Mono',monospace;}
   .cfe-bar-track{flex:1;height:7px;background:var(--surface-2);border-radius:4px;overflow:hidden;min-width:56px;}
   .cfe-bar-fill{height:100%;border-radius:4px;}

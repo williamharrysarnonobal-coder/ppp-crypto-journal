@@ -924,7 +924,11 @@ function normalizeTrade(r){
     pattern_type: r.pattern_type || "Unspecified",
     execution_tf: r.execution_tf || "Unspecified",
     exit_type: r.exit_type || "",
-    post_be_result: r.post_be_result || "",
+    // Filled from Exit Type when it was never answered. "BE Hit" means the
+    // trade ended AT the breakeven stop, and there is no second possibility to
+    // choose between — so leaving it blank was asking for a decision that the
+    // Exit Type had already made. Only ever fills a blank; a stored answer wins.
+    post_be_result: r.post_be_result || _impliedPostBE(r) || "",
     chart_pattern: r.chart_pattern || "",
     confluence_answers: (r.confluence_answers && typeof r.confluence_answers === 'object') ? r.confluence_answers : null,
     session: r.session || computeSession(r) || "Unspecified",
@@ -942,6 +946,18 @@ function normalizeTrade(r){
     notes: r.notes || "",
     link: r.link || ""
   };
+}
+
+// Post-BE Result implied by Exit Type. Only ONE direction is safe:
+//   "BE Hit" -> the trade closed at the breakeven stop -> SL After BE.
+// The other direction is NOT derivable — a trade that closed at TP may or may
+// not have had its stop moved to breakeven first, and nothing in the row says
+// which. So "TP Hit" is deliberately left alone rather than guessed at.
+// A BE stop set a few ticks above entry to cover fees still closes slightly
+// green; that is still SL After BE, which is why this reads Exit Type and not
+// the sign of the P&L.
+function _impliedPostBE(row){
+  return String(row.exit_type || '').trim().toLowerCase() === 'be hit' ? 'SL After BE' : null;
 }
 
 /* ---------------- Computed fields (mirrors the AppSheet formulas) ---------------- */
@@ -1401,8 +1417,9 @@ function renderCalendar(){
       // Banded, not a pass/fail at 50%. A 41% win rate sitting on a profitable
       // month is a working system with a wide R — painting that red would be
       // the panel lying about a month that made money. Amber says look, not
-      // wrong; only a genuinely thin rate goes red.
-      const rateColor = winPct >= 50 ? 'var(--win)' : (winPct >= 38 ? 'var(--accent)' : 'var(--loss)');
+      // wrong; only a genuinely thin rate goes red. Same bands the Confluence
+      // Edge matrix uses, from the same function.
+      const rateColor = _winRateTint(winPct, winTrades + lossTrades);
       const cell = (k, v, opts = {}) => `
         <div class="cal-sum-cell${opts.lead ? ' lead' : ''}${opts.click ? ' clickable' : ''}"${
           opts.click ? ` onclick="${opts.click}"` : ''}${opts.title ? ` title="${opts.title}"` : ''}>
@@ -3171,6 +3188,21 @@ function _cfeStats(trades){
   };
 }
 
+// Colour a win rate by the win rate. Shared so the calendar summary and this
+// panel can never disagree about what "good" looks like.
+//
+// `count` matters as much as the rate: 100% off one trade is not the same
+// claim as 100% off twelve, and painting both bright green says it is. Under
+// three, the number is shown but stays muted — present, not asserted.
+const WIN_RATE_STRONG = 50, WIN_RATE_OK = 38, WIN_RATE_MIN_N = 3;
+function _winRateTint(rate, count){
+  if(rate === null || rate === undefined) return 'var(--muted)';
+  if(count !== undefined && count < WIN_RATE_MIN_N) return 'var(--muted)';
+  if(rate >= WIN_RATE_STRONG) return 'var(--win)';
+  if(rate >= WIN_RATE_OK) return 'var(--accent)';
+  return 'var(--loss)';
+}
+
 function _cfeBarCell(winRate, color){
   if(winRate === null) return '—';
   return `<div class="cfe-bar-wrap">
@@ -3250,9 +3282,12 @@ function renderConfluenceEdge(){
       const arr = seqByPattern[p][o];
       if(!arr) return `<td style="color:var(--muted);">—</td>`;
       const s = _cfeStats(arr);
-      const tint = _sequenceTint(seqOrder.indexOf(o));
-      // Count alongside the rate — "100%" off one trade should not read like
-      // "100%" off twelve.
+      // Tinted by the WIN RATE, not by the sequence position. The pooled table
+      // above tints by position because there the row IS the position; here the
+      // position is already the column header, so tinting by it again made a 0%
+      // in the 2nd column green and a 100% in the 3rd orange — the colour was
+      // answering a question nobody asked of that cell.
+      const tint = _winRateTint(s.winRate, s.count);
       return `<td><span style="color:${tint};font-weight:600;">${
         s.winRate === null ? '—' : fmtNum(s.winRate,0) + '%'}</span> <span style="color:var(--muted);font-size:11px;">${s.count}</span></td>`;
     }).join('');
@@ -10753,6 +10788,7 @@ function _renderDrawerFieldRow(f, mode, row){
       : f.key === 'trade_type' ? ` onchange="syncTradeSetupFromType(this.value)"`
       : f.key === 'trade_setup' ? ` onchange="syncPatternTypeFromSetup(this.value)"`
       : f.key === 'pattern_type' ? ` onchange="syncExecutionFromPattern(this.value)"`
+      : f.key === 'exit_type' ? ` onchange="syncPostBEFromExitType(this.value)"`
       : f.key === 'win_loss' ? ` onchange="syncPostBEFromWinLoss(this.value); syncExitTypeFromWinLoss(this.value);"`
       : '';
     return `<div class="${rowCls}"><label>${f.label}</label><select data-field="${f.key}"${onchange}><option value="">—</option>${opts}</select></div>`;
@@ -10919,6 +10955,14 @@ function _collectDrawerPatch(){
   if(patch.exit_type == null){
     const auto = _autoExitType(patch);
     if(auto) patch.exit_type = auto;
+  }
+
+  // Same "fill a blank, never overwrite" rule as Exit Type above. Runs on edit
+  // too: it is reading a fact off Exit Type, not making the judgment call the
+  // red flag was asking for.
+  if(!patch.post_be_result){
+    const implied = _impliedPostBE(patch);
+    if(implied) patch.post_be_result = implied;
   }
 
   // Create only. This flag exists to catch a moved stop the trader didn't
@@ -14777,6 +14821,20 @@ function syncExitTypeFromWinLoss(winLossValue){
   if(winLossValue !== 'Breakeven') return;
   const sel = document.querySelector('#drawerBody [data-field="exit_type"]');
   if(sel){ sel.value = 'BE Hit'; sel.dispatchEvent(new Event('change', { bubbles: true })); }
+  syncPostBEFromExitType('BE Hit');
+}
+
+// Exit Type settles Post-BE Result whenever it is "BE Hit", so the drawer stops
+// flagging a field red that the answer above it has already decided.
+function syncPostBEFromExitType(exitTypeValue){
+  const implied = _impliedPostBE({ exit_type: exitTypeValue });
+  if(!implied) return;
+  const sel = document.querySelector('#drawerBody [data-field="post_be_result"]');
+  if(!sel || sel.value) return;   // never overwrite an answer already given
+  sel.value = implied;
+  sel.dispatchEvent(new Event('change', { bubbles: true }));
+  const row = sel.closest('.field-row');
+  if(row) row.classList.remove('needs-input');
 }
 
 // Derives all the compliance/progress numbers for one account from the real
