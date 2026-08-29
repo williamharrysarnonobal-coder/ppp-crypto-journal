@@ -17,7 +17,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<link rel="stylesheet" href="css/style.css?v=235">
+<link rel="stylesheet" href="css/style.css?v=236">
 </head>
 <body>
 
@@ -91,6 +91,10 @@
       <div class="sub" id="tradeCountLabel">—</div>
     </div>
     <div class="filters">
+      <button class="rec-open-btn" onclick="openRecommendations()" title="What the data says to look for, and what to skip">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2Z"/></svg>
+        What should I trade?
+      </button>
       <select id="yearFilter" onchange="onDashYearChange()"></select>
       <select id="monthFilter" onchange="applyFilters()"></select>
       <select id="accountFilter" onchange="applyFilters()">
@@ -1260,6 +1264,19 @@
 </div>
 </div>
 
+<div class="modal-overlay" id="recModal" onclick="if(event.target===this) closeRecommendations()">
+  <div class="modal-box rec-box" style="position:relative;">
+    <button class="modal-close" onclick="closeRecommendations()">✕</button>
+    <h3>What should I trade?</h3>
+    <div class="modal-sub" id="recSub"></div>
+    <div class="rec-tabs">
+      <button class="rec-tab active" data-rec-tab="do" onclick="setRecTab('do')">Look for these</button>
+      <button class="rec-tab" data-rec-tab="avoid" onclick="setRecTab('avoid')">Avoid these</button>
+    </div>
+    <div id="recBody"></div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="tradeModal" onclick="if(event.target===this) closeModal()">
   <div class="modal-box" style="position:relative;">
     <button class="modal-close" onclick="closeModal()">✕</button>
@@ -2131,6 +2148,6 @@
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=2"></script>
-<script src="js/dashboard.js?v=397"></script>
+<script src="js/dashboard.js?v=398"></script>
 </body>
 </html>

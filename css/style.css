@@ -1877,6 +1877,64 @@
   .panel-details-body{padding-top:12px;}
   @media (prefers-reduced-motion: reduce){.panel-details > summary::before{transition:none;}}
 
+  /* ---------- "What should I trade?" ---------- */
+  .rec-open-btn{
+    display:inline-flex;align-items:center;gap:7px;font:inherit;font-size:12.5px;
+    font-weight:600;padding:7px 14px;border-radius:6px;cursor:pointer;
+    background:var(--accent);color:#12141C;border:1px solid var(--accent);
+    white-space:nowrap;
+  }
+  .rec-open-btn:hover{filter:brightness(1.08);}
+  .rec-open-btn:focus-visible{outline:2px solid var(--ink);outline-offset:2px;}
+  .rec-box{max-width:700px;max-height:88vh;overflow-y:auto;}
+  .rec-tabs{display:flex;gap:6px;margin:14px 0 4px;border-bottom:1px solid var(--rule);}
+  .rec-tab{
+    font:inherit;font-size:13px;font-weight:600;padding:9px 16px;cursor:pointer;
+    background:none;border:none;border-bottom:2px solid transparent;
+    color:var(--muted);margin-bottom:-1px;
+  }
+  .rec-tab:hover{color:var(--ink);}
+  .rec-tab.active{color:var(--accent);border-bottom-color:var(--accent);}
+  .rec-tab:focus-visible{outline:2px solid var(--accent);outline-offset:-2px;border-radius:4px;}
+  .rec-lead{
+    margin:16px 0 4px;padding:13px 15px;border-radius:8px;font-size:14px;
+    background:color-mix(in srgb, var(--win) 8%, var(--surface));
+    border:1px solid color-mix(in srgb, var(--win) 30%, var(--rule));
+    border-left:3px solid var(--win);color:var(--ink);
+  }
+  .rec-lead-bad{
+    background:color-mix(in srgb, var(--loss) 8%, var(--surface));
+    border-color:color-mix(in srgb, var(--loss) 30%, var(--rule));
+    border-left-color:var(--loss);
+  }
+  .rec-list{margin-top:14px;}
+  .rec-row{
+    display:grid;grid-template-columns:104px 1fr auto;gap:4px 14px;
+    padding:12px 0;border-bottom:1px solid var(--rule);align-items:baseline;
+  }
+  .rec-row:last-child{border-bottom:none;}
+  .rec-dim{
+    font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.08em;
+    text-transform:uppercase;color:var(--muted);
+  }
+  .rec-name{font-size:14.5px;font-weight:600;color:var(--ink);}
+  .rec-avg{
+    font-family:'IBM Plex Mono',monospace;font-size:15px;font-weight:700;
+    text-align:right;white-space:nowrap;
+  }
+  .rec-unit{display:block;font-size:9.5px;font-weight:400;color:var(--muted);letter-spacing:.05em;text-transform:uppercase;}
+  .rec-meta{grid-column:2 / -1;font-size:11.5px;color:var(--muted);}
+  .rec-foot{
+    margin-top:16px;padding-top:12px;border-top:1px solid var(--rule);
+    font-size:11.5px;color:var(--muted);line-height:1.6;
+  }
+  @media(max-width:560px){
+    .rec-row{grid-template-columns:1fr auto;}
+    .rec-dim{grid-column:1 / -1;}
+    .rec-meta{grid-column:1 / -1;}
+  }
+  body.mobile-mode .rec-open-btn{width:100%;justify-content:center;}
+
   /* Confluence Edge + Breakeven Protection dashboard panels */
   .cfe-grid{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-bottom:16px;}
   /* These were the same muted grey, the same size and the same casing as the

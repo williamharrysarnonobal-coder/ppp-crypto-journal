@@ -3166,6 +3166,181 @@ function renderBreakdown(){
   `;
 }
 
+/* ---------------- "What should I trade?" ----------------
+   Ranked by AVERAGE NET P&L PER TRADE, not win rate. His own August is the
+   argument: 41% win rate, +$1,465.92 on the month. A win-rate ranking would
+   have told him to stop doing the thing that made the money. Expectancy is
+   what a recommendation has to be built on — it already contains both how
+   often you win and how much you win when you do.
+
+   Nothing is recommended off fewer than REC_MIN_TRADES, and the count is
+   printed next to every line, because "best symbol" off two trades is not a
+   finding. Groups that clear the bar but sit near zero are left out of both
+   tabs — a recommendation has to be worth acting on, not merely measurable. */
+const REC_MIN_TRADES = 5;
+let REC_TAB = 'do';
+
+// Every dimension the summary scans. The first five mirror the Breakdown
+// panel's tabs; the rest are the ones that only exist inside other panels, so
+// this is the one place they can be compared against each other.
+function _recDimensions(trades){
+  const plain = (label, key) => ({
+    label,
+    groups: _recGroupBy(trades, t => {
+      const v = t[key];
+      return (v === null || v === undefined || String(v).trim() === '') ? null : String(v);
+    })
+  });
+
+  const dims = [
+    plain('Symbol', 'symbol'),
+    plain('Setup', 'trade_setup'),
+    plain('Pattern', 'pattern_type'),
+    plain('Session', 'session'),
+    plain('Day of week', 'day_of_week'),
+    plain('Execution TF', 'execution_tf'),
+    plain('AOF phase', 'aof_phase'),
+    plain('Exit type', 'exit_type'),
+    plain('Account', 'account'),
+  ];
+
+  // Hour the trade was OPENED — the decision point, matching the Hour of Day
+  // panel rather than the calendar's close-date view.
+  dims.push({ label:'Hour of day', groups: _recGroupBy(trades, t =>
+    t.open_date ? `${String(t.open_date.getHours()).padStart(2,'0')}:00` : null) });
+
+  // Confluence score, in the same three buckets the Confluence Edge panel uses.
+  dims.push({ label:'Confluence score', groups: _recGroupBy(trades, t => {
+    const s = _confluenceScoreFor(t);
+    if(s === null) return null;
+    return s >= 0.8 ? '80–100%' : (s >= 0.5 ? '50–80%' : 'under 50%');
+  })});
+
+  // Sequence position and entry trigger, read the same way Confluence Edge
+  // reads them — by tag, never by a hardcoded index.
+  const answerBy = (t, pick) => {
+    const cfg = CONFLUENCE_SETUPS[`${t.trade_type}|${t.pattern_type}`];
+    if(!cfg || !cfg.items || !t.confluence_answers) return null;
+    const i = cfg.items.findIndex(pick);
+    return i === -1 ? null : (t.confluence_answers[i] || null);
+  };
+  dims.push({ label:'Sequence position', groups: _recGroupBy(trades, t => answerBy(t, it => it.select)) });
+  dims.push({ label:'Entry trigger', groups: _recGroupBy(trades, t => {
+    const a = answerBy(t, it => it.retest);
+    return a ? ({ yes:'Zero-line cross', retest:'Retest', almost:'Almost', no:'No confirmation' }[a] || null) : null;
+  })});
+
+  // Broken rules are one-to-many — a trade breaking three rules counts against
+  // all three, the same way the cost-per-rule table already does it.
+  dims.push({ label:'Broken rule', avoidOnly:true, groups:
+    _recGroupByMulti(trades, t => _brokenRuleTags(t.unfollowed_rules)) });
+
+  return dims.filter(d => d.groups.length);
+}
+
+function _recStats(arr){
+  const net = arr.reduce((s,t) => s + netPnl(t), 0);
+  return { n: arr.length, net, avg: net / arr.length, winRate: _winRateOf(arr) };
+}
+
+function _recGroupBy(trades, keyOf){
+  const g = {};
+  trades.forEach(t => {
+    const k = keyOf(t);
+    if(k === null || k === undefined || k === '' || k === 'Unspecified') return;
+    (g[k] = g[k] || []).push(t);
+  });
+  return Object.entries(g)
+    .filter(([, arr]) => arr.length >= REC_MIN_TRADES)
+    .map(([name, arr]) => ({ name, ..._recStats(arr) }));
+}
+
+function _recGroupByMulti(trades, keysOf){
+  const g = {};
+  trades.forEach(t => (keysOf(t) || []).forEach(k => { (g[k] = g[k] || []).push(t); }));
+  return Object.entries(g)
+    .filter(([, arr]) => arr.length >= REC_MIN_TRADES)
+    .map(([name, arr]) => ({ name, ..._recStats(arr) }));
+}
+
+function openRecommendations(){
+  REC_TAB = 'do';
+  document.querySelectorAll('.rec-tab').forEach(b =>
+    b.classList.toggle('active', b.dataset.recTab === 'do'));
+  renderRecommendations();
+  document.getElementById('recModal').classList.add('open');
+}
+function closeRecommendations(){
+  document.getElementById('recModal').classList.remove('open');
+}
+function setRecTab(tab){
+  REC_TAB = tab;
+  document.querySelectorAll('.rec-tab').forEach(b =>
+    b.classList.toggle('active', b.dataset.recTab === tab));
+  renderRecommendations();
+}
+
+function renderRecommendations(){
+  const body = document.getElementById('recBody');
+  const sub = document.getElementById('recSub');
+  if(!body) return;
+
+  const trades = FILTERED.filter(t => t.close_date);
+  if(sub){
+    sub.textContent = `${trades.length} trade${trades.length===1?'':'s'} in view · ` +
+      `nothing is listed off fewer than ${REC_MIN_TRADES}, and every line shows what it is built on.`;
+  }
+
+  if(trades.length < REC_MIN_TRADES){
+    body.innerHTML = `<div class="empty-state">Only ${trades.length} trade${trades.length===1?'':'s'} in view. This needs at least ${REC_MIN_TRADES} in a single group before it can say anything worth acting on — widen the month filter, or keep journaling.</div>`;
+    return;
+  }
+
+  const dims = _recDimensions(trades);
+  const wantGood = REC_TAB === 'do';
+
+  // One line per dimension: its best group if this is the "look for" tab, its
+  // worst if it is the "avoid" tab. Near-zero groups appear in neither.
+  const rows = [];
+  dims.forEach(d => {
+    if(wantGood && d.avoidOnly) return;
+    const sorted = [...d.groups].sort((a,b) => b.avg - a.avg);
+    const pick = wantGood ? sorted[0] : sorted[sorted.length - 1];
+    if(!pick) return;
+    if(wantGood ? pick.avg <= 0 : pick.avg >= 0) return;
+    // What it is being compared against — a "best" with nothing to beat is
+    // just the only thing you did.
+    const others = d.groups.length - 1;
+    rows.push({ dim: d.label, ...pick, others });
+  });
+
+  if(!rows.length){
+    body.innerHTML = `<div class="empty-state">${wantGood
+      ? 'Nothing clears the bar yet — no group of ' + REC_MIN_TRADES + '+ trades is making money on average. That is worth knowing on its own.'
+      : 'Nothing to avoid — no group of ' + REC_MIN_TRADES + '+ trades is losing on average.'}</div>`;
+    return;
+  }
+
+  rows.sort((a,b) => wantGood ? b.avg - a.avg : a.avg - b.avg);
+
+  const head = wantGood
+    ? `<div class="rec-lead">Your strongest edge is <strong>${escapeHtml(rows[0].dim)} · ${escapeHtml(rows[0].name)}</strong> at <strong>${fmtMoney(rows[0].avg)}</strong> a trade across ${rows[0].n}.</div>`
+    : `<div class="rec-lead rec-lead-bad">Your most expensive habit is <strong>${escapeHtml(rows[0].dim)} · ${escapeHtml(rows[0].name)}</strong> at <strong>${fmtMoney(rows[0].avg)}</strong> a trade across ${rows[0].n}.</div>`;
+
+  const list = rows.map(r => `
+    <div class="rec-row">
+      <div class="rec-dim">${escapeHtml(r.dim)}</div>
+      <div class="rec-name">${escapeHtml(r.name)}</div>
+      <div class="rec-avg ${r.avg >= 0 ? 'pos' : 'neg'}">${fmtMoney(r.avg)}<span class="rec-unit">per trade</span></div>
+      <div class="rec-meta">${r.n} trade${r.n===1?'':'s'}${
+        r.winRate !== null ? ` · ${fmtNum(r.winRate,0)}% win` : ''} · ${fmtMoney(r.net)} total${
+        r.others ? ` · beat ${r.others} other${r.others===1?'':'s'}` : ' · nothing else to compare'}</div>
+    </div>`).join('');
+
+  body.innerHTML = head + `<div class="rec-list">${list}</div>` +
+    `<div class="rec-foot">Each line is measured on its own, not in combination — a Monday and a 15 mins HL both paying does not prove a Monday 15 mins HL pays. Ranked by average net P&amp;L per trade, which is the number that decides whether something makes money; a low win rate with a wide R can still top this list, and should.</div>`;
+}
+
 /* ---------------- Confluence Edge + Breakeven Protection ---------------- */
 
 // Fraction of full confluence credit (0..1) for one journaled trade, using
