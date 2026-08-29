@@ -3238,16 +3238,26 @@ function _cfeSeqMatrixHTML(){
       // Nothing was ever traded at this position. A bare dash, no count.
       if(!arr) return `<td><span class="cfe-cell-none" title="No trades at this position">—</span></td>`;
 
-      const s = _cfeStats(arr);
-      const count = `<span class="cfe-cell-n">${s.count}</span>`;
-      const avg = CFE_SEQ_PICK ? ` <span class="cfe-cell-n">· ${fmtMoney(s.avgPnl)}</span>` : '';
+      // Wins and losses written out, rather than a percentage plus a footnote.
+      // "100%* 1" needed a legend to mean "one trade, it won"; "1W 0L" says it
+      // on its own. The rate is then only added where it is actually a rate —
+      // three or more decided trades — so nothing has to be marked as unsafe
+      // to read, because nothing unsafe to read is shown.
+      const wins = arr.filter(_isWin).length;
+      const losses = arr.filter(_isLoss).length;
+      const decided = wins + losses;
+      const blanks = arr.filter(t => !String(t.win_loss || '').trim()).length;
+      const avgP = _cfeStats(arr).avgPnl;
+      const avg = CFE_SEQ_PICK ? ` <span class="cfe-cell-n">· ${fmtMoney(avgP)}</span>` : '';
 
-      // Trades exist, but not one of them has a Win or a Loss — every one is
-      // breakeven or was never given a result. There is no win rate to show,
-      // which is NOT the same as having no trades, and a bare dash for both
-      // was the confusing part: "— 2" read as a contradiction.
-      if(s.winRate === null){
-        return `<td><span class="cfe-cell-na" title="${s.count} trade${s.count===1?'':'s'} here, none with a Win or Loss set — no win rate can be worked out">n/a</span> ${count}${avg}</td>`;
+      // Nothing here has a Win or a Loss: every one is breakeven, or the result
+      // was never filled in. Naming which of the two is the point — one is a
+      // real outcome, the other is a gap he can close.
+      if(decided === 0){
+        const what = blanks ? `${blanks} unset` : `${arr.length} BE`;
+        return `<td><span class="cfe-cell-na" title="${
+          blanks ? 'Win/Loss was never set on these — nothing to measure until it is'
+                 : 'All breakeven, so there is no win or loss to rate'}">${what}</span>${avg}</td>`;
       }
 
       // Tinted by the WIN RATE, not by the sequence position. The pooled table
@@ -3255,13 +3265,12 @@ function _cfeSeqMatrixHTML(){
       // position is already the column header, so tinting by it again made a 0%
       // in the 2nd column green and a 100% in the 3rd orange — the colour was
       // answering a question nobody asked of that cell.
-      const thin = s.count < WIN_RATE_MIN_N;
-      const tint = _winRateTint(s.winRate, s.count);
-      const title = thin
-        ? `${fmtNum(s.winRate,0)}% off just ${s.count} trade${s.count===1?'':'s'} — too few to read as a rate`
-        : `${fmtNum(s.winRate,0)}% across ${s.count} trades`;
-      return `<td><span style="color:${tint};font-weight:600;" title="${title}">${fmtNum(s.winRate,0)}%${
-        thin ? '<span class="cfe-cell-thin">*</span>' : ''}</span> ${count}${avg}</td>`;
+      const rate = wins / decided * 100;
+      const showRate = decided >= WIN_RATE_MIN_N;
+      const ratePart = showRate
+        ? ` <span style="color:${_winRateTint(rate, decided)};font-weight:600;">${fmtNum(rate,0)}%</span>`
+        : '';
+      return `<td><span class="cfe-cell-wl">${wins}W ${losses}L</span>${ratePart}${avg}</td>`;
     }).join('');
     return `<tr><td style="white-space:nowrap;">${escapeHtml(p)}</td>${cells}</tr>`;
   }).join('');
@@ -3462,10 +3471,7 @@ function renderConfluenceEdge(){
             <table class="breakdown" id="cfeSeqMatrix">${seqMatrixHtml}</table>
           </div>
           <div class="cfe-legend">
-            <span><b>68%</b> <span class="cfe-cell-n">12</span> &mdash; win rate, then how many trades it came from</span>
-            <span><span class="cfe-cell-thin">*</span> fewer than ${WIN_RATE_MIN_N} trades, so the rate is shown grey rather than read as one</span>
-            <span><span class="cfe-cell-na">n/a</span> trades here, but none with a Win or Loss set</span>
-            <span><span class="cfe-cell-none">&mdash;</span> no trades at that position</span>
+            <span>Wins and losses at that position. The win rate is added once there are ${WIN_RATE_MIN_N} or more &mdash; below that it would just be restating the count.</span>
           </div>` : ''}
         ${trigRows ? `
           <div class="cfe-subhead">By entry trigger</div>
