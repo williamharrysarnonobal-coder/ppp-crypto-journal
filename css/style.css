@@ -1989,6 +1989,12 @@
     box-shadow:inset 2px 0 0 var(--accent);
   }
   .cfe-seq-note{font-size:11.5px;color:var(--muted);margin:-4px 0 10px;}
+  /* Data that needs repairing, not an observation — it sits outside the
+     disclosure and carries the warning tone rather than the neutral one. */
+  .cfe-insight-warn{
+    border-left:3px solid var(--warn);
+    background:color-mix(in srgb, var(--warn) 8%, var(--surface));
+  }
   /* Three states that all used to render as a grey dash, now each with its own
      mark: a rate, "n/a" (traded but nothing decided), and "—" (never traded). */
   .cfe-cell-n{color:var(--muted);font-size:11px;}

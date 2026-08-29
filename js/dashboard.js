@@ -3250,16 +3250,7 @@ function _recDimensions(trades){
   // position. Every answer is checked against what the item can actually
   // accept, and a value the question could never have produced is treated as
   // stale rather than shown as data.
-  const answerBy = (t, pick, allowed) => {
-    const cfg = CONFLUENCE_SETUPS[`${t.trade_type}|${t.pattern_type}`];
-    if(!cfg || !cfg.items || !t.confluence_answers) return null;
-    const i = cfg.items.findIndex(pick);
-    if(i === -1) return null;
-    const a = t.confluence_answers[i];
-    if(!a) return null;
-    const valid = allowed || (cfg.items[i].select || []);
-    return valid.includes(a) ? a : null;
-  };
+  const answerBy = _confluenceAnswerAt;
   dims.push({ label:'Sequence position', groups: _recGroupBy(trades, t => answerBy(t, it => it.select)) });
   dims.push({ label:'Entry trigger', groups: _recGroupBy(trades, t => {
     // A retest item is a yes/no/almost question, plus "retest" itself — not a
@@ -3437,6 +3428,42 @@ function _confluenceScoreFor(t){
   if(!cfg) return null;
   const { total, done } = _confluenceProgress(cfg.items, t.confluence_answers, !!t.chart_pattern);
   return total ? done / total : null;
+}
+
+// Reads one checklist answer off a trade, and refuses it when the stored value
+// is not something that question could ever have produced.
+//
+// Answers are keyed by their POSITION in the checklist, so a trade whose
+// Pattern Type was changed after the answers were saved now reads them against
+// a different set of questions — index 3 is a Sequence on one checklist and a
+// plain yes/no on another. That is not a rare edge: it is what happens any
+// time a pattern gets corrected. One definition, used by both the Confluence
+// Edge tables and the recommendation popup, so the two can never disagree
+// about which answers are trustworthy.
+function _confluenceAnswerAt(t, pick, allowed){
+  const cfg = CONFLUENCE_SETUPS[`${t.trade_type}|${t.pattern_type}`];
+  if(!cfg || !cfg.items || !t.confluence_answers) return null;
+  const i = cfg.items.findIndex(pick);
+  if(i === -1) return null;
+  const a = t.confluence_answers[i];
+  if(!a) return null;
+  const valid = allowed || (cfg.items[i].select || []);
+  return valid.includes(a) ? a : null;
+}
+
+// Every answer on a trade that its CURRENT checklist cannot accept. A non-zero
+// count means the trade's confluence is being read against the wrong questions
+// — its score is under-counted and it is missing from the sequence tables.
+function _staleConfluenceItems(t){
+  const cfg = CONFLUENCE_SETUPS[`${t.trade_type}|${t.pattern_type}`];
+  if(!cfg || !cfg.items || !t.confluence_answers) return [];
+  const YESNO = ['yes','no','almost','retest'];
+  return cfg.items.map((it, i) => {
+    const a = t.confluence_answers[i];
+    if(!a) return null;
+    const valid = it.select || YESNO;
+    return valid.includes(a) ? null : { i, tag: it.tag, got: a, expected: valid };
+  }).filter(Boolean);
 }
 
 function _cfeStats(trades){
@@ -3621,10 +3648,9 @@ function renderConfluenceEdge(){
   const seqTally = {};
   const seqByPattern = {};
   scored.forEach(({ t }) => {
-    const cfg = CONFLUENCE_SETUPS[`${t.trade_type}|${t.pattern_type}`];
-    const idx = cfg.items.findIndex(it => it.select);
-    if(idx < 0) return;
-    const ans = t.confluence_answers[idx];
+    // Validated, same as the recommendation popup: an answer the question
+    // could not have produced is stale, not data.
+    const ans = _confluenceAnswerAt(t, it => it.select);
     if(!ans) return;
     (seqTally[ans] = seqTally[ans] || []).push(t);
     const p = t.pattern_type || 'Unspecified';
@@ -3656,10 +3682,7 @@ function renderConfluenceEdge(){
   // --- entry trigger (the Execution retest-enabled item) ---
   const trigTally = {};
   scored.forEach(({ t }) => {
-    const cfg = CONFLUENCE_SETUPS[`${t.trade_type}|${t.pattern_type}`];
-    const idx = cfg.items.findIndex(it => it.retest);
-    if(idx < 0) return;
-    const ans = t.confluence_answers[idx];
+    const ans = _confluenceAnswerAt(t, it => it.retest, ['yes','no','almost','retest']);
     if(!ans) return;
     (trigTally[ans] = trigTally[ans] || []).push(t);
   });
@@ -3702,6 +3725,25 @@ function renderConfluenceEdge(){
   }
   if(!insights.length) insights.push(`Only ${scored.length} trade${scored.length===1?'':'s'} with confluence data so far — patterns here get trustworthy around 15–20 trades. Keep filling in the checklist.`);
 
+  // Trades whose stored answers no longer line up with their own checklist.
+  // Named, because nothing else can fix them: the answers were given against a
+  // different set of questions, so the only repair is to re-open the Confluence
+  // and answer it again against the pattern the trade actually carries now.
+  const stale = scored
+    .map(({ t }) => ({ t, bad: _staleConfluenceItems(t) }))
+    .filter(x => x.bad.length);
+  const staleHtml = stale.length ? `
+    <div class="cfe-insight cfe-insight-warn">⚠ ${stale.length} trade${stale.length===1?'':'s'}
+      ${stale.length===1?'has':'have'} confluence answers that its current checklist cannot accept —
+      the Pattern Type was changed after the answers were saved, so they are being read against
+      different questions. ${stale.slice(0,5).map(x =>
+        `<strong>${escapeHtml(x.t.symbol || '—')} ${x.t.close_date ? x.t.close_date.toLocaleDateString(undefined,{day:'numeric',month:'short'}) : ''}</strong>`
+      ).join(', ')}${stale.length > 5 ? `, and ${stale.length - 5} more` : ''}.
+      ${stale.length===1?'It is':'They are'} left out of the sequence and trigger tables rather than
+      counted wrongly, and ${stale.length===1?'its':'their'} confluence score is under-counted.
+      Re-open the Confluence on ${stale.length===1?'it':'them'} and answer it against the pattern
+      ${stale.length===1?'it carries':'they carry'} now.</div>` : '';
+
   // The panel's title asks "does your checklist pay?", so answer that first
   // and in one line. The three tables are how the answer was reached, not the
   // answer — they move behind a disclosure.
@@ -3729,6 +3771,7 @@ function renderConfluenceEdge(){
       <span class="verdict-word">${vWord}</span>
       <span class="verdict-say"><span class="q">Does a fuller checklist win more?</span>${vSay}</span>
     </div>
+    ${staleHtml}
     <details class="panel-details">
       <summary>Show the breakdown &mdash; by score, by sequence, by entry trigger</summary>
       <div class="panel-details-body">
