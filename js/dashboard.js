@@ -3211,6 +3211,63 @@ function _cfeBarCell(winRate, color){
   </div>`;
 }
 
+const CFE_SEQ_ORDER = ['1st','2nd','3rd','4th','5th'];
+// Which sequence position the split-by-setup table is narrowed to; null shows
+// every column. Picking the same one again clears it.
+let CFE_SEQ_PICK = null;
+
+// Built on its own so a pick can swap just this table. Reads the tally stashed
+// by renderConfluenceEdge rather than taking it as an argument, because the
+// click handler has no way to get at that local.
+function _cfeSeqMatrixHTML(){
+  const byPattern = window._cfeSeqByPattern || {};
+  const cols = CFE_SEQ_PICK ? [CFE_SEQ_PICK] : CFE_SEQ_ORDER;
+  // With a column picked, a setup that never answered THAT position has nothing
+  // to say — dropping the row is the whole point of narrowing.
+  const patterns = Object.keys(byPattern).sort()
+    .filter(p => cols.some(o => byPattern[p][o]));
+
+  if(!patterns.length){
+    return `<tr><td colspan="${cols.length + 1}" style="color:var(--muted);padding:14px 0;">No setup has a ${CFE_SEQ_PICK} yet.</td></tr>`;
+  }
+
+  const head = `<tr><th>Setup</th>${cols.map(o => `<th>${o}</th>`).join('')}</tr>`;
+  const rows = patterns.map(p => {
+    const cells = cols.map(o => {
+      const arr = byPattern[p][o];
+      if(!arr) return `<td style="color:var(--muted);">—</td>`;
+      const s = _cfeStats(arr);
+      // Tinted by the WIN RATE, not by the sequence position. The pooled table
+      // tints by position because there the row IS the position; here the
+      // position is already the column header, so tinting by it again made a 0%
+      // in the 2nd column green and a 100% in the 3rd orange — the colour was
+      // answering a question nobody asked of that cell.
+      const tint = _winRateTint(s.winRate, s.count);
+      return `<td><span style="color:${tint};font-weight:600;">${
+        s.winRate === null ? '—' : fmtNum(s.winRate,0) + '%'}</span> <span style="color:var(--muted);font-size:11px;">${s.count}</span>${
+        CFE_SEQ_PICK ? ` <span style="color:var(--muted);font-size:11px;">· ${fmtMoney(s.avgPnl)}</span>` : ''}</td>`;
+    }).join('');
+    return `<tr><td style="white-space:nowrap;">${escapeHtml(p)}</td>${cells}</tr>`;
+  }).join('');
+  return head + rows;
+}
+
+function pickCfeSequence(pos){
+  CFE_SEQ_PICK = (CFE_SEQ_PICK === pos) ? null : pos;
+  const tbl = document.getElementById('cfeSeqMatrix');
+  if(tbl) tbl.innerHTML = _cfeSeqMatrixHTML();
+  const note = document.getElementById('cfeSeqMatrixNote');
+  if(note){
+    note.innerHTML = CFE_SEQ_PICK
+      ? `Showing <strong>${CFE_SEQ_PICK}</strong> only &mdash; <span class="cfe-seq-clear" onclick="pickCfeSequence('${CFE_SEQ_PICK}')">show every position</span>`
+      : `Click a row in the table above to narrow this to one position.`;
+  }
+  document.querySelectorAll('.cfe-seq-row').forEach(tr => {
+    const on = CFE_SEQ_PICK && tr.textContent.trim().startsWith(CFE_SEQ_PICK);
+    tr.classList.toggle('is-picked', !!on);
+  });
+}
+
 // Answers the question the checklist exists for: do high-confluence trades
 // actually win more? Groups the trades in view by score bucket, by sequence
 // position across every setup that asks for one, and by entry trigger
@@ -3262,11 +3319,12 @@ function renderConfluenceEdge(){
     (seqByPattern[p] = seqByPattern[p] || {});
     (seqByPattern[p][ans] = seqByPattern[p][ans] || []).push(t);
   });
-  const seqOrder = ['1st','2nd','3rd','4th','5th'];
+  const seqOrder = CFE_SEQ_ORDER;
   const seqRows = seqOrder.filter(o => seqTally[o]).map(o => {
     const s = _cfeStats(seqTally[o]);
     const tint = _sequenceTint(seqOrder.indexOf(o));
-    return `<tr>
+    const picked = CFE_SEQ_PICK === o;
+    return `<tr class="cfe-seq-row${picked ? ' is-picked' : ''}" onclick="pickCfeSequence('${o}')" title="Show only ${o} in the split below">
       <td><span style="color:${tint};font-weight:700;font-family:'IBM Plex Mono',monospace;">${o}</span></td>
       <td>${s.count}</td>
       <td>${_cfeBarCell(s.winRate, tint)}</td>
@@ -3274,25 +3332,14 @@ function renderConfluenceEdge(){
     </tr>`;
   }).join('');
 
+  // Stashed so picking a sequence can rebuild ONLY the matrix. Re-running the
+  // whole panel would reset the <details> the matrix lives inside — you would
+  // click a row and the thing you were reading would fold shut.
+  window._cfeSeqByPattern = seqByPattern;
+  const seqPatterns = Object.keys(seqByPattern).sort();
   // Only worth drawing once more than one pattern has actually answered a
   // Sequence — with a single pattern it would just restate the table above.
-  const seqPatterns = Object.keys(seqByPattern).sort();
-  const seqMatrixRows = seqPatterns.length > 1 ? seqPatterns.map(p => {
-    const cells = seqOrder.map(o => {
-      const arr = seqByPattern[p][o];
-      if(!arr) return `<td style="color:var(--muted);">—</td>`;
-      const s = _cfeStats(arr);
-      // Tinted by the WIN RATE, not by the sequence position. The pooled table
-      // above tints by position because there the row IS the position; here the
-      // position is already the column header, so tinting by it again made a 0%
-      // in the 2nd column green and a 100% in the 3rd orange — the colour was
-      // answering a question nobody asked of that cell.
-      const tint = _winRateTint(s.winRate, s.count);
-      return `<td><span style="color:${tint};font-weight:600;">${
-        s.winRate === null ? '—' : fmtNum(s.winRate,0) + '%'}</span> <span style="color:var(--muted);font-size:11px;">${s.count}</span></td>`;
-    }).join('');
-    return `<tr><td style="white-space:nowrap;">${escapeHtml(p)}</td>${cells}</tr>`;
-  }).join('') : '';
+  const seqMatrixHtml = seqPatterns.length > 1 ? _cfeSeqMatrixHTML() : '';
 
   // --- entry trigger (the Execution retest-enabled item) ---
   const trigTally = {};
@@ -3389,13 +3436,14 @@ function renderConfluenceEdge(){
             </table>` : `<div class="empty-state" style="padding:20px 0;">No sequence answers yet — the Confluence checklist asks &ldquo;which HL/LH is this?&rdquo; on every setup except the 4 Hour ones.</div>`}
           </div>
         </div>
-        ${seqMatrixRows ? `
-          <div class="cfe-subhead">Same sequence, split by setup &mdash; win rate, then trade count</div>
+        ${seqMatrixHtml ? `
+          <div class="cfe-subhead">Split by setup &mdash; win rate, then trade count</div>
+          <div class="cfe-seq-note" id="cfeSeqMatrixNote">${
+            CFE_SEQ_PICK
+              ? `Showing <strong>${CFE_SEQ_PICK}</strong> only &mdash; <span class="cfe-seq-clear" onclick="pickCfeSequence('${CFE_SEQ_PICK}')">show every position</span>`
+              : `Click a row in the table above to narrow this to one position.`}</div>
           <div style="overflow-x:auto;">
-            <table class="breakdown">
-              <tr><th>Setup</th>${seqOrder.map(o => `<th>${o}</th>`).join('')}</tr>
-              ${seqMatrixRows}
-            </table>
+            <table class="breakdown" id="cfeSeqMatrix">${seqMatrixHtml}</table>
           </div>` : ''}
         ${trigRows ? `
           <div class="cfe-subhead">By entry trigger</div>
