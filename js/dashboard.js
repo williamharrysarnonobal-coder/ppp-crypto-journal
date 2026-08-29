@@ -9950,9 +9950,21 @@ function getFilteredJournalRows(exceptKey){
 // warning constant and therefore ignorable.
 const JOURNAL_REQUIRED_KEYS = [
   'symbol','open_date','close_date','win_loss','profit_loss','account',
-  'session','trade_setup','pattern_type','execution_tf','aof_phase',
+  'session','trade_type','trade_setup','pattern_type','execution_tf','aof_phase',
   'rules_followed','exit_type'
 ];
+
+// Which columns are blank, and on how many trades. The per-row icon says a row
+// is incomplete; this says WHAT is incomplete across the whole journal, which
+// is the difference between "something is missing" and "you never filled in
+// Exit Type on 31 trades".
+function _journalBlankSummary(rows){
+  const counts = {};
+  rows.forEach(r => _journalMissingFields(r).forEach(label => {
+    counts[label] = (counts[label] || 0) + 1;
+  }));
+  return Object.entries(counts).sort((a,b) => b[1] - a[1]);
+}
 
 function warnIconSVG(){
   return `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`;
@@ -10044,6 +10056,17 @@ function _journalMissingFields(r){
   if(String(r.rules_followed || '').trim().toLowerCase() === 'no' && isBlank('unfollowed_rules')){
     missing.push(labelOf('unfollowed_rules'));
   }
+  // Same shape, and it was missing: a Breakeven trade with no Post-BE Result
+  // is invisible to the whole Breakeven Protection panel — it appears in
+  // neither "ran on to TP" nor "stopped at BE" — yet the journal gave no hint
+  // anything was wrong with the row. Conditional, because on any other result
+  // the field is legitimately N/A. Exit Type "BE Hit" already fills it in on
+  // read, so this only fires where nothing can be inferred.
+  if(String(r.win_loss || '').trim().toLowerCase() === 'breakeven' &&
+     visible.has('post_be_result') && isBlank('post_be_result') &&
+     !_impliedPostBE(r)){
+    missing.push(labelOf('post_be_result'));
+  }
   return missing;
 }
 
@@ -10065,7 +10088,10 @@ function renderJournalTable(){
     `${rows.length} trade${rows.length===1?'':'s'}` +
     (JOURNAL_INCOMPLETE_ONLY
       ? ` · <span class="journal-warn-count" onclick="toggleJournalIncompleteOnly()" title="Show all trades again">showing incomplete only ✕</span>`
-      : (incomplete ? ` · <span class="journal-warn-count" onclick="toggleJournalIncompleteOnly()" title="Show only these">${incomplete} incomplete</span>` : '')) +
+      : (incomplete ? ` · <span class="journal-warn-count" onclick="toggleJournalIncompleteOnly()" title="${
+          escapeHtml('Blank on: ' + _journalBlankSummary(rows)
+            .map(([label, n]) => `${label} (${n})`).join(', ') + ' — click to show only these')
+        }">${incomplete} incomplete</span>` : '')) +
     (invalid ? ` · <span class="journal-invalid-count" title="These hold a value their column no longer accepts — open each one and re-pick it">${invalid} invalid</span>` : '');
 
   if(rows.length === 0){
