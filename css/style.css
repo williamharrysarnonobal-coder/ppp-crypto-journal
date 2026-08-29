@@ -1916,14 +1916,29 @@
   }
   .rec-dim-block{margin-bottom:14px;}
   .rec-dim-block:last-child{margin-bottom:0;}
+  /* Same problem the Confluence Edge subheads had: a heading in plain ink at
+     nearly body size, sitting directly above its own rows, reads as another
+     row. Coloured, spaced and ruled so it is unmistakably a label. */
   .rec-dim-head{
-    display:flex;align-items:baseline;gap:9px;font-size:12px;font-weight:600;
-    color:var(--ink);margin-bottom:5px;
+    display:flex;align-items:baseline;gap:9px;font-size:11px;font-weight:700;
+    letter-spacing:.09em;text-transform:uppercase;color:var(--info);
+    margin-bottom:6px;padding-bottom:5px;
+    border-bottom:1px dashed color-mix(in srgb, var(--info) 30%, var(--rule));
   }
   .rec-pool{
     font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--muted);
-    font-weight:400;letter-spacing:.04em;
+    font-weight:400;letter-spacing:.04em;text-transform:none;margin-left:auto;
   }
+  .rec-controls{display:flex;align-items:center;gap:10px;margin-top:14px;}
+  .rec-period-label{
+    font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.1em;
+    text-transform:uppercase;color:var(--muted);
+  }
+  .rec-controls select{
+    background:var(--surface-2);color:var(--ink);border:1px solid var(--rule);
+    border-radius:6px;padding:6px 10px;font:inherit;font-size:12.5px;cursor:pointer;
+  }
+  .rec-controls select:focus-visible{outline:2px solid var(--accent);outline-offset:1px;}
   .rec-line{
     display:grid;grid-template-columns:20px 1fr auto;gap:2px 12px;
     padding:7px 0 7px 2px;border-bottom:1px solid var(--rule);align-items:baseline;

@@ -3190,13 +3190,20 @@ let REC_TAB = 'do';
 // the data moved — Hour of day above Symbol one day and below it the next — so
 // there was no way to learn where to look. The ranking still happens, inside
 // each dimension, where it means something.
+// Each group is titled for the tab it is being read on — "What to trade" makes
+// no sense above a list of things that lose money.
 const REC_GROUPS = [
-  { title:'What to trade',  dims:['Symbol','Setup','Pattern'] },
-  { title:'When to trade',  dims:['Session','Day of week','Hour of day'] },
-  { title:'How you enter',  dims:['Confluence score','Sequence position','Entry trigger','Execution TF','AOF phase'] },
-  { title:'Account & exit', dims:['Account','Exit type'] },
-  { title:'Rules',          dims:['Broken rule'] },
+  { do:'What to trade',      avoid:'What not to trade',    dims:['Symbol','Setup','Pattern'] },
+  { do:'When to trade',      avoid:'When not to trade',    dims:['Session','Day of week','Hour of day'] },
+  { do:'How to enter',       avoid:'How not to enter',     dims:['Confluence score','Sequence position','Entry trigger','Execution TF','AOF phase'] },
+  { do:'Where and how you exit', avoid:'Where it goes wrong', dims:['Account','Exit type'] },
+  { do:'Discipline',         avoid:'Rules that cost you',  dims:['Broken rule'] },
 ];
+
+// The popup carries its own period, independent of the dashboard's month
+// filter: finding an edge means looking across everything, then narrowing —
+// not being stuck with whatever month the page happened to be showing.
+let REC_PERIOD = 'all';   // 'all' | 'YYYY-MM'
 
 // Every dimension the summary scans. The first five mirror the Breakdown
 // panel's tabs; the rest are the ones that only exist inside other panels, so
@@ -3236,15 +3243,28 @@ function _recDimensions(trades){
 
   // Sequence position and entry trigger, read the same way Confluence Edge
   // reads them — by tag, never by a hardcoded index.
-  const answerBy = (t, pick) => {
+  // Answers are stored by their POSITION in a checklist, so a trade whose
+  // Pattern Type was changed after the fact now reads its old answers against
+  // a different set of questions — index 3 was a Sequence on one checklist and
+  // a plain yes/no on another. That is how "yes" turned up as a sequence
+  // position. Every answer is checked against what the item can actually
+  // accept, and a value the question could never have produced is treated as
+  // stale rather than shown as data.
+  const answerBy = (t, pick, allowed) => {
     const cfg = CONFLUENCE_SETUPS[`${t.trade_type}|${t.pattern_type}`];
     if(!cfg || !cfg.items || !t.confluence_answers) return null;
     const i = cfg.items.findIndex(pick);
-    return i === -1 ? null : (t.confluence_answers[i] || null);
+    if(i === -1) return null;
+    const a = t.confluence_answers[i];
+    if(!a) return null;
+    const valid = allowed || (cfg.items[i].select || []);
+    return valid.includes(a) ? a : null;
   };
   dims.push({ label:'Sequence position', groups: _recGroupBy(trades, t => answerBy(t, it => it.select)) });
   dims.push({ label:'Entry trigger', groups: _recGroupBy(trades, t => {
-    const a = answerBy(t, it => it.retest);
+    // A retest item is a yes/no/almost question, plus "retest" itself — not a
+    // select, so its allowed answers are named here.
+    const a = answerBy(t, it => it.retest, ['yes','no','almost','retest']);
     return a ? ({ yes:'Zero-line cross', retest:'Retest', almost:'Almost', no:'No confirmation' }[a] || null) : null;
   })});
 
@@ -3281,10 +3301,41 @@ function _recGroupByMulti(trades, keysOf){
     .map(([name, arr]) => ({ name, ..._recStats(arr) }));
 }
 
+// Months that actually hold trades, newest first — the same "only what has
+// data" rule the dashboard's own month filter follows.
+function _recPeriodOptions(){
+  const seen = new Map();
+  ALL_TRADES.forEach(t => {
+    if(!t.close_date) return;
+    const key = `${t.close_date.getFullYear()}-${String(t.close_date.getMonth()+1).padStart(2,'0')}`;
+    if(!seen.has(key)) seen.set(key, t.close_date.toLocaleDateString('en-US',{month:'long', year:'numeric'}));
+  });
+  return [...seen.entries()].sort((a,b) => b[0].localeCompare(a[0]));
+}
+
+function _recTrades(){
+  const rows = ALL_TRADES.filter(t => t.close_date);
+  if(REC_PERIOD === 'all') return rows;
+  return rows.filter(t =>
+    `${t.close_date.getFullYear()}-${String(t.close_date.getMonth()+1).padStart(2,'0')}` === REC_PERIOD);
+}
+
+function setRecPeriod(v){
+  REC_PERIOD = v;
+  renderRecommendations();
+}
+
 function openRecommendations(){
   REC_TAB = 'do';
   document.querySelectorAll('.rec-tab').forEach(b =>
     b.classList.toggle('active', b.dataset.recTab === 'do'));
+  const sel = document.getElementById('recPeriod');
+  if(sel){
+    sel.innerHTML = `<option value="all">All data</option>` +
+      _recPeriodOptions().map(([k,label]) =>
+        `<option value="${k}"${k === REC_PERIOD ? ' selected' : ''}>${escapeHtml(label)}</option>`).join('');
+    sel.value = REC_PERIOD;
+  }
   renderRecommendations();
   document.getElementById('recModal').classList.add('open');
 }
@@ -3303,14 +3354,16 @@ function renderRecommendations(){
   const sub = document.getElementById('recSub');
   if(!body) return;
 
-  const trades = FILTERED.filter(t => t.close_date);
+  const trades = _recTrades();
   if(sub){
-    sub.textContent = `${trades.length} trade${trades.length===1?'':'s'} in view · ` +
+    const period = REC_PERIOD === 'all' ? 'all your journalled trades'
+      : (_recPeriodOptions().find(([k]) => k === REC_PERIOD) || [,REC_PERIOD])[1];
+    sub.textContent = `${trades.length} trade${trades.length===1?'':'s'} · ${period} · ` +
       `nothing is listed off fewer than ${REC_MIN_TRADES}, and every line shows what it is built on.`;
   }
 
   if(trades.length < REC_MIN_TRADES){
-    body.innerHTML = `<div class="empty-state">Only ${trades.length} trade${trades.length===1?'':'s'} in view. This needs at least ${REC_MIN_TRADES} in a single group before it can say anything worth acting on — widen the month filter, or keep journaling.</div>`;
+    body.innerHTML = `<div class="empty-state">Only ${trades.length} trade${trades.length===1?'':'s'} in this period. This needs at least ${REC_MIN_TRADES} in a single group before it can say anything worth acting on — switch to All data, or keep journaling.</div>`;
     return;
   }
 
@@ -3354,7 +3407,8 @@ function renderRecommendations(){
           ${lines}
         </div>`;
     }).filter(Boolean).join('');
-    return blocks ? `<div class="rec-section"><div class="rec-section-title">${grp.title}</div>${blocks}</div>` : '';
+    return blocks ? `<div class="rec-section"><div class="rec-section-title">${
+      wantGood ? grp.do : grp.avoid}</div>${blocks}</div>` : '';
   }).filter(Boolean).join('');
 
   if(!anyRows){

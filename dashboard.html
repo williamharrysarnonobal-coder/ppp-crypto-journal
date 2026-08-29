@@ -17,7 +17,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<link rel="stylesheet" href="css/style.css?v=237">
+<link rel="stylesheet" href="css/style.css?v=238">
 </head>
 <body>
 
@@ -1269,9 +1269,13 @@
     <button class="modal-close" onclick="closeRecommendations()">✕</button>
     <h3>What should I trade?</h3>
     <div class="modal-sub" id="recSub"></div>
+    <div class="rec-controls">
+      <label class="rec-period-label" for="recPeriod">Period</label>
+      <select id="recPeriod" onchange="setRecPeriod(this.value)"></select>
+    </div>
     <div class="rec-tabs">
-      <button class="rec-tab active" data-rec-tab="do" onclick="setRecTab('do')">Look for these</button>
-      <button class="rec-tab" data-rec-tab="avoid" onclick="setRecTab('avoid')">Avoid these</button>
+      <button class="rec-tab active" data-rec-tab="do" onclick="setRecTab('do')">Your edge</button>
+      <button class="rec-tab" data-rec-tab="avoid" onclick="setRecTab('avoid')">Your leaks</button>
     </div>
     <div id="recBody"></div>
   </div>
@@ -2148,6 +2152,6 @@
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=2"></script>
-<script src="js/dashboard.js?v=399"></script>
+<script src="js/dashboard.js?v=400"></script>
 </body>
 </html>
