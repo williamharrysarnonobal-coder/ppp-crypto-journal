@@ -3260,17 +3260,20 @@ function _cfeSeqMatrixHTML(){
                  : 'All breakeven, so there is no win or loss to rate'}">${what}</span>${avg}</td>`;
       }
 
-      // Tinted by the WIN RATE, not by the sequence position. The pooled table
-      // tints by position because there the row IS the position; here the
-      // position is already the column header, so tinting by it again made a 0%
-      // in the 2nd column green and a 100% in the 3rd orange — the colour was
-      // answering a question nobody asked of that cell.
-      const rate = wins / decided * 100;
-      const showRate = decided >= WIN_RATE_MIN_N;
-      const ratePart = showRate
-        ? ` <span style="color:${_winRateTint(rate, decided)};font-weight:600;">${fmtNum(rate,0)}%</span>`
-        : '';
-      return `<td><span class="cfe-cell-wl">${wins}W ${losses}L</span>${ratePart}${avg}</td>`;
+      // No percentage here, on any cell. Showing it only past three decided
+      // trades meant "1W 0L" and "3W 0L 100%" sat side by side with no visible
+      // reason for the difference — a rule you have to read a legend to learn
+      // is a rule the table failed to express. The counts are already the
+      // answer at these sample sizes, and the pooled table above carries the
+      // rates on populations big enough to deserve one.
+      //
+      // Colour comes from the counts on show, not from a rate: more wins than
+      // losses is green whether it is 1-0 or 12-3, so no threshold is hidden
+      // in it and nothing needs explaining.
+      const tone = wins > losses ? 'var(--win)' : (losses > wins ? 'var(--loss)' : 'var(--muted)');
+      return `<td><span class="cfe-cell-wl" style="color:${tone};" title="${
+        wins} win${wins===1?'':'s'}, ${losses} loss${losses===1?'':'es'}${
+        blanks ? `, ${blanks} with no result set` : ''}">${wins}W ${losses}L</span>${avg}</td>`;
     }).join('');
     return `<tr><td style="white-space:nowrap;">${escapeHtml(p)}</td>${cells}</tr>`;
   }).join('');
@@ -3471,7 +3474,7 @@ function renderConfluenceEdge(){
             <table class="breakdown" id="cfeSeqMatrix">${seqMatrixHtml}</table>
           </div>
           <div class="cfe-legend">
-            <span>Wins and losses at that position. The win rate is added once there are ${WIN_RATE_MIN_N} or more &mdash; below that it would just be restating the count.</span>
+            <span>Wins and losses at that position. Green means more wins than losses. Win rates live in the table above, where the samples are big enough to carry one.</span>
           </div>` : ''}
         ${trigRows ? `
           <div class="cfe-subhead">By entry trigger</div>
@@ -3534,10 +3537,34 @@ function renderBEProtection(){
     String(t.win_loss || '').trim().toLowerCase() === 'breakeven' &&
     !['TP After BE','SL After BE'].includes(t.post_be_result));
 
+  // The other half of this panel's question, and it had nowhere to appear.
+  // "Would Have BE'd Out" is ticked on a trade where the stop was NOT moved to
+  // breakeven but would have closed it if it had been. Those trades are the
+  // control group: their net P&L is what NOT moving the stop was worth. It
+  // counts as clean discipline, which is why it never showed up among the
+  // broken rules — clean is not the same as invisible.
+  const wouldHave = FILTERED.filter(t =>
+    _ruleTags(t.unfollowed_rules).some(r => r.toLowerCase() === "would have be'd out"));
+  const wouldHaveNet = wouldHave.reduce((s,t) => s + netPnl(t), 0);
+  const wouldHaveWins = wouldHave.filter(_isWin).length;
+  const wouldHaveHtml = wouldHave.length ? `
+      <div class="be-stat">
+        <div class="be-stat-label">Would have BE'd out</div>
+        <div class="be-stat-value" style="color:${wouldHaveNet >= 0 ? 'var(--win)' : 'var(--loss)'};">${fmtMoney(wouldHaveNet)}</div>
+        <div class="be-stat-note">${wouldHave.length} trade${wouldHave.length===1?'':'s'} you did <em>not</em> move to breakeven that would have stopped there${
+          wouldHaveWins ? `, ${wouldHaveWins} of which went on to win` : ''}. ${
+          wouldHaveNet >= 0
+            ? 'Leaving the stop alone paid, on these.'
+            : 'Moving to breakeven would have saved this.'}</div>
+      </div>` : '';
+
   if(!tpAfter.length && !slAfter.length){
-    body.innerHTML = beUnanswered.length
+    // Still worth showing the "would have" group — it stands on its own and
+    // needs no Post-BE data at all.
+    body.innerHTML = (beUnanswered.length
       ? `<div class="empty-state">${beUnanswered.length} trade${beUnanswered.length===1?' is':'s are'} marked Breakeven but ${beUnanswered.length===1?'has':'have'} no Post-BE Result set, so there is nothing to measure yet. Open ${beUnanswered.length===1?'it':'them'} and answer TP After BE or SL After BE.</div>`
-      : `<div class="empty-state">No Post-BE Result data yet — this fills in once you journal trades that reached breakeven.</div>`;
+      : `<div class="empty-state">No Post-BE Result data yet — this fills in once you journal trades that reached breakeven.</div>`)
+      + (wouldHaveHtml ? `<div class="be-stat-grid">${wouldHaveHtml}</div>` : '');
     return;
   }
 
@@ -3764,6 +3791,7 @@ function renderBEProtection(){
             ? ` <strong>${good.length} of ${slAfter.length}</strong> carry the prices this panel can measure.`
             : ''}</div>
       </div>
+      ${wouldHaveHtml}
       ${beUnanswered.length ? `
       <div class="be-stat">
         <div class="be-stat-label">Not answered</div>
