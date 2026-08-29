@@ -301,8 +301,33 @@
   .kpi .label{font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:8px;}
   .kpi .value{font-family:'IBM Plex Mono',monospace;font-size:21px;font-weight:600;}
   .pos{color:var(--win);} .neg{color:var(--loss);}
-  .cal-total-summary{display:flex;gap:14px;font-size:12px;font-weight:600;color:var(--muted);margin:-6px 0 10px;}
-  .cal-total-summary .pos, .cal-total-summary .neg{font-weight:700;}
+  /* One divided bar instead of a loose run of six coloured words. Every figure
+     gets a label of its own, so none of them has to be guessed at from colour,
+     and the month's P&L leads at 1.5x the width of the rest. */
+  .cal-total-summary{
+    display:flex;border:1px solid var(--rule);border-radius:7px;overflow:hidden;
+    background:var(--surface-2);margin:-4px 0 12px;flex-shrink:0;
+  }
+  .cal-sum-cell{
+    flex:1;min-width:0;padding:8px 12px;border-right:1px solid var(--rule);
+    display:flex;flex-direction:column;gap:1px;
+  }
+  .cal-sum-cell:last-child{border-right:none;}
+  .cal-sum-cell.lead{flex:1.5;background:var(--surface);}
+  .cal-sum-k{
+    font-family:'IBM Plex Mono',monospace;font-size:9.5px;letter-spacing:.07em;
+    text-transform:uppercase;color:var(--muted);display:flex;align-items:center;
+    gap:5px;white-space:nowrap;
+  }
+  .cal-sum-v{font-family:'IBM Plex Mono',monospace;font-size:15px;font-weight:600;line-height:1.15;}
+  .cal-sum-cell.lead .cal-sum-v{font-size:19px;font-weight:700;}
+  .cal-sum-cell.clickable{cursor:pointer;}
+  .cal-sum-cell.clickable:hover{background:var(--surface);}
+  .cal-sum-cell.clickable:hover .cal-sum-k{color:var(--accent);}
+  @media(max-width:900px){
+    .cal-total-summary{flex-wrap:wrap;}
+    .cal-sum-cell{flex:1 1 33%;border-bottom:1px solid var(--rule);}
+  }
   .tc-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:2px;vertical-align:1px;}
   .tc-dot.win{background:var(--win);} .tc-dot.loss{background:var(--loss);} .tc-dot.be{background:var(--muted);}
   .kpi-bar{height:5px;border-radius:3px;background:var(--rule);margin-top:10px;overflow:hidden;}
@@ -738,7 +763,10 @@
 
   /* ---------- Calendar ---------- */
   .cal-grid{display:grid;grid-template-columns:repeat(7,1fr) 0.9fr;grid-auto-rows:1fr;gap:4px;flex:1;min-height:0;}
-  .panel-fixed-h{height:460px;display:flex;flex-direction:column;}
+  /* Calendar + Equity curve only — they share this row. 460 left a six-row
+     month (Aug 2026) short of the height its cells need; 560 clears it with
+     room over, and the curve gets the same lift for free. */
+  .panel-fixed-h{height:560px;display:flex;flex-direction:column;}
   .panel-fixed-h-sm{height:230px;display:flex;flex-direction:column;}
   .chart-fill{flex:1;min-height:0;position:relative;}
 
@@ -780,8 +808,26 @@
      a five-row month then has room to breathe instead of being pinned at the
      minimum. Finance already carries this same fix (#finDashGrid, further
      down) — this is the Trading Journal half that was left out. */
-  #calGrid.cal-grid{grid-template-rows:auto;}
-  #calGrid .cal-cell{min-height:46px;}
+  /* Why the date boxes came out uneven, and it was two things at once:
+
+     1. `grid-auto-rows:1fr` is really minmax(AUTO, 1fr) — the auto floor means
+        a row can never be shorter than its tallest cell, so a row holding a
+        full cell (day + amount + count = 73px of content) grew past a row
+        holding only day numbers. minmax(0,1fr) drops that floor, and every row
+        is then exactly the same height, whatever is in it.
+     2. The content was taller than the row it had to fit, and the amount wrapped
+        after the minus sign at any realistic cell width ("−$1,355.48" wants
+        96px at 14px mono; the cell is ~92px), adding a fourth line to exactly
+        the cells that already had the most in them.
+
+     So: equal rows by construction, tighter line boxes, and an amount that can
+     never wrap. At 560px with six rows each row is ~64px and the content is
+     ~59px, so nothing is clipped — the fit is by design, not by hiding it. */
+  #calGrid.cal-grid{grid-template-rows:auto;grid-auto-rows:minmax(0,1fr);}
+  #calGrid .cal-cell{min-height:0;padding:6px 7px;}
+  #calGrid .cal-cell .d{line-height:1.2;}
+  #calGrid .cal-cell .p{font-size:12.5px;margin-top:3px;white-space:nowrap;}
+  #calGrid .cal-cell .cal-count{line-height:1.2;margin-top:1px;}
   /* Today, so the month has an anchor. Kept distinct from .best (the accent
      outline) — a dotted underline on the date only, which can sit on a
      winning, losing or empty day without competing with the P&L colour. */

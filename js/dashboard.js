@@ -1397,15 +1397,27 @@ function renderCalendar(){
       // total — and the only way to find that total was to add the week
       // column by hand. Stated outright, with the undecided remainder named
       // rather than left as an unexplained gap between the numbers.
-      const undecided = monthTrades.length - winTrades - lossTrades;
-      summaryEl.innerHTML = `
-        <span class="${monthPnl>=0?'pos':'neg'}">${fmtMoney(monthPnl)}</span>
-        <span class="cal-sum-total">${monthTrades.length} trade${monthTrades.length===1?'':'s'}</span>
-        <span class="pos">${winTrades} profit</span>
-        <span class="neg">${lossTrades} loss</span>
-        ${undecided > 0 ? `<span title="Breakeven, or Win/Loss not set">${undecided} undecided</span>` : ''}
-        <span>${winPct}% win rate</span>
-      `;
+      const beTrades = monthTrades.length - winTrades - lossTrades;
+      // Banded, not a pass/fail at 50%. A 41% win rate sitting on a profitable
+      // month is a working system with a wide R — painting that red would be
+      // the panel lying about a month that made money. Amber says look, not
+      // wrong; only a genuinely thin rate goes red.
+      const rateColor = winPct >= 50 ? 'var(--win)' : (winPct >= 38 ? 'var(--accent)' : 'var(--loss)');
+      const cell = (k, v, opts = {}) => `
+        <div class="cal-sum-cell${opts.lead ? ' lead' : ''}${opts.click ? ' clickable' : ''}"${
+          opts.click ? ` onclick="${opts.click}"` : ''}${opts.title ? ` title="${opts.title}"` : ''}>
+          <span class="cal-sum-k">${opts.dot ? `<i class="tc-dot ${opts.dot}"></i>` : ''}${k}</span>
+          <span class="cal-sum-v"${opts.color ? ` style="color:${opts.color}"` : ''}>${v}</span>
+        </div>`;
+      summaryEl.innerHTML =
+        cell('Profit', fmtMoney(monthPnl), { lead:true, color:`var(--${monthPnl>=0?'win':'loss'})` }) +
+        cell('Trades', monthTrades.length) +
+        cell('Win', winTrades, { dot:'win' }) +
+        cell('Loss', lossTrades, { dot:'loss' }) +
+        cell('BE', beTrades, beTrades > 0 ? { dot:'be',
+          title:'Breakeven, or Win/Loss not set — click to see them',
+          click:'showBreakevenTrades()' } : { dot:'be' }) +
+        cell('Win rate', winPct + '%', { color:rateColor });
     }
   }
 
@@ -1467,6 +1479,9 @@ function renderCalendar(){
 
   document.getElementById('calGrid').innerHTML = html;
   window._calByDay = byDay;
+  // The BE cell reads this — the month's trades, not FILTERED, which is what
+  // the summary above was counted from.
+  window._calMonthTrades = monthTrades;
 }
 
 /* ---------------- Equity curve ---------------- */
@@ -2048,6 +2063,26 @@ function showDayTrades(y, m, d){
   document.getElementById('modalTitle').textContent = dateLabel;
   const pnl = trades.reduce((s,t)=>s+netPnl(t),0);
   document.getElementById('modalSub').textContent = `${trades.length} trade${trades.length===1?'':'s'} · ${fmtMoney(pnl)}`;
+  document.getElementById('modalBody').innerHTML = renderTradeCards(trades);
+  document.getElementById('tradeModal').classList.add('open');
+}
+
+// The BE cell in the month summary. Deliberately a modal and not a journal
+// chip: "BE" is every trade that is neither a win nor a loss, which is two
+// different things at once — an actual Breakeven, and a row where Win/Loss was
+// never filled in. One chip on win_loss="Breakeven" would silently drop the
+// blanks, and the blanks are the half worth finding. Showing the trades
+// themselves is the only honest answer to "which seven?".
+function showBreakevenTrades(){
+  const trades = (window._calMonthTrades || []).filter(t => !_isWin(t) && !_isLoss(t));
+  if(!trades.length) return;
+  const monthLabel = calMonth.toLocaleDateString('en-US',{month:'long', year:'numeric'});
+  const blanks = trades.filter(t => !String(t.win_loss || '').trim()).length;
+
+  document.getElementById('modalTitle').textContent = `Breakeven & unset — ${monthLabel}`;
+  document.getElementById('modalSub').textContent =
+    `${trades.length} trade${trades.length===1?'':'s'} · ` +
+    (blanks ? `${trades.length - blanks} breakeven, ${blanks} with no Win/Loss set` : 'all breakeven');
   document.getElementById('modalBody').innerHTML = renderTradeCards(trades);
   document.getElementById('tradeModal').classList.add('open');
 }
