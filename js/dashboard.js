@@ -9947,6 +9947,73 @@ function warnIconSVG(){
   return `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`;
 }
 
+// Columns whose stored value has to be one of a fixed list. Deliberately NOT
+// every key in FIELD_OPTIONS:
+//   `account`  — its list is the legacy AppSheet one ('10k','25k',…) while the
+//                real accounts are named from TRADING_ACCOUNTS, so checking
+//                against it would flag every trade in the journal.
+//   `session`, `day_of_week` — always derived by computeSession/computeDayOfWeek
+//                on read, so they cannot hold anything else.
+const JOURNAL_VALIDATED_KEYS = [
+  'win_loss','trade_type','trade_setup','pattern_type','execution_tf',
+  'aof_phase','rules_followed','account_type','exit_type','post_be_result'
+];
+
+// Values that mean "blank", not "wrong". normalizeTrade fills several columns
+// with "Unspecified" when they are empty, and an empty column is the missing-
+// field check's business, not this one's.
+const _isBlankish = v => {
+  const s = String(v ?? '').trim();
+  return s === '' || s === 'Unspecified';
+};
+
+// Every stored value that its own column can no longer accept. Renaming an
+// option in the Options editor, or correcting a Pattern Type, leaves the old
+// string behind on the trades that already carried it — and a value nothing
+// recognises is silently excluded from every filter, chart and grouping that
+// reads that column, which is worse than being visibly wrong.
+function _journalInvalidFields(r){
+  const labelOf = k => (ALL_DRAWER_FIELDS.find(f => f.key === k) || {}).label || k;
+  const bad = [];
+
+  JOURNAL_VALIDATED_KEYS.forEach(k => {
+    const v = r[k];
+    if(_isBlankish(v)) return;
+    const opts = FIELD_OPTIONS[k];
+    if(!opts || !opts.length) return;
+    if(!opts.some(o => o.toLowerCase() === String(v).trim().toLowerCase())){
+      bad.push({ key:k, label:labelOf(k), value:String(v) });
+    }
+  });
+
+  // Comma-joined, so each tag is checked on its own — one stale tag does not
+  // condemn the others beside it.
+  _ruleTags(r.unfollowed_rules).forEach(tag => {
+    if(!UNFOLLOWED_RULES_OPTIONS.some(o => o.toLowerCase() === tag.toLowerCase())){
+      bad.push({ key:'unfollowed_rules', label:labelOf('unfollowed_rules'), value:tag });
+    }
+  });
+
+  // Chart Pattern is scoped to the setup that was traded, so what counts as
+  // valid moves with Trade Type and Pattern Type.
+  if(!_isBlankish(r.chart_pattern)){
+    const cfg = CONFLUENCE_SETUPS[`${r.trade_type}|${r.pattern_type}`];
+    if(cfg && cfg.patterns && !cfg.patterns.includes(r.chart_pattern)){
+      bad.push({ key:'chart_pattern', label:'Chart Pattern', value:String(r.chart_pattern) });
+    }
+  }
+
+  // Checklist answers, same rule, reported as one entry rather than one per
+  // question — the fix is the same single action either way.
+  const staleAnswers = _staleConfluenceItems(r);
+  if(staleAnswers.length){
+    bad.push({ key:'confluence_answers', label:'Confluence',
+               value:`${staleAnswers.length} answer${staleAnswers.length===1?'':'s'} from a different checklist` });
+  }
+
+  return bad;
+}
+
 function _journalMissingFields(r){
   // Only fields kept visible in the form config count — hiding a field is a
   // statement that it isn't part of how this journal is kept, so nagging
@@ -9978,11 +10045,17 @@ function renderJournalTable(){
   renderJournalFilterChips();
 
   const incomplete = rows.filter(r => _journalMissingFields(r).length).length;
+  // Counted separately from "incomplete". An empty field is work not done; a
+  // value nothing recognises is work that silently does not count — it drops
+  // out of every filter and grouping that reads that column while still
+  // looking filled in.
+  const invalid = rows.filter(r => _journalInvalidFields(r).length).length;
   document.getElementById('journalCountLabel').innerHTML =
     `${rows.length} trade${rows.length===1?'':'s'}` +
     (JOURNAL_INCOMPLETE_ONLY
       ? ` · <span class="journal-warn-count" onclick="toggleJournalIncompleteOnly()" title="Show all trades again">showing incomplete only ✕</span>`
-      : (incomplete ? ` · <span class="journal-warn-count" onclick="toggleJournalIncompleteOnly()" title="Show only these">${incomplete} incomplete</span>` : ''));
+      : (incomplete ? ` · <span class="journal-warn-count" onclick="toggleJournalIncompleteOnly()" title="Show only these">${incomplete} incomplete</span>` : '')) +
+    (invalid ? ` · <span class="journal-invalid-count" title="These hold a value their column no longer accepts — open each one and re-pick it">${invalid} invalid</span>` : '');
 
   if(rows.length === 0){
     table.innerHTML = `<tr><td colspan="99" style="padding:24px;color:var(--muted);">No trades found.</td></tr>`;
@@ -9994,9 +10067,18 @@ function renderJournalTable(){
     <tr onclick='openTradeViewModal(${JSON.stringify(r.position_id)})' style="cursor:pointer;">
       ${(() => {
         const missing = _journalMissingFields(r);
-        return missing.length
-          ? `<td class="journal-warn" title="Missing: ${escapeHtml(missing.join(', '))}">${warnIconSVG()}</td>`
-          : '<td></td>';
+        const invalid = _journalInvalidFields(r);
+        if(!missing.length && !invalid.length) return '<td></td>';
+        // Two different problems, one icon, and the tooltip says which: a
+        // field that was never filled in, and a field holding a value its
+        // column no longer accepts. The second is the quieter one — it reads
+        // as filled in everywhere until you look at what it says.
+        const parts = [];
+        if(missing.length) parts.push('Missing: ' + missing.join(', '));
+        if(invalid.length) parts.push('Not a valid option: ' +
+          invalid.map(b => `${b.label} = "${b.value}"`).join(', '));
+        const cls = invalid.length ? 'journal-warn journal-warn-invalid' : 'journal-warn';
+        return `<td class="${cls}" title="${escapeHtml(parts.join(' · '))}">${warnIconSVG()}</td>`;
       })()}
       ${JOURNAL_COLUMNS.map(c => {
         if(c.key === 'link'){

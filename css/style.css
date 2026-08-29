@@ -1092,6 +1092,11 @@
     text-underline-offset:2px;
   }
   .journal-warn-count:hover{opacity:.75;}
+  /* Amber, not red: an invalid value is a repair, not a gap. Written with the
+     same two-class weight as the rule above so `table.journal td`'s colour
+     doesn't win and turn the icon back to ink. */
+  table.journal td.journal-warn-invalid{color:var(--warn);}
+  .journal-invalid-count{color:var(--warn);font-weight:600;cursor:help;}
   .bulk-note-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:7px;}
   .bulk-note-chip{
     font-size:11.5px;font-weight:600;color:var(--ink);background:var(--surface);
