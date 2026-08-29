@@ -1412,11 +1412,16 @@ function renderCalendar(){
       summaryEl.innerHTML =
         cell('Profit', fmtMoney(monthPnl), { lead:true, color:`var(--${monthPnl>=0?'win':'loss'})` }) +
         cell('Trades', monthTrades.length) +
-        cell('Win', winTrades, { dot:'win' }) +
-        cell('Loss', lossTrades, { dot:'loss' }) +
-        cell('BE', beTrades, beTrades > 0 ? { dot:'be',
+        // Only wired up when there is something behind the click — a cell
+        // showing 0 that opens an empty modal is a dead end that still looks
+        // like a button.
+        cell('Win', winTrades, winTrades ? { dot:'win', title:"This month's winning trades",
+          click:"showMonthResultTrades('win')" } : { dot:'win' }) +
+        cell('Loss', lossTrades, lossTrades ? { dot:'loss', title:"This month's losing trades",
+          click:"showMonthResultTrades('loss')" } : { dot:'loss' }) +
+        cell('BE', beTrades, beTrades ? { dot:'be',
           title:'Breakeven, or Win/Loss not set — click to see them',
-          click:'showBreakevenTrades()' } : { dot:'be' }) +
+          click:"showMonthResultTrades('be')" } : { dot:'be' }) +
         cell('Win rate', winPct + '%', { color:rateColor });
     }
   }
@@ -2067,22 +2072,41 @@ function showDayTrades(y, m, d){
   document.getElementById('tradeModal').classList.add('open');
 }
 
-// The BE cell in the month summary. Deliberately a modal and not a journal
-// chip: "BE" is every trade that is neither a win nor a loss, which is two
-// different things at once — an actual Breakeven, and a row where Win/Loss was
-// never filled in. One chip on win_loss="Breakeven" would silently drop the
-// blanks, and the blanks are the half worth finding. Showing the trades
-// themselves is the only honest answer to "which seven?".
-function showBreakevenTrades(){
-  const trades = (window._calMonthTrades || []).filter(t => !_isWin(t) && !_isLoss(t));
+// Win / Loss / BE in the month summary all open the same modal the calendar's
+// day and week cells use. Deliberately a modal and not a journal chip: "BE" is
+// every trade that is neither a win nor a loss, which is two different things
+// at once — an actual Breakeven, and a row where Win/Loss was never filled in.
+// One chip on win_loss="Breakeven" would silently drop the blanks, and the
+// blanks are the half worth finding. Win and Loss could be chips, but sending
+// the three of them to different places for the same kind of click would be
+// the surprise.
+function showMonthResultTrades(kind){
+  const all = window._calMonthTrades || [];
+  const pick = kind === 'win' ? _isWin
+             : kind === 'loss' ? _isLoss
+             : (t => !_isWin(t) && !_isLoss(t));
+  const trades = all.filter(pick);
   if(!trades.length) return;
-  const monthLabel = calMonth.toLocaleDateString('en-US',{month:'long', year:'numeric'});
-  const blanks = trades.filter(t => !String(t.win_loss || '').trim()).length;
 
-  document.getElementById('modalTitle').textContent = `Breakeven & unset — ${monthLabel}`;
-  document.getElementById('modalSub').textContent =
-    `${trades.length} trade${trades.length===1?'':'s'} · ` +
-    (blanks ? `${trades.length - blanks} breakeven, ${blanks} with no Win/Loss set` : 'all breakeven');
+  const monthLabel = calMonth.toLocaleDateString('en-US',{month:'long', year:'numeric'});
+  const pnl = trades.reduce((s,t) => s + netPnl(t), 0);
+  const title = kind === 'win' ? 'Wins' : kind === 'loss' ? 'Losses' : 'Breakeven & unset';
+
+  let sub = `${trades.length} trade${trades.length===1?'':'s'} · ${fmtMoney(pnl)}`;
+  if(kind === 'be'){
+    // Naming the split is the whole point of the cell — one half is a real
+    // result, the other is a row that was never finished.
+    const blanks = trades.filter(t => !String(t.win_loss || '').trim()).length;
+    sub = `${trades.length} trade${trades.length===1?'':'s'} · ` +
+      (blanks ? `${trades.length - blanks} breakeven, ${blanks} with no Win/Loss set` : 'all breakeven');
+  }
+
+  WEEK_REVIEW_CONTEXT = null;
+  const btn = document.getElementById('weekReviewBtn');
+  if(btn) btn.style.display = 'none';
+
+  document.getElementById('modalTitle').textContent = `${title} — ${monthLabel}`;
+  document.getElementById('modalSub').textContent = sub;
   document.getElementById('modalBody').innerHTML = renderTradeCards(trades);
   document.getElementById('tradeModal').classList.add('open');
 }

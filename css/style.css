@@ -308,16 +308,24 @@
     display:flex;border:1px solid var(--rule);border-radius:7px;overflow:hidden;
     background:var(--surface-2);margin:-4px 0 12px;flex-shrink:0;
   }
+  /* Centred, not left-aligned. Sharing a left edge helps when you read a
+     COLUMN of numbers down the page; this is a horizontal strip of six tiles
+     read one at a time, and centring is what makes each one a unit rather than
+     a row of labels with ragged space after them. */
   .cal-sum-cell{
     flex:1;min-width:0;padding:8px 12px;border-right:1px solid var(--rule);
     display:flex;flex-direction:column;gap:1px;
+    align-items:center;text-align:center;
   }
   .cal-sum-cell:last-child{border-right:none;}
   .cal-sum-cell.lead{flex:1.5;background:var(--surface);}
   .cal-sum-k{
     font-family:'IBM Plex Mono',monospace;font-size:9.5px;letter-spacing:.07em;
     text-transform:uppercase;color:var(--muted);display:flex;align-items:center;
-    gap:5px;white-space:nowrap;
+    justify-content:center;gap:5px;white-space:nowrap;
+    /* uppercase + letter-spacing leaves a trailing gap after the last letter,
+       which throws a centred label visibly left. Pulled back by the same amount. */
+    text-indent:.07em;
   }
   .cal-sum-v{font-family:'IBM Plex Mono',monospace;font-size:15px;font-weight:600;line-height:1.15;}
   .cal-sum-cell.lead .cal-sum-v{font-size:19px;font-weight:700;}
@@ -329,7 +337,11 @@
     .cal-sum-cell{flex:1 1 33%;border-bottom:1px solid var(--rule);}
   }
   .tc-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:2px;vertical-align:1px;}
-  .tc-dot.win{background:var(--win);} .tc-dot.loss{background:var(--loss);} .tc-dot.be{background:var(--muted);}
+  /* BE is blue, not grey. Grey read as "nothing here" when a breakeven is a
+     real, deliberate outcome — and the cell is clickable, which a grey dot
+     argues against. Changed on the shared class so a breakeven looks the same
+     on a trade card as it does in the month summary. */
+  .tc-dot.win{background:var(--win);} .tc-dot.loss{background:var(--loss);} .tc-dot.be{background:var(--info);}
   .kpi-bar{height:5px;border-radius:3px;background:var(--rule);margin-top:10px;overflow:hidden;}
   .kpi-bar-fill{height:100%;border-radius:3px;transition:width .3s ease;}
   .kpi-dual-bar{display:flex;height:5px;border-radius:3px;overflow:hidden;margin-top:10px;background:var(--rule);}
