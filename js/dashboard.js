@@ -3178,7 +3178,25 @@ function renderBreakdown(){
    finding. Groups that clear the bar but sit near zero are left out of both
    tabs — a recommendation has to be worth acting on, not merely measurable. */
 const REC_MIN_TRADES = 5;
+// Up to three per dimension, not one. The single best pattern is not the
+// answer to "which patterns should I be looking for" — the runners-up are part
+// of the answer, and with one line you cannot tell a clear winner from a
+// three-way tie.
+const REC_TOP_N = 3;
 let REC_TAB = 'do';
+
+// A fixed reading order, grouped by the question each dimension answers.
+// Ranking the dimensions against each other made the list reshuffle every time
+// the data moved — Hour of day above Symbol one day and below it the next — so
+// there was no way to learn where to look. The ranking still happens, inside
+// each dimension, where it means something.
+const REC_GROUPS = [
+  { title:'What to trade',  dims:['Symbol','Setup','Pattern'] },
+  { title:'When to trade',  dims:['Session','Day of week','Hour of day'] },
+  { title:'How you enter',  dims:['Confluence score','Sequence position','Entry trigger','Execution TF','AOF phase'] },
+  { title:'Account & exit', dims:['Account','Exit type'] },
+  { title:'Rules',          dims:['Broken rule'] },
+];
 
 // Every dimension the summary scans. The first five mirror the Breakdown
 // panel's tabs; the rest are the ones that only exist inside other panels, so
@@ -3298,46 +3316,59 @@ function renderRecommendations(){
 
   const dims = _recDimensions(trades);
   const wantGood = REC_TAB === 'do';
+  const byLabel = Object.fromEntries(dims.map(d => [d.label, d]));
 
-  // One line per dimension: its best group if this is the "look for" tab, its
-  // worst if it is the "avoid" tab. Near-zero groups appear in neither.
-  const rows = [];
-  dims.forEach(d => {
-    if(wantGood && d.avoidOnly) return;
-    const sorted = [...d.groups].sort((a,b) => b.avg - a.avg);
-    const pick = wantGood ? sorted[0] : sorted[sorted.length - 1];
-    if(!pick) return;
-    if(wantGood ? pick.avg <= 0 : pick.avg >= 0) return;
-    // What it is being compared against — a "best" with nothing to beat is
-    // just the only thing you did.
-    const others = d.groups.length - 1;
-    rows.push({ dim: d.label, ...pick, others });
-  });
+  // Up to REC_TOP_N per dimension, best-first on the "look for" tab and
+  // worst-first on "avoid". A group sitting near zero belongs on neither.
+  const picksFor = d => {
+    if(wantGood && d.avoidOnly) return [];
+    const sorted = [...d.groups].sort((a,b) => wantGood ? b.avg - a.avg : a.avg - b.avg);
+    return sorted.filter(g => wantGood ? g.avg > 0 : g.avg < 0).slice(0, REC_TOP_N);
+  };
 
-  if(!rows.length){
+  let anyRows = 0, best = null;
+  const sections = REC_GROUPS.map(grp => {
+    const blocks = grp.dims.map(label => {
+      const d = byLabel[label];
+      if(!d) return '';
+      const picks = picksFor(d);
+      if(!picks.length) return '';
+      anyRows += picks.length;
+      if(!best || (wantGood ? picks[0].avg > best.avg : picks[0].avg < best.avg)){
+        best = { ...picks[0], dim: label };
+      }
+      // How many it was actually chosen from — "best" out of one is just the
+      // only thing you did, and that has to be visible.
+      const pool = d.groups.length;
+      const lines = picks.map((r, i) => `
+        <div class="rec-line">
+          <div class="rec-rank">${i + 1}</div>
+          <div class="rec-name">${escapeHtml(r.name)}</div>
+          <div class="rec-avg ${r.avg >= 0 ? 'pos' : 'neg'}">${fmtMoney(r.avg)}<span class="rec-unit">per trade</span></div>
+          <div class="rec-meta">${r.n} trade${r.n===1?'':'s'}${
+            r.winRate !== null ? ` · ${fmtNum(r.winRate,0)}% win` : ''} · ${fmtMoney(r.net)} total</div>
+        </div>`).join('');
+      return `<div class="rec-dim-block">
+          <div class="rec-dim-head">${escapeHtml(label)}<span class="rec-pool">${
+            pool > picks.length ? `top ${picks.length} of ${pool}` : `${pool} in total`}</span></div>
+          ${lines}
+        </div>`;
+    }).filter(Boolean).join('');
+    return blocks ? `<div class="rec-section"><div class="rec-section-title">${grp.title}</div>${blocks}</div>` : '';
+  }).filter(Boolean).join('');
+
+  if(!anyRows){
     body.innerHTML = `<div class="empty-state">${wantGood
       ? 'Nothing clears the bar yet — no group of ' + REC_MIN_TRADES + '+ trades is making money on average. That is worth knowing on its own.'
       : 'Nothing to avoid — no group of ' + REC_MIN_TRADES + '+ trades is losing on average.'}</div>`;
     return;
   }
 
-  rows.sort((a,b) => wantGood ? b.avg - a.avg : a.avg - b.avg);
-
   const head = wantGood
-    ? `<div class="rec-lead">Your strongest edge is <strong>${escapeHtml(rows[0].dim)} · ${escapeHtml(rows[0].name)}</strong> at <strong>${fmtMoney(rows[0].avg)}</strong> a trade across ${rows[0].n}.</div>`
-    : `<div class="rec-lead rec-lead-bad">Your most expensive habit is <strong>${escapeHtml(rows[0].dim)} · ${escapeHtml(rows[0].name)}</strong> at <strong>${fmtMoney(rows[0].avg)}</strong> a trade across ${rows[0].n}.</div>`;
+    ? `<div class="rec-lead">Your strongest edge is <strong>${escapeHtml(best.dim)} · ${escapeHtml(best.name)}</strong> at <strong>${fmtMoney(best.avg)}</strong> a trade across ${best.n}.</div>`
+    : `<div class="rec-lead rec-lead-bad">Your most expensive habit is <strong>${escapeHtml(best.dim)} · ${escapeHtml(best.name)}</strong> at <strong>${fmtMoney(best.avg)}</strong> a trade across ${best.n}.</div>`;
 
-  const list = rows.map(r => `
-    <div class="rec-row">
-      <div class="rec-dim">${escapeHtml(r.dim)}</div>
-      <div class="rec-name">${escapeHtml(r.name)}</div>
-      <div class="rec-avg ${r.avg >= 0 ? 'pos' : 'neg'}">${fmtMoney(r.avg)}<span class="rec-unit">per trade</span></div>
-      <div class="rec-meta">${r.n} trade${r.n===1?'':'s'}${
-        r.winRate !== null ? ` · ${fmtNum(r.winRate,0)}% win` : ''} · ${fmtMoney(r.net)} total${
-        r.others ? ` · beat ${r.others} other${r.others===1?'':'s'}` : ' · nothing else to compare'}</div>
-    </div>`).join('');
-
-  body.innerHTML = head + `<div class="rec-list">${list}</div>` +
+  body.innerHTML = head + sections +
     `<div class="rec-foot">Each line is measured on its own, not in combination — a Monday and a 15 mins HL both paying does not prove a Monday 15 mins HL pays. Ranked by average net P&amp;L per trade, which is the number that decides whether something makes money; a low win rate with a wide R can still top this list, and should.</div>`;
 }
 
