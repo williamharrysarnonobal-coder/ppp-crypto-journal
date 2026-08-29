@@ -772,6 +772,24 @@
   .cal-cell.week-cell.loss{background:rgba(255,92,92,0.09);border-color:rgba(255,92,92,0.35);cursor:pointer;}
   .cal-cell.week-cell:hover{filter:brightness(1.15);}
 
+  /* The Sun..Sat header row was taking a full 1fr share, same as a day row —
+     47px of the 356px budget for 18px of text. On a six-row month (Aug 2026)
+     that plus min-height:56 on six rows needs 378px and overflows the fixed
+     460px panel by 22px, which is why the grid looked cramped and the padding
+     uneven. Header sized to its content, cells short enough that six rows fit;
+     a five-row month then has room to breathe instead of being pinned at the
+     minimum. Finance already carries this same fix (#finDashGrid, further
+     down) — this is the Trading Journal half that was left out. */
+  #calGrid.cal-grid{grid-template-rows:auto;}
+  #calGrid .cal-cell{min-height:46px;}
+  /* Today, so the month has an anchor. Kept distinct from .best (the accent
+     outline) — a dotted underline on the date only, which can sit on a
+     winning, losing or empty day without competing with the P&L colour. */
+  #calGrid .cal-cell.today .d{
+    color:var(--accent);font-weight:700;
+    border-bottom:1px dotted var(--accent);padding-bottom:1px;
+  }
+
   /* ---------- Diary (mood check-in) ---------- */
   /* .cal-grid is 8 columns (repeat(7,1fr) 0.9fr) — built for Trade Journal/
      Finance, which both add an 8th "Week" summary cell per row. The Diary

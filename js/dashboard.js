@@ -1392,10 +1392,18 @@ function renderCalendar(){
       const lossTrades = monthTrades.filter(_isLoss).length;
       const winPct = Math.round(_winRateOf(monthTrades) ?? 0);
       const monthPnl = monthTrades.reduce((s,t) => s + netPnl(t), 0);
+      // Profit + loss counts only DECIDED trades, so on a month with any
+      // breakeven or un-set Win/Loss they don't add up to the month's real
+      // total — and the only way to find that total was to add the week
+      // column by hand. Stated outright, with the undecided remainder named
+      // rather than left as an unexplained gap between the numbers.
+      const undecided = monthTrades.length - winTrades - lossTrades;
       summaryEl.innerHTML = `
         <span class="${monthPnl>=0?'pos':'neg'}">${fmtMoney(monthPnl)}</span>
+        <span class="cal-sum-total">${monthTrades.length} trade${monthTrades.length===1?'':'s'}</span>
         <span class="pos">${winTrades} profit</span>
         <span class="neg">${lossTrades} loss</span>
+        ${undecided > 0 ? `<span title="Breakeven, or Win/Loss not set">${undecided} undecided</span>` : ''}
         <span>${winPct}% win rate</span>
       `;
     }
@@ -1414,6 +1422,10 @@ function renderCalendar(){
   while(cells.length % 7 !== 0) cells.push(null);
 
   window._calByWeek = [];
+
+  const _now = new Date();
+  const isThisMonth = _now.getFullYear() === y && _now.getMonth() === m;
+  const todayDate = _now.getDate();
 
   for(let i=0; i<cells.length; i+=7){
     const weekCells = cells.slice(i, i+7);
@@ -1435,6 +1447,10 @@ function renderCalendar(){
         pnlHtml = `<div class="p">${fmtMoney(info.pnl)}</div><div class="cal-count" style="font-size:10.5px;color:var(--muted);">${info.count} trade${info.count>1?'s':''}</div>`;
         click = `onclick="showDayTrades(${y}, ${m}, ${d})"`;
       }
+      // Appended, never assigned — the win/loss branch above sets `cls` from
+      // scratch, so marking today before it would simply be overwritten on any
+      // day that actually has trades, which is most of the ones worth marking.
+      if(isThisMonth && d === todayDate) cls += ' today';
       html += `<div class="cal-cell ${cls}" ${click}><div class="d">${d}</div>${pnlHtml}</div>`;
     });
 
@@ -8804,11 +8820,26 @@ async function deleteFinRec(id){
    would be one row per trade. */
 const JOURNAL_FILTER_EXCLUDE = new Set([
   'no','position_id','linked_setup_id','notes','link','trade_summary',
-  'objective','duration','risk_amount','confluence_score',
+  // `objective` was in here, and shouldn't have been: it is computed, but it
+  // computes to one of four words (Scalping / Intraday / Day Trade / Position
+  // Trade), which is exactly the shape a chip filter wants. `duration` and
+  // `confluence_score` stay excluded because they are near-unique per trade —
+  // a dropdown of "2 hours 23 mins" would be one row per trade.
+  'duration','risk_amount','confluence_score',
   'open_date','close_date','profit_loss','pnl_percent','fee','rr',
   'entry_price','close_price','tp_price','sl_price','position_size',
   'screenshot_before','screenshot_after'
 ]);
+
+// Columns that live on the trade but are not drawer fields, so the list above
+// could never reach them. Chart Pattern is answered in the Confluence modal
+// and Emotion came across with the AppSheet import — both are stored, both are
+// worth filtering, and neither is added to the drawer here: chart_pattern
+// already has one place it gets edited, and a second one would drift.
+const JOURNAL_FILTER_EXTRA = [
+  {key:'chart_pattern', label:'Chart Pattern'},
+  {key:'emotion', label:'Emotion'}
+];
 // Held as a comma-separated list on each trade, so it matches by membership:
 // picking "Moved Stop Loss" has to find trades that broke it alongside others.
 const JOURNAL_MULTI_KEYS = new Set(['unfollowed_rules']);
@@ -8832,10 +8863,15 @@ function _journalFilterValues(key){
 // field you have never filled in simply isn't offered.
 function _journalFilterableColumns(){
   const labelOf = k => (ALL_DRAWER_FIELDS.find(f => f.key === k) || {}).label || k;
-  return ALL_DRAWER_FIELDS
-    .map(f => f.key)
-    .filter(k => !JOURNAL_FILTER_EXCLUDE.has(k))
-    .map(k => ({ key:k, label:labelOf(k), values:_journalFilterValues(k) }))
+  const fromDrawer = ALL_DRAWER_FIELDS
+    .map(f => ({ key:f.key, label:labelOf(f.key) }))
+    .filter(c => !JOURNAL_FILTER_EXCLUDE.has(c.key));
+  const seen = new Set(fromDrawer.map(c => c.key));
+  const extra = JOURNAL_FILTER_EXTRA.filter(c => !seen.has(c.key));
+  return [...fromDrawer, ...extra]
+    .map(c => ({ ...c, values:_journalFilterValues(c.key) }))
+    // A column nothing has been filled in for offers an empty dropdown, so it
+    // stays out of the menu until there is something to pick.
     .filter(c => c.values.length > 0);
 }
 
