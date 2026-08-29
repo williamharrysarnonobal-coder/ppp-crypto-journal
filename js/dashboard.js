@@ -3228,54 +3228,78 @@ function _cfeSeqMatrixHTML(){
     .filter(p => cols.some(o => byPattern[p][o]));
 
   if(!patterns.length){
-    return `<tr><td colspan="${cols.length + 1}" style="color:var(--muted);padding:14px 0;">No setup has a ${CFE_SEQ_PICK} yet.</td></tr>`;
+    return `<tr><td colspan="${cols.length + 2}" style="color:var(--muted);padding:14px 0;">No setup has a ${CFE_SEQ_PICK} yet.</td></tr>`;
   }
 
-  const head = `<tr><th>Setup</th>${cols.map(o => `<th>${o}</th>`).join('')}</tr>`;
+  // Every cell carries its win rate — showing it on some and not others made
+  // the table look arbitrary, and the threshold that decided it was invisible.
+  // The counts sit right beside the rate instead, so "100%" is never read
+  // without "1W 0L" next to it saying how thin it is.
+  const tally = arr => {
+    const wins = arr.filter(_isWin).length;
+    const losses = arr.filter(_isLoss).length;
+    const decided = wins + losses;
+    return { wins, losses, decided, rate: decided ? wins / decided * 100 : null,
+             blanks: arr.filter(t => !String(t.win_loss || '').trim()).length,
+             count: arr.length };
+  };
+  const allOf = p => cols.reduce((acc, o) => acc.concat(byPattern[p][o] || []), []);
+
+  // Sorted best-first on the rate being shown: the picked column when one is
+  // picked, the row's own total otherwise. A setup with nothing decided has no
+  // rate to rank on and goes last rather than being treated as 0%.
+  const sortKey = p => tally(CFE_SEQ_PICK ? (byPattern[p][CFE_SEQ_PICK] || []) : allOf(p));
+  patterns.sort((a,b) => {
+    const ta = sortKey(a), tb = sortKey(b);
+    const ra = ta.rate === null ? -1 : ta.rate;
+    const rb = tb.rate === null ? -1 : tb.rate;
+    if(rb !== ra) return rb - ra;
+    // Ties broken by sample size, not alphabetically. Several setups sit at
+    // 100% early on, and "which of these actually wins" is answered by the one
+    // that got there over more trades — putting a 1-0 above a 4-0 would rank
+    // the least evidence first, which is the opposite of the question.
+    return tb.decided - ta.decided || a.localeCompare(b);
+  });
+
+  const rateSpan = t => t.rate === null ? ''
+    : ` <span style="color:${_winRateTint(t.rate)};font-weight:600;">${fmtNum(t.rate,0)}%</span>`;
+
+  const head = `<tr><th>Setup</th>${cols.map(o => `<th>${o}</th>`).join('')}${
+    CFE_SEQ_PICK ? '' : '<th>All</th>'}</tr>`;
   const rows = patterns.map(p => {
     const cells = cols.map(o => {
       const arr = byPattern[p][o];
       // Nothing was ever traded at this position. A bare dash, no count.
       if(!arr) return `<td><span class="cfe-cell-none" title="No trades at this position">—</span></td>`;
 
-      // Wins and losses written out, rather than a percentage plus a footnote.
-      // "100%* 1" needed a legend to mean "one trade, it won"; "1W 0L" says it
-      // on its own. The rate is then only added where it is actually a rate —
-      // three or more decided trades — so nothing has to be marked as unsafe
-      // to read, because nothing unsafe to read is shown.
-      const wins = arr.filter(_isWin).length;
-      const losses = arr.filter(_isLoss).length;
-      const decided = wins + losses;
-      const blanks = arr.filter(t => !String(t.win_loss || '').trim()).length;
-      const avgP = _cfeStats(arr).avgPnl;
-      const avg = CFE_SEQ_PICK ? ` <span class="cfe-cell-n">· ${fmtMoney(avgP)}</span>` : '';
+      const t = tally(arr);
+      const avg = CFE_SEQ_PICK ? ` <span class="cfe-cell-n">· ${fmtMoney(_cfeStats(arr).avgPnl)}</span>` : '';
 
       // Nothing here has a Win or a Loss: every one is breakeven, or the result
       // was never filled in. Naming which of the two is the point — one is a
       // real outcome, the other is a gap he can close.
-      if(decided === 0){
-        const what = blanks ? `${blanks} unset` : `${arr.length} BE`;
+      if(t.decided === 0){
+        const what = t.blanks ? `${t.blanks} unset` : `${t.count} BE`;
         return `<td><span class="cfe-cell-na" title="${
-          blanks ? 'Win/Loss was never set on these — nothing to measure until it is'
-                 : 'All breakeven, so there is no win or loss to rate'}">${what}</span>${avg}</td>`;
+          t.blanks ? 'Win/Loss was never set on these — nothing to measure until it is'
+                   : 'All breakeven, so there is no win or loss to rate'}">${what}</span>${avg}</td>`;
       }
 
-      // No percentage here, on any cell. Showing it only past three decided
-      // trades meant "1W 0L" and "3W 0L 100%" sat side by side with no visible
-      // reason for the difference — a rule you have to read a legend to learn
-      // is a rule the table failed to express. The counts are already the
-      // answer at these sample sizes, and the pooled table above carries the
-      // rates on populations big enough to deserve one.
-      //
-      // Colour comes from the counts on show, not from a rate: more wins than
-      // losses is green whether it is 1-0 or 12-3, so no threshold is hidden
-      // in it and nothing needs explaining.
-      const tone = wins > losses ? 'var(--win)' : (losses > wins ? 'var(--loss)' : 'var(--muted)');
-      return `<td><span class="cfe-cell-wl" style="color:${tone};" title="${
-        wins} win${wins===1?'':'s'}, ${losses} loss${losses===1?'':'es'}${
-        blanks ? `, ${blanks} with no result set` : ''}">${wins}W ${losses}L</span>${avg}</td>`;
+      return `<td><span class="cfe-cell-wl" title="${
+        t.wins} win${t.wins===1?'':'s'}, ${t.losses} loss${t.losses===1?'':'es'}${
+        t.blanks ? `, ${t.blanks} with no result set` : ''}">${t.wins}W ${t.losses}L</span>${rateSpan(t)}${avg}</td>`;
     }).join('');
-    return `<tr><td style="white-space:nowrap;">${escapeHtml(p)}</td>${cells}</tr>`;
+
+    // The row's own total, so the sort order is visible rather than something
+    // the reader has to take on trust.
+    let totalCell = '';
+    if(!CFE_SEQ_PICK){
+      const t = tally(allOf(p));
+      totalCell = t.decided === 0
+        ? `<td><span class="cfe-cell-na">—</span></td>`
+        : `<td><span class="cfe-cell-wl">${t.wins}W ${t.losses}L</span>${rateSpan(t)}</td>`;
+    }
+    return `<tr><td style="white-space:nowrap;">${escapeHtml(p)}</td>${cells}${totalCell}</tr>`;
   }).join('');
   return head + rows;
 }
@@ -3474,7 +3498,7 @@ function renderConfluenceEdge(){
             <table class="breakdown" id="cfeSeqMatrix">${seqMatrixHtml}</table>
           </div>
           <div class="cfe-legend">
-            <span>Wins and losses at that position. Green means more wins than losses. Win rates live in the table above, where the samples are big enough to carry one.</span>
+            <span>Best win rate first &mdash; by the <b>All</b> column, or by the position you pick. The counts sit beside each rate, so a 100% off one trade never reads like a 100% off twelve.</span>
           </div>` : ''}
         ${trigRows ? `
           <div class="cfe-subhead">By entry trigger</div>
