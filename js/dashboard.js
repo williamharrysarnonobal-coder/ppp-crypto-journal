@@ -3281,30 +3281,61 @@ function renderConfluenceEdge(){
   }
   if(!insights.length) insights.push(`Only ${scored.length} trade${scored.length===1?'':'s'} with confluence data so far — patterns here get trustworthy around 15–20 trades. Keep filling in the checklist.`);
 
+  // The panel's title asks "does your checklist pay?", so answer that first
+  // and in one line. The three tables are how the answer was reached, not the
+  // answer — they move behind a disclosure.
+  const lo = rest;   // everything under 80%
+  let vTone, vWord, vSay;
+  if(hi.count < 5 || lo.count < 5 || hi.winRate === null || lo.winRate === null){
+    vTone = 'thin'; vWord = 'Too early to say';
+    vSay = `${scored.length} trade${scored.length===1?'':'s'} have a filled-in checklist. Comparing high against low confluence needs about 5 on each side — keep answering it and this will settle.`;
+  }else{
+    const gap = hi.winRate - lo.winRate;
+    if(gap >= 10){
+      vTone = 'good'; vWord = 'It pays';
+      vSay = `At 80%+ confluence you win ${fmtNum(hi.winRate,0)}% of the time, against ${fmtNum(lo.winRate,0)}% below it — ${fmtNum(gap,0)} points better. The checklist is doing real work; the low-confluence trades are the ones to skip.`;
+    }else if(gap <= -10){
+      vTone = 'bad'; vWord = "It doesn't";
+      vSay = `Your lower-confluence trades are winning MORE (${fmtNum(lo.winRate,0)}% against ${fmtNum(hi.winRate,0)}%). Either some checklist items aren't earning their place, or the full-confluence setups are ones you take too late.`;
+    }else{
+      vTone = 'thin'; vWord = 'No clear edge';
+      vSay = `${fmtNum(hi.winRate,0)}% at 80%+ confluence against ${fmtNum(lo.winRate,0)}% below it — close enough to be noise across ${scored.length} trades. The checklist isn't hurting, but it isn't yet separating the good setups from the rest either.`;
+    }
+  }
+
   body.innerHTML = `
-    <div class="cfe-grid">
-      <div>
-        <div class="cfe-subhead">By confluence score</div>
-        <table class="breakdown">
-          <tr><th>Score</th><th>Trades</th><th>Win rate</th><th>Avg Net P&amp;L</th></tr>
-          ${bucketRows}
-        </table>
-      </div>
-      <div>
-        <div class="cfe-subhead">By 5m HL/LH sequence</div>
-        ${seqRows ? `<table class="breakdown">
-          <tr><th>Sequence</th><th>Trades</th><th>Win rate</th><th>Avg Net P&amp;L</th></tr>
-          ${seqRows}
-        </table>` : `<div class="empty-state" style="padding:20px 0;">No sequence answers yet (5 mins HL/LH setups only).</div>`}
-      </div>
+    <div class="verdict-line ${vTone}">
+      <span class="verdict-word">${vWord}</span>
+      <span class="verdict-say"><span class="q">Does a fuller checklist win more?</span>${vSay}</span>
     </div>
-    ${trigRows ? `
-      <div class="cfe-subhead">By entry trigger</div>
-      <table class="breakdown">
-        <tr><th>Trigger</th><th>Trades</th><th>Win rate</th><th>Avg Net P&amp;L</th></tr>
-        ${trigRows}
-      </table>` : ''}
-    ${insights.map(i => `<div class="cfe-insight">💡 ${i}</div>`).join('')}
+    <details class="panel-details">
+      <summary>Show the breakdown &mdash; by score, by sequence, by entry trigger</summary>
+      <div class="panel-details-body">
+        <div class="cfe-grid">
+          <div>
+            <div class="cfe-subhead">By confluence score</div>
+            <table class="breakdown">
+              <tr><th>Score</th><th>Trades</th><th>Win rate</th><th>Avg Net P&amp;L</th></tr>
+              ${bucketRows}
+            </table>
+          </div>
+          <div>
+            <div class="cfe-subhead">By 5m HL/LH sequence</div>
+            ${seqRows ? `<table class="breakdown">
+              <tr><th>Sequence</th><th>Trades</th><th>Win rate</th><th>Avg Net P&amp;L</th></tr>
+              ${seqRows}
+            </table>` : `<div class="empty-state" style="padding:20px 0;">No sequence answers yet (5 mins HL/LH setups only).</div>`}
+          </div>
+        </div>
+        ${trigRows ? `
+          <div class="cfe-subhead">By entry trigger</div>
+          <table class="breakdown">
+            <tr><th>Trigger</th><th>Trades</th><th>Win rate</th><th>Avg Net P&amp;L</th></tr>
+            ${trigRows}
+          </table>` : ''}
+        ${insights.map(i => `<div class="cfe-insight">💡 ${i}</div>`).join('')}
+      </div>
+    </details>
   `;
 }
 
@@ -3514,34 +3545,68 @@ function renderBEProtection(){
     insights.push(`${missing} BE-stopped trade${missing===1?' is':'s are'} missing entry/SL/quantity and ${missing===1?'is':'are'} excluded rather than guessed at. Trades journaled from a Pending Setup fill these in automatically.`);
   }
 
+  // The one line this panel exists to produce. Everything below it is the
+  // working, and the working is what made the panel hard to read — so it moves
+  // behind a disclosure rather than being deleted.
+  const worthIt = (bounded.length && breakEvenRate !== null && survivedRate !== null)
+    ? survivedRate < breakEvenRate : null;
+  const enough = reachedBE >= 10;
+  let vTone, vWord, vSay;
+  if(worthIt === null || !enough){
+    vTone = 'thin'; vWord = 'Too early to say';
+    vSay = `Only ${reachedBE} trade${reachedBE===1?'':'s'} have reached breakeven so far. This reads properly at about 10 — keep filling in Post-BE Result and it will answer itself.`;
+  }else if(worthIt){
+    vTone = 'good'; vWord = 'Working';
+    vSay = `Of the trades that reached breakeven, ${survivedRate.toFixed(0)}% carried on to TP — under the ${breakEvenRate.toFixed(0)}% it would take for the BE stop to be costing you. Moving your stop up is protecting more than it gives away.`;
+  }else{
+    vTone = 'bad'; vWord = 'Cutting winners';
+    vSay = `Of the trades that reached breakeven, ${survivedRate.toFixed(0)}% carried on to TP — above the ${breakEvenRate.toFixed(0)}% break-even point. You are moving the stop up too early and stopping trades that would have paid.`;
+  }
+
   body.innerHTML = `
+    <div class="verdict-line ${vTone}">
+      <span class="verdict-word">${vWord}</span>
+      <span class="verdict-say"><span class="q">Is moving your stop to breakeven helping?</span>${vSay}</span>
+    </div>
     <div class="be-stat-grid">
       <div class="be-stat">
-        <div class="be-stat-label">TP After BE</div>
+        <div class="be-stat-label">Ran on to TP</div>
         <div class="be-stat-value" style="color:var(--win);">${tpAfter.length}</div>
-        <div class="be-stat-note">Ran on to TP after the stop moved to breakeven${capturedTotal !== 0 ? ` — <strong style="color:var(--win);">${fmtMoney(capturedTotal)}</strong> captured.` : '.'}</div>
+        <div class="be-stat-note">Survived breakeven and reached take-profit.</div>
       </div>
       <div class="be-stat">
-        <div class="be-stat-label">SL After BE</div>
+        <div class="be-stat-label">Stopped at BE</div>
         <div class="be-stat-value" style="color:var(--info);">${slAfter.length}</div>
-        <div class="be-stat-note">Stopped out at breakeven — $0 instead of a full loss.</div>
-      </div>
-      <div class="be-stat">
-        <div class="be-stat-label">Risk Amount at stake</div>
-        <div class="be-stat-value" style="color:var(--win);">${!canShowProtected ? '—' : '$' + protectedTotal.toLocaleString(undefined,{maximumFractionDigits:0})}</div>
-        <div class="be-stat-note">${protectedNote}</div>
+        <div class="be-stat-note">Closed flat instead of at the original stop.</div>
       </div>
     </div>
-    ${verdictHtml}
-    ${[...insights, planInsight].filter(Boolean).map(i => `<div class="cfe-insight">💡 ${i}</div>`).join('')}
-    ${workingRows ? `
-      <div class="cfe-subhead">How that was worked out — per BE-stopped trade</div>
-      <div style="overflow-x:auto;">
-        <table class="breakdown">
-          <tr><th>Symbol</th><th>Closed</th><th>Entry → SL</th><th>Stop distance</th><th>Quantity</th><th>Planned risk</th><th>Risk amount</th></tr>
-          ${workingRows}
-        </table>
-      </div>` : ''}
+    <details class="panel-details">
+      <summary>Show the working &mdash; the money, the assumptions, and every trade behind it</summary>
+      <div class="panel-details-body">
+        ${verdictHtml}
+        <div class="be-stat-grid">
+          <div class="be-stat">
+            <div class="be-stat-label">Captured on winners</div>
+            <div class="be-stat-value" style="color:var(--win);">${fmtMoney(capturedTotal)}</div>
+            <div class="be-stat-note">Real money made by trades that survived breakeven.</div>
+          </div>
+          <div class="be-stat">
+            <div class="be-stat-label">Risk Amount at stake</div>
+            <div class="be-stat-value" style="color:var(--win);">${!canShowProtected ? '—' : '$' + protectedTotal.toLocaleString(undefined,{maximumFractionDigits:0})}</div>
+            <div class="be-stat-note">${protectedNote}</div>
+          </div>
+        </div>
+        ${[...insights, planInsight].filter(Boolean).map(i => `<div class="cfe-insight">💡 ${i}</div>`).join('')}
+        ${workingRows ? `
+          <div class="cfe-subhead">Per BE-stopped trade</div>
+          <div style="overflow-x:auto;">
+            <table class="breakdown">
+              <tr><th>Symbol</th><th>Closed</th><th>Entry → SL</th><th>Stop distance</th><th>Quantity</th><th>Planned risk</th><th>Risk amount</th></tr>
+              ${workingRows}
+            </table>
+          </div>` : ''}
+      </div>
+    </details>
   `;
 }
 
