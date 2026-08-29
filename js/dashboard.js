@@ -3414,8 +3414,19 @@ function renderBEProtection(){
   const tpAfter = FILTERED.filter(t => t.post_be_result === 'TP After BE');
   const slAfter = FILTERED.filter(t => t.post_be_result === 'SL After BE');
 
+  // A trade marked Breakeven in Win/Loss but with Post-BE Result never
+  // answered belongs in this panel and was invisible to it: every population
+  // here is keyed on post_be_result alone, so the row simply wasn't there.
+  // Counted separately and said out loud — it is missing input, not an absence
+  // of trades, and it is the one thing here he can actually fix.
+  const beUnanswered = FILTERED.filter(t =>
+    String(t.win_loss || '').trim().toLowerCase() === 'breakeven' &&
+    !['TP After BE','SL After BE'].includes(t.post_be_result));
+
   if(!tpAfter.length && !slAfter.length){
-    body.innerHTML = `<div class="empty-state">No Post-BE Result data yet — this fills in once you journal trades that reached breakeven.</div>`;
+    body.innerHTML = beUnanswered.length
+      ? `<div class="empty-state">${beUnanswered.length} trade${beUnanswered.length===1?' is':'s are'} marked Breakeven but ${beUnanswered.length===1?'has':'have'} no Post-BE Result set, so there is nothing to measure yet. Open ${beUnanswered.length===1?'it':'them'} and answer TP After BE or SL After BE.</div>`
+      : `<div class="empty-state">No Post-BE Result data yet — this fills in once you journal trades that reached breakeven.</div>`;
     return;
   }
 
@@ -3585,11 +3596,23 @@ function renderBEProtection(){
   // behind a disclosure rather than being deleted.
   const worthIt = (bounded.length && breakEvenRate !== null && survivedRate !== null)
     ? survivedRate < breakEvenRate : null;
-  const enough = reachedBE >= 10;
+  // BOTH sides have to be worth trusting, and they are counted separately.
+  // survivedRate comes from every trade that reached breakeven; breakEvenRate
+  // comes only from the BE-stopped trades that carry entry, SL, TP and
+  // quantity — often far fewer. Gating on the first number alone let a verdict
+  // built on two trades be stated against a rate built on fourteen.
+  const enough = reachedBE >= 10 && bounded.length >= 5;
   let vTone, vWord, vSay;
   if(worthIt === null || !enough){
     vTone = 'thin'; vWord = 'Too early to say';
-    vSay = `Only ${reachedBE} trade${reachedBE===1?'':'s'} have reached breakeven so far. This reads properly at about 10 — keep filling in Post-BE Result and it will answer itself.`;
+    if(bounded.length < 5 && reachedBE >= 10){
+      vSay = `${reachedBE} trades have reached breakeven, but only ${bounded.length} of the ${slAfter.length} that stopped there carry the entry, stop, TP and quantity needed to work out whether it was worth it. A break-even rate built on ${bounded.length} trade${bounded.length===1?'':'s'} is noise, so this stays unanswered until more of them are filled in.`;
+    }else{
+      vSay = `Only ${reachedBE} trade${reachedBE===1?'':'s'} have reached breakeven so far. This reads properly at about 10 — keep filling in Post-BE Result and it will answer itself.`;
+    }
+    if(beUnanswered.length){
+      vSay += ` ${beUnanswered.length} more ${beUnanswered.length===1?'is':'are'} marked Breakeven with no Post-BE Result set.`;
+    }
   }else if(worthIt){
     vTone = 'good'; vWord = 'Working';
     vSay = `Of the trades that reached breakeven, ${survivedRate.toFixed(0)}% carried on to TP — under the ${breakEvenRate.toFixed(0)}% it would take for the BE stop to be costing you. Moving your stop up is protecting more than it gives away.`;
@@ -3612,8 +3635,17 @@ function renderBEProtection(){
       <div class="be-stat">
         <div class="be-stat-label">Stopped at BE</div>
         <div class="be-stat-value" style="color:var(--info);">${slAfter.length}</div>
-        <div class="be-stat-note">Closed flat instead of at the original stop.</div>
+        <div class="be-stat-note">Closed flat instead of at the original stop.${
+          good.length < slAfter.length
+            ? ` <strong>${good.length} of ${slAfter.length}</strong> carry the prices this panel can measure.`
+            : ''}</div>
       </div>
+      ${beUnanswered.length ? `
+      <div class="be-stat">
+        <div class="be-stat-label">Not answered</div>
+        <div class="be-stat-value" style="color:var(--warn);">${beUnanswered.length}</div>
+        <div class="be-stat-note">Marked Breakeven, but Post-BE Result was never set — so ${beUnanswered.length===1?'it is':'they are'} missing from everything above.</div>
+      </div>` : ''}
     </div>
     <details class="panel-details">
       <summary>Show the working &mdash; the money, the assumptions, and every trade behind it</summary>
