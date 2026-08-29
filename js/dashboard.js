@@ -3180,8 +3180,9 @@ function _cfeBarCell(winRate, color){
 }
 
 // Answers the question the checklist exists for: do high-confluence trades
-// actually win more? Groups the trades in view by score bucket, by 5m HL/LH
-// sequence position, and by entry trigger (zero-line cross vs retest).
+// actually win more? Groups the trades in view by score bucket, by sequence
+// position across every setup that asks for one, and by entry trigger
+// (zero-line cross vs retest).
 function renderConfluenceEdge(){
   const body = document.getElementById('confluenceEdgeBody');
   if(!body) return;
@@ -3210,8 +3211,14 @@ function renderConfluenceEdge(){
       <td class="${b.stats.avgPnl === null ? '' : (b.stats.avgPnl >= 0 ? 'pos' : 'neg')}">${b.stats.avgPnl === null ? '—' : fmtMoney(b.stats.avgPnl)}</td>
     </tr>`).join('');
 
-  // --- sequence position (Which 5m HL/LH is this?) ---
+  // --- sequence position ("Which 15m HL is this?" and its siblings) ---
+  // Found by `it.select`, which every setup carrying a Sequence question has —
+  // 5 mins, 15 mins, 1 hour and Invalidation alike. This was never 5-minute
+  // only; the heading said so and the heading was wrong. The per-pattern split
+  // below exists because a 1st HL on the 5 minute chart and a 1st HL on the
+  // hourly are not the same trade, and pooling them hides exactly that.
   const seqTally = {};
+  const seqByPattern = {};
   scored.forEach(({ t }) => {
     const cfg = CONFLUENCE_SETUPS[`${t.trade_type}|${t.pattern_type}`];
     const idx = cfg.items.findIndex(it => it.select);
@@ -3219,6 +3226,9 @@ function renderConfluenceEdge(){
     const ans = t.confluence_answers[idx];
     if(!ans) return;
     (seqTally[ans] = seqTally[ans] || []).push(t);
+    const p = t.pattern_type || 'Unspecified';
+    (seqByPattern[p] = seqByPattern[p] || {});
+    (seqByPattern[p][ans] = seqByPattern[p][ans] || []).push(t);
   });
   const seqOrder = ['1st','2nd','3rd','4th','5th'];
   const seqRows = seqOrder.filter(o => seqTally[o]).map(o => {
@@ -3231,6 +3241,23 @@ function renderConfluenceEdge(){
       <td class="${s.avgPnl >= 0 ? 'pos' : 'neg'}">${fmtMoney(s.avgPnl)}</td>
     </tr>`;
   }).join('');
+
+  // Only worth drawing once more than one pattern has actually answered a
+  // Sequence — with a single pattern it would just restate the table above.
+  const seqPatterns = Object.keys(seqByPattern).sort();
+  const seqMatrixRows = seqPatterns.length > 1 ? seqPatterns.map(p => {
+    const cells = seqOrder.map(o => {
+      const arr = seqByPattern[p][o];
+      if(!arr) return `<td style="color:var(--muted);">—</td>`;
+      const s = _cfeStats(arr);
+      const tint = _sequenceTint(seqOrder.indexOf(o));
+      // Count alongside the rate — "100%" off one trade should not read like
+      // "100%" off twelve.
+      return `<td><span style="color:${tint};font-weight:600;">${
+        s.winRate === null ? '—' : fmtNum(s.winRate,0) + '%'}</span> <span style="color:var(--muted);font-size:11px;">${s.count}</span></td>`;
+    }).join('');
+    return `<tr><td style="white-space:nowrap;">${escapeHtml(p)}</td>${cells}</tr>`;
+  }).join('') : '';
 
   // --- entry trigger (the Execution retest-enabled item) ---
   const trigTally = {};
@@ -3320,13 +3347,21 @@ function renderConfluenceEdge(){
             </table>
           </div>
           <div>
-            <div class="cfe-subhead">By 5m HL/LH sequence</div>
+            <div class="cfe-subhead">By sequence position &mdash; all setups</div>
             ${seqRows ? `<table class="breakdown">
               <tr><th>Sequence</th><th>Trades</th><th>Win rate</th><th>Avg Net P&amp;L</th></tr>
               ${seqRows}
-            </table>` : `<div class="empty-state" style="padding:20px 0;">No sequence answers yet (5 mins HL/LH setups only).</div>`}
+            </table>` : `<div class="empty-state" style="padding:20px 0;">No sequence answers yet — the Confluence checklist asks &ldquo;which HL/LH is this?&rdquo; on every setup except the 4 Hour ones.</div>`}
           </div>
         </div>
+        ${seqMatrixRows ? `
+          <div class="cfe-subhead">Same sequence, split by setup &mdash; win rate, then trade count</div>
+          <div style="overflow-x:auto;">
+            <table class="breakdown">
+              <tr><th>Setup</th>${seqOrder.map(o => `<th>${o}</th>`).join('')}</tr>
+              ${seqMatrixRows}
+            </table>
+          </div>` : ''}
         ${trigRows ? `
           <div class="cfe-subhead">By entry trigger</div>
           <table class="breakdown">
