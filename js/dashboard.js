@@ -4137,7 +4137,13 @@ const TAG_OBSERVATIONS = [
   'No BE at Prev High/Low',
   "BE'd at Prev High/Low",
   'Held Through Invalidation',
-  'Cut on Invalidation'
+  'Cut on Invalidation',
+  // Where the move already was when he entered. These read like faults, and
+  // they were filed as faults, but he has not decided they are: whether the
+  // 3rd HL/LH or an entry at a key level is actually worse is the thing he is
+  // measuring. A tag cannot both ask the question and assert the answer.
+  'Chased Extended Move',
+  'Traded Into Key Level'
 ];
 // "Nothing was broken" — answered, and clean. Not an observation: it is the
 // absence of a breach rather than a fact about the trade.
@@ -4242,12 +4248,6 @@ const RULE_GROUPS = [
   { name:'Follow the confluence checklist',
     tags:['Lack of Confluence','Entered Without Confirmation','Non-BnB Setup',
           'Against Daily Bias / HTF Bias'] },
-  // Its own rule, not part of the confluence one. A setup can pass every
-  // confluence question and still be a bad entry because the move is spent or
-  // price is sitting under a level — that is a judgement about WHERE in the
-  // move you are, which the checklist does not ask.
-  { name:'Read where the move already is',
-    tags:['Chased Extended Move','Traded Into Key Level'] },
   { name:'Do not touch an open trade',
     tags:['Moved Stop Loss','Moved Take Profit','Changing Plan'] },
   { name:'Do not trade on emotion',
@@ -4260,7 +4260,11 @@ const RULE_GROUPS = [
 // was. "Ignored Trend" is safe to place even though it cannot be resolved to
 // one of its two successors, because BOTH of them live in the same group.
 const RETIRED_TAG_GROUP = {
-  'ignored trend':     'Read where the move already is',
+  // "Ignored Trend" split into two tags that are BOTH observations now, so it
+  // has no breach group left to sit in. Left out deliberately: a trade still
+  // carrying it keeps its warning and its count, and falls back to its own
+  // name on the card rather than being filed under a rule that no longer
+  // exists.
   'no scalping trade': 'Respect size and instrument',
   'early tp':          'Do not touch an open trade',
 };
@@ -10050,9 +10054,24 @@ function _journalColoredCell(key, row, plainVal){
   const v = String(raw).trim();
   const lower = v.toLowerCase();
 
+  /* Four states, not two.
+
+     green   Yes, and nothing negative is tagged — a clean trade
+     orange  Yes, but a breach tag is ticked. That combination only happens
+             when the answer was set by hand against what the tags say, and it
+             is worth seeing: it is a judgement call, not a clean trade, and
+             flattening it to green hid the difference.
+     red     No
+     blue    anything else — a value neither Yes nor No, which means the
+             column holds something the journal does not recognise rather than
+             something it can colour. */
   if(key === 'rules_followed'){
-    if(lower === 'yes') return _box('box-solid-win', v);
+    if(lower === 'yes'){
+      return _box(_brokenRuleTags(row.unfollowed_rules).length
+        ? 'box-solid-warn' : 'box-solid-win', v);
+    }
     if(lower === 'no') return _box('box-solid-loss', v);
+    if(v && v !== '—') return _box('box-solid-info', v);
   }
   if(key === 'win_loss'){
     const c = _winLossBoxClass(raw);
