@@ -4025,13 +4025,14 @@ const TAG_SENTINELS = ['Rules Followed'];
          became the action ("I entered without it"), matching Moved Stop Loss
          and Ignored No-Trade Decision.
 
-   null means the tag is dropped because a COLUMN already records it properly:
-
-     Early TP           -> exit_type
-         Exit Type already carries "Manual Early TP - Valid" and "Manual Early
-         TP - Invalid", which say more than the tag did — including whether the
-         early exit was justified, which the tag could never express. Worse,
-         the two could contradict each other on the same trade.
+   "Early TP" is deliberately NOT here either. It was briefly aliased to null —
+   dropped on read, because Exit Type already carries "Manual Early TP - Valid"
+   and "Manual Early TP - Invalid". That was wrong in the same way: it is only
+   true when Exit Type actually SAYS one of those. On a trade tagged "Early TP"
+   whose Exit Type reads "TP Hit", dropping the tag erases the only record that
+   the profit was taken early — silently, with nothing shown. It is retired
+   with an instruction instead, so the fact survives until he moves it to the
+   column that holds it better.
 
    "Ignored Trend" is deliberately NOT here. It looked like a duplicate of
    "Against Daily Bias / HTF Bias" and was briefly merged into it; that was
@@ -4043,7 +4044,6 @@ const TAG_SENTINELS = ['Rules Followed'];
 const TAG_ALIASES = {
   'entered early':   'Entered Without Confirmation',
   'no confirmation': 'Entered Without Confirmation',
-  'early tp':        null,
 };
 
 /* Tags no longer offered in the checklist but still valid on a trade that
@@ -4055,7 +4055,12 @@ const TAG_RETIRED = {
   'ignored trend':
     'was two mistakes in one tag — open the trade and pick "Chased Extended Move" or "Traded Into Key Level"',
   'no scalping trade':
-    'no longer one of your rules',
+    'no longer one of your rules — untick it',
+  // Not a tag at all: it is how the trade ENDED, and Exit Type is where that
+  // lives. Exit Type also asks the question the tag could not — whether
+  // closing early was the right call.
+  'early tp':
+    'belongs in Exit Type — set it to "Manual Early TP - Valid" if closing early was the right call, or "- Invalid" if it was not, then untick this',
 };
 const _tagRetiredNote = t => TAG_RETIRED[String(t).trim().toLowerCase()] || null;
 
@@ -4113,6 +4118,7 @@ const RULE_GROUPS = [
 const RETIRED_TAG_GROUP = {
   'ignored trend':     'Read where the move already is',
   'no scalping trade': 'Respect size and instrument',
+  'early tp':          'Do not touch an open trade',
 };
 const _RULE_GROUP_OF = (() => {
   const m = new Map();
