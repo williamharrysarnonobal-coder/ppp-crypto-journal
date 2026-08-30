@@ -594,9 +594,10 @@ function resolveCustomAlert(){
   if(_customAlertResolver){ _customAlertResolver(); _customAlertResolver = null; }
 }
 
-// Hover popup for "Rules Followed? = No" cells in the Trade Journal table —
-// shows which specific rules were broken, since a "Yes" cell has nothing to
-// check and doesn't need one.
+// Hover popup for the "Rules Followed?" cell in the Trade Journal table —
+// shows the tags on that trade. It used to fire only on "No", back when the
+// column held nothing but breaches; a "Yes" row now carries the observations,
+// and those had no way of being seen from the table at all.
 function showRulesTooltip(event){
   const tip = document.getElementById('rulesTooltip');
   const cell = event.currentTarget;
@@ -10328,8 +10329,14 @@ function renderJournalTable(){
         const val = _journalCellValue(r, c.key);
         const colored = _journalColoredCell(c.key, r, val);
         if(colored){
-          if(c.key === 'rules_followed' && String(r.rules_followed||'').trim().toLowerCase() === 'no'){
-            const rulesText = escapeHtml(r.unfollowed_rules || 'No rules specified');
+          // Any row with tags, not just the "No" ones. The gate on "no" made
+          // sense when this column held nothing but breaches — a Yes row had
+          // only the sentinel and there was nothing to show. Now a Yes row
+          // carries the observations, which are the ones actually worth
+          // reading: "No BE at Prev High/Low", "Held Through Invalidation".
+          // They were the only tags with no way to see them from the table.
+          if(c.key === 'rules_followed' && _ruleTags(r.unfollowed_rules).length){
+            const rulesText = escapeHtml(_canonicalTags(r.unfollowed_rules).join(', '));
             return `<td data-rules="${rulesText}" onmouseenter="showRulesTooltip(event)" onmouseleave="hideRulesTooltip()">${colored}</td>`;
           }
           return `<td title="${String(r[c.key]||'').replace(/"/g,'&quot;')}">${colored}</td>`;
