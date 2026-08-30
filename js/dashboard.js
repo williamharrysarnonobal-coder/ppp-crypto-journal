@@ -10031,11 +10031,16 @@ function _journalInvalidFields(r){
   // drops out of the whole page — it is not zero, it is absent, and nothing
   // said so. Skipped while TRADING_ACCOUNTS is still empty, because that means
   // the accounts have not loaded yet rather than that they are all gone.
+  // Also accepted: a name from the FIELD_OPTIONS list. "Demo" lives there and
+  // is not a row in trading_accounts — it has no size, no prop-firm rules, and
+  // never needed one, but the trades on it are real. Checking only against
+  // trading_accounts called every one of them broken.
   if(Array.isArray(TRADING_ACCOUNTS) && TRADING_ACCOUNTS.length &&
      !_isBlankish(r.account) &&
-     !TRADING_ACCOUNTS.some(a => a.account_name === r.account)){
+     !TRADING_ACCOUNTS.some(a => a.account_name === r.account) &&
+     !(FIELD_OPTIONS.account || []).some(o => o.toLowerCase() === String(r.account).toLowerCase())){
     bad.push({ key:'account', label:'Account',
-               value:`${r.account} — no account by that name any more` });
+               value:`${r.account} — no account by that name` });
   }
 
   // Rules Followed? and the tags beside it, disagreeing.
