@@ -15207,10 +15207,26 @@ async function _autoDetectAccountStatus(){
 // My Accounts, instead of a manually-maintained list — mutated in place so
 // ALL_DRAWER_FIELDS' captured reference to FIELD_OPTIONS.account stays in sync.
 // Falls back to whatever's already there if no accounts exist yet.
+// Any account name an existing trade already uses is kept alongside them.
+// "Demo" is the case that showed why: it is not a row in My Accounts — it has
+// no size and no prop-firm rules and never needed them — but real trades sit on
+// it. Replacing the list outright dropped it from the dropdown, so it could not
+// be picked, and worse: opening one of those trades and saving left the select
+// with no matching option, which writes back an EMPTY account. The trade lost
+// which account it was on, silently, just by being edited.
 function syncAccountFieldOptions(){
   if(!TRADING_ACCOUNTS.length) return;
+  const live = TRADING_ACCOUNTS.map(a => a.account_name);
+  const seen = new Set(live.map(n => String(n).toLowerCase()));
+  const inUse = [];
+  (ALL_TRADES || []).forEach(t => {
+    const n = String(t.account || '').trim();
+    if(!n || n === 'Unspecified' || seen.has(n.toLowerCase())) return;
+    seen.add(n.toLowerCase());
+    inUse.push(n);
+  });
   FIELD_OPTIONS.account.length = 0;
-  FIELD_OPTIONS.account.push(...TRADING_ACCOUNTS.map(a => a.account_name));
+  FIELD_OPTIONS.account.push(...live, ...inUse.sort());
 }
 
 // Applies a +/- delta to an account's current_balance whenever a trade tagged
