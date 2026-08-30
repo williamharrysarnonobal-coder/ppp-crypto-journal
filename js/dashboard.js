@@ -10066,20 +10066,20 @@ function _journalColoredCell(key, row, plainVal){
   const v = String(raw).trim();
   const lower = v.toLowerCase();
 
-  /* Four states, not two.
+  /* Three states.
 
-     green   Yes, and nothing negative is tagged — a clean trade
-     blue    Yes, but a breach tag is ticked. That combination only happens
-             when the answer was set by hand against what the tags say, so it
-             is a judgement call rather than a clean trade — and flattening it
-             to green hid the difference.
+     green   Yes with nothing tagged, or nothing beyond "Rules Followed" —
+             a plain clean trade with nothing to read
+     blue    Yes with any other tag on it. Not a judgement about the tag, just
+             "there is something written here": an observation under test, or
+             a breach he answered Yes to anyway. Either way the row is worth
+             hovering, and green would say there was nothing to see.
      red     No
-     blue    anything else — a value that is neither Yes nor No */
+     blue    also anything that is neither Yes nor No */
   if(key === 'rules_followed'){
-    if(lower === 'yes'){
-      return _box(_brokenRuleTags(row.unfollowed_rules).length
-        ? 'box-solid-info' : 'box-solid-win', v);
-    }
+    const noted = _canonicalTags(row.unfollowed_rules)
+      .some(t => _tagKind(t) !== 'sentinel');
+    if(lower === 'yes') return _box(noted ? 'box-solid-info' : 'box-solid-win', v);
     if(lower === 'no') return _box('box-solid-loss', v);
     if(v && v !== '—') return _box('box-solid-info', v);
   }
