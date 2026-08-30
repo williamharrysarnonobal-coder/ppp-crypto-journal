@@ -4094,6 +4094,9 @@ const FIELD_OPTIONS = {
 const UNFOLLOWED_RULES_OPTIONS = [
   'Rules Followed',"Would Have BE'd Out",
   'Overleveraged','Entered Without Confirmation','Moved Stop Loss',
+  // Taking the stop off entirely, which is not the same act as moving it —
+  // moving it is a bad adjustment, removing it is trading with no floor.
+  'Removed Stop Loss',
   'Revenge Trade','Against Daily Bias / HTF Bias',
   // The two halves of what "Ignored Trend" used to mean. He described them as
   // separate mistakes: the move had already run and he expected another leg,
@@ -4143,7 +4146,12 @@ const TAG_OBSERVATIONS = [
   // 3rd HL/LH or an entry at a key level is actually worse is the thing he is
   // measuring. A tag cannot both ask the question and assert the answer.
   'Chased Extended Move',
-  'Traded Into Key Level'
+  'Traded Into Key Level',
+  // Same reasoning, and it was doubly wrong as a breach: whether the setup was
+  // confirmed is already what the confluence score measures, so counting it
+  // here charged the same thing twice — once through the score dropping below
+  // the bar, and again as a rule broken.
+  'Entered Without Confirmation'
 ];
 // "Nothing was broken" — answered, and clean. Not an observation: it is the
 // absence of a breach rather than a fact about the trade.
@@ -4246,10 +4254,9 @@ const _tagKind = t => {
    a tag missing from every group still counts, it just shows on its own. */
 const RULE_GROUPS = [
   { name:'Follow the confluence checklist',
-    tags:['Lack of Confluence','Entered Without Confirmation','Non-BnB Setup',
-          'Against Daily Bias / HTF Bias'] },
+    tags:['Lack of Confluence','Non-BnB Setup','Against Daily Bias / HTF Bias'] },
   { name:'Do not touch an open trade',
-    tags:['Moved Stop Loss','Moved Take Profit','Changing Plan'] },
+    tags:['Moved Stop Loss','Removed Stop Loss','Moved Take Profit','Changing Plan'] },
   { name:'Do not trade on emotion',
     tags:['Revenge Trade','FOMO Entry','Ignored No-Trade Decision'] },
   { name:'Respect size and instrument',
@@ -4313,7 +4320,12 @@ const _ruleGroupOf = t => {
 // about discipline either way. Every count of discipline has to strip the last
 // two first — these are the shared answer.
 const _ruleTags = v => String(v || '').split(/[,;]/).map(s => s.trim()).filter(Boolean);
-const _brokenRuleTags = v => _ruleTags(v).filter(r => _tagKind(r) === 'breach');
+// Canonical first, like _ruleGroupOf and the journal's validation. Without it a
+// retired name is judged on its own — and "Entered Early" is unknown, so it
+// counted as a breach even though what it resolves to is an observation. The
+// app normalises on read so this rarely showed, but the two views disagreeing
+// at all is the bug: one canonical answer, everywhere.
+const _brokenRuleTags = v => _canonicalTags(v).filter(r => _tagKind(r) === 'breach');
 // Answered, and nothing broken — a blank field is "not logged", not "clean".
 // An observation on its own still counts as answered: "I did not move to BE at
 // prev high/low" is a complete, clean record of the trade.
@@ -10358,21 +10370,18 @@ function _journalInvalidFields(r){
     }
   });
 
-  // Now that the answer is derived rather than typed, the check is simply
-  // whether the stored one still matches what the trade says — and the reason
-  // is spelled out, because "No" can come from the checklist OR from a tag.
-  const rf = String(r.rules_followed || '').trim().toLowerCase();
-  const want = _deriveRulesFollowed(r);
-  if(want && rf && rf !== want.toLowerCase()){
-    const brokenTags = _brokenRuleTags(r.unfollowed_rules);
-    const score = _confluenceScoreFor(r);
-    const why = want === 'No'
-      ? (brokenTags.length ? `"${brokenTags[0]}" is a broken rule`
-                           : `confluence was ${Math.round(score * 100)}%`)
-      : 'nothing here is a broken rule and the checklist passed';
-    bad.push({ key:'rules_followed', label:'Rules Followed?',
-               value:`${r.rules_followed}, but should be ${want} — ${why}` });
-  }
+  // There is deliberately NO check that Rules Followed? matches what the tags
+  // and the confluence score suggest.
+  //
+  // It was here, and it had to go: the field is his to set, and the journal
+  // cannot tell a deliberate answer from a stale one. Warning about both meant
+  // every override earned a permanent ⚠ — which makes the override pointless,
+  // and buries the warnings that ARE about something broken under ones that
+  // are only about a judgement call he already made.
+  //
+  // Nothing is lost. The select is kept in step with the tags while the drawer
+  // is open, so a trade opened and saved comes out consistent; and a value he
+  // set against that on purpose is simply his answer.
 
   return bad;
 }
