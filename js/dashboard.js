@@ -685,6 +685,17 @@ async function initApp(){
     RAW_TRADES = data;
     ALL_TRADES = data.map(normalizeTrade);
 
+    // Rebuild the Account dropdown now that the trades are actually here.
+    //
+    // loadAccounts() above is fired WITHOUT await, so it races this fetch — and
+    // the accounts table is small, so it almost always wins. Its call to
+    // syncAccountFieldOptions() therefore ran while ALL_TRADES was still empty,
+    // which meant the "keep any account name a trade already uses" half had
+    // nothing to look at and names like "Demo" were dropped anyway. It has to
+    // run once more on this side of the race; it rebuilds from scratch each
+    // time, so calling it twice costs nothing.
+    syncAccountFieldOptions();
+
     setLoading(100);
     document.getElementById('app').style.display = 'block';
 
