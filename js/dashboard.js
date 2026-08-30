@@ -9626,7 +9626,7 @@ function renderJournalFilterChips(){
     const period = (document.getElementById('journalYearFilter')?.value ?? 'all') !== 'all' ||
                    (document.getElementById('journalMonthFilter')?.value ?? 'all') !== 'all';
     const anything = JOURNAL_ACTIVE_FILTERS.length || JOURNAL_BLANK_FILTER || period ||
-      JOURNAL_INCOMPLETE_ONLY || (document.getElementById('journalSearch')?.value || '').trim();
+      JOURNAL_INCOMPLETE_ONLY || JOURNAL_INVALID_ONLY || (document.getElementById('journalSearch')?.value || '').trim();
     clearBtn.style.display = anything ? '' : 'none';
   }
 }
@@ -9715,6 +9715,7 @@ function clearJournalFilters(){
   if(mo){ _renderJournalMonthOptions(); mo.value = 'all'; }
   setJournalBlankFilter(null);
   JOURNAL_INCOMPLETE_ONLY = false;
+  JOURNAL_INVALID_ONLY = false;
   renderJournalTable();
 }
 
@@ -9868,6 +9869,7 @@ function getFilteredJournalRows(exceptKey){
   }
 
   if(JOURNAL_INCOMPLETE_ONLY) rows = rows.filter(r => _journalMissingFields(r).length);
+  if(JOURNAL_INVALID_ONLY) rows = rows.filter(r => _journalInvalidFields(r).length);
 
   // sort by Close Date (most recent first) — matches the same field the
   // Calendar, Reports, and Discipline Radar all already use as the
@@ -9902,6 +9904,29 @@ function _journalBlankSummary(rows){
     counts[label] = (counts[label] || 0) + 1;
   }));
   return Object.entries(counts).sort((a,b) => b[1] - a[1]);
+}
+
+// The same question for wrong values rather than missing ones, and it had no
+// answer: the count said "7 invalid" and nothing said what the seven were, so
+// the only way to find out was to open trades one at a time. Grouped by the
+// column and the reason, because "Trade Tags (4)" is a job you can do in one
+// pass while four separate lines are four separate hunts.
+function _journalInvalidSummary(rows){
+  const counts = {};
+  rows.forEach(r => _journalInvalidFields(r).forEach(b => {
+    // The retired-tag messages carry their own instruction and differ per tag,
+    // so they are kept apart; everything else groups by column.
+    const key = b.value && b.value.length > 30 ? `${b.label}: ${b.value}` : b.label;
+    counts[key] = (counts[key] || 0) + 1;
+  }));
+  return Object.entries(counts).sort((a,b) => b[1] - a[1]);
+}
+
+// Toggled by clicking the "N invalid" count, mirroring the incomplete one.
+let JOURNAL_INVALID_ONLY = false;
+function toggleJournalInvalidOnly(){
+  JOURNAL_INVALID_ONLY = !JOURNAL_INVALID_ONLY;
+  renderJournalTable();
 }
 
 function warnIconSVG(){
@@ -10130,7 +10155,12 @@ function renderJournalTable(){
           escapeHtml('Blank on: ' + _journalBlankSummary(rows)
             .map(([label, n]) => `${label} (${n})`).join(', ') + ' — click to show only these')
         }">${incomplete} incomplete</span>` : '')) +
-    (invalid ? ` · <span class="journal-invalid-count" title="These hold a value their column no longer accepts — open each one and re-pick it">${invalid} invalid</span>` : '');
+    (JOURNAL_INVALID_ONLY
+      ? ` · <span class="journal-invalid-count" onclick="toggleJournalInvalidOnly()" title="Show all trades again">showing invalid only ✕</span>`
+      : (invalid ? ` · <span class="journal-invalid-count" onclick="toggleJournalInvalidOnly()" title="${
+          escapeHtml(_journalInvalidSummary(rows).map(([label, n]) => `${label} (${n})`).join('\n') +
+            '\n\nClick to show only these')
+        }">${invalid} to fix</span>` : ''));
 
   if(rows.length === 0){
     table.innerHTML = `<tr><td colspan="99" style="padding:24px;color:var(--muted);">No trades found.</td></tr>`;
