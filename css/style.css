@@ -1882,6 +1882,78 @@
   .panel-details-body{padding-top:12px;}
   @media (prefers-reduced-motion: reduce){.panel-details > summary::before{transition:none;}}
 
+  /* ---------- Edge Map ---------- */
+  .em-verdicts{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin-bottom:14px;}
+  .em-vcard{
+    background:var(--surface-2);border:1px solid var(--rule);border-radius:9px;
+    padding:13px 15px;border-left:3px solid var(--vt,var(--muted));
+  }
+  .em-vcard.good{--vt:var(--win);} .em-vcard.bad{--vt:var(--loss);} .em-vcard.thin{--vt:var(--muted);}
+  .em-vcard .k{font-family:'IBM Plex Mono',monospace;font-size:9.5px;letter-spacing:.11em;
+    text-transform:uppercase;color:var(--muted);margin-bottom:5px;}
+  .em-vcard .v{font-size:16px;font-weight:700;line-height:1.2;}
+  .em-vcard .n{font-family:'IBM Plex Mono',monospace;font-size:12.5px;color:var(--vt);font-weight:600;margin-top:3px;}
+  .em-vcard .s{font-size:11.5px;color:var(--muted);margin-top:3px;}
+
+  .em-filterbar{
+    display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 13px;
+    background:var(--surface-2);border:1px solid var(--rule);border-radius:8px;margin-bottom:14px;
+  }
+  .em-lbl{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.1em;
+    text-transform:uppercase;color:var(--muted);}
+  .em-chip{
+    display:inline-flex;align-items:center;gap:6px;font:inherit;font-size:12.5px;font-weight:600;
+    padding:5px 10px;border-radius:6px;background:var(--accent);color:#12141C;border:none;cursor:pointer;
+  }
+  .em-chip .x{opacity:.6;font-weight:700;}
+  .em-chip:hover .x{opacity:1;}
+  .em-nofilter{font-size:12.5px;color:var(--muted);}
+  .em-clear{
+    margin-left:auto;font:inherit;font-size:12px;background:none;border:1px solid var(--rule);
+    color:var(--muted);padding:5px 11px;border-radius:6px;cursor:pointer;
+  }
+  .em-clear:hover{color:var(--ink);border-color:var(--accent);}
+
+  .em-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:16px;}
+  .em-card{background:var(--surface-2);border:1px solid var(--rule);border-radius:9px;padding:15px 17px 13px;}
+  /* The mistakes card leads: it is the only one naming something he did. */
+  .em-card.lead{border-color:color-mix(in srgb, var(--loss) 35%, var(--rule));}
+  .em-card.lead .em-card-head h3{color:var(--loss);}
+  .em-card-head{display:flex;align-items:baseline;gap:9px;margin-bottom:11px;
+    padding-bottom:8px;border-bottom:1px solid var(--rule);}
+  .em-card-head h3{font-size:14px;font-weight:600;margin:0;}
+  .em-card-head .q{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--muted);margin-left:auto;}
+
+  .em-row{
+    display:grid;grid-template-columns:132px 1fr 44px 32px;gap:12px;align-items:center;
+    padding:7px 6px;cursor:pointer;border-radius:6px;
+  }
+  .em-row:hover{background:var(--surface);}
+  .em-row.on{background:color-mix(in srgb, var(--accent) 15%, transparent);}
+  .em-row.off{opacity:.32;}
+  .em-name{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .em-bar{position:relative;height:20px;}
+  .em-bar .zero{position:absolute;left:50%;top:-1px;bottom:-1px;width:1px;background:var(--rule);}
+  .em-bar .fill{position:absolute;top:4px;bottom:4px;border-radius:2px;}
+  /* Texture, not just colour — a thin sample has to read as thin for anyone
+     who cannot separate the two hues, and in print. */
+  .em-bar .fill.thin{background-image:repeating-linear-gradient(45deg,rgba(0,0,0,.34) 0 3px,transparent 3px 6px);}
+  .em-rate{font-family:'IBM Plex Mono',monospace;font-size:12.5px;font-weight:600;text-align:right;}
+  .em-n{font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:var(--muted);text-align:right;}
+
+  .em-legend{
+    display:flex;flex-wrap:wrap;gap:7px 18px;margin-top:16px;padding-top:12px;
+    border-top:1px solid var(--rule);font-size:11.5px;color:var(--muted);
+  }
+  .em-legend b{color:var(--ink);}
+  .em-legend .sw{display:inline-block;width:22px;height:9px;border-radius:2px;
+    vertical-align:-1px;margin-right:5px;background:var(--muted);}
+  .em-legend .sw.hatch{background-image:repeating-linear-gradient(45deg,rgba(0,0,0,.34) 0 3px,transparent 3px 6px);}
+  @media(max-width:560px){
+    .em-row{grid-template-columns:1fr 40px 30px;}
+    .em-bar{grid-column:1 / -1;}
+  }
+
   /* ---------- "What should I trade?" ---------- */
   .rec-open-btn{
     display:inline-flex;align-items:center;gap:7px;font:inherit;font-size:12.5px;

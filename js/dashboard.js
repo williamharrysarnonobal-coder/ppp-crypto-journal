@@ -324,7 +324,8 @@ function applyUIPrefsFromProfile(){
     // The profile arrives after the page is already interactive, so pulling
     // the account's copy over a half-entered setup would delete work in
     // progress — and re-rendering the table would drop the caret besides.
-    if(changedKeys.includes('dash_groups')) applyDashGroups();
+    // 'dash_groups' still arrives from older saved profiles and is ignored —
+    // the collapsible groups are gone, and calling into them would throw.
     if((changedKeys.includes('poscalc_draft') || changedKeys.includes('poscalc_risk_amounts')) && !_posCalcTouched){
       calcDraftLoaded = false;
       refreshPosSizeCalculator();
@@ -1179,13 +1180,13 @@ function applyFilters(){
   renderSessionFrequencyChart();
   renderBreakdownTabs();
   renderBreakdown();
-  renderConfluenceEdge();
-  renderBEProtection();
-  applyDashGroups();
+  // Confluence Edge, Breakeven Protection, Trades after a loss, Where the stop
+  // gets hit and Hour of day all folded into this one panel — each of them was
+  // a slice of the same question, and none of them could be crossed with the
+  // others. Their data-integrity warnings moved to the Trade Journal, which is
+  // where the trades get fixed.
+  renderEdgeMap();
   renderAccountCompare();
-  renderAfterLoss();
-  renderStopReality();
-  renderHourOfDay();
   renderHoldTime();
   document.getElementById('aiOutput').style.display = 'none';
 }
@@ -1975,6 +1976,18 @@ const PANEL_INFO = {
     `Groups your trades by whichever tab is selected and totals the
      <b>net P&amp;L</b> of each group. <b>Unspecified</b> means that field is
      empty on those trades — the warning icon in the Trade Journal marks them.`],
+  edgemap: ['Edge Map',
+    `Every dimension your journal holds, each value drawn as a bar around a
+     zero line: right of centre it makes money per trade, left of centre it
+     loses. Ranked by <b>average net P&amp;L per trade</b>, not win rate — a 41%
+     win rate with a wide R beats a 70% one that scratches, and ranking on win
+     rate would recommend the wrong month. The two figures printed are win
+     rate and trade count; the money is the bar, and the bar is what the order
+     follows. Anything under 5 trades is hatched. Click a value and every other
+     card re-reads itself against it. Replaces the old Confluence Edge,
+     Breakeven Protection, Trades after a loss, Where the stop gets hit and
+     Hour of day panels — their data-integrity warnings moved to the Trade
+     Journal, beside the incomplete and invalid counts.`],
   cfledge: ['Confluence Edge',
     `Win rate and average net P&amp;L grouped by how much of the checklist you
      had answered at entry, read from the saved <b>confluence answers</b>. Only
@@ -2874,36 +2887,12 @@ function renderStopReality(){
     <div style="margin-top:8px;font-size:10.5px;color:var(--muted);line-height:1.5;">Counted only on trades with an Exit Type recorded. The indented rows split a pattern by how complete its confluence was — they appear once a pattern has trades in more than one band.</div>`;
 }
 
-/* ---------------- Collapsible dashboard groups ----------------
-   Sixteen panels is more than anyone scrolls through looking for one number.
-   Which groups you keep open is a working preference, so it rides in
-   UI_PREF_LS_KEYS with the rest and follows the account, not the browser. */
-const DASH_GROUP_DEFAULTS = { prop: true, discipline: true, timing: false };
-
-function _dashGroupState(){
-  try{
-    const raw = localStorage.getItem('dash-groups');
-    return raw ? { ...DASH_GROUP_DEFAULTS, ...JSON.parse(raw) } : { ...DASH_GROUP_DEFAULTS };
-  }catch(e){ return { ...DASH_GROUP_DEFAULTS }; }
-}
-
-function applyDashGroups(){
-  const state = _dashGroupState();
-  Object.entries(state).forEach(([key, open]) => {
-    const el = document.getElementById('dashGroup-' + key);
-    if(el) el.classList.toggle('collapsed', !open);
-  });
-}
-
-function toggleDashGroup(key){
-  const state = _dashGroupState();
-  state[key] = !state[key];
-  try{
-    localStorage.setItem('dash-groups', JSON.stringify(state));
-    syncUIPrefsToProfile();
-  }catch(e){}
-  applyDashGroups();
-}
+/* The collapsible dashboard groups are gone. They existed because sixteen
+   panels was more than anyone scrolls through — five of those panels have
+   since folded into the Edge Map, so the remaining handful reads straight
+   down without a lid on each section. The 'dash-groups' preference key is
+   left registered in UI_PREF_LS_KEYS so an older saved profile does not
+   error on load; nothing writes it any more. */
 
 
 
@@ -3164,6 +3153,225 @@ function renderBreakdown(){
       `).join('')}
     </table>
   `;
+}
+
+/* ---------------- Edge Map ----------------
+   One page in place of five. Every dimension the journal holds, each value
+   drawn as a diverging bar around a zero line: right of centre it makes money,
+   left of centre it loses. Click any value and every other card re-reads
+   itself against it — which is what the five separate panels could never do,
+   because "what hour is good WHEN I trade 15 mins HL" was a question none of
+   them could be asked.
+
+   The bar is average net P&L per trade. That is deliberate and it is the one
+   thing here that is not up for negotiation: his August ran 41% win rate for
+   +$1,465.92, so a page ranked on win rate would tell him to stop doing the
+   thing that made the money. The printed figures are win rate and trade count
+   — the two he reads — while the money stays as the bar, which is also what
+   the sort follows, so the order down a card is always the money order. */
+const EM_MIN_N = 5;
+let EM_FILTERS = {};
+
+// Where a trade sat in its own day: the first one, the one after a win, or the
+// one after a loss. Not a column on the trade — it only exists relative to the
+// trades around it, which is why this is computed rather than read.
+function _emPositionInDay(trades){
+  const byDay = {};
+  trades.forEach(t => {
+    const d = t.open_date || t.close_date;
+    if(!d) return;
+    const k = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+    (byDay[k] = byDay[k] || []).push(t);
+  });
+  const pos = new Map();
+  Object.values(byDay).forEach(list => {
+    const ordered = [...list].sort((a,b) =>
+      (a.open_date || a.close_date) - (b.open_date || b.close_date));
+    ordered.forEach((t, i) => {
+      if(i === 0){ pos.set(t, 'First of the day'); return; }
+      const prev = ordered[i-1];
+      pos.set(t, _isLoss(prev) ? 'After a loss' : (_isWin(prev) ? 'After a win' : 'After a breakeven'));
+    });
+  });
+  return pos;
+}
+
+function _emDimensions(){
+  const pos = _emPositionInDay(FILTERED);
+  const answerBy = _confluenceAnswerAt;
+  return [
+    // First card, and the only one naming something he DID rather than a
+    // circumstance he was in. Multi: a trade breaking three rules counts
+    // against all three, so this card's counts exceed the trade total.
+    { key:'rules', label:'What you did wrong', q:'the mistake', multi:true, lead:true,
+      of: t => _brokenRuleTags(t.unfollowed_rules) },
+    { key:'trade_setup',  label:'Setup',        q:'what to look for', of: t => t.trade_setup },
+    { key:'pattern_type', label:'Pattern',      q:'which one',        of: t => t.pattern_type },
+    { key:'seq',          label:'Sequence',     q:'how many HL/LH in',
+      of: t => answerBy(t, it => it.select) },
+    { key:'score',        label:'Confluence score', q:'is the checklist worth it',
+      of: t => { const s = _confluenceScoreFor(t);
+        return s === null ? null : (s >= 0.8 ? '80–100%' : (s >= 0.5 ? '50–80%' : 'under 50%')); } },
+    { key:'trigger',      label:'Entry trigger', q:'how you got in',
+      of: t => { const a = answerBy(t, it => it.retest, ['yes','no','almost','retest']);
+        return a ? ({ yes:'Zero-line cross', retest:'Retest', almost:'Almost', no:'No confirmation' }[a] || null) : null; } },
+    // The Breakeven Protection question, with the control group it never had:
+    // what happened on the trades where the stop was NOT moved up.
+    { key:'be', label:'Stop to breakeven', q:'is it helping',
+      of: t => {
+        if(t.post_be_result === 'TP After BE') return 'Ran on to TP after BE';
+        if(t.post_be_result === 'SL After BE') return 'Stopped at BE';
+        // The control group, and the sharper half of it: trades he tagged as
+        // ones a breakeven stop WOULD have closed. Their P&L is what leaving
+        // the stop alone was worth, which is the question from the other side.
+        return _ruleTags(t.unfollowed_rules).some(r => r.toLowerCase() === "would have be'd out")
+          ? "Would have BE'd out" : 'Stop never moved';
+      } },
+    { key:'afterloss', label:'Order in the day', q:'revenge trading',
+      of: t => pos.get(t) || null },
+    { key:'session',      label:'Session',      q:'when',        of: t => t.session },
+    { key:'hour',         label:'Hour opened',  q:'exactly when',
+      of: t => t.open_date ? `${String(t.open_date.getHours()).padStart(2,'0')}:00` : null },
+    { key:'exit_type',    label:'Exit type',    q:'how it ended', of: t => t.exit_type },
+    { key:'day_of_week',  label:'Day of week',  q:'which day',    of: t => t.day_of_week },
+    { key:'account',      label:'Account',      q:'where',        of: t => t.account },
+  ];
+}
+
+const _emMatches = (val, v) => Array.isArray(val) ? val.includes(v) : val === v;
+
+function _emFiltered(dims, exceptKey){
+  return FILTERED.filter(t => Object.entries(EM_FILTERS).every(([k, v]) => {
+    if(k === exceptKey) return true;
+    const d = dims.find(x => x.key === k);
+    return d ? _emMatches(d.of(t), v) : true;
+  }));
+}
+
+function _emStats(dims, dim){
+  // The card's own filter is excluded, so picking "15 mins HL" leaves the
+  // Pattern card showing every pattern — otherwise the card you just clicked
+  // collapses to one row and there is no way to change your mind.
+  const rows = _emFiltered(dims, dim.key);
+  const g = {};
+  rows.forEach(t => {
+    const v = dim.of(t);
+    const keys = dim.multi ? (v || []) : [v];
+    keys.forEach(k => {
+      if(k === null || k === undefined || k === '' || k === 'Unspecified') return;
+      (g[k] = g[k] || []).push(t);
+    });
+  });
+  const out = Object.entries(g).map(([name, arr]) => {
+    const wins = arr.filter(_isWin).length;
+    const losses = arr.filter(_isLoss).length;
+    const net = arr.reduce((s,t) => s + netPnl(t), 0);
+    return { name, n: arr.length, wins, losses, net, avg: net / arr.length,
+             rate: (wins + losses) ? wins / (wins + losses) * 100 : null };
+  });
+  // Best to worst on every card. A mistakes card ranks on TOTAL damage instead
+  // — what stops you doing something is what it has cost you altogether, not
+  // what it costs per go.
+  if(dim.multi) out.sort((a,b) => a.net - b.net);
+  else out.sort((a,b) => b.avg - a.avg);
+  return out;
+}
+
+function toggleEdgeFilter(key, value){
+  if(EM_FILTERS[key] === value) delete EM_FILTERS[key]; else EM_FILTERS[key] = value;
+  renderEdgeMap();
+}
+function clearEdgeFilters(){ EM_FILTERS = {}; renderEdgeMap(); }
+
+function renderEdgeMap(){
+  const body = document.getElementById('edgeMapBody');
+  if(!body) return;
+
+  const dims = _emDimensions();
+  const shown = _emFiltered(dims);
+
+  if(!FILTERED.length){
+    body.innerHTML = `<div class="empty-state">No trades in view.</div>`;
+    return;
+  }
+
+  // One scale across the whole page, so a bar on one card is directly
+  // comparable with a bar on another. Rescaling per card would make the
+  // weakest dimension look as strong as the best.
+  let max = 1;
+  const table = dims.map(d => ({ d, rows: _emStats(dims, d) }));
+  table.forEach(({ rows }) => rows.forEach(r => { max = Math.max(max, Math.abs(r.avg)); }));
+
+  let best = null, worst = null, costliest = null;
+  table.forEach(({ d, rows }) => rows.forEach(r => {
+    if(r.n < EM_MIN_N) return;
+    if(d.multi){ if(!costliest || r.net < costliest.net) costliest = { ...r, dim:d.label }; return; }
+    if(!best || r.avg > best.avg) best = { ...r, dim:d.label };
+    if(!worst || r.avg < worst.avg) worst = { ...r, dim:d.label };
+  }));
+
+  const chips = Object.entries(EM_FILTERS);
+  const chipHtml = chips.length
+    ? chips.map(([k,v]) => {
+        const d = dims.find(x => x.key === k);
+        return `<button class="em-chip" onclick="toggleEdgeFilter('${k}', ${escapeHtml(JSON.stringify(v))})">${
+          escapeHtml(d ? d.label : k)}: ${escapeHtml(v)} <span class="x">✕</span></button>`;
+      }).join('')
+    : `<span class="em-nofilter">Nothing picked — click any bar below.</span>`;
+
+  const vcard = (cls, k, v, n, s) =>
+    `<div class="em-vcard ${cls}"><div class="k">${k}</div><div class="v">${escapeHtml(v)}</div>
+     <div class="n">${n}</div><div class="s">${s}</div></div>`;
+  const shownNet = shown.reduce((s,t) => s + netPnl(t), 0);
+  const sw = shown.filter(_isWin).length, sl = shown.filter(_isLoss).length;
+
+  const cards = table.map(({ d, rows }) => {
+    if(!rows.length) return '';
+    const lines = rows.map(r => {
+      const w = Math.min(50, Math.abs(r.avg) / max * 50);
+      const thin = r.n < EM_MIN_N;
+      const col = r.avg >= 0 ? 'var(--win)' : 'var(--loss)';
+      const on = EM_FILTERS[d.key] === r.name;
+      const dimmed = EM_FILTERS[d.key] && !on;
+      return `<div class="em-row${on?' on':''}${dimmed?' off':''}"
+          onclick="toggleEdgeFilter('${d.key}', ${escapeHtml(JSON.stringify(r.name))})"
+          title="${escapeHtml(r.name)} — ${r.wins}W ${r.losses}L, ${fmtMoney(r.avg)} per trade, ${fmtMoney(r.net)} in total${
+            thin ? ` · under ${EM_MIN_N} trades` : ''}">
+        <span class="em-name">${escapeHtml(r.name)}</span>
+        <span class="em-bar"><i class="zero"></i><i class="fill${thin?' thin':''}" style="${
+          r.avg >= 0 ? `left:50%;width:${w}%` : `right:50%;width:${w}%`};background-color:${col}"></i></span>
+        <span class="em-rate">${r.rate === null ? '—' : fmtNum(r.rate,0) + '%'}</span>
+        <span class="em-n">${r.n}</span>
+      </div>`;
+    }).join('');
+    return `<div class="em-card${d.lead?' lead':''}">
+      <div class="em-card-head"><h3>${escapeHtml(d.label)}</h3><span class="q">${escapeHtml(d.q)}</span></div>
+      ${lines}</div>`;
+  }).join('');
+
+  body.innerHTML = `
+    <div class="em-verdicts">
+      ${costliest ? vcard('bad', 'Your costliest habit', costliest.name,
+          `${fmtMoney(costliest.net)} in total`, `${costliest.n} trades · ${fmtMoney(costliest.avg)} each`) : ''}
+      ${best ? vcard('good', 'Look for this', `${best.dim} · ${best.name}`,
+          `${fmtMoney(best.avg)} per trade`, `${best.wins}W ${best.losses}L · ${fmtMoney(best.net)} total`) : ''}
+      ${worst ? vcard('bad', 'Avoid this', `${worst.dim} · ${worst.name}`,
+          `${fmtMoney(worst.avg)} per trade`, `${worst.wins}W ${worst.losses}L · ${fmtMoney(worst.net)} total`) : ''}
+      ${vcard('thin', 'In the filter now', `${shown.length} trades`, fmtMoney(shownNet),
+          (sw + sl) ? `${Math.round(sw/(sw+sl)*100)}% win rate` : 'nothing decided')}
+    </div>
+    <div class="em-filterbar">
+      <span class="em-lbl">Filter</span>${chipHtml}
+      <button class="em-clear" onclick="clearEdgeFilters()">Clear all</button>
+    </div>
+    <div class="em-grid">${cards}</div>
+    <div class="em-legend">
+      <span><i class="sw" style="background:var(--win)"></i>makes money per trade</span>
+      <span><i class="sw" style="background:var(--loss)"></i>loses money per trade</span>
+      <span><i class="sw hatch"></i><b>hatched</b> = under ${EM_MIN_N} trades, don't lean on it</span>
+      <span>The two figures are <b>win rate</b> then <b>trade count</b>. The money is the bar, and the bar is what the order follows.</span>
+      <span>Each card is measured on its own — click a value to read the rest against it.</span>
+    </div>`;
 }
 
 /* ---------------- "What should I trade?" ----------------
@@ -10016,6 +10224,16 @@ function _journalInvalidFields(r){
       bad.push({ key:'unfollowed_rules', label:labelOf('unfollowed_rules'), value:tag });
     }
   });
+
+  // Two fields that cannot both be true. A trade that exited AT the breakeven
+  // stop did not also run on to take-profit. This used to be caught inside the
+  // Breakeven Protection panel; that panel is gone, and the check belongs here
+  // anyway — it is a repair, not a reading.
+  if(String(r.exit_type || '').trim().toLowerCase() === 'be hit' &&
+     r.post_be_result === 'TP After BE'){
+    bad.push({ key:'post_be_result', label:'Post-BE Result',
+               value:'TP After BE, but Exit Type says BE Hit' });
+  }
 
   // Chart Pattern is scoped to the setup that was traded, so what counts as
   // valid moves with Trade Type and Pattern Type.
