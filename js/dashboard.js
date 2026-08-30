@@ -941,7 +941,9 @@ function normalizeTrade(r){
     day_of_week: computeDayOfWeek(r) || r.day_of_week || "Unspecified",
     emotion: r.emotion || "Unspecified",
     rules_followed: r.rules_followed || "",
-    unfollowed_rules: r.unfollowed_rules || "",
+    // Retired tag names are folded into their survivors here, so every panel,
+    // filter and count downstream sees one spelling.
+    unfollowed_rules: _canonicalTags(r.unfollowed_rules).join(', '),
     account: r.account || "Unspecified",
     account_type: r.account_type || "",
     notes: r.notes || "",
@@ -3963,10 +3965,15 @@ const FIELD_OPTIONS = {
 
 const UNFOLLOWED_RULES_OPTIONS = [
   'Rules Followed',"Would Have BE'd Out",
-  'Early TP','Entered Early','Overleveraged','No Confirmation','Moved Stop Loss',
-  'Revenge Trade','Ignored Trend','Against Daily Bias / HTF Bias',
+  'Overleveraged','Entered Without Confirmation','Moved Stop Loss',
+  'Revenge Trade','Against Daily Bias / HTF Bias',
+  // The two halves of what "Ignored Trend" used to mean. He described them as
+  // separate mistakes: the move had already run and he expected another leg,
+  // versus price had already reached a level that should stop it and he traded
+  // through anyway. One tag could not tell him which he does more often.
+  'Chased Extended Move','Traded Into Key Level',
   'FOMO Entry','No BE at Prev High/Low','Ignored No-Trade Decision',
-  'Non-BnB Setup','No Scalping Trade','Moved Take Profit','Lack of Confluence','BTC Only',
+  'Non-BnB Setup','Moved Take Profit','Lack of Confluence','BTC Only',
   'Changing Plan','No Cutloss 3mins Breakout',
   // The other arm of the breakeven experiment. Without it "did not move to BE"
   // has nothing to be compared against, and the question it exists to answer —
@@ -4001,6 +4008,70 @@ const TAG_OBSERVATIONS = [
 // absence of a breach rather than a fact about the trade.
 const TAG_SENTINELS = ['Rules Followed'];
 
+/* Tags that turned out to be two names for one thing, and the one name kept.
+
+   Applied when a trade is READ, so history consolidates without a database
+   migration and the checklist stops offering both spellings. The stored value
+   is untouched until the next save, so a wrong merge here is reversible by
+   deleting a line.
+
+     Entered Early      -> Entered Without Confirmation
+         Entering before the setup completed IS entering without confirmation.
+         Two tags for one mistake meant it looked half as common as it is, and
+         which one he reached for was arbitrary.
+
+     No Confirmation    -> Entered Without Confirmation
+         Renamed rather than merged: a state ("there was no confirmation")
+         became the action ("I entered without it"), matching Moved Stop Loss
+         and Ignored No-Trade Decision.
+
+   null means the tag is dropped because a COLUMN already records it properly:
+
+     Early TP           -> exit_type
+         Exit Type already carries "Manual Early TP - Valid" and "Manual Early
+         TP - Invalid", which say more than the tag did — including whether the
+         early exit was justified, which the tag could never express. Worse,
+         the two could contradict each other on the same trade.
+
+   "Ignored Trend" is deliberately NOT here. It looked like a duplicate of
+   "Against Daily Bias / HTF Bias" and was briefly merged into it; that was
+   wrong. It meant two things, neither of them direction: the move had already
+   run and he expected another leg, or price had reached a level that should
+   stop it and he traded through. Both are now their own tag, and a stored
+   "Ignored Trend" cannot be resolved to either without him saying which —
+   see TAG_RETIRED. */
+const TAG_ALIASES = {
+  'entered early':   'Entered Without Confirmation',
+  'no confirmation': 'Entered Without Confirmation',
+  'early tp':        null,
+};
+
+/* Tags no longer offered in the checklist but still valid on a trade that
+   already carries one. They keep counting — the mistake really happened — and
+   they are NOT reported as "not a valid option", because they were correct
+   when they were written. The note is what the journal shows instead, and it
+   says what to do about it. */
+const TAG_RETIRED = {
+  'ignored trend':
+    'was two mistakes in one tag — open the trade and pick "Chased Extended Move" or "Traded Into Key Level"',
+  'no scalping trade':
+    'no longer one of your rules',
+};
+const _tagRetiredNote = t => TAG_RETIRED[String(t).trim().toLowerCase()] || null;
+
+// Read-side normalisation. Order is preserved and duplicates collapse, so a
+// trade that carried BOTH "Entered Early" and "No Confirmation" ends up with
+// one tag rather than the same rule counted twice.
+function _canonicalTags(v){
+  const out = [];
+  _ruleTags(v).forEach(t => {
+    const key = t.trim().toLowerCase();
+    const mapped = Object.prototype.hasOwnProperty.call(TAG_ALIASES, key) ? TAG_ALIASES[key] : t;
+    if(mapped && !out.some(x => x.toLowerCase() === mapped.toLowerCase())) out.push(mapped);
+  });
+  return out;
+}
+
 const _TAG_NEUTRAL_SET = new Set(
   [...TAG_SENTINELS, ...TAG_OBSERVATIONS].map(s => s.toLowerCase()));
 const _TAG_OBSERVATION_SET = new Set(TAG_OBSERVATIONS.map(s => s.toLowerCase()));
@@ -4020,23 +4091,46 @@ const _tagKind = t => {
    a tag missing from every group still counts, it just shows on its own. */
 const RULE_GROUPS = [
   { name:'Follow the confluence checklist',
-    tags:['Lack of Confluence','No Confirmation','Entered Early','Non-BnB Setup',
-          'Against Daily Bias / HTF Bias','Ignored Trend'] },
+    tags:['Lack of Confluence','Entered Without Confirmation','Non-BnB Setup',
+          'Against Daily Bias / HTF Bias'] },
+  // Its own rule, not part of the confluence one. A setup can pass every
+  // confluence question and still be a bad entry because the move is spent or
+  // price is sitting under a level — that is a judgement about WHERE in the
+  // move you are, which the checklist does not ask.
+  { name:'Read where the move already is',
+    tags:['Chased Extended Move','Traded Into Key Level'] },
   { name:'Do not touch an open trade',
-    tags:['Moved Stop Loss','Moved Take Profit','Changing Plan','Early TP'] },
+    tags:['Moved Stop Loss','Moved Take Profit','Changing Plan'] },
   { name:'Do not trade on emotion',
     tags:['Revenge Trade','FOMO Entry','Ignored No-Trade Decision'] },
   { name:'Respect size and instrument',
-    tags:['Overleveraged','BTC Only','No Scalping Trade'] },
+    tags:['Overleveraged','BTC Only'] },
   { name:'Follow the exit rules',
     tags:['No Cutloss 3mins Breakout'] },
 ];
+// Retired tags still belong to a rule — the mistake happened, and dropping it
+// out of the Discipline panel would quietly rewrite history as cleaner than it
+// was. "Ignored Trend" is safe to place even though it cannot be resolved to
+// one of its two successors, because BOTH of them live in the same group.
+const RETIRED_TAG_GROUP = {
+  'ignored trend':     'Read where the move already is',
+  'no scalping trade': 'Respect size and instrument',
+};
 const _RULE_GROUP_OF = (() => {
   const m = new Map();
   RULE_GROUPS.forEach(g => g.tags.forEach(t => m.set(t.toLowerCase(), g.name)));
+  Object.entries(RETIRED_TAG_GROUP).forEach(([t, g]) => m.set(t, g));
   return m;
 })();
-const _ruleGroupOf = t => _RULE_GROUP_OF.get(String(t).trim().toLowerCase()) || String(t).trim();
+// Resolves a retired name to its survivor before looking up the group, so a
+// tag that reaches a panel without passing through normalizeTrade still lands
+// in the right rule instead of sitting on its own as an unknown.
+const _ruleGroupOf = t => {
+  const k = String(t).trim().toLowerCase();
+  const live = Object.prototype.hasOwnProperty.call(TAG_ALIASES, k)
+    ? (TAG_ALIASES[k] || String(t).trim()) : String(t).trim();
+  return _RULE_GROUP_OF.get(live.toLowerCase()) || live;
+};
 
 // Kept as the union of the two neutral kinds so the older call sites that ask
 // "is this tag a mark against him" keep reading the same way.
@@ -9827,6 +9921,14 @@ function _journalInvalidFields(r){
   // Comma-joined, so each tag is checked on its own — one stale tag does not
   // condemn the others beside it.
   _ruleTags(r.unfollowed_rules).forEach(tag => {
+    // A retired tag was correct when it was written, so it is reported as work
+    // to redo rather than as a broken value — with the instruction attached.
+    const note = _tagRetiredNote(tag);
+    if(note){
+      bad.push({ key:'unfollowed_rules', label:labelOf('unfollowed_rules'),
+                 value:`"${tag}" ${note}` });
+      return;
+    }
     if(!UNFOLLOWED_RULES_OPTIONS.some(o => o.toLowerCase() === tag.toLowerCase())){
       bad.push({ key:'unfollowed_rules', label:labelOf('unfollowed_rules'), value:tag });
     }
@@ -11456,7 +11558,12 @@ function _applyMovedStopFlags(patch){
   if(!_detectMovedStop(patch)) return;
   const existing = String(patch.unfollowed_rules || '')
     .split(/[,;]/).map(s => s.trim()).filter(Boolean);
-  const merged = [...new Set([...existing, 'Moved Stop Loss', 'Changing Plan'])]
+  // Only "Moved Stop Loss". It used to add "Changing Plan" alongside it, which
+  // double-counted the same act: both live in "Do not touch an open trade", so
+  // every auto-detected moved stop broke that rule twice and made it look like
+  // his worst habit by construction. "Changing Plan" stays in the list for the
+  // deviations that are NOT a moved stop — he can still tick it himself.
+  const merged = [...new Set([...existing, 'Moved Stop Loss'])]
     // Only the sentinel goes. "Rules Followed" means nothing was broken and
     // cannot stand beside a breach — but an observation can, and must: "price
     // reached prev high/low and I did not move to BE" stays true whether or not
@@ -16445,8 +16552,8 @@ function _autoUnfollowedRules(cfg, answers, chartPatternPresent){
   const crossDown = byText('Did MACD cross the zero line downward when your order triggered?');
   const crossUp = byText('Did MACD cross the zero line upward when your order triggered?');
   if(crossDown === 'no' || crossUp === 'no'){
-    reasons.add('No Confirmation');
-    reasons.add('Entered Early');
+    reasons.add('Entered Without Confirmation');
+    reasons.add('Entered Without Confirmation');
     reasons.add('FOMO Entry');
   }
 
@@ -16460,26 +16567,31 @@ function _autoUnfollowedRules(cfg, answers, chartPatternPresent){
   const bull4h = byText('4H MACD in Bull Territory (Green Histogram)?');
   if([bear1h, bull1h, bear4h, bull4h].includes('no')){
     reasons.add('Against Daily Bias / HTF Bias');
-    reasons.add('Ignored Trend');
   }
 
   // Divergence. These questions are INVERTED — a hand being present is the
   // warning — so "yes" is the breach, not "no". This had no rule anywhere,
   // including the 5 mins and 15 mins setups where the question has existed
   // all along.
+  // A divergence hand being present says the move is running out of strength —
+  // that is the "already extended" mistake, not a direction one. It briefly
+  // pointed at the HTF bias tag, which was simply wrong.
   const leftHand = byText('Left Hand Present?');
   const rightHand = byText('Right Hand Present?');
   if(leftHand === 'yes' || rightHand === 'yes'){
-    reasons.add('Ignored Trend');
+    reasons.add('Chased Extended Move');
   }
 
   // Matched on the item being a `select`, not on its wording. The old version
   // listed the four question texts by hand, so renaming one — say from "Which
   // 15m HL is this?" to "Which 1h HL is this?" — would have quietly stopped
   // the rule firing on that setup with nothing to show it had broken.
+  // Entering on the 3rd HL/LH onward IS the "already extended" mistake, in his
+  // own words: the market has already made its move and he is still expecting
+  // another leg. This is the auto-rule that names it most directly.
   const lateSequence = new Set(['3rd','4th','5th']);
   cfg.items.forEach((it, i) => {
-    if(it.select && lateSequence.has(answers[i])) reasons.add('Ignored Trend');
+    if(it.select && lateSequence.has(answers[i])) reasons.add('Chased Extended Move');
   });
 
   return reasons;
