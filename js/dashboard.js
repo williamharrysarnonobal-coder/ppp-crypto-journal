@@ -904,6 +904,18 @@ function saveFeatureAccess(){
 
 window.addEventListener('DOMContentLoaded', initApp);
 
+// Every numeric column came through as `x != null ? parseFloat(x) : fallback`,
+// which lets an empty string past the guard — `'' != null` is true — and then
+// parseFloat('') returns NaN, not the fallback. One trade with a blank
+// Profit/Loss therefore turned every total that touched it into NaN: the
+// month's net, the equity curve, the account balance, the Edge Map's return.
+// Silently, and from a single empty cell. This checks the RESULT instead of
+// the input, so anything unparseable lands on the fallback.
+const _num = (v, fallback) => {
+  const n = parseFloat(v);
+  return Number.isFinite(n) ? n : fallback;
+};
+
 function normalizeTrade(r){
   return {
     position_id: r.position_id,
@@ -912,18 +924,24 @@ function normalizeTrade(r){
     symbol: r.symbol || "—",
     win_loss: (r.win_loss || "").trim(),
     trade_type: r.trade_type || "—",
-    profit_loss: r.profit_loss != null ? parseFloat(r.profit_loss) : 0,
-    fee: r.fee != null ? parseFloat(r.fee) : 0,
-    pnl_percent: r.pnl_percent != null ? parseFloat(r.pnl_percent) : null,
-    rr: r.rr != null ? parseFloat(r.rr) : null,
-    entry_price: r.entry_price != null ? parseFloat(r.entry_price) : null,
-    close_price: r.close_price != null ? parseFloat(r.close_price) : null,
-    tp_price: r.tp_price != null ? parseFloat(r.tp_price) : null,
-    sl_price: r.sl_price != null ? parseFloat(r.sl_price) : null,
-    position_size: r.position_size != null ? parseFloat(r.position_size) : null,
+    profit_loss: _num(r.profit_loss, 0),
+    fee: _num(r.fee, 0),
+    pnl_percent: _num(r.pnl_percent, null),
+    rr: _num(r.rr, null),
+    entry_price: _num(r.entry_price, null),
+    close_price: _num(r.close_price, null),
+    tp_price: _num(r.tp_price, null),
+    sl_price: _num(r.sl_price, null),
+    position_size: _num(r.position_size, null),
     trade_setup: r.trade_setup || "Unspecified",
     pattern_type: r.pattern_type || "Unspecified",
     execution_tf: r.execution_tf || "Unspecified",
+    // Was missing from this list entirely. The drawer writes it, the database
+    // stores it, the journal has a column for it and the auto-fill chain
+    // derives it from the pattern and the sequence — but nothing ever read it
+    // back, so every trade came out of here with no AOF Phase at all. It is
+    // the one column of the thirty-three that was write-only.
+    aof_phase: r.aof_phase || "Unspecified",
     exit_type: r.exit_type || "",
     // Both of these read straight through. What price did after a stop or a cut
     // took you out is not on the trade — a blank stays blank so the journal can
@@ -9906,9 +9924,13 @@ const JOURNAL_VALIDATED_KEYS = [
 // Values that mean "blank", not "wrong". normalizeTrade fills several columns
 // with "Unspecified" when they are empty, and an empty column is the missing-
 // field check's business, not this one's.
+// normalizeTrade fills several columns with a placeholder rather than leaving
+// them empty — "Unspecified" for most, "—" for symbol and trade_type. Both mean
+// "nothing was recorded", so both have to read as blank here. Missing "—" is
+// what let a trade with no symbol and no direction pass as complete.
 const _isBlankish = v => {
   const s = String(v ?? '').trim();
-  return s === '' || s === 'Unspecified';
+  return s === '' || s === 'Unspecified' || s === '—' || s === '-';
 };
 
 // Every stored value that its own column can no longer accept. Renaming an
@@ -9955,6 +9977,20 @@ function _journalInvalidFields(r){
   // exactly the cost this column exists to measure. Same reading as
   // post_cutloss_result below. The check flagged correct data as broken.
 
+  // A Post-BE answer on a trade the breakeven stop never closed. The old
+  // "contradiction" check here was removed because it was wrong — it called
+  // "BE Hit + TP After BE" impossible when that is the most informative row in
+  // the journal. This is the check that should have been there instead: not
+  // that the two disagree, but that the question does not apply at all. A Win
+  // that ran to TP never reached a breakeven stop, so there is nothing for
+  // "what happened after it" to describe, and the answer would quietly join
+  // the breakeven verdict's numbers.
+  if(!_isBlankish(r.post_be_result) && r.post_be_result !== 'N/A' &&
+     !_postBEApplies(r)){
+    bad.push({ key:'post_be_result', label:'Post-BE Result',
+               value:`${r.post_be_result}, but this trade never reached a breakeven stop` });
+  }
+
   // A real answer here is a statement about
   // what happened after a manual cut, so it cannot stand on a trade that was
   // not cut — that answer belongs to a different exit and would quietly join
@@ -9980,6 +10016,26 @@ function _journalInvalidFields(r){
   if(staleAnswers.length){
     bad.push({ key:'confluence_answers', label:'Confluence',
                value:`${staleAnswers.length} answer${staleAnswers.length===1?'':'s'} from a different checklist` });
+  }
+
+  // A trade pointing at an account that no longer exists.
+  //
+  // `account` is deliberately not in JOURNAL_VALIDATED_KEYS: its FIELD_OPTIONS
+  // list is the legacy AppSheet one ('10k', '25k', …) while the real accounts
+  // are named in TRADING_ACCOUNTS, so checking it against the options would
+  // flag every trade in the journal. Checking it against the REAL accounts is
+  // a different question, and it had no answer anywhere.
+  //
+  // It matters more than a tidy-up: every ranking on the Edge Map divides P&L
+  // by the account's size, so a trade whose account has been deleted silently
+  // drops out of the whole page — it is not zero, it is absent, and nothing
+  // said so. Skipped while TRADING_ACCOUNTS is still empty, because that means
+  // the accounts have not loaded yet rather than that they are all gone.
+  if(Array.isArray(TRADING_ACCOUNTS) && TRADING_ACCOUNTS.length &&
+     !_isBlankish(r.account) &&
+     !TRADING_ACCOUNTS.some(a => a.account_name === r.account)){
+    bad.push({ key:'account', label:'Account',
+               value:`${r.account} — no account by that name any more` });
   }
 
   // Rules Followed? and the tags beside it, disagreeing.
@@ -10012,10 +10068,13 @@ function _journalMissingFields(r){
   // about it would be arguing with a setting the user already made.
   const visible = new Set(DRAWER_FIELDS.map(f => f.key));
   const labelOf = k => (ALL_DRAWER_FIELDS.find(f => f.key === k) || {}).label || k;
-  const isBlank = k => {
-    const v = r[k];
-    return v === null || v === undefined || String(v).trim() === '';
-  };
+  // Uses the shared notion of blank, which counts the placeholders normalizeTrade
+  // writes. The old local version tested only for an empty string, and since
+  // normalizeTrade replaces every empty value with "Unspecified" or "—" BEFORE
+  // this ever runs, seven of the fourteen required columns — symbol, account,
+  // session, trade_type, trade_setup, pattern_type, execution_tf — could never
+  // be reported at all. The incomplete count was quietly missing half its job.
+  const isBlank = k => _isBlankish(r[k]);
 
   const missing = JOURNAL_REQUIRED_KEYS
     .filter(k => visible.has(k) && isBlank(k))
