@@ -602,7 +602,21 @@ function showRulesTooltip(event){
   const tip = document.getElementById('rulesTooltip');
   const cell = event.currentTarget;
   if(!tip || !cell) return;
-  tip.textContent = cell.dataset.rules || '';
+  tip.textContent = '';
+  // textContent, never innerHTML: an option added in the Options editor is
+  // free text, and this is the one place it gets rendered as markup.
+  const section = (label, text, cls) => {
+    if(!text) return;
+    const h = document.createElement('div');
+    h.className = 'rules-tip-head ' + cls;
+    h.textContent = label;
+    const b = document.createElement('div');
+    b.className = 'rules-tip-body';
+    b.textContent = text;
+    tip.append(h, b);
+  };
+  section('Unfollowed Rules', cell.dataset.broke, 'broke');
+  section('Others', cell.dataset.notes, 'notes');
   const rect = cell.getBoundingClientRect();
   tip.style.left = `${rect.left}px`;
   tip.style.top = `${rect.bottom + 8}px`;
@@ -4262,18 +4276,21 @@ const _isCleanRules = v => {
 // legacy trade marked Yes but carrying a broken rule would otherwise have that
 // rule hidden, and a hidden checkbox is dropped on save — losing the value
 // silently. Shown instead, so the disagreement is visible and correctable.
+/* The whole list, always.
+
+   This used to hide half of it depending on the Rules Followed? answer, which
+   made sense while that answer was something he typed: pick "Yes" and the
+   breaches were irrelevant. It is derived now — the tags PRODUCE the answer —
+   so filtering the tags by it had the causality backwards, and hid the very
+   option that would have set it. Picking "Yes" left no way to tick "Entered
+   Without Confirmation", so the trade could never say what actually happened.
+
+   `keepSelected` is still honoured: a value stored on the trade that is no
+   longer in the list stays visible, because a hidden checkbox is dropped on
+   save and would lose the value silently. */
 function _unfollowedOptionsFor(rulesFollowed, keepSelected){
-  const v = String(rulesFollowed || '').trim().toLowerCase();
   const norm = s => String(s).trim().toLowerCase();
-  // Unanswered shows the whole list rather than pre-emptively hiding half.
-  //
-  // Observations appear on BOTH answers, and that is the point of splitting the
-  // kinds: "price reached prev high/low and I did not move to BE" is equally
-  // true of a disciplined trade and a sloppy one. Hiding it behind "Rules
-  // Followed? = No" was what forced it to read as a fault.
-  let opts = UNFOLLOWED_RULES_OPTIONS.slice();
-  if(v === 'yes') opts = opts.filter(o => _tagKind(o) !== 'breach');
-  else if(v === 'no') opts = opts.filter(o => _tagKind(o) !== 'sentinel');
+  const opts = UNFOLLOWED_RULES_OPTIONS.slice();
   (keepSelected || []).forEach(s => {
     if(!opts.some(o => norm(o) === norm(s))) opts.push(s);
   });
@@ -4420,7 +4437,10 @@ const ALL_DRAWER_FIELDS = [
   {key:'pattern_type', label:'Pattern Type', widget:'select', editable:true, options:FIELD_OPTIONS.pattern_type},
   {key:'execution_tf', label:'Execution TF', widget:'select', editable:true, options:FIELD_OPTIONS.execution_tf},
   {key:'aof_phase', label:'AOF Phase', widget:'select', editable:true, options:FIELD_OPTIONS.aof_phase},
-  {key:'rules_followed', label:'Rules Followed?', widget:'select', editable:true, options:FIELD_OPTIONS.rules_followed},
+  // Read-only: derived from the tags and the confluence score on save, so an
+  // editable control here was a switch that did nothing — whatever it was set
+  // to got overwritten a moment later. Tick the tags instead; this follows.
+  {key:'rules_followed', label:'Rules Followed?', widget:'select', editable:false, options:FIELD_OPTIONS.rules_followed},
   {key:'unfollowed_rules', label:'Trade Tags', widget:'checklist', editable:true, options:UNFOLLOWED_RULES_OPTIONS},
   {key:'exit_type', label:'Exit Type', widget:'select', editable:true, options:FIELD_OPTIONS.exit_type},
   {key:'post_be_result', label:'Post-BE Result', widget:'select', editable:true, options:FIELD_OPTIONS.post_be_result},
@@ -10200,6 +10220,21 @@ function _journalInvalidFields(r){
   //
   // Both directions, because the opposite disagreement is just as wrong and was
   // always possible on a hand-edited row.
+  // Both halves of an either/or ticked on the same trade. You held OR you cut;
+  // you moved the stop OR you left it. A trade carrying both is silently
+  // dropped from that experiment — the dimension returns null rather than
+  // guessing — so without this the evidence just goes quiet.
+  [[["be'd at prev high/low", 'no be at prev high/low'], 'the breakeven decision'],
+   [["be'd at prev high/low", "would have be'd out"],    'the breakeven decision'],
+   [['held through invalidation', 'cut on invalidation'], 'the invalidation decision']
+  ].forEach(([pair, what]) => {
+    const on = _canonicalTags(r.unfollowed_rules).map(s => s.toLowerCase());
+    if(pair.every(t => on.includes(t))){
+      bad.push({ key:'unfollowed_rules', label:labelOf('unfollowed_rules'),
+                 value:`both sides of ${what} are ticked — pick one, or this trade counts for neither` });
+    }
+  });
+
   // Now that the answer is derived rather than typed, the check is simply
   // whether the stored one still matches what the trade says — and the reason
   // is spelled out, because "No" can come from the checklist OR from a tag.
@@ -10335,9 +10370,14 @@ function renderJournalTable(){
           // carries the observations, which are the ones actually worth
           // reading: "No BE at Prev High/Low", "Held Through Invalidation".
           // They were the only tags with no way to see them from the table.
+          // Split into the two kinds. Run together, an observation on a clean
+          // trade reads as a fault — the tooltip was the last place the two
+          // were still being shown as one list.
           if(c.key === 'rules_followed' && _ruleTags(r.unfollowed_rules).length){
-            const rulesText = escapeHtml(_canonicalTags(r.unfollowed_rules).join(', '));
-            return `<td data-rules="${rulesText}" onmouseenter="showRulesTooltip(event)" onmouseleave="hideRulesTooltip()">${colored}</td>`;
+            const tags = _canonicalTags(r.unfollowed_rules);
+            const broke = tags.filter(t => _tagKind(t) === 'breach');
+            const notes = tags.filter(t => _tagKind(t) !== 'breach');
+            return `<td data-broke="${escapeHtml(broke.join(', '))}" data-notes="${escapeHtml(notes.join(', '))}" onmouseenter="showRulesTooltip(event)" onmouseleave="hideRulesTooltip()">${colored}</td>`;
           }
           return `<td title="${String(r[c.key]||'').replace(/"/g,'&quot;')}">${colored}</td>`;
         }
@@ -11506,6 +11546,15 @@ function _updateDrawerRiskAmount(){
 }
 
 function _renderDrawerFieldRow(f, mode, row){
+  // Derived, so it is shown rather than asked. An editable select here was a
+  // control that did nothing — _collectDrawerPatch overwrites it on save from
+  // the tags and the confluence score. It updates live as the tags are ticked.
+  if(f.key === 'rules_followed'){
+    const v = _deriveRulesFollowed(row) || '';
+    return `<div class="field-row"><label>${f.label}</label>` +
+      `<div class="field-static${v ? ` rf-${v.toLowerCase()}` : ''}" id="drawerRulesFollowed">${v || '—'}</div>` +
+      `<div class="field-hint">Set by your Trade Tags and confluence score</div></div>`;
+  }
   if(f.key === 'objective' || f.key === 'duration'){
     const computed = f.key === 'objective' ? computeObjective(row) : computeDuration(row);
     return `<div class="field-row"><label>${f.label}</label><div class="field-static">${computed || '—'}</div></div>`;
@@ -11548,7 +11597,6 @@ function _renderDrawerFieldRow(f, mode, row){
     }
     const opts = selectOptions.map(o => `<option value="${o}" ${raw===o?'selected':''}>${o}</option>`).join('');
     const onchange = f.key === 'account' ? ` onchange="syncAccountTypeFromAccount(this.value)"`
-      : f.key === 'rules_followed' ? ` onchange="syncUnfollowedRulesFromFollowed(this.value)"`
       : f.key === 'trade_type' ? ` onchange="syncTradeSetupFromType(this.value)"`
       : f.key === 'trade_setup' ? ` onchange="syncPatternTypeFromSetup(this.value)"`
       : f.key === 'pattern_type' ? ` onchange="syncExecutionFromPattern(this.value)"`
@@ -11619,6 +11667,7 @@ function renderDrawerFields(){
     : 'Save changes';
   document.getElementById('drawerError').textContent = '';
 
+  _drawerRow = row;
   const body = document.getElementById('drawerBody');
   const fieldByKey = {};
   DRAWER_FIELDS.forEach(f => { fieldByKey[f.key] = f; });
@@ -15579,29 +15628,31 @@ function syncAofFromLinkedSetup(row){
 // two can never drift into producing different markup for the same field.
 function _checklistBoxesHtml(key, options, selected){
   const norm = s => String(s).trim().toLowerCase();
+  // Ticking a tag is what decides Rules Followed?, so the answer updates as
+  // you tick rather than only appearing after a save.
+  const onchange = key === 'unfollowed_rules' ? ' onchange="_refreshDerivedRulesFollowed()"' : '';
   return options.map(o => `
       <label><input type="checkbox" data-checklist="${escapeHtml(key)}" value="${escapeHtml(o)}" ${
         selected.some(s => norm(s) === norm(o)) ? 'checked' : ''
-      }> ${escapeHtml(o)}</label>
+      }${onchange}> ${escapeHtml(o)}</label>
     `).join('');
 }
 
-// Rules Followed? flips which half of the Unfollowed Rules checklist applies.
-// Anything ticked on the half that just disappeared is dropped, not merely
-// hidden: _collectDrawerPatch reads the checkboxes still in the DOM, so a
-// hidden-but-checked box would be saved anyway and contradict the answer.
-function syncUnfollowedRulesFromFollowed(rulesFollowedValue){
-  const box = document.querySelector('#drawerBody [data-checklist-for="unfollowed_rules"]');
-  if(!box) return;
-  const checked = [...box.querySelectorAll('input[type="checkbox"]')]
-    .filter(cb => cb.checked).map(cb => cb.value);
-  // No keepSelected here — unlike the initial render, this is a deliberate
-  // answer change, so the other half's ticks are stale rather than history.
-  const opts = _unfollowedOptionsFor(rulesFollowedValue);
-  box.innerHTML = _checklistBoxesHtml('unfollowed_rules', opts, checked);
-  // the needs-input red flag listens for this
-  box.dispatchEvent(new Event('change', { bubbles: true }));
+// Reads the ticked boxes straight out of the drawer and re-derives the answer.
+// The confluence score is not editable here, so it comes off the row the drawer
+// was opened with.
+let _drawerRow = null;
+function _refreshDerivedRulesFollowed(){
+  const el = document.getElementById('drawerRulesFollowed');
+  if(!el) return;
+  const ticked = [...document.querySelectorAll('#drawerBody [data-checklist="unfollowed_rules"]:checked')]
+    .map(cb => cb.value);
+  const v = _deriveRulesFollowed({ ...(_drawerRow || {}), unfollowed_rules: ticked.join(', ') });
+  el.textContent = v || '—';
+  el.className = 'field-static' + (v ? ` rf-${v.toLowerCase()}` : '');
 }
+
+
 
 // Post-BE Result only means something when the breakeven stop is what closed
 // the trade — that is Win/Loss "Breakeven" or Exit Type "BE Hit". Anything else

@@ -258,6 +258,25 @@
     max-width:240px;z-index:600;box-shadow:0 6px 16px rgba(0,0,0,.2);display:none;pointer-events:none;
   }
   .rules-tooltip.show{display:block;}
+  /* Two kinds in one popup, and they must not read as one list: a broken rule
+     is a fault, an observation is a note about a decision under test. */
+  .rules-tip-head{
+    font-family:'IBM Plex Mono',monospace;font-size:9.5px;font-weight:600;
+    letter-spacing:.11em;text-transform:uppercase;margin-bottom:3px;
+  }
+  .rules-tip-head.broke{color:var(--loss);}
+  .rules-tip-head.notes{color:var(--info);}
+  .rules-tip-body{color:var(--ink);margin-bottom:9px;}
+  .rules-tip-body:last-child{margin-bottom:0;}
+
+  /* Rules Followed? in the drawer — shown, not asked. It is derived from the
+     tags and the confluence score, so it reads as a result rather than as a
+     control you could have set differently. */
+  .field-static.rf-yes{color:var(--win);font-weight:600;}
+  .field-static.rf-no{color:var(--loss);font-weight:600;}
+  .field-hint{
+    grid-column:1 / -1;font-size:11px;color:var(--muted);margin-top:3px;
+  }
   .content{flex:1;min-width:0;padding:76px 22px 20px;container-type:inline-size;}
   @media(max-width:800px){
     .shell{flex-direction:column;}
