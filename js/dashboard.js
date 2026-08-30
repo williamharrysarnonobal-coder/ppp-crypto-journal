@@ -684,6 +684,7 @@ async function initApp(){
     const data = await res.json();
     RAW_TRADES = data;
     ALL_TRADES = data.map(normalizeTrade);
+    _rebuildTradeNumbers();
 
     // Rebuild the Account dropdown now that the trades are actually here.
     //
@@ -9807,7 +9808,36 @@ function clearJournalFilters(){
   renderJournalTable();
 }
 
+/* "No." as a position rather than a stored id.
+
+   It used to be a permanent number handed out once at creation and never
+   reused, so deleting three trades left 148 rows numbered up to 151 — every
+   number after a deletion off by the count of what was removed. The column is
+   called "No.", it is read as a count, and it should behave like one.
+
+   Numbered oldest-first across the WHOLE journal, not the filtered view: the
+   number has to mean "your 74th trade", and it cannot do that if narrowing to
+   August renumbers everything from 1. Ties broken on open date then id so the
+   order never shuffles between two renders of the same data. */
+let _TRADE_NO = new Map();
+function _rebuildTradeNumbers(){
+  const at = t => {
+    const d = t.close_date || t.open_date;
+    return d ? new Date(d).getTime() : Infinity;
+  };
+  _TRADE_NO = new Map(
+    [...(ALL_TRADES || [])]
+      .sort((a,b) =>
+        at(a) - at(b) ||
+        ((a.open_date ? +new Date(a.open_date) : 0) - (b.open_date ? +new Date(b.open_date) : 0)) ||
+        String(a.position_id).localeCompare(String(b.position_id)))
+      .map((t,i) => [t.position_id, i + 1])
+  );
+}
+const _tradeNo = row => _TRADE_NO.get(row && row.position_id) || '';
+
 function _journalCellValue(row, key){
+  if(key === 'no') return _tradeNo(row);
   if(key === 'objective') return computeObjective(row) || '—';
   if(key === 'duration') return computeDuration(row) || '—';
   // Computed, not stored — the answers live in confluence_answers and the
@@ -10067,7 +10097,10 @@ function _journalInvalidFields(r){
 
   // Comma-joined, so each tag is checked on its own — one stale tag does not
   // condemn the others beside it.
-  _ruleTags(r.unfollowed_rules).forEach(tag => {
+  // Judged on the canonical form, like everything else. A retired name that
+  // reaches here without passing through normalizeTrade would otherwise be
+  // reported as unrecognised even though it has a perfectly good successor.
+  _canonicalTags(r.unfollowed_rules).forEach(tag => {
     // A retired tag was correct when it was written, so it is reported as work
     // to redo rather than as a broken value — with the instruction attached.
     const note = _tagRetiredNote(tag);
@@ -11366,7 +11399,7 @@ function renderTradeViewModal(){
   const row = tradeViewList[tradeViewIndex];
   if(!row) return;
 
-  document.getElementById('tradeViewTitle').textContent = (row.symbol || 'Trade') + (row.no ? ` · #${row.no}` : '');
+  document.getElementById('tradeViewTitle').textContent = (row.symbol || 'Trade') + (_tradeNo(row) ? ` · #${_tradeNo(row)}` : '');
   document.getElementById('tradeViewSetupNotesBtn').style.display = row.linked_setup_id ? 'flex' : 'none';
 
   const fieldByKey = {};
@@ -11566,7 +11599,7 @@ function renderDrawerFields(){
 
   document.getElementById('drawerTitle').textContent = mode === 'create'
     ? (bulkCount > 1 ? `Add ${bulkCount} trades` : 'Add trade')
-    : (row.symbol || 'Trade') + (row.no ? ` · #${row.no}` : '');
+    : (row.symbol || 'Trade') + (_tradeNo(row) ? ` · #${_tradeNo(row)}` : '');
   document.getElementById('drawerDeleteBtn').style.display = mode === 'view' ? 'inline-block' : 'none';
   document.getElementById('drawerEditBtn').style.display = (mode === 'view' && !drawerEditing) ? 'inline-block' : 'none';
   document.getElementById('drawerSetupNotesBtn').style.display = (mode === 'view' && row.linked_setup_id) ? 'inline-block' : 'none';
@@ -11851,6 +11884,7 @@ async function saveDrawer(){
     }
 
     ALL_TRADES = RAW_TRADES.map(normalizeTrade);
+  _rebuildTradeNumbers();
     populateAccountFilter();
   populateDashPeriodFilters();
     populateJournalFilters();
@@ -11901,6 +11935,7 @@ async function deleteDrawer(){
 
     RAW_TRADES = RAW_TRADES.filter(r => r.position_id !== drawerPositionId);
     ALL_TRADES = RAW_TRADES.map(normalizeTrade);
+  _rebuildTradeNumbers();
     populateAccountFilter();
   populateDashPeriodFilters();
     populateJournalFilters();
@@ -17195,6 +17230,7 @@ async function _saveBulkJournal(shared){
   (inserted.length ? inserted : rows).forEach(r => RAW_TRADES.push(r));
 
   ALL_TRADES = RAW_TRADES.map(normalizeTrade);
+  _rebuildTradeNumbers();
   populateAccountFilter();
   populateDashPeriodFilters();
   populateJournalFilters();
