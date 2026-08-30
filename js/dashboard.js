@@ -10066,20 +10066,18 @@ function _journalColoredCell(key, row, plainVal){
   const v = String(raw).trim();
   const lower = v.toLowerCase();
 
-  /* Three states.
+  /* Three states, keyed on the "Rules Followed" tag itself.
 
-     green   Yes with nothing tagged, or nothing beyond "Rules Followed" —
-             a plain clean trade with nothing to read
-     blue    Yes with any other tag on it. Not a judgement about the tag, just
-             "there is something written here": an observation under test, or
-             a breach he answered Yes to anyway. Either way the row is worth
-             hovering, and green would say there was nothing to see.
+     green   the "Rules Followed" tag is ticked — he has said outright that
+             this one was clean, whatever else is noted alongside it
+     blue    Yes, but that tag is not ticked. The trade was not declared clean,
+             so there is something to read rather than nothing.
      red     No
      blue    also anything that is neither Yes nor No */
   if(key === 'rules_followed'){
-    const noted = _canonicalTags(row.unfollowed_rules)
-      .some(t => _tagKind(t) !== 'sentinel');
-    if(lower === 'yes') return _box(noted ? 'box-solid-info' : 'box-solid-win', v);
+    const declaredClean = _canonicalTags(row.unfollowed_rules)
+      .some(t => _tagKind(t) === 'sentinel');
+    if(lower === 'yes') return _box(declaredClean ? 'box-solid-win' : 'box-solid-info', v);
     if(lower === 'no') return _box('box-solid-loss', v);
     if(v && v !== '—') return _box('box-solid-info', v);
   }
