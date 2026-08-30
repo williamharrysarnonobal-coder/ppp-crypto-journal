@@ -4437,10 +4437,9 @@ const ALL_DRAWER_FIELDS = [
   {key:'pattern_type', label:'Pattern Type', widget:'select', editable:true, options:FIELD_OPTIONS.pattern_type},
   {key:'execution_tf', label:'Execution TF', widget:'select', editable:true, options:FIELD_OPTIONS.execution_tf},
   {key:'aof_phase', label:'AOF Phase', widget:'select', editable:true, options:FIELD_OPTIONS.aof_phase},
-  // Read-only: derived from the tags and the confluence score on save, so an
-  // editable control here was a switch that did nothing — whatever it was set
-  // to got overwritten a moment later. Tick the tags instead; this follows.
-  {key:'rules_followed', label:'Rules Followed?', widget:'select', editable:false, options:FIELD_OPTIONS.rules_followed},
+  // Filled in for you as the tags are ticked, but still yours to change — the
+  // journal suggests, it does not decide.
+  {key:'rules_followed', label:'Rules Followed?', widget:'select', editable:true, options:FIELD_OPTIONS.rules_followed},
   {key:'unfollowed_rules', label:'Trade Tags', widget:'checklist', editable:true, options:UNFOLLOWED_RULES_OPTIONS},
   {key:'exit_type', label:'Exit Type', widget:'select', editable:true, options:FIELD_OPTIONS.exit_type},
   {key:'post_be_result', label:'Post-BE Result', widget:'select', editable:true, options:FIELD_OPTIONS.post_be_result},
@@ -9857,6 +9856,34 @@ function _rebuildTradeNumbers(){
 }
 const _tradeNo = row => _TRADE_NO.get(row && row.position_id) || '';
 
+/* The confluence score for one trade, as a percentage plus the verdict.
+
+   It used to print "5/7", and the totals differ per setup — 5/7 against 6/9
+   against 4/6 — so nothing could be compared at a glance and the number had to
+   be divided in your head before it meant anything. A percentage is the same
+   scale for every setup.
+
+   The three colours answer the only question the number was being asked:
+
+     green   at or above this setup's bar   — passed
+     orange  within 10 points below it      — borderline
+     red     further below                  — did not pass
+
+   Tied to `minConfluencePct`, so "green" means passed THIS setup's bar rather
+   than passed some fixed number. The old bands were 80/50 while the bar has
+   always been 60, which is why a trade that passed at 70% still showed orange. */
+function _confluenceCellData(row){
+  const cfg = CONFLUENCE_SETUPS[`${row.trade_type}|${row.pattern_type}`];
+  const ans = row.confluence_answers;
+  if(!cfg || !ans || typeof ans !== 'object' || !Object.keys(ans).length) return null;
+  const { total, done } = _confluenceProgress(cfg.items, ans, !!row.chart_pattern);
+  if(!total) return null;
+  const pct = Math.round(done / total * 100);
+  const bar = Number.isFinite(cfg.minConfluencePct) ? cfg.minConfluencePct : DEFAULT_MIN_CONFLUENCE_PCT;
+  const state = pct >= bar ? 'pass' : (pct >= bar - 10 ? 'near' : 'fail');
+  return { done, total, pct, bar, state };
+}
+
 function _journalCellValue(row, key){
   if(key === 'no') return _tradeNo(row);
   if(key === 'objective') return computeObjective(row) || '—';
@@ -9865,11 +9892,8 @@ function _journalCellValue(row, key){
   // question list in CONFLUENCE_SETUPS, so the score is derived the same way
   // the Trade View badge and the Dashboard's Confluence Edge derive it.
   if(key === 'confluence_score'){
-    const cfg = CONFLUENCE_SETUPS[`${row.trade_type}|${row.pattern_type}`];
-    const ans = row.confluence_answers;
-    if(!cfg || !ans || typeof ans !== 'object' || !Object.keys(ans).length) return '—';
-    const { total, done } = _confluenceProgress(cfg.items, ans, !!row.chart_pattern);
-    return `${Number(done.toFixed(1))}/${total}`;
+    const d = _confluenceCellData(row);
+    return d ? `${d.pct}%` : '—';
   }
   if(key === 'trade_summary'){
     const plain = computeTradeSummary(row).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
@@ -9930,13 +9954,14 @@ function _journalColoredCell(key, row, plainVal){
   // Computed columns have no row[key] to read, so they're handled before the
   // guard below — otherwise they bail out immediately and never get styled.
   if(key === 'confluence_score'){
-    if(!plainVal || plainVal === '—') return null;
-    const [doneStr, totalStr] = String(plainVal).split('/');
-    const frac = Number(totalStr) > 0 ? Number(doneStr) / Number(totalStr) : 0;
+    const d = _confluenceCellData(row);
+    if(!d) return null;
     // Deliberately not a .box-badge: this column reads better bare, with the
     // bar and the number carrying the tone instead of a filled pill.
-    const cls = frac >= 0.8 ? 'cfl-t-win' : (frac >= 0.5 ? 'cfl-t-orange' : 'cfl-t-loss');
-    return `<span class="cfl-score-box ${cls}"><span class="cfl-score-bar"><span class="cfl-score-bar-fill" style="width:${(frac*100).toFixed(0)}%;"></span></span><span class="cfl-score-num">${plainVal}</span></span>`;
+    const cls = d.state === 'pass' ? 'cfl-t-win'
+              : d.state === 'near' ? 'cfl-t-orange' : 'cfl-t-loss';
+    const title = `${Number(d.done.toFixed(1))} of ${d.total} answered · your bar for this setup is ${d.bar}%`;
+    return `<span class="cfl-score-box ${cls}" title="${escapeHtml(title)}"><span class="cfl-score-bar"><span class="cfl-score-bar-fill" style="width:${d.pct}%;"></span></span><span class="cfl-score-num">${d.pct}%</span></span>`;
   }
 
   const raw = row[key];
@@ -11432,12 +11457,16 @@ function _renderTradeViewConfluenceGroup(row){
   // Same scoring as the live checklist's progress chip (Yes/Retest = full
   // credit, Almost = half, No = none) — here it reads as how strong this
   // trade's confluence actually was, not just how many questions got answered.
-  const scoreBadge = cfg ? (() => {
-    const { total, done } = _confluenceProgress(cfg.items, row.confluence_answers || {}, !!row.chart_pattern);
-    const pct = total ? done / total : 0;
-    const color = pct >= 0.8 ? 'var(--win)' : (pct >= 0.5 ? 'var(--accent)' : 'var(--loss)');
-    return `<span style="font-size:11px;font-weight:700;letter-spacing:0;text-transform:none;color:${color};font-variant-numeric:tabular-nums;">${Number(done.toFixed(1))}/${total}</span>`;
-  })() : '';
+  // Same number and the same three colours as the journal column — they were
+  // two different scales and two different sets of bands for the one score.
+  const scoreBadge = (() => {
+    const d = _confluenceCellData(row);
+    if(!d) return '';
+    const color = d.state === 'pass' ? 'var(--win)'
+                : d.state === 'near' ? 'var(--accent)' : 'var(--loss)';
+    const title = `${Number(d.done.toFixed(1))} of ${d.total} answered · your bar for this setup is ${d.bar}%`;
+    return `<span title="${escapeHtml(title)}" style="font-size:11px;font-weight:700;letter-spacing:0;text-transform:none;color:${color};font-variant-numeric:tabular-nums;">${d.pct}%</span>`;
+  })();
 
   return `<div class="field-row span-2 field-group-title">Confluence${scoreBadge}</div>${rows}${patternRow}`;
 }
@@ -11546,15 +11575,6 @@ function _updateDrawerRiskAmount(){
 }
 
 function _renderDrawerFieldRow(f, mode, row){
-  // Derived, so it is shown rather than asked. An editable select here was a
-  // control that did nothing — _collectDrawerPatch overwrites it on save from
-  // the tags and the confluence score. It updates live as the tags are ticked.
-  if(f.key === 'rules_followed'){
-    const v = _deriveRulesFollowed(row) || '';
-    return `<div class="field-row"><label>${f.label}</label>` +
-      `<div class="field-static${v ? ` rf-${v.toLowerCase()}` : ''}" id="drawerRulesFollowed">${v || '—'}</div>` +
-      `<div class="field-hint">Set by your Trade Tags and confluence score</div></div>`;
-  }
   if(f.key === 'objective' || f.key === 'duration'){
     const computed = f.key === 'objective' ? computeObjective(row) : computeDuration(row);
     return `<div class="field-row"><label>${f.label}</label><div class="field-static">${computed || '—'}</div></div>`;
@@ -11799,9 +11819,15 @@ function _collectDrawerPatch(){
   // fill above already follows — never silently rewrite an answered field.
   if(drawerMode === 'create') _applyMovedStopFlags(patch);
 
-  // Rules Followed? last, because it reads the two things settled above.
-  const rf = _deriveRulesFollowed(patch);
-  if(rf) patch.rules_followed = rf;
+  // Rules Followed? only when the form left it blank. It is kept in step with
+  // the tags live while the drawer is open, so by save time it already says the
+  // right thing in the ordinary case — and if it does not, that is because it
+  // was changed on purpose. Overwriting here made the select a control that did
+  // nothing, which is not what was asked for.
+  if(!patch.rules_followed){
+    const rf = _deriveRulesFollowed(patch);
+    if(rf) patch.rules_followed = rf;
+  }
 
   return patch;
 }
@@ -15638,18 +15664,17 @@ function _checklistBoxesHtml(key, options, selected){
     `).join('');
 }
 
-// Reads the ticked boxes straight out of the drawer and re-derives the answer.
-// The confluence score is not editable here, so it comes off the row the drawer
-// was opened with.
+// Moves the Rules Followed? select to match the tags as they are ticked, so the
+// common case needs no thought. It is a suggestion, not a lock: the select stays
+// editable and whatever it says at save time is what gets stored.
 let _drawerRow = null;
 function _refreshDerivedRulesFollowed(){
-  const el = document.getElementById('drawerRulesFollowed');
-  if(!el) return;
+  const sel = document.querySelector('#drawerBody [data-field="rules_followed"]');
+  if(!sel) return;
   const ticked = [...document.querySelectorAll('#drawerBody [data-checklist="unfollowed_rules"]:checked')]
     .map(cb => cb.value);
   const v = _deriveRulesFollowed({ ...(_drawerRow || {}), unfollowed_rules: ticked.join(', ') });
-  el.textContent = v || '—';
-  el.className = 'field-static' + (v ? ` rf-${v.toLowerCase()}` : '');
+  if(v) sel.value = v;
 }
 
 

@@ -269,14 +269,7 @@
   .rules-tip-body{color:var(--ink);margin-bottom:9px;}
   .rules-tip-body:last-child{margin-bottom:0;}
 
-  /* Rules Followed? in the drawer — shown, not asked. It is derived from the
-     tags and the confluence score, so it reads as a result rather than as a
-     control you could have set differently. */
-  .field-static.rf-yes{color:var(--win);font-weight:600;}
-  .field-static.rf-no{color:var(--loss);font-weight:600;}
-  .field-hint{
-    grid-column:1 / -1;font-size:11px;color:var(--muted);margin-top:3px;
-  }
+
   .content{flex:1;min-width:0;padding:76px 22px 20px;container-type:inline-size;}
   @media(max-width:800px){
     .shell{flex-direction:column;}
