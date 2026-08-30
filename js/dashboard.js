@@ -3163,13 +3163,40 @@ function renderBreakdown(){
    because "what hour is good WHEN I trade 15 mins HL" was a question none of
    them could be asked.
 
-   The bar is average net P&L per trade. That is deliberate and it is the one
-   thing here that is not up for negotiation: his August ran 41% win rate for
-   +$1,465.92, so a page ranked on win rate would tell him to stop doing the
-   thing that made the money. The printed figures are win rate and trade count
-   — the two he reads — while the money stays as the bar, which is also what
-   the sort follows, so the order down a card is always the money order. */
+   The bar is WIN RATE, measured against his own overall win rate rather than
+   against 50%. Money was the obvious ranking and it was wrong here for a
+   reason worth writing down: he runs 5K, 10K and 50K accounts, so the same
+   setup on the 50K throws ten times the dollars of the 5K. Ranking on dollars
+   would have declared the 50K account his best edge when all it has is bigger
+   position sizes. Win rate carries no account size at all.
+
+   The known cost of this choice, stated so nobody rediscovers it as a bug:
+   win rate is blind to how big the wins are. His August ran 41% for
+   +$1,465.92 — a profitable month that this page ranks below a 70% one that
+   scratches. The money is still on every tooltip for exactly that reason. */
 const EM_MIN_N = 5;
+// How much evidence a group needs before its own rate is believed over the
+// overall one. This is how the trade COUNT earns its place in the ranking: a
+// raw rate puts 100% off three trades above 60% off forty, which is nonsense.
+// Every group is pulled toward his own overall win rate by this many imaginary
+// trades sitting at that rate —
+//
+//     shown = (n · own + K · overall) / (n + K)
+//
+// so at n=3 the figure is mostly the baseline, at n=40 mostly the group's own,
+// and nothing is thrown away or hidden: raw rate, count and money are all on
+// the tooltip.
+//
+// Toward his overall rate, not toward zero. A rate has no meaningful zero to
+// shrink to — pulling everything toward 0% would paint every thin group as a
+// disaster. (When this ranked on money, shrinking toward the portfolio mean
+// was wrong for the opposite reason: it dragged a losing pattern up past
+// break-even and drew it green. A rate cannot cross a sign that way, because
+// the centre of this scale IS the baseline.)
+//
+// 20 matches what this app already treats as "enough to read" elsewhere:
+// patterns get trustworthy around 15–20 trades.
+const EM_PRIOR = 20;
 let EM_FILTERS = {};
 
 // Where a trade sat in its own day: the first one, the one after a win, or the
@@ -3248,7 +3275,7 @@ function _emFiltered(dims, exceptKey){
   }));
 }
 
-function _emStats(dims, dim){
+function _emStats(dims, dim, baseRate){
   // The card's own filter is excluded, so picking "15 mins HL" leaves the
   // Pattern card showing every pattern — otherwise the card you just clicked
   // collapses to one row and there is no way to change your mind.
@@ -3262,18 +3289,30 @@ function _emStats(dims, dim){
       (g[k] = g[k] || []).push(t);
     });
   });
+  const base = baseRate === undefined || baseRate === null ? 50 : baseRate;
   const out = Object.entries(g).map(([name, arr]) => {
     const wins = arr.filter(_isWin).length;
     const losses = arr.filter(_isLoss).length;
+    const decided = wins + losses;
     const net = arr.reduce((s,t) => s + netPnl(t), 0);
-    return { name, n: arr.length, wins, losses, net, avg: net / arr.length,
-             rate: (wins + losses) ? wins / (wins + losses) * 100 : null };
+    const n = arr.length;
+    const rate = decided ? wins / decided * 100 : null;
+    // Shrunk on the DECIDED count, not the row count — a group of ten trades
+    // where nine are breakeven has one win/loss behind its rate, and the
+    // shrinking has to know that.
+    const shown = rate === null ? null
+      : (decided * rate + EM_PRIOR * base) / (decided + EM_PRIOR);
+    return { name, n, wins, losses, decided, net, avg: net / n, rate, shown,
+             // How far this sits from his own average. The bar draws this, so
+             // the centre line means "same as you usually do".
+             delta: shown === null ? null : shown - base };
   });
-  // Best to worst on every card. A mistakes card ranks on TOTAL damage instead
-  // — what stops you doing something is what it has cost you altogether, not
-  // what it costs per go.
-  if(dim.multi) out.sort((a,b) => a.net - b.net);
-  else out.sort((a,b) => b.avg - a.avg);
+  // Best to worst on every card, worst-first on the mistakes card. Groups with
+  // nothing decided have no rate to rank on and go last rather than being
+  // treated as 0%.
+  const key = r => r.shown === null ? (dim.multi ? Infinity : -Infinity) : r.shown;
+  if(dim.multi) out.sort((a,b) => key(a) - key(b));
+  else out.sort((a,b) => key(b) - key(a));
   return out;
 }
 
@@ -3295,19 +3334,29 @@ function renderEdgeMap(){
     return;
   }
 
+  // His own win rate is the centre of the scale: a bar to the right means the
+  // value beats how he usually does, not that it beats a coin flip. For a
+  // trader running a wide R at 41%, 50% would be the wrong middle.
+  const baseRate = _winRateOf(FILTERED);
+  const base = baseRate === null ? 50 : baseRate;
+
   // One scale across the whole page, so a bar on one card is directly
   // comparable with a bar on another. Rescaling per card would make the
   // weakest dimension look as strong as the best.
   let max = 1;
-  const table = dims.map(d => ({ d, rows: _emStats(dims, d) }));
-  table.forEach(({ rows }) => rows.forEach(r => { max = Math.max(max, Math.abs(r.avg)); }));
+  const table = dims.map(d => ({ d, rows: _emStats(dims, d, base) }));
+  table.forEach(({ rows }) => rows.forEach(r => {
+    if(r.delta !== null) max = Math.max(max, Math.abs(r.delta));
+  }));
 
   let best = null, worst = null, costliest = null;
   table.forEach(({ d, rows }) => rows.forEach(r => {
-    if(r.n < EM_MIN_N) return;
-    if(d.multi){ if(!costliest || r.net < costliest.net) costliest = { ...r, dim:d.label }; return; }
-    if(!best || r.avg > best.avg) best = { ...r, dim:d.label };
-    if(!worst || r.avg < worst.avg) worst = { ...r, dim:d.label };
+    if(r.decided < EM_MIN_N || r.shown === null) return;
+    if(d.multi){ if(!costliest || r.shown < costliest.shown) costliest = { ...r, dim:d.label }; return; }
+    // Picked on the shrunk figure too, so the headline cannot be a three-trade
+    // fluke while the card below it ranks that same value fourth.
+    if(!best || r.shown > best.shown) best = { ...r, dim:d.label };
+    if(!worst || r.shown < worst.shown) worst = { ...r, dim:d.label };
   }));
 
   const chips = Object.entries(EM_FILTERS);
@@ -3328,18 +3377,25 @@ function renderEdgeMap(){
   const cards = table.map(({ d, rows }) => {
     if(!rows.length) return '';
     const lines = rows.map(r => {
-      const w = Math.min(50, Math.abs(r.avg) / max * 50);
-      const thin = r.n < EM_MIN_N;
-      const col = r.avg >= 0 ? 'var(--win)' : 'var(--loss)';
+      const has = r.delta !== null;
+      const w = has ? Math.min(50, Math.abs(r.delta) / max * 50) : 0;
+      const thin = r.decided < EM_MIN_N;
+      const col = !has ? 'var(--muted)' : (r.delta >= 0 ? 'var(--win)' : 'var(--loss)');
       const on = EM_FILTERS[d.key] === r.name;
       const dimmed = EM_FILTERS[d.key] && !on;
+      // The tooltip carries the raw rate, the decided count AND the money, so
+      // nothing the ranking sets aside is actually hidden — the money is out
+      // of the ranking because account sizes differ, not because it is
+      // uninteresting.
       return `<div class="em-row${on?' on':''}${dimmed?' off':''}"
           onclick="toggleEdgeFilter('${d.key}', ${escapeHtml(JSON.stringify(r.name))})"
-          title="${escapeHtml(r.name)} — ${r.wins}W ${r.losses}L, ${fmtMoney(r.avg)} per trade, ${fmtMoney(r.net)} in total${
-            thin ? ` · under ${EM_MIN_N} trades` : ''}">
+          title="${escapeHtml(r.name)} — ${r.wins}W ${r.losses}L${
+            r.n > r.decided ? `, ${r.n - r.decided} with no result` : ''}${
+            has ? ` · ${fmtNum(r.rate,0)}% against your ${fmtNum(base,0)}%` : ' · nothing decided yet'}${
+            thin && has ? ` · only ${r.decided} decided, pulled toward your average` : ''} · ${fmtMoney(r.net)} in total">
         <span class="em-name">${escapeHtml(r.name)}</span>
-        <span class="em-bar"><i class="zero"></i><i class="fill${thin?' thin':''}" style="${
-          r.avg >= 0 ? `left:50%;width:${w}%` : `right:50%;width:${w}%`};background-color:${col}"></i></span>
+        <span class="em-bar"><i class="zero"></i>${has ? `<i class="fill${thin?' thin':''}" style="${
+          r.delta >= 0 ? `left:50%;width:${w}%` : `right:50%;width:${w}%`};background-color:${col}"></i>` : ''}</span>
         <span class="em-rate">${r.rate === null ? '—' : fmtNum(r.rate,0) + '%'}</span>
         <span class="em-n">${r.n}</span>
       </div>`;
@@ -3351,14 +3407,18 @@ function renderEdgeMap(){
 
   body.innerHTML = `
     <div class="em-verdicts">
-      ${costliest ? vcard('bad', 'Your costliest habit', costliest.name,
-          `${fmtMoney(costliest.net)} in total`, `${costliest.n} trades · ${fmtMoney(costliest.avg)} each`) : ''}
+      ${costliest ? vcard('bad', 'Your worst habit', costliest.name,
+          `${fmtNum(costliest.rate,0)}% win rate`,
+          `${costliest.wins}W ${costliest.losses}L · ${fmtMoney(costliest.net)} total`) : ''}
       ${best ? vcard('good', 'Look for this', `${best.dim} · ${best.name}`,
-          `${fmtMoney(best.avg)} per trade`, `${best.wins}W ${best.losses}L · ${fmtMoney(best.net)} total`) : ''}
+          `${fmtNum(best.rate,0)}% win rate`,
+          `${best.wins}W ${best.losses}L · against your ${fmtNum(base,0)}%`) : ''}
       ${worst ? vcard('bad', 'Avoid this', `${worst.dim} · ${worst.name}`,
-          `${fmtMoney(worst.avg)} per trade`, `${worst.wins}W ${worst.losses}L · ${fmtMoney(worst.net)} total`) : ''}
-      ${vcard('thin', 'In the filter now', `${shown.length} trades`, fmtMoney(shownNet),
-          (sw + sl) ? `${Math.round(sw/(sw+sl)*100)}% win rate` : 'nothing decided')}
+          `${fmtNum(worst.rate,0)}% win rate`,
+          `${worst.wins}W ${worst.losses}L · against your ${fmtNum(base,0)}%`) : ''}
+      ${vcard('thin', 'In the filter now', `${shown.length} trades`,
+          (sw + sl) ? `${Math.round(sw/(sw+sl)*100)}% win rate` : 'nothing decided',
+          fmtMoney(shownNet))}
     </div>
     <div class="em-filterbar">
       <span class="em-lbl">Filter</span>${chipHtml}
@@ -3366,11 +3426,14 @@ function renderEdgeMap(){
     </div>
     <div class="em-grid">${cards}</div>
     <div class="em-legend">
-      <span><i class="sw" style="background:var(--win)"></i>makes money per trade</span>
-      <span><i class="sw" style="background:var(--loss)"></i>loses money per trade</span>
-      <span><i class="sw hatch"></i><b>hatched</b> = under ${EM_MIN_N} trades, don't lean on it</span>
-      <span>The two figures are <b>win rate</b> then <b>trade count</b>. The money is the bar, and the bar is what the order follows.</span>
-      <span>Each card is measured on its own — click a value to read the rest against it.</span>
+      <span>The centre line is <b>your own ${fmtNum(base,0)}% win rate</b> — not 50%.</span>
+      <span><i class="sw" style="background:var(--win)"></i>you win more often than usual here</span>
+      <span><i class="sw" style="background:var(--loss)"></i>you win less often than usual here</span>
+      <span><i class="sw hatch"></i><b>hatched</b> = under ${EM_MIN_N} decided trades</span>
+      <span>The two figures are <b>win rate</b> then <b>trade count</b>.</span>
+      <span><b>Few trades draw a short bar on purpose.</b> Each value is pulled toward your own average until it has about ${EM_PRIOR} decided trades behind it, so 100% off three cannot outrank 60% off forty. Hover for the raw rate.</span>
+      <span><b>Money is not in this ranking</b>, because a 50K account throws ten times the dollars of a 5K one for the same trade. It is on every tooltip — worth checking, since a low win rate with a wide R can still be your best setup.</span>
+      <span>Click a value to read every other card against it.</span>
     </div>`;
 }
 
