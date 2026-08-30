@@ -10057,18 +10057,16 @@ function _journalColoredCell(key, row, plainVal){
   /* Four states, not two.
 
      green   Yes, and nothing negative is tagged — a clean trade
-     orange  Yes, but a breach tag is ticked. That combination only happens
-             when the answer was set by hand against what the tags say, and it
-             is worth seeing: it is a judgement call, not a clean trade, and
-             flattening it to green hid the difference.
+     blue    Yes, but a breach tag is ticked. That combination only happens
+             when the answer was set by hand against what the tags say, so it
+             is a judgement call rather than a clean trade — and flattening it
+             to green hid the difference.
      red     No
-     blue    anything else — a value neither Yes nor No, which means the
-             column holds something the journal does not recognise rather than
-             something it can colour. */
+     blue    anything else — a value that is neither Yes nor No */
   if(key === 'rules_followed'){
     if(lower === 'yes'){
       return _box(_brokenRuleTags(row.unfollowed_rules).length
-        ? 'box-solid-warn' : 'box-solid-win', v);
+        ? 'box-solid-info' : 'box-solid-win', v);
     }
     if(lower === 'no') return _box('box-solid-loss', v);
     if(v && v !== '—') return _box('box-solid-info', v);

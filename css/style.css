@@ -1265,9 +1265,7 @@
   .box-solid-win{background:var(--win);color:#fff;}
   .box-solid-loss{background:var(--loss);color:#fff;}
   .box-solid-info{background:var(--info);color:#fff;}
-  /* "Yes" that carries a breach tag — the answer was set by hand against what
-     the tags say. Dark ink, because amber under white text is unreadable. */
-  .box-solid-warn{background:var(--warn);color:#12141C;}
+
 
   /* ---------- Toast notification ---------- */
   .toast{
