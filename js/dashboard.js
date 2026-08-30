@@ -3123,7 +3123,7 @@ function _emDimensions(){
     // at all is that they now sit in the same bin.
     { key:'beprev', label:'BE at prev high/low', q:'move it or let it run', outcome:true,
       of: t => {
-        const tags = _ruleTags(t.unfollowed_rules).map(s => s.toLowerCase());
+        const tags = _canonicalTags(t.unfollowed_rules).map(s => s.toLowerCase());
         const moved = tags.includes("be'd at prev high/low");
         // "Would Have BE'd Out" is the same decision as "No BE at Prev
         // High/Low" — he just tags the ones that paid off differently. Both
@@ -3182,6 +3182,16 @@ function _emDimensions(){
         if(t.post_cutloss_result === 'TP After Cutloss') return 'Cut, TP would have hit';
         if(String(t.exit_type || '').trim().toLowerCase() === 'cut loss') return 'Cut, outcome unknown';
         return _isLoss(t) ? 'Loss, let it run' : null;
+      } },
+    // The second experiment, same shape as the breakeven one: the setup broke
+    // mid-trade, and the only choice was to sit or to get out.
+    { key:'invalid', label:'When the setup invalidates', q:'hold or cut', outcome:true,
+      of: t => {
+        const tags = _canonicalTags(t.unfollowed_rules).map(s => s.toLowerCase());
+        const held = tags.includes('held through invalidation');
+        const cut  = tags.includes('cut on invalidation');
+        if(held === cut) return null;      // neither, or contradictory
+        return held ? 'Held through it' : 'Cut when it broke';
       } },
     // Also an outcome in the wildcard's eyes — "after a loss" is a position you
     // land in, and its finding below is the before-and-after comparison.
@@ -3360,6 +3370,33 @@ function _emFindings(table, dims){
       head: `Only one side of the breakeven test has data`,
       body: `You have ${have.n} trades tagged "${have.name}" but not enough of the other. Tag both choices at previous high/low and the journal can tell you which one pays.`,
       key:'beprev', value:have.name });
+  }
+
+  // 7b. The other experiment he is running: when the setup invalidates
+  //     mid-trade — a 15 mins HL turning into a 1 hour HL — is it better to sit
+  //     through it or to get out? Same straight comparison as the breakeven
+  //     one, and possible for the same reason: both arms are neutral tags.
+  const invHeld = get('When the setup invalidates', 'Held through it');
+  const invCut  = get('When the setup invalidates', 'Cut when it broke');
+  if(solid(invHeld) && solid(invCut)){
+    const better = invHeld.ret > invCut.ret ? invHeld : invCut;
+    const gap = Math.abs(invHeld.ret - invCut.ret);
+    if(gap > 0.15) out.push({ tone:'good', weight: gap * Math.min(invHeld.priced, invCut.priced),
+      head: better === invHeld
+        ? `Sitting through an invalidation is working`
+        : `Get out when the setup invalidates`,
+      body: `Holding through it returns ${pct(invHeld.ret)} a trade across ${invHeld.n}; cutting when it broke returns ${pct(invCut.ret)} across ${invCut.n}. ${better === invHeld ? 'Holding' : 'Cutting'} is ${pct(gap).replace('+','')} better per trade.`,
+      key:'invalid', value:better.name });
+    else out.push({ tone:'note', weight: 0.02,
+      head: `Holding through an invalidation is a coin flip so far`,
+      body: `Holding returns ${pct(invHeld.ret)} across ${invHeld.n} trades; cutting ${pct(invCut.ret)} across ${invCut.n}. Too close to call — keep tagging both.`,
+      key:'invalid', value:better.name });
+  }else if((invHeld || invCut) && !(solid(invHeld) && solid(invCut))){
+    const have = solid(invHeld) ? invHeld : (solid(invCut) ? invCut : null);
+    if(have) out.push({ tone:'note', weight: 0.015,
+      head: `Only one side of the invalidation test has data`,
+      body: `You have ${have.n} trades tagged "${have.name}" but not enough of the other. Tag both choices and the journal can tell you which one pays.`,
+      key:'invalid', value:have.name });
   }
 
   // 8. The catch-all, and deliberately last to be written: the single best and
@@ -4001,9 +4038,14 @@ const UNFOLLOWED_RULES_OPTIONS = [
   // versus price had already reached a level that should stop it and he traded
   // through anyway. One tag could not tell him which he does more often.
   'Chased Extended Move','Traded Into Key Level',
+  // The invalidation pair. The setup breaks mid-trade — a 15 mins HL becomes a
+  // 1 hour HL — and the only question is whether getting out then is worth it.
+  // Neither is a fault: he does not know the answer yet, which is exactly why
+  // both need recording. Same shape as the breakeven pair.
+  'Held Through Invalidation','Cut on Invalidation',
   'FOMO Entry','No BE at Prev High/Low','Ignored No-Trade Decision',
   'Non-BnB Setup','Moved Take Profit','Lack of Confluence','BTC Only',
-  'Changing Plan','No Cutloss 3mins Breakout',
+  'Changing Plan',
   // The other arm of the breakeven experiment. Without it "did not move to BE"
   // has nothing to be compared against, and the question it exists to answer —
   // is moving the stop to breakeven worth it — has only one side.
@@ -4031,7 +4073,9 @@ const UNFOLLOWED_RULES_OPTIONS = [
 const TAG_OBSERVATIONS = [
   "Would Have BE'd Out",
   'No BE at Prev High/Low',
-  "BE'd at Prev High/Low"
+  "BE'd at Prev High/Low",
+  'Held Through Invalidation',
+  'Cut on Invalidation'
 ];
 // "Nothing was broken" — answered, and clean. Not an observation: it is the
 // absence of a breach rather than a fact about the trade.
@@ -4073,6 +4117,17 @@ const TAG_SENTINELS = ['Rules Followed'];
 const TAG_ALIASES = {
   'entered early':   'Entered Without Confirmation',
   'no confirmation': 'Entered Without Confirmation',
+  // Added by hand in the Options editor, and it decided the answer in its own
+  // name: "ego" says holding was wrong. That is the question, not the finding.
+  // The neutral name records the same decision without pre-judging it, so the
+  // journal can be the one to say whether it pays. Harmless if never used.
+  'ego hold despite invalidation': 'Held Through Invalidation',
+  // The same event named by its trigger instead of its meaning. A 3-minute
+  // breakout against the position IS the setup invalidating; not cutting on it
+  // is not cutting on an invalidation. It sat on the breach side, which quietly
+  // decided the very question the invalidation pair exists to ask — and split
+  // the evidence for it across two bins, so neither half could answer.
+  'no cutloss 3mins breakout': 'Held Through Invalidation',
 };
 
 /* Tags no longer offered in the checklist but still valid on a trade that
@@ -4137,8 +4192,6 @@ const RULE_GROUPS = [
     tags:['Revenge Trade','FOMO Entry','Ignored No-Trade Decision'] },
   { name:'Respect size and instrument',
     tags:['Overleveraged','BTC Only'] },
-  { name:'Follow the exit rules',
-    tags:['No Cutloss 3mins Breakout'] },
 ];
 // Retired tags still belong to a rule — the mistake happened, and dropping it
 // out of the Discipline panel would quietly rewrite history as cleaner than it
@@ -4158,6 +4211,30 @@ const _RULE_GROUP_OF = (() => {
 // Resolves a retired name to its survivor before looking up the group, so a
 // tag that reaches a panel without passing through normalizeTrade still lands
 // in the right rule instead of sitting on its own as an unknown.
+/* Rules Followed? is not a judgement any more — it is a consequence, so the
+   journal works it out instead of asking.
+
+   Two things make it "No", and he named both:
+
+     the confluence score fell below the bar     — the setup was not there
+     a breach tag is ticked                      — Revenge Trade, FOMO Entry,
+                                                   Moved Stop Loss, and the rest
+
+   Anything else is "Yes". Observations never count: "I did not move to BE at
+   prev high/low" is a decision under test, not a rule broken, and letting it
+   drag the answer to No is what made his discipline rate move with his luck.
+
+   Returns null when there is nothing to go on — no tags AND no checklist — so
+   an untouched field stays untouched rather than being asserted as clean. */
+function _deriveRulesFollowed(row){
+  if(_brokenRuleTags(row.unfollowed_rules).length) return 'No';
+  const score = _confluenceScoreFor(row);
+  const bar = Number.isFinite(row.minConfluencePct)
+    ? row.minConfluencePct : DEFAULT_MIN_CONFLUENCE_PCT;
+  if(score !== null && score * 100 < bar) return 'No';
+  return (_ruleTags(row.unfollowed_rules).length || score !== null) ? 'Yes' : null;
+}
+
 const _ruleGroupOf = t => {
   const k = String(t).trim().toLowerCase();
   const live = Object.prototype.hasOwnProperty.call(TAG_ALIASES, k)
@@ -10089,15 +10166,20 @@ function _journalInvalidFields(r){
   //
   // Both directions, because the opposite disagreement is just as wrong and was
   // always possible on a hand-edited row.
+  // Now that the answer is derived rather than typed, the check is simply
+  // whether the stored one still matches what the trade says — and the reason
+  // is spelled out, because "No" can come from the checklist OR from a tag.
   const rf = String(r.rules_followed || '').trim().toLowerCase();
-  const brokenTags = _brokenRuleTags(r.unfollowed_rules);
-  if(rf === 'no' && _ruleTags(r.unfollowed_rules).length && !brokenTags.length){
+  const want = _deriveRulesFollowed(r);
+  if(want && rf && rf !== want.toLowerCase()){
+    const brokenTags = _brokenRuleTags(r.unfollowed_rules);
+    const score = _confluenceScoreFor(r);
+    const why = want === 'No'
+      ? (brokenTags.length ? `"${brokenTags[0]}" is a broken rule`
+                           : `confluence was ${Math.round(score * 100)}%`)
+      : 'nothing here is a broken rule and the checklist passed';
     bad.push({ key:'rules_followed', label:'Rules Followed?',
-               value:'No, but nothing here is a broken rule any more' });
-  }
-  if(rf === 'yes' && brokenTags.length){
-    bad.push({ key:'rules_followed', label:'Rules Followed?',
-               value:`Yes, but "${brokenTags[0]}" is a broken rule` });
+               value:`${r.rules_followed}, but should be ${want} — ${why}` });
   }
 
   return bad;
@@ -11627,6 +11709,10 @@ function _collectDrawerPatch(){
   // edit saved, then immediately undid itself. Same principle the Exit Type
   // fill above already follows — never silently rewrite an answered field.
   if(drawerMode === 'create') _applyMovedStopFlags(patch);
+
+  // Rules Followed? last, because it reads the two things settled above.
+  const rf = _deriveRulesFollowed(patch);
+  if(rf) patch.rules_followed = rf;
 
   return patch;
 }
@@ -16673,13 +16759,19 @@ function _autoUnfollowedRules(cfg, answers, chartPatternPresent){
     reasons.add('Non-BnB Setup');
   }
 
-  // A 3min breakdown (Long) or breakout (Short) against the position is the
-  // signal to cut. Answering Yes means it happened and the trade was held.
-  // The question is inverted, so Yes is the breach.
+  // A 3min breakdown (Long) or breakout (Short) against the position IS the
+  // setup invalidating, and answering Yes has always meant it happened and the
+  // trade was held — which is what "Held Through Invalidation" records, in the
+  // words of the decision rather than of the trigger.
+  //
+  // It is no longer a breach, and it now feeds an A/B test, so the one thing to
+  // know: this fills in the HELD arm. On a trade where the 3min signal fired
+  // and he actually got out, swap it for "Cut on Invalidation" — otherwise the
+  // comparison quietly leans toward holding.
   const breakdown3m = byText('Did 3min MACD Breakdown?');
   const breakout3m = byText('Did 3min MACD Breakout?');
   if(breakdown3m === 'yes' || breakout3m === 'yes'){
-    reasons.add('No Cutloss 3mins Breakout');
+    reasons.add('Held Through Invalidation');
   }
 
   const crossDown = byText('Did MACD cross the zero line downward when your order triggered?');
