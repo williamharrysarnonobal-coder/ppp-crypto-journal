@@ -2079,14 +2079,26 @@ const PANEL_INFO = {
      <b>net P&amp;L</b> of each group. <b>Unspecified</b> means that field is
      empty on those trades — the warning icon in the Trade Journal marks them.`],
   discipline: ['Discipline & Experiments',
-    `Your Trade Tags split into the two different things they are.<br><br>
-     <b>The top half</b> is the breach tags — the ones that name something you
+    `<b>The strip at the top is the whole panel in one look</b>: whether your
+     discipline is holding, the rule costing you the most right now, and the
+     habit with the widest proven gap. The clean rate counts only trades you
+     have actually tagged — an untagged trade is unjournalled, not clean.
+     Everything below "Show the working" is the evidence, and it stays closed
+     until you want it.<br><br>
+     <b>About the percentages.</b> Every figure in this panel is <b>one trade's
+     average result measured against the size of the account it was taken on</b>.
+     On a $10,000 account, +0.20% is +$20 and −0.39% is −$39. They are small one
+     at a time by nature — that is what a single trade does to a whole account —
+     so each verdict also states what the gap adds up to over the trades that
+     took the losing side, which is the number worth acting on.<br><br>
+     Your Trade Tags are then split into the two different things they are.<br><br>
+     <b>The first half</b> is the breach tags — the ones that name something you
      did against your own plan. They are grouped into the rules they actually
      describe, because six tags that all mean "I did not follow the checklist"
      read as six problems when they are one. A trade that broke two tags inside
      the same rule counts once for that rule. Ranked by what they cost, and the
      target is zero.<br><br>
-     <b>The bottom half</b> is the observation tags and the two exit columns
+     <b>The second half</b> is the observation tags and the two exit columns
      (Post-BE Result, Post-Cutloss Result), read as experiments. Nothing here is
      a fault: each is a question you have not answered yet, so the panel
      compares the two choices rather than judging either. Scored on
@@ -2095,15 +2107,26 @@ const PANEL_INFO = {
      5 measurable trades, and a gap under 0.15% is reported as too close to
      call rather than as a winner.`],
   setupedge: ['Pattern, Session & Confluence',
-    `The three things you choose before taking a trade, plus which play you
-     took. Same metric as the experiments panel — return per trade as a percent
-     of the account the trade ran on — so the two panels can be read against
-     each other.<br><br>
+    `Everything decided before the trade was taken, in three groups.
+     <b>The setup you chose</b> — pattern, direction, play, chart pattern.
+     <b>When you took it</b> — session, day, AOF phase, execution timeframe.
+     <b>What the checklist said</b> — the score as a band, then the checklist
+     opened up item by item.<br><br>
+     That last group is the part worth sitting with. The band alone only says
+     whether a high score pays; the items below say <b>which part of the score
+     was carrying it</b> — the sequence you entered on, whether the top
+     timeframe agreed, whether divergence was showing, whether your trigger and
+     your levels lined up. Sequence keeps its own 1st→5th order rather than
+     being sorted by return, because the trend along it is the whole point.
+     <b>Met</b> always means the answer <b>scored</b>, so a "No" on
+     "Left Hand Present?" reads as Met — that is the good answer there.<br><br>
+     Same metric as the panel above — return per trade as a percent of the
+     account the trade ran on — so the two can be read against each other.
      Bars are centred on zero: right of centre grew the account, left of it
      shrank it. Values are pulled toward zero until roughly 20 trades stand
      behind them, so 100% off three cannot outrank 60% off forty; anything
      under 5 measurable trades is hatched, and the true figure is always on the
-     tooltip. The Confluence rows are bands, not raw scores, because the
+     tooltip. The Confluence band rows are bands, not raw scores, because the
      checklists differ in length — each trade is judged against
      <b>that setup's own bar</b>, the same way the journal colours it.`],
   cfledge: ['Confluence Edge',
@@ -3302,6 +3325,33 @@ function _disciplineStats(trades){
   })).sort((a,b) => a.net - b.net || b.n - a.n);
 }
 
+/* The one-glance read, so the panel answers three questions before any detail
+   is opened: am I disciplined, what is costing the most, and which habit is
+   currently winning. Everything below the strip is the evidence for these. */
+function _disciplineSummary(trades, rules){
+  const tagged   = trades.filter(t => _ruleTags(t.unfollowed_rules).length);
+  const breached = trades.filter(t => _brokenRuleTags(t.unfollowed_rules).length);
+  // Scored against TAGGED trades only. An untagged trade is unjournalled, not
+  // clean, and counting it as clean would flatter the number every time.
+  const rate = tagged.length ? (tagged.length - breached.length) / tagged.length * 100 : null;
+  const state = rate === null ? { tone:'wait', txt:'Nothing tagged yet' }
+    : rate >= 90 ? { tone:'good', txt:'Your discipline is holding' }
+    : rate >= 70 ? { tone:'warn', txt:'Your discipline is slipping' }
+    :              { tone:'bad',  txt:'Discipline is your biggest problem' };
+
+  const worst = rules.find(r => r.n > 0 && r.net < 0) || null;
+
+  // The habit with the widest decided gap — the single change with the most
+  // evidence behind it right now.
+  let best = null;
+  TRADE_EXPERIMENTS.forEach(g => g.items.forEach(e => {
+    const res = _runExperiment(e, trades);
+    if(!res || res.kind !== 'ab' || !res.decided) return;
+    if(!best || Math.abs(res.gap) > Math.abs(best.gap)) best = res;
+  }));
+  return { rate, state, worst, best, tagged: tagged.length, breached: breached.length };
+}
+
 function renderDisciplinePanel(){
   const body = document.getElementById('disciplineBody');
   if(!body) return;
@@ -3334,7 +3384,35 @@ function renderDisciplinePanel(){
       items.map(_experimentHtml).join('')}</div>`;
   }).join('');
 
-  body.innerHTML = `
+  const s = _disciplineSummary(FILTERED, rules);
+  const card = (cls, k, v, m) => `<div class="dx-s-card ${cls}">
+      <span class="dx-s-k">${k}</span><span class="dx-s-v">${v}</span><span class="dx-s-m">${m}</span></div>`;
+
+  const summaryHtml = `<div class="dx-summary">
+    <div class="dx-s-verdict ${s.state.tone}">
+      <span class="dx-dot ${s.state.tone}"></span>
+      <b>${s.state.txt}</b>
+      <span>${s.rate === null ? 'Tick the tags as you journal and this fills itself in.'
+        : `${s.tagged - s.breached} of ${s.tagged} tagged trades kept every rule · ${Math.round(s.rate)}%`}</span>
+    </div>
+    <div class="dx-s-cards">
+      ${s.worst
+        ? card('bad', 'Costing you the most', escapeHtml(s.worst.name),
+               `${s.worst.n} trade${s.worst.n===1?'':'s'} · ${fmtMoney(s.worst.net)}`)
+        : card('good', 'Costing you the most', 'Nothing', 'No rule is in the red right now')}
+      ${s.best
+        ? card('good', 'Working best for you',
+               escapeHtml((s.best.gap > 0 ? s.best.a : s.best.b).label),
+               `${escapeHtml(s.best.exp.title.toLowerCase())} · ${Math.abs(s.best.gap).toFixed(2)}% better per trade`)
+        : card('wait', 'Working best for you', 'Not decided yet',
+               `No experiment has ${EM_MIN_N} trades on both sides`)}
+    </div>
+  </div>`;
+
+  body.innerHTML = summaryHtml + `
+  <details class="dx-detail">
+    <summary><span>Show the working</span></summary>
+    <div class="dx-halves">
     <div class="dx-half">
       <div class="dx-half-head"><span class="dx-dot bad"></span>
         <h3>What you are doing wrong</h3>
@@ -3346,10 +3424,14 @@ function renderDisciplinePanel(){
     <div class="dx-half">
       <div class="dx-half-head"><span class="dx-dot note"></span>
         <h3>What you should be doing</h3></div>
-      <p class="dx-lead">Your observation tags and the two exit columns, read as experiments. Nothing here
-        is a fault — each one is a question, measured on <b>return per trade as a percent of the account</b>.</p>
+      <p class="dx-lead">Your observation tags and the two exit columns, read as experiments. Nothing here is a
+        fault — each one is a question. <b>Every percentage below is one trade's average result measured against
+        the size of the account it was taken on</b>: on a $10,000 account, +0.20% is +$20 of that account, and
+        −0.39% is −$39. They look small one at a time; the line under each verdict is what they add up to.</p>
       ${groupsHtml || `<div class="empty-state">Nothing tagged yet — tick the observation tags as you journal and the answers build themselves.</div>`}
-    </div>`;
+    </div>
+    </div>
+  </details>`;
 }
 
 /* ======================== Setup: Pattern · Session · Confluence ===========
@@ -3360,7 +3442,7 @@ function renderDisciplinePanel(){
    pulled toward zero until roughly EM_PRIOR trades stand behind it, so 100%
    off three cannot outrank 60% off forty. The true figure is always printed
    beside the bar — nothing is hidden, only ranked carefully. */
-function _setupStats(trades, keyOf){
+function _setupStats(trades, keyOf, order){
   const g = {};
   trades.forEach(t => {
     const k = keyOf(t);
@@ -3373,21 +3455,75 @@ function _setupStats(trades, keyOf){
       rate: (s.wins + s.losses) ? s.wins / (s.wins + s.losses) * 100 : null,
       shown: s.ret === null ? null : s.priced * s.ret / (s.priced + EM_PRIOR) };
   }).sort((a, b) => {
+    // Ordinal dimensions keep their own order. Sorting 1st/2nd/3rd by return
+    // would destroy the only thing they are being read for — the trend along
+    // the sequence — so `order` wins where a dimension declares one.
+    if(order){
+      const at = order.indexOf(a.name), bt = order.indexOf(b.name);
+      return (at < 0 ? 99 : at) - (bt < 0 ? 99 : bt);
+    }
     const thin = r => r.shown === null || r.priced < EM_MIN_N;
     return (thin(a) - thin(b)) || ((b.shown ?? -Infinity) - (a.shown ?? -Infinity));
   });
 }
 
+/* One checklist item, found by predicate across whichever setup the trade used,
+   and reported in a single direction: `Met` always means the answer SCORED.
+   Without that normalisation an inverted question — "Left Hand Present?", where
+   No is the good answer — would rank upside down beside a plain one. */
+function _confluenceItemAnswer(t, pick){
+  const cfg = CONFLUENCE_SETUPS[`${t.trade_type}|${t.pattern_type}`];
+  if(!cfg || !cfg.items || !t.confluence_answers) return null;
+  const i = cfg.items.findIndex(pick);
+  if(i === -1) return null;
+  const it = cfg.items[i], ans = t.confluence_answers[i];
+  if(!ans || it.select) return null;
+  const credit = it.invert
+    ? (ans === 'no' ? 1 : ans === 'almost' ? 0.5 : 0)
+    : ((ans === 'yes' || ans === 'retest') ? 1 : ans === 'almost' ? 0.5 : 0);
+  return credit === 1 ? 'Met' : credit === 0.5 ? 'Half met' : 'Missed';
+}
+const MET_ORDER = ['Met', 'Half met', 'Missed'];
+const SEQ_ORDER = ['1st', '2nd', '3rd', '4th', '5th'];
+
 const SETUP_DIMENSIONS = [
-  { key:'pattern_type', label:'Pattern',  q:'which setup pays',   of:t => t.pattern_type },
-  { key:'session',      label:'Session',  q:'when to be at the desk', of:t => t.session },
-  { key:'trade_setup',  label:'Play',     q:'bounce, rejection or invalidation', of:t => t.trade_setup },
-  // Bands, not raw scores: the checklists differ in length, so only the
-  // percentage is comparable — and the band each trade falls in is judged
-  // against that setup's OWN bar, the same way the journal colours it.
-  { key:'confluence',   label:'Confluence', q:'does the checklist pay',
-    of: t => { const d = _confluenceCellData(t);
-      return d ? ({ pass:'Passed the bar', near:'Just under', fail:'Well under' })[d.state] : null; } },
+  { group:'The setup you chose', dims:[
+    { label:'Pattern',  q:'which setup pays',  of:t => t.pattern_type },
+    { label:'Direction', q:'long or short',    of:t => t.trade_type },
+    { label:'Play',     q:'bounce, rejection or invalidation', of:t => t.trade_setup },
+    { label:'Chart pattern', q:'the shape you traded', of:t => t.chart_pattern },
+  ]},
+  { group:'When you took it', dims:[
+    { label:'Session',  q:'when to be at the desk', of:t => t.session },
+    { label:'Day',      q:'which days are worth trading', of:t => t.day_of_week,
+      order:['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'] },
+    { label:'AOF phase', q:'where in the move you entered', of:t => t.aof_phase },
+    { label:'Execution TF', q:'the timeframe you pulled the trigger on', of:t => t.execution_tf },
+  ]},
+  // The checklist opened up. The band alone says whether a high score pays; the
+  // items below say WHICH part of the score was carrying it, which is the only
+  // version of this that can change how the next trade is taken.
+  { group:'What the checklist said', dims:[
+    // Bands, not raw scores: the checklists differ in length, so only the
+    // percentage is comparable — and the band each trade falls in is judged
+    // against that setup's OWN bar, the same way the journal colours it.
+    { label:'Confluence band', q:'does a high score actually pay',
+      order:['Passed the bar','Just under','Well under'],
+      of: t => { const d = _confluenceCellData(t);
+        return d ? ({ pass:'Passed the bar', near:'Just under', fail:'Well under' })[d.state] : null; } },
+    { label:'Sequence', q:'the 1st HL/LH or the 4th', order:SEQ_ORDER,
+      of: t => _confluenceAnswerAt(t, it => it.tag === 'Sequence', SEQ_ORDER) },
+    // The highest timeframe on each checklist — 1H on the shorter setups, 4H on
+    // the 1 hour ones. Matched by pattern so one card covers every setup.
+    { label:'HTF bias', q:'the top timeframe with you or against you', order:MET_ORDER,
+      of: t => _confluenceItemAnswer(t, it => /^MACD · (1H|4H)$/.test(it.tag)) },
+    { label:'Divergence', q:'the opposite hand showing before you entered', order:MET_ORDER,
+      of: t => _confluenceItemAnswer(t, it => it.tag === 'Divergence') },
+    { label:'Entry trigger', q:'MACD crossing zero as your order filled', order:MET_ORDER,
+      of: t => _confluenceItemAnswer(t, it => it.tag === 'Execution') },
+    { label:'Level alignment', q:'BB50 with the .382 Fib or MOBV at entry', order:MET_ORDER,
+      of: t => _confluenceItemAnswer(t, it => /^Execution · /.test(it.tag)) },
+  ]},
 ];
 
 function renderSetupPanel(){
@@ -3395,16 +3531,19 @@ function renderSetupPanel(){
   if(!body) return;
   if(!FILTERED.length){ body.innerHTML = `<div class="empty-state">No trades in view.</div>`; return; }
 
-  const table = SETUP_DIMENSIONS.map(d => ({ d, rows:_setupStats(FILTERED, d.of) }));
+  const table = SETUP_DIMENSIONS.map(g => ({ group:g.group,
+    dims: g.dims.map(d => ({ d, rows:_setupStats(FILTERED, d.of, d.order) })) }));
   let max = 0.01;
-  table.forEach(({ rows }) => rows.forEach(r => {
+  table.forEach(g => g.dims.forEach(({ rows }) => rows.forEach(r => {
     if(r.shown !== null) max = Math.max(max, Math.abs(r.shown));
-  }));
+  })));
 
   // The one line per card that says what to do with it, rather than leaving
-  // the reader to compare bars.
+  // the reader to compare bars. Best and worst are picked by value, never by
+  // position — an ordinal card is not sorted by return.
   const headline = rows => {
-    const solid = rows.filter(r => r.priced >= EM_MIN_N && r.ret !== null);
+    const solid = rows.filter(r => r.priced >= EM_MIN_N && r.ret !== null)
+                      .slice().sort((x, y) => y.shown - x.shown);
     if(solid.length < 2) return null;
     const best = solid[0], worst = solid[solid.length - 1];
     if(best.ret <= 0) return { tone:'bad', txt:`Nothing here is paying. Best is <b>${escapeHtml(best.name)}</b> at ${_pctTxt(best.ret)} across ${best.n}.` };
@@ -3412,7 +3551,7 @@ function renderSetupPanel(){
     return { tone:'good', txt:`<b>${escapeHtml(best.name)}</b> at ${_pctTxt(best.ret)} against <b>${escapeHtml(worst.name)}</b> at ${_pctTxt(worst.ret)}. That is where the difference is.` };
   };
 
-  const cards = table.map(({ d, rows }) => {
+  const cardHtml = ({ d, rows }) => {
     if(!rows.length) return '';
     const h = headline(rows);
     const lines = rows.map(r => {
@@ -3434,13 +3573,22 @@ function renderSetupPanel(){
       <div class="sx-card-head"><h4>${escapeHtml(d.label)}</h4><span class="sx-q">${escapeHtml(d.q)}</span></div>
       ${h ? `<div class="sx-headline ${h.tone}">${h.txt}</div>` : ''}
       ${lines}</div>`;
+  };
+
+  const groups = table.map(g => {
+    const cards = g.dims.map(cardHtml).join('');
+    if(!cards) return '';
+    return `<div class="sx-group">
+      <div class="sx-group-name">${escapeHtml(g.group)}</div>
+      <div class="sx-grid">${cards}</div></div>`;
   }).join('');
 
-  body.innerHTML = `<div class="sx-grid">${cards}</div>
+  body.innerHTML = groups + `
     <div class="sx-legend">
-      <span>Bars are <b>return on the account per trade</b>. Centre is zero — right of it grew the account, left of it shrank it.</span>
+      <span>Bars are <b>return on the account per trade</b> — the same measure as the panel above. Centre is zero: right of it grew the account, left of it shrank it.</span>
       <span><i class="sw hatch"></i><b>hatched</b> = under ${EM_MIN_N} measurable trades, and pulled toward zero until about ${EM_PRIOR} stand behind it</span>
       <span>The two figures are <b>win rate</b> then <b>trade count</b>. Hover any row for the real return and the dollars.</span>
+      <span>Under <b>What the checklist said</b>, <b>Met</b> means the answer scored — so a “No” on “Left Hand Present?” reads as Met, because that is the good answer there.</span>
     </div>`;
 }
 
@@ -3474,18 +3622,24 @@ function _experimentHtml(r){
   const bLead = r.decided && r.gap < 0;
   const arm = (s, lead, trail) => `<div class="dx-arm ${lead ? 'lead' : (trail ? 'trail' : '')}">
       <div class="dx-a-name">${escapeHtml(s.label)}</div>
-      <div class="dx-a-val">${s.ret === null ? '—' : pct(s.ret)}</div>
-      <div class="dx-a-n">${s.n} trade${s.n===1?'':'s'} · ${s.wins}W ${s.losses}L</div></div>`;
+      <div class="dx-a-val">${s.ret === null ? '—' : pct(s.ret)}<em>per trade</em></div>
+      <div class="dx-a-n">${s.n} trade${s.n===1?'':'s'} · ${s.wins}W ${s.losses}L · ${fmtMoney(s.net)}</div></div>`;
 
   const better = r.gap > 0 ? a : b;
+  const behind = r.gap > 0 ? b : a;
   const verdict = !r.enough
     ? { cls:'wait', mark:'·',
         txt:`${a.n} against ${b.n}. Each side needs ${EM_MIN_N} measurable trades before this can say anything.` }
     : !r.decided
     ? { cls:'wait', mark:'·',
         txt:`Too close to call — ${pct(a.ret)} against ${pct(b.ret)}. Keep tagging both and it will separate.` }
+    // A gap of half a percent per trade reads as nothing until it is multiplied
+    // by how many trades took the losing side. That product is the number worth
+    // acting on, so the verdict states it rather than leaving it to be worked out.
     : { cls:'good', mark:'→',
-        txt:`<b>${escapeHtml(better.label)}.</b> ${pct(Math.abs(r.gap)).replace('+','')} better per trade across ${a.n + b.n} trades.` };
+        txt:`<b>${escapeHtml(better.label)}.</b> ${Math.abs(r.gap).toFixed(2)}% better per trade — over the
+             ${behind.n} trade${behind.n===1?'':'s'} on “${escapeHtml(behind.label.toLowerCase())}” that is about
+             <b>${(Math.abs(r.gap) * behind.n).toFixed(1)}% of an account</b>, ${fmtMoney(behind.net)} in cash.` };
 
   return `<div class="dx-exp">
     <h4>${escapeHtml(exp.title)}</h4><div class="dx-exp-q">${escapeHtml(exp.q)}</div>
