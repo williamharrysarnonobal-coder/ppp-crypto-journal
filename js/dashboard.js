@@ -627,6 +627,52 @@ function hideRulesTooltip(){
   if(tip) tip.classList.remove('show');
 }
 
+// Hover popup for the Confluence Score — the checklist behind the number, so
+// "71%" becomes "these five were there, this one wasn't" without opening the
+// trade. Built with textContent throughout: the question text is data.
+const _CFL_MARK = { met:'✓', half:'~', missed:'✗', blank:'·' };
+function showConfluenceTooltip(event){
+  const tip = document.getElementById('confluenceTooltip');
+  const el = event.currentTarget;
+  if(!tip || !el) return;
+  tip.textContent = '';
+
+  const head = document.createElement('div');
+  head.className = 'cfl-tip-head';
+  head.textContent = el.dataset.cflHead || '';
+  tip.append(head);
+
+  (el.dataset.cfl || '').split('\n').filter(Boolean).forEach(line => {
+    const [state, label, answer] = line.split('|');
+    const r = document.createElement('div');
+    r.className = 'cfl-tip-row ' + state;
+    const m = document.createElement('span');
+    m.className = 'cfl-tip-mark';
+    m.textContent = _CFL_MARK[state] || '·';
+    const l = document.createElement('span');
+    l.className = 'cfl-tip-label';
+    l.textContent = label;
+    const a = document.createElement('span');
+    a.className = 'cfl-tip-ans';
+    a.textContent = answer;
+    r.append(m, l, a);
+    tip.append(r);
+  });
+
+  // Flipped above the cell when it would run off the bottom — the list is
+  // taller than the one-line tooltip this borrowed its placement from.
+  const rect = el.getBoundingClientRect();
+  tip.classList.add('show');
+  const h = tip.offsetHeight;
+  const below = rect.bottom + 8;
+  tip.style.top = `${(below + h > window.innerHeight - 8) ? Math.max(8, rect.top - h - 8) : below}px`;
+  tip.style.left = `${Math.min(rect.left, window.innerWidth - tip.offsetWidth - 10)}px`;
+}
+function hideConfluenceTooltip(){
+  const tip = document.getElementById('confluenceTooltip');
+  if(tip) tip.classList.remove('show');
+}
+
 /* Auto-refresh Trade Alerts while that tab is open — the bots only push
    every ~5 min, so a short poll is enough to feel "live" without a
    websocket subscription. */
@@ -9884,6 +9930,37 @@ function _confluenceCellData(row){
   return { done, total, pct, bar, state };
 }
 
+/* The checklist behind the score, item by item, for the hover popup.
+
+   The percentage says how much was met; this says WHICH. Same credit rules the
+   score itself uses, so the marks and the number can never disagree:
+
+     met      full credit   — Yes / Retest, or No on an inverted question
+     half     0.5           — Almost, or a mid-ranked select answer
+     missed   0             — the answer scored nothing
+     blank    0             — never answered at all, which is not the same
+                              thing as answered badly and should not look it */
+function _confluenceTooltipRows(row){
+  const cfg = CONFLUENCE_SETUPS[`${row.trade_type}|${row.pattern_type}`];
+  const ans = row.confluence_answers;
+  if(!cfg || !ans || typeof ans !== 'object' || !Object.keys(ans).length) return null;
+  const out = cfg.items.map((it, i) => {
+    const a = ans[i];
+    const label = it.tag || it.text || `Q${i+1}`;
+    if(a === undefined) return { label, state:'blank', answer:'—' };
+    let credit;
+    if(it.select) credit = _selectCredit(it, a);
+    else if(it.invert) credit = a === 'no' ? 1 : (a === 'almost' ? 0.5 : 0);
+    else credit = (a === 'yes' || a === 'retest') ? 1 : (a === 'almost' ? 0.5 : 0);
+    return { label, answer: a,
+             state: credit >= 1 ? 'met' : (credit > 0 ? 'half' : 'missed') };
+  });
+  // Counted in the score as one more item, so it belongs in the list too.
+  out.push({ label:'Chart Pattern', answer: row.chart_pattern || '—',
+             state: row.chart_pattern ? 'met' : 'blank' });
+  return out;
+}
+
 function _journalCellValue(row, key){
   if(key === 'no') return _tradeNo(row);
   if(key === 'objective') return computeObjective(row) || '—';
@@ -9960,8 +10037,12 @@ function _journalColoredCell(key, row, plainVal){
     // bar and the number carrying the tone instead of a filled pill.
     const cls = d.state === 'pass' ? 'cfl-t-win'
               : d.state === 'near' ? 'cfl-t-orange' : 'cfl-t-loss';
-    const title = `${Number(d.done.toFixed(1))} of ${d.total} answered · your bar for this setup is ${d.bar}%`;
-    return `<span class="cfl-score-box ${cls}" title="${escapeHtml(title)}"><span class="cfl-score-bar"><span class="cfl-score-bar-fill" style="width:${d.pct}%;"></span></span><span class="cfl-score-num">${d.pct}%</span></span>`;
+    // The whole checklist rides on the element, so hovering shows which items
+    // were met rather than only how many.
+    const rows = _confluenceTooltipRows(row) || [];
+    const payload = rows.map(r => `${r.state}|${r.label}|${r.answer}`).join('\n');
+    const head = `${Number(d.done.toFixed(1))} of ${d.total} · bar ${d.bar}%`;
+    return `<span class="cfl-score-box ${cls}" data-cfl-head="${escapeHtml(head)}" data-cfl="${escapeHtml(payload)}" onmouseenter="showConfluenceTooltip(event)" onmouseleave="hideConfluenceTooltip()"><span class="cfl-score-bar"><span class="cfl-score-bar-fill" style="width:${d.pct}%;"></span></span><span class="cfl-score-num">${d.pct}%</span></span>`;
   }
 
   const raw = row[key];

@@ -269,6 +269,38 @@
   .rules-tip-body{color:var(--ink);margin-bottom:9px;}
   .rules-tip-body:last-child{margin-bottom:0;}
 
+  /* Confluence Score hover — the checklist behind the percentage. */
+  .cfl-tooltip{
+    position:fixed;background:var(--surface-2);color:var(--ink);
+    border:1px solid var(--rule);padding:10px 12px;border-radius:7px;
+    font-size:12px;line-height:1.45;max-width:320px;z-index:600;
+    box-shadow:0 6px 18px rgba(0,0,0,.28);display:none;pointer-events:none;
+  }
+  .cfl-tooltip.show{display:block;}
+  .cfl-tip-head{
+    font-family:'IBM Plex Mono',monospace;font-size:10px;font-weight:600;
+    letter-spacing:.09em;text-transform:uppercase;color:var(--muted);
+    padding-bottom:6px;margin-bottom:6px;border-bottom:1px solid var(--rule);
+  }
+  .cfl-tip-row{display:flex;align-items:baseline;gap:8px;padding:2px 0;}
+  .cfl-tip-mark{
+    flex:none;width:12px;text-align:center;font-weight:700;
+    font-family:'IBM Plex Mono',monospace;
+  }
+  .cfl-tip-label{flex:1;min-width:0;}
+  .cfl-tip-ans{
+    flex:none;font-family:'IBM Plex Mono',monospace;font-size:11px;
+    color:var(--muted);max-width:96px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  }
+  .cfl-tip-row.met    .cfl-tip-mark{color:var(--win);}
+  .cfl-tip-row.half   .cfl-tip-mark{color:var(--accent);}
+  .cfl-tip-row.missed .cfl-tip-mark{color:var(--loss);}
+  .cfl-tip-row.blank  .cfl-tip-mark{color:var(--muted);}
+  /* Never answered is dimmed whole — it is not a failure, it is a gap. */
+  .cfl-tip-row.blank{opacity:.5;}
+  .cfl-tip-row.missed .cfl-tip-label{color:var(--loss);}
+  .cfl-score-box{cursor:default;}
+
 
   .content{flex:1;min-width:0;padding:76px 22px 20px;container-type:inline-size;}
   @media(max-width:800px){
