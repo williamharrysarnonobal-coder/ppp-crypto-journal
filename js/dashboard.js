@@ -930,6 +930,10 @@ function normalizeTrade(r){
     // choose between — so leaving it blank was asking for a decision that the
     // Exit Type had already made. Only ever fills a blank; a stored answer wins.
     post_be_result: r.post_be_result || _impliedPostBE(r) || "",
+    // No equivalent of _impliedPostBE here, and there cannot be one: what price
+    // did after you cut is not recorded anywhere on the trade. Only you saw it.
+    // A blank stays blank so the journal can ask for it.
+    post_cutloss_result: r.post_cutloss_result || "",
     chart_pattern: r.chart_pattern || "",
     confluence_answers: (r.confluence_answers && typeof r.confluence_answers === 'object') ? r.confluence_answers : null,
     session: r.session || computeSession(r) || "Unspecified",
@@ -3163,40 +3167,60 @@ function renderBreakdown(){
    because "what hour is good WHEN I trade 15 mins HL" was a question none of
    them could be asked.
 
-   The bar is WIN RATE, measured against his own overall win rate rather than
-   against 50%. Money was the obvious ranking and it was wrong here for a
-   reason worth writing down: he runs 5K, 10K and 50K accounts, so the same
-   setup on the 50K throws ten times the dollars of the 5K. Ranking on dollars
-   would have declared the 50K account his best edge when all it has is bigger
-   position sizes. Win rate carries no account size at all.
+   The bar is RETURN ON ACCOUNT per trade — each trade's net P&L as a percent
+   of the account it ran on, averaged. Zero is the centre.
 
-   The known cost of this choice, stated so nobody rediscovers it as a bug:
-   win rate is blind to how big the wins are. His August ran 41% for
-   +$1,465.92 — a profitable month that this page ranks below a 70% one that
-   scratches. The money is still on every tooltip for exactly that reason. */
+   Two earlier attempts and why each failed, so neither gets tried again:
+
+   Raw dollars. He runs 5K, 10K and 50K accounts, so the same setup on the 50K
+   throws ten times the dollars of the 5K. Dollars declared the 50K account his
+   best edge when all it had was bigger position sizes.
+
+   Win rate, centred on his own average. It removed account size, but a rate
+   cannot say what to DO: 55% with losses three times the size of the wins is
+   still a losing setup. And centring on his own 47% made it relative — half
+   the bars green and half red by construction, whatever he does, so nothing
+   in it was ever an instruction.
+
+   Return on account fixes both. Dividing by account size removes the thing
+   that made dollars unfair, while staying money-shaped, so the size of the
+   wins is back in the ranking. Zero is a real centre: right of it a group
+   genuinely grew the account, left of it it shrank it, regardless of how the
+   rest of his trading went. Win rate stays as one of the two printed figures
+   because it is worth reading — it just no longer decides the order. */
 const EM_MIN_N = 5;
-// How much evidence a group needs before its own rate is believed over the
-// overall one. This is how the trade COUNT earns its place in the ranking: a
-// raw rate puts 100% off three trades above 60% off forty, which is nonsense.
-// Every group is pulled toward his own overall win rate by this many imaginary
-// trades sitting at that rate —
+// How much evidence a group needs before its own return is believed. This is
+// how the trade COUNT earns its place in the ranking: a raw average puts
+// +3.0% off three trades above +0.9% off forty, which is nonsense. Every group
+// is pulled toward ZERO by this many imaginary trades that returned nothing —
 //
-//     shown = (n · own + K · overall) / (n + K)
+//     shown = n · own / (n + K)
 //
-// so at n=3 the figure is mostly the baseline, at n=40 mostly the group's own,
-// and nothing is thrown away or hidden: raw rate, count and money are all on
+// so at n=3 almost nothing survives, at n=40 most of it does, and nothing is
+// hidden: the raw return, the win rate, the count and the dollars are all on
 // the tooltip.
 //
-// Toward his overall rate, not toward zero. A rate has no meaningful zero to
-// shrink to — pulling everything toward 0% would paint every thin group as a
-// disaster. (When this ranked on money, shrinking toward the portfolio mean
-// was wrong for the opposite reason: it dragged a losing pattern up past
-// break-even and drew it green. A rate cannot cross a sign that way, because
-// the centre of this scale IS the baseline.)
+// Toward zero, which is now safe and was not before. When this ranked on
+// dollars, shrinking toward the portfolio mean dragged a losing pattern up
+// past break-even and drew it green; zero has no such failure, and it is the
+// honest prior — until a group proves otherwise, assume no edge.
 //
 // 20 matches what this app already treats as "enough to read" elsewhere:
 // patterns get trustworthy around 15–20 trades.
 const EM_PRIOR = 20;
+
+// A trade's result as a percent of the account it was taken on. This is the
+// whole point of the metric: +$500 on a 50K account is 1%, the same +$500 on
+// a 5K account is 10%, and only the second one actually moved the needle.
+// Null when the account size is unknown — never guessed, and such trades are
+// counted in `n` but left out of the return so one unmapped account cannot
+// quietly drag a group's number toward zero.
+function _emReturnPct(t){
+  const acc = TRADING_ACCOUNTS.find(a => a.account_name === t.account);
+  const size = acc ? Number(acc.account_size) : NaN;
+  if(!Number.isFinite(size) || size <= 0) return null;
+  return netPnl(t) / size * 100;
+}
 let EM_FILTERS = {};
 
 // Where a trade sat in its own day: the first one, the one after a win, or the
@@ -3232,20 +3256,32 @@ function _emDimensions(){
     // against all three, so this card's counts exceed the trade total.
     { key:'rules', label:'What you did wrong', q:'the mistake', multi:true, lead:true,
       of: t => _brokenRuleTags(t.unfollowed_rules) },
+    // `say` is how a finding names this dimension in a sentence. "Stop taking
+    // hour opened 09:00" is not English; "Stop taking trades opened at 09:00"
+    // is an instruction. Every dimension the briefing can name needs one.
     { key:'hour',         label:'Hour opened',  q:'exactly when',
+      say: v => `trades opened at ${v}`,
       of: t => t.open_date ? `${String(t.open_date.getHours()).padStart(2,'0')}:00` : null },
-    { key:'pattern_type', label:'Pattern',      q:'which one',        of: t => t.pattern_type },
+    { key:'pattern_type', label:'Pattern',      q:'which one',
+      say: v => `the ${v} pattern`, of: t => t.pattern_type },
     { key:'seq',          label:'Sequence',     q:'how many HL/LH in',
+      say: v => `the ${v} HL/LH of the move`,
       of: t => answerBy(t, it => it.select) },
     { key:'score',        label:'Confluence score', q:'is the checklist worth it',
+      say: v => `trades at ${v} confluence`,
       of: t => { const s = _confluenceScoreFor(t);
         return s === null ? null : (s >= 0.8 ? '80–100%' : (s >= 0.5 ? '50–80%' : 'under 50%')); } },
     { key:'trigger',      label:'Entry trigger', q:'how you got in',
+      say: v => `${v} entries`,
       of: t => { const a = answerBy(t, it => it.retest, ['yes','no','almost','retest']);
         return a ? ({ yes:'Zero-line cross', retest:'Retest', almost:'Almost', no:'No confirmation' }[a] || null) : null; } },
     // The Breakeven Protection question, with the control group it never had:
     // what happened on the trades where the stop was NOT moved up.
-    { key:'be', label:'Stop to breakeven', q:'is it helping',
+    // `outcome` — how the trade ended, not something chosen before entry. The
+    // briefing must never write "stop taking Stopped at BE": you do not pick
+    // that, and reading it as advice is circular. It has its own finding below,
+    // phrased as the comparison it actually is.
+    { key:'be', label:'Stop to breakeven', q:'is it helping', outcome:true,
       of: t => {
         if(t.post_be_result === 'TP After BE') return 'Ran on to TP after BE';
         if(t.post_be_result === 'SL After BE') return 'Stopped at BE';
@@ -3255,17 +3291,180 @@ function _emDimensions(){
         return _ruleTags(t.unfollowed_rules).some(r => r.toLowerCase() === "would have be'd out")
           ? "Would have BE'd out" : 'Stop never moved';
       } },
-    { key:'afterloss', label:'Order in the day', q:'revenge trading',
+    // The cut-loss counterpart, and the same question from the other side: once
+    // you were out, did price go on to prove you right or wrong? The control
+    // group is the losses you did NOT cut — without it "my cuts lose money" is
+    // trivially true, because every cut is a loss.
+    { key:'cutloss', label:'Cutting the loss', q:'is it helping', outcome:true,
+      of: t => {
+        if(t.post_cutloss_result === 'SL After Cutloss') return 'Cut, SL would have hit';
+        if(t.post_cutloss_result === 'TP After Cutloss') return 'Cut, TP would have hit';
+        if(String(t.exit_type || '').trim().toLowerCase() === 'cut loss') return 'Cut, outcome unknown';
+        return _isLoss(t) ? 'Loss, let it run' : null;
+      } },
+    // Also an outcome in the wildcard's eyes — "after a loss" is a position you
+    // land in, and its finding below is the before-and-after comparison.
+    { key:'afterloss', label:'Order in the day', q:'revenge trading', outcome:true,
       of: t => pos.get(t) || null },
-    { key:'session',      label:'Session',      q:'when',        of: t => t.session },
-    { key:'trade_setup',  label:'Setup',        q:'what to look for', of: t => t.trade_setup },
-    { key:'exit_type',    label:'Exit type',    q:'how it ended', of: t => t.exit_type },
-    { key:'day_of_week',  label:'Day of week',  q:'which day',    of: t => t.day_of_week },
+    { key:'session',      label:'Session',      q:'when',
+      say: v => `the ${v} session`, of: t => t.session },
+    { key:'trade_setup',  label:'Setup',        q:'what to look for',
+      say: v => `${v} setups`, of: t => t.trade_setup },
+    // How the trade ended is the result, never the decision. "Stop taking exit
+    // type SL Hit" is a tautology dressed as advice.
+    { key:'exit_type',    label:'Exit type',    q:'how it ended', outcome:true,
+      of: t => t.exit_type },
+    { key:'day_of_week',  label:'Day of week',  q:'which day',
+      say: v => `${v} trades`, of: t => t.day_of_week },
     // No Account card. Which account a trade ran on is a fact about position
-    // size, not about the trade — and the whole reason this page ranks on win
-    // rate rather than money is that account size must not be part of the
-    // answer. My Accounts already covers per-account performance properly.
+    // size, not about the trade — and the whole reason this page ranks on
+    // percent of account rather than dollars is that account size must not be
+    // part of the answer. My Accounts already covers per-account performance.
   ];
+}
+
+/* Findings — the part that is actually an instruction.
+
+   A grid of bars shows data and leaves the conclusion to the reader; every
+   time this page got better at drawing bars it got no better at telling him
+   what to do. These are sentences: what to stop, what to do more of, and the
+   evidence attached to each so it can be argued with. Nothing is written
+   unless it clears EM_MIN_N, and every line carries its own counts, because a
+   confident sentence off four trades is worse than no sentence. */
+function _emFindings(table, dims){
+  const out = [];
+  const rowsOf = label => (table.find(x => x.d.label === label) || {}).rows || [];
+  const get = (label, name) => rowsOf(label).find(r => r.name === name);
+  const solid = r => r && r.priced >= EM_MIN_N && r.ret !== null;
+  const pct = v => (v >= 0 ? '+' : '−') + Math.abs(v).toFixed(2) + '%';
+
+  // 1. The most expensive broken rule — his own tagged mistakes, by total damage.
+  const mistakes = rowsOf('What you did wrong').filter(solid);
+  if(mistakes.length){
+    const w = mistakes[0];
+    if(w.ret < 0) out.push({ tone:'bad', weight: Math.abs(w.ret) * w.priced,
+      head: `Stop breaking "${w.name}"`,
+      body: `Trades where you tagged it return ${pct(w.ret)} of the account each. ${w.wins}W ${w.losses}L across ${w.n}.`,
+      key:'rules', value:w.name });
+  }
+
+  // 2. Revenge trading — the one comparison that is about behaviour, not setup.
+  const first = get('Order in the day', 'First of the day');
+  const after = get('Order in the day', 'After a loss');
+  if(solid(first) && solid(after) && after.ret < first.ret - 0.15){
+    out.push({ tone:'bad', weight: Math.abs(after.ret - first.ret) * after.priced,
+      head: `Stop trading after a loss`,
+      body: `Your first trade of the day returns ${pct(first.ret)}; the one after a red trade returns ${pct(after.ret)}. That gap across ${after.n} trades is revenge trading, not variance.`,
+      key:'afterloss', value:'After a loss' });
+  }
+
+  // 3. Does the checklist pay — the question the Confluence panel used to ask.
+  const hi = get('Confluence score', '80–100%');
+  const lo = get('Confluence score', 'under 50%');
+  if(solid(hi) && solid(lo)){
+    const gap = hi.ret - lo.ret;
+    if(gap > 0.15) out.push({ tone:'good', weight: gap * Math.min(hi.priced, lo.priced),
+      head: `Wait for the full checklist`,
+      body: `At 80%+ confluence you return ${pct(hi.ret)} a trade; under 50% you return ${pct(lo.ret)}. Skipping the thin ones is the cheapest edge you have.`,
+      key:'score', value:'80–100%' });
+    else if(gap < -0.15) out.push({ tone:'warn', weight: Math.abs(gap) * Math.min(hi.priced, lo.priced),
+      head: `Your checklist is not paying`,
+      body: `Low-confluence trades return ${pct(lo.ret)} against ${pct(hi.ret)} for the full ones. Worth asking which items on that list actually matter.`,
+      key:'score', value:'under 50%' });
+  }
+
+  // 4. Late in the sequence — his own colour-coding says 4th and 5th are bad.
+  const late = ['3rd','4th','5th'].map(s => get('Sequence', s)).filter(solid);
+  const early = ['1st','2nd'].map(s => get('Sequence', s)).filter(solid);
+  if(late.length && early.length){
+    const lr = late.reduce((s,r) => s + r.ret * r.priced, 0) / late.reduce((s,r) => s + r.priced, 0);
+    const er = early.reduce((s,r) => s + r.ret * r.priced, 0) / early.reduce((s,r) => s + r.priced, 0);
+    const lateN = late.reduce((s,r) => s + r.n, 0);
+    if(lr < er - 0.15) out.push({ tone:'bad', weight: Math.abs(er - lr) * lateN,
+      head: `Stop taking the 3rd HL/LH onward`,
+      body: `The 1st and 2nd return ${pct(er)} a trade; the 3rd and later return ${pct(lr)} across ${lateN}. The move is already spent by then.`,
+      key:'seq', value:late.sort((a,b) => a.ret - b.ret)[0].name });
+  }
+
+  // 5. Moving the stop to breakeven — was a whole panel, is one sentence.
+  const beStopped = get('Stop to breakeven', 'Stopped at BE');
+  const beNever = get('Stop to breakeven', 'Stop never moved');
+  if(solid(beStopped) && solid(beNever)){
+    out.push(beNever.ret > beStopped.ret
+      ? { tone:'warn', weight: (beNever.ret - beStopped.ret) * beStopped.priced,
+          head: `You are moving the stop up too early`,
+          body: `Trades you left alone return ${pct(beNever.ret)}; the ones you pulled to breakeven return ${pct(beStopped.ret)} across ${beStopped.n}. The stop is closing trades that were going to work.`,
+          key:'be', value:'Stopped at BE' }
+      : { tone:'good', weight: (beStopped.ret - beNever.ret) * beStopped.priced,
+          head: `Keep moving the stop to breakeven`,
+          body: `It is doing its job — ${pct(beStopped.ret)} against ${pct(beNever.ret)} on the ones you left alone.`,
+          key:'be', value:'Stopped at BE' });
+  }
+
+  // 6. Is cutting the loss working — the question the new column was added to
+  //    answer. Not "do my cuts lose money" (every cut is a loss, so that says
+  //    nothing) but: of the trades you cut, how many were about to come back?
+  //    That ratio is the whole verdict, and it needs no control group.
+  const cutRight = get('Cutting the loss', 'Cut, SL would have hit');
+  const cutWrong = get('Cutting the loss', 'Cut, TP would have hit');
+  const cutRightN = cutRight ? cutRight.n : 0;
+  const cutWrongN = cutWrong ? cutWrong.n : 0;
+  const cutTotal = cutRightN + cutWrongN;
+  if(cutTotal >= EM_MIN_N){
+    const wrongPct = cutWrongN / cutTotal * 100;
+    // Saved is what the cut spared you; given up is what it cost. Both are real
+    // money already in the journal, so the verdict is a comparison, not a guess.
+    const saved = cutRight ? cutRight.net : 0;
+    const gaveUp = cutWrong ? cutWrong.net : 0;
+    if(wrongPct >= 40) out.push({ tone:'bad', weight: Math.abs(gaveUp) / 100 + cutWrongN,
+      head: `You are cutting too early`,
+      body: `${cutWrongN} of your ${cutTotal} cut losses would have reached TP — ${Math.round(wrongPct)}% of them. Those cuts turned winning trades into ${fmtMoney(gaveUp)}. Give the trade its stop.`,
+      key:'cutloss', value:'Cut, TP would have hit' });
+    else out.push({ tone:'good', weight: Math.abs(saved) / 100 + cutRightN,
+      head: `Keep cutting the loss`,
+      body: `${cutRightN} of your ${cutTotal} cuts were about to hit the stop anyway — only ${cutWrongN} would have come back. Cutting is saving you the rest of those losses.`,
+      key:'cutloss', value:'Cut, SL would have hit' });
+  }
+  // Unanswered cuts are not a verdict, they are a gap — say so rather than
+  // quietly computing the ratio off whichever half happens to be filled in.
+  const cutUnknown = get('Cutting the loss', 'Cut, outcome unknown');
+  if(cutUnknown && cutUnknown.n >= EM_MIN_N && cutUnknown.n > cutTotal){
+    out.push({ tone:'note', weight: 0.01,
+      head: `${cutUnknown.n} cut losses have no result logged`,
+      body: `Until they carry a Post-Cutloss Result there is no way to tell whether cutting saved you money or cost it. Set Exit Type to Cut Loss on a trade and the journal will ask for it.`,
+      key:'cutloss', value:'Cut, outcome unknown' });
+  }
+
+  // 7. The catch-all, and deliberately last to be written: the single best and
+  //    single worst thing across every dimension nothing above already spoke
+  //    for. It runs last so the hand-written findings claim their subject
+  //    first — otherwise this says "stop taking Order in the day After a loss"
+  //    one line above the revenge-trading finding, in worse English, about the
+  //    same trades. `outcome` dimensions are skipped entirely: you do not
+  //    choose your exit type, so ranking it can only produce a tautology.
+  const claimed = new Set(out.map(f => f.key));
+  let worst = null, best = null;
+  table.forEach(({ d, rows }) => {
+    if(d.multi || d.outcome || !d.say || claimed.has(d.key)) return;
+    rows.forEach(r => {
+      if(!solid(r)) return;
+      if(!worst || r.shown < worst.shown) worst = { ...r, d };
+      if(!best  || r.shown > best.shown)  best  = { ...r, d };
+    });
+  });
+  if(worst && worst.ret < 0) out.push({ tone:'bad', weight: Math.abs(worst.ret) * worst.priced,
+    head: `Stop taking ${worst.d.say(worst.name)}`,
+    body: `They return ${pct(worst.ret)} of the account each — ${worst.wins}W ${worst.losses}L across ${worst.n}. Nothing else you choose costs you more.`,
+    key:worst.d.key, value:worst.name });
+  if(best && best.ret > 0 && !(worst && best.name === worst.name && best.d.key === worst.d.key))
+    out.push({ tone:'good', weight: best.ret * best.priced,
+      head: `Take more of ${best.d.say(best.name)}`,
+      body: `${pct(best.ret)} of the account each, ${best.wins}W ${best.losses}L across ${best.n}. Your strongest single edge.`,
+      key:best.d.key, value:best.name });
+
+  // Biggest lesson first: how bad it is, times how often it happens.
+  out.sort((a,b) => b.weight - a.weight);
+  return out;
 }
 
 const _emMatches = (val, v) => Array.isArray(val) ? val.includes(v) : val === v;
@@ -3278,7 +3477,7 @@ function _emFiltered(dims, exceptKey){
   }));
 }
 
-function _emStats(dims, dim, baseRate){
+function _emStats(dims, dim){
   // The card's own filter is excluded, so picking "15 mins HL" leaves the
   // Pattern card showing every pattern — otherwise the card you just clicked
   // collapses to one row and there is no way to change your mind.
@@ -3292,7 +3491,6 @@ function _emStats(dims, dim, baseRate){
       (g[k] = g[k] || []).push(t);
     });
   });
-  const base = baseRate === undefined || baseRate === null ? 50 : baseRate;
   const out = Object.entries(g).map(([name, arr]) => {
     const wins = arr.filter(_isWin).length;
     const losses = arr.filter(_isLoss).length;
@@ -3300,22 +3498,27 @@ function _emStats(dims, dim, baseRate){
     const net = arr.reduce((s,t) => s + netPnl(t), 0);
     const n = arr.length;
     const rate = decided ? wins / decided * 100 : null;
-    // Shrunk on the DECIDED count, not the row count — a group of ten trades
-    // where nine are breakeven has one win/loss behind its rate, and the
-    // shrinking has to know that.
-    const shown = rate === null ? null
-      : (decided * rate + EM_PRIOR * base) / (decided + EM_PRIOR);
-    return { name, n, wins, losses, decided, net, avg: net / n, rate, shown,
-             // How far this sits from his own average. The bar draws this, so
-             // the centre line means "same as you usually do".
-             delta: shown === null ? null : shown - base };
+    // Only the trades whose account size is known can carry a return.
+    const pcts = arr.map(_emReturnPct).filter(v => v !== null);
+    const ret = pcts.length ? pcts.reduce((s,v) => s + v, 0) / pcts.length : null;
+    return { name, n, wins, losses, decided, net, rate,
+             ret, priced: pcts.length,
+             // What the bar draws and the sort follows. Shrunk on the count of
+             // trades that actually have a return behind them.
+             shown: ret === null ? null : pcts.length * ret / (pcts.length + EM_PRIOR) };
   });
-  // Best to worst on every card, worst-first on the mistakes card. Groups with
-  // nothing decided have no rate to rank on and go last rather than being
-  // treated as 0%.
+  // Best to worst on every card, worst-first on the mistakes card. A group
+  // with no measurable return goes last rather than being read as zero.
+  //
+  // Under EM_MIN_N a row can never lead, whatever it returns. Shrinkage alone
+  // was not enough: three trades at +10% each survive being pulled toward zero
+  // and still outrank forty at +1.7%, which is exactly the nonsense he
+  // objected to. The row keeps its true numbers and its hatching — it just
+  // sits below everything that has enough behind it to be worth reading first.
+  const thin = r => r.shown === null || r.priced < EM_MIN_N;
   const key = r => r.shown === null ? (dim.multi ? Infinity : -Infinity) : r.shown;
-  if(dim.multi) out.sort((a,b) => key(a) - key(b));
-  else out.sort((a,b) => key(b) - key(a));
+  const cmp = dim.multi ? (a,b) => key(a) - key(b) : (a,b) => key(b) - key(a);
+  out.sort((a,b) => (thin(a) - thin(b)) || cmp(a,b));
   return out;
 }
 
@@ -3337,30 +3540,21 @@ function renderEdgeMap(){
     return;
   }
 
-  // His own win rate is the centre of the scale: a bar to the right means the
-  // value beats how he usually does, not that it beats a coin flip. For a
-  // trader running a wide R at 41%, 50% would be the wrong middle.
-  const baseRate = _winRateOf(FILTERED);
-  const base = baseRate === null ? 50 : baseRate;
-
+  // Zero is the centre. Right of it a group grew the account, left of it it
+  // shrank it — an absolute statement, not a comparison against his own
+  // average, which was always going to leave half the bars green whatever he
+  // did and so could never be an instruction.
+  //
   // One scale across the whole page, so a bar on one card is directly
   // comparable with a bar on another. Rescaling per card would make the
   // weakest dimension look as strong as the best.
-  let max = 1;
-  const table = dims.map(d => ({ d, rows: _emStats(dims, d, base) }));
+  let max = 0.01;
+  const table = dims.map(d => ({ d, rows: _emStats(dims, d) }));
   table.forEach(({ rows }) => rows.forEach(r => {
-    if(r.delta !== null) max = Math.max(max, Math.abs(r.delta));
+    if(r.shown !== null) max = Math.max(max, Math.abs(r.shown));
   }));
 
-  let best = null, worst = null, costliest = null;
-  table.forEach(({ d, rows }) => rows.forEach(r => {
-    if(r.decided < EM_MIN_N || r.shown === null) return;
-    if(d.multi){ if(!costliest || r.shown < costliest.shown) costliest = { ...r, dim:d.label }; return; }
-    // Picked on the shrunk figure too, so the headline cannot be a three-trade
-    // fluke while the card below it ranks that same value fourth.
-    if(!best || r.shown > best.shown) best = { ...r, dim:d.label };
-    if(!worst || r.shown < worst.shown) worst = { ...r, dim:d.label };
-  }));
+  const findings = _emFindings(table, dims);
 
   const chips = Object.entries(EM_FILTERS);
   const chipHtml = chips.length
@@ -3371,79 +3565,81 @@ function renderEdgeMap(){
       }).join('')
     : `<span class="em-nofilter">Nothing picked — click any bar below.</span>`;
 
-  const vcard = (cls, k, v, n, s) =>
-    `<div class="em-vcard ${cls}"><div class="k">${k}</div><div class="v">${escapeHtml(v)}</div>
-     <div class="n">${n}</div><div class="s">${s}</div></div>`;
   const shownNet = shown.reduce((s,t) => s + netPnl(t), 0);
   const sw = shown.filter(_isWin).length, sl = shown.filter(_isLoss).length;
+
+  const findingsHtml = findings.length
+    ? findings.map((f, i) => `
+        <div class="em-find ${f.tone}" onclick="toggleEdgeFilter('${f.key}', ${escapeHtml(JSON.stringify(f.value))})"
+             title="Show only these trades">
+          <span class="em-find-n">${i + 1}</span>
+          <div class="em-find-txt">
+            <div class="em-find-head">${escapeHtml(f.head)}</div>
+            <div class="em-find-body">${escapeHtml(f.body)}</div>
+          </div>
+        </div>`).join('')
+    : `<div class="em-find thin"><span class="em-find-n">—</span><div class="em-find-txt">
+         <div class="em-find-head">Nothing worth acting on yet</div>
+         <div class="em-find-body">Every rule here needs at least ${EM_MIN_N} trades with a known account behind it before it will say anything. Keep journalling and this fills itself in.</div>
+       </div></div>`;
 
   const cards = table.map(({ d, rows }) => {
     if(!rows.length) return '';
     const lines = rows.map(r => {
-      const has = r.delta !== null;
-      const w = has ? Math.min(50, Math.abs(r.delta) / max * 50) : 0;
-      const thin = r.decided < EM_MIN_N;
-      const col = !has ? 'var(--muted)' : (r.delta >= 0 ? 'var(--win)' : 'var(--loss)');
+      const has = r.shown !== null;
+      const w = has ? Math.min(50, Math.abs(r.shown) / max * 50) : 0;
+      const thin = r.priced < EM_MIN_N;
+      const col = !has ? 'var(--muted)' : (r.shown >= 0 ? 'var(--win)' : 'var(--loss)');
       const on = EM_FILTERS[d.key] === r.name;
       const dimmed = EM_FILTERS[d.key] && !on;
-      // The tooltip carries the raw rate, the decided count AND the money, so
-      // nothing the ranking sets aside is actually hidden — the money is out
-      // of the ranking because account sizes differ, not because it is
-      // uninteresting.
+      // The tooltip carries the raw return, the win rate, the counts AND the
+      // dollars — the ranking sets money aside because account sizes differ,
+      // not because it is uninteresting.
       return `<div class="em-row${on?' on':''}${dimmed?' off':''}"
           onclick="toggleEdgeFilter('${d.key}', ${escapeHtml(JSON.stringify(r.name))})"
           title="${escapeHtml(r.name)} — ${r.wins}W ${r.losses}L${
             r.n > r.decided ? `, ${r.n - r.decided} with no result` : ''}${
-            has ? ` · ${fmtNum(r.rate,0)}% against your ${fmtNum(base,0)}%` : ' · nothing decided yet'}${
-            thin && has ? ` · only ${r.decided} decided, pulled toward your average` : ''} · ${fmtMoney(r.net)} in total">
+            has ? ` · ${(r.ret>=0?'+':'−')}${Math.abs(r.ret).toFixed(2)}% of account per trade` : ' · no account size, cannot measure'}${
+            thin && has ? ` · only ${r.priced} trades, held back toward zero` : ''} · ${fmtMoney(r.net)} in total">
         <span class="em-name">${escapeHtml(r.name)}</span>
         <span class="em-bar"><i class="zero"></i>${has ? `<i class="fill${thin?' thin':''}" style="${
-          r.delta >= 0 ? `left:50%;width:${w}%` : `right:50%;width:${w}%`};background-color:${col}"></i>` : ''}</span>
+          r.shown >= 0 ? `left:50%;width:${w}%` : `right:50%;width:${w}%`};background-color:${col}"></i>` : ''}</span>
         <span class="em-rate">${r.rate === null ? '—' : fmtNum(r.rate,0) + '%'}</span>
         <span class="em-n">${r.n}</span>
       </div>`;
     }).join('');
-    // The baseline printed on every card, not just once in the legend. Red
-    // does NOT mean a negative win rate — there is no such thing — it means
-    // below this number, and that only reads at a glance if the number is
-    // right there next to the bars it explains.
     return `<div class="em-card${d.lead?' lead':''}">
       <div class="em-card-head"><h3>${escapeHtml(d.label)}</h3>
-        <span class="q">${escapeHtml(d.q)}</span>
-        <span class="em-base">vs your ${fmtNum(base,0)}%</span></div>
+        <span class="q">${escapeHtml(d.q)}</span></div>
       ${lines}</div>`;
   }).join('');
 
   body.innerHTML = `
-    <div class="em-verdicts">
-      ${costliest ? vcard('bad', 'Your worst habit', costliest.name,
-          `${fmtNum(costliest.rate,0)}% win rate`,
-          `${costliest.wins}W ${costliest.losses}L · ${fmtMoney(costliest.net)} total`) : ''}
-      ${best ? vcard('good', 'Look for this', `${best.dim} · ${best.name}`,
-          `${fmtNum(best.rate,0)}% win rate`,
-          `${best.wins}W ${best.losses}L · against your ${fmtNum(base,0)}%`) : ''}
-      ${worst ? vcard('bad', 'Avoid this', `${worst.dim} · ${worst.name}`,
-          `${fmtNum(worst.rate,0)}% win rate`,
-          `${worst.wins}W ${worst.losses}L · against your ${fmtNum(base,0)}%`) : ''}
-      ${vcard('thin', 'In the filter now', `${shown.length} trades`,
-          (sw + sl) ? `${Math.round(sw/(sw+sl)*100)}% win rate` : 'nothing decided',
-          fmtMoney(shownNet))}
+    <div class="em-findings">
+      <div class="em-findings-head">What the journal is telling you
+        <span>${shown.length} trades${(sw+sl) ? ` · ${Math.round(sw/(sw+sl)*100)}% win rate` : ''} · ${fmtMoney(shownNet)}</span>
+      </div>
+      ${findingsHtml}
     </div>
     <div class="em-filterbar">
       <span class="em-lbl">Filter</span>${chipHtml}
       <button class="em-clear" onclick="clearEdgeFilters()">Clear all</button>
     </div>
-    <div class="em-grid">${cards}</div>
-    <div class="em-legend">
-      <span>The centre line is <b>your own ${fmtNum(base,0)}% win rate</b> — not 50%.</span>
-      <span><i class="sw" style="background:var(--win)"></i>you win more often than usual here</span>
-      <span><i class="sw" style="background:var(--loss)"></i>you win less often than usual here</span>
-      <span><i class="sw hatch"></i><b>hatched</b> = under ${EM_MIN_N} decided trades</span>
-      <span>The two figures are <b>win rate</b> then <b>trade count</b>.</span>
-      <span><b>Few trades draw a short bar on purpose.</b> Each value is pulled toward your own average until it has about ${EM_PRIOR} decided trades behind it, so 100% off three cannot outrank 60% off forty. Hover for the raw rate.</span>
-      <span><b>Money is not in this ranking</b>, because a 50K account throws ten times the dollars of a 5K one for the same trade. It is on every tooltip — worth checking, since a low win rate with a wide R can still be your best setup.</span>
-      <span>Click a value to read every other card against it.</span>
-    </div>`;
+    <details class="panel-details" ${Object.keys(EM_FILTERS).length ? 'open' : ''}>
+      <summary>Show the working — every dimension, every value</summary>
+      <div class="panel-details-body">
+        <div class="em-grid">${cards}</div>
+        <div class="em-legend">
+          <span>Bars are <b>return on the account per trade</b> — each trade's P&amp;L as a percent of the account it ran on. Centre is zero.</span>
+          <span><i class="sw" style="background:var(--win)"></i>grew the account</span>
+          <span><i class="sw" style="background:var(--loss)"></i>shrank it</span>
+          <span><i class="sw hatch"></i><b>hatched</b> = under ${EM_MIN_N} trades</span>
+          <span>The two figures are <b>win rate</b> then <b>trade count</b>.</span>
+          <span><b>Percent of account, not dollars</b>, so a 50K account cannot outrank a 5K one on position size alone. Few trades draw a short bar on purpose — each value is held back toward zero until about ${EM_PRIOR} trades stand behind it.</span>
+          <span>Click a value to read every other card against it.</span>
+        </div>
+      </div>
+    </details>`;
 }
 
 /* ---------------- "What should I trade?" ----------------
@@ -4493,6 +4689,11 @@ const FIELD_OPTIONS = {
   account_type: ['Demo','Evaluation','Funded'],
   exit_type: ['Manual Early TP - Valid','Manual Early TP - Invalid','Stop Profit','TP Hit','SL Hit','Cut Loss','BE Hit'],
   post_be_result: ['TP After BE','SL After BE','N/A'],
+  // The same question as Post-BE, asked of a manual cut instead of a breakeven
+  // stop: once you were out, what did price actually go on to do? "SL After
+  // Cutloss" means the cut saved you the rest of the loss; "TP After Cutloss"
+  // means the trade would have won and the cut is what lost it.
+  post_cutloss_result: ['TP After Cutloss','SL After Cutloss','N/A'],
   account: ['10k','25k','50k','100k','200k','Demo'],
   session: ['Asia','London','London + NY Overlap','New York','Low Liquidity'],
   day_of_week: ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday']
@@ -4559,6 +4760,7 @@ const OPTIONS_FIELD_META = [
   {key:'account_type', label:'Account Type'},
   {key:'exit_type', label:'Exit Type'},
   {key:'post_be_result', label:'Post-BE Result'},
+  {key:'post_cutloss_result', label:'Post-Cutloss Result'},
   {key:'session', label:'Session'},
   {key:'day_of_week', label:'Day of Week'},
   {key:'unfollowed_rules', label:'Unfollowed Rules (checklist)'}
@@ -4678,6 +4880,7 @@ const ALL_DRAWER_FIELDS = [
   {key:'unfollowed_rules', label:'Unfollowed Rules', widget:'checklist', editable:true, options:UNFOLLOWED_RULES_OPTIONS},
   {key:'exit_type', label:'Exit Type', widget:'select', editable:true, options:FIELD_OPTIONS.exit_type},
   {key:'post_be_result', label:'Post-BE Result', widget:'select', editable:true, options:FIELD_OPTIONS.post_be_result},
+  {key:'post_cutloss_result', label:'Post-Cutloss Result', widget:'select', editable:true, options:FIELD_OPTIONS.post_cutloss_result},
   {key:'account', label:'Account', widget:'select', editable:true, options:FIELD_OPTIONS.account},
   {key:'account_type', label:'Account Type', widget:'select', editable:true, options:FIELD_OPTIONS.account_type},
   {key:'session', label:'Session', widget:'select', editable:true, options:FIELD_OPTIONS.session},
@@ -4772,6 +4975,7 @@ const ALL_JOURNAL_COLUMNS = [
   {key:'unfollowed_rules', label:'Unfollowed Rules'},
   {key:'exit_type', label:'Exit Type'},
   {key:'post_be_result', label:'Post-BE Result'},
+  {key:'post_cutloss_result', label:'Post-Cutloss Result'},
   {key:'confluence_score', label:'Confluence Score'},
   {key:'account', label:'Account'},
   {key:'account_type', label:'Account Type'},
@@ -10259,7 +10463,8 @@ function warnIconSVG(){
 //                on read, so they cannot hold anything else.
 const JOURNAL_VALIDATED_KEYS = [
   'win_loss','trade_type','trade_setup','pattern_type','execution_tf',
-  'aof_phase','rules_followed','account_type','exit_type','post_be_result'
+  'aof_phase','rules_followed','account_type','exit_type','post_be_result',
+  'post_cutloss_result'
 ];
 
 // Values that mean "blank", not "wrong". normalizeTrade fills several columns
@@ -10305,6 +10510,16 @@ function _journalInvalidFields(r){
      r.post_be_result === 'TP After BE'){
     bad.push({ key:'post_be_result', label:'Post-BE Result',
                value:'TP After BE, but Exit Type says BE Hit' });
+  }
+
+  // The same shape one column over. A real answer here is a statement about
+  // what happened after a manual cut, so it cannot stand on a trade that was
+  // not cut — that answer belongs to a different exit and would quietly join
+  // the cut-loss numbers, making the cut look better or worse than it was.
+  if(!_isBlankish(r.post_cutloss_result) && r.post_cutloss_result !== 'N/A' &&
+     String(r.exit_type || '').trim().toLowerCase() !== 'cut loss'){
+    bad.push({ key:'post_cutloss_result', label:'Post-Cutloss Result',
+               value:`${r.post_cutloss_result}, but Exit Type is ${r.exit_type || 'blank'}` });
   }
 
   // Chart Pattern is scoped to the setup that was traded, so what counts as
@@ -10356,6 +10571,14 @@ function _journalMissingFields(r){
      visible.has('post_be_result') && isBlank('post_be_result') &&
      !_impliedPostBE(r)){
     missing.push(labelOf('post_be_result'));
+  }
+  // And the same for a manual cut. Nothing on the trade can infer this one, so
+  // an unanswered Cut Loss is simply a cut whose worth was never checked — the
+  // exact trades the effectiveness question is about. "N/A" counts as answered
+  // here: it is a real choice in the list, just not an informative one.
+  if(String(r.exit_type || '').trim().toLowerCase() === 'cut loss' &&
+     visible.has('post_cutloss_result') && isBlank('post_cutloss_result')){
+    missing.push(labelOf('post_cutloss_result'));
   }
   return missing;
 }
@@ -11365,7 +11588,7 @@ const JOURNAL_FIELD_GROUPS = [
   { title: 'Result', keys: ['win_loss','profit_loss','pnl_percent','rr','fee','entry_price','close_price','tp_price','sl_price','position_size','risk_amount'] },
   { title: 'Account', keys: ['account','account_type','session','day_of_week'] },
   { title: 'Setup & Strategy', keys: ['trade_type','trade_setup','pattern_type','execution_tf','aof_phase'] },
-  { title: 'Discipline', keys: ['rules_followed','unfollowed_rules','exit_type','post_be_result'] },
+  { title: 'Discipline', keys: ['rules_followed','unfollowed_rules','exit_type','post_be_result','post_cutloss_result'] },
 ];
 const JOURNAL_FIELD_GROUPS_PRE_CONFLUENCE_COUNT = 4; // Overview, Result, Account, Setup & Strategy
 const NOTES_LINKS_GROUP = { title: 'Notes & Links', keys: ['notes','link','trade_summary'] };
@@ -11641,7 +11864,7 @@ function _renderDrawerFieldRow(f, mode, row){
       : f.key === 'trade_type' ? ` onchange="syncTradeSetupFromType(this.value)"`
       : f.key === 'trade_setup' ? ` onchange="syncPatternTypeFromSetup(this.value)"`
       : f.key === 'pattern_type' ? ` onchange="syncExecutionFromPattern(this.value)"`
-      : f.key === 'exit_type' ? ` onchange="syncPostBEFromExitType(this.value)"`
+      : f.key === 'exit_type' ? ` onchange="syncPostBEFromExitType(this.value); syncPostCutlossFromExitType(this.value);"`
       : f.key === 'win_loss' ? ` onchange="syncPostBEFromWinLoss(this.value); syncExitTypeFromWinLoss(this.value);"`
       : '';
     return `<div class="${rowCls}"><label>${f.label}</label><select data-field="${f.key}"${onchange}><option value="">—</option>${opts}</select></div>`;
@@ -11746,6 +11969,10 @@ function renderDrawerFields(){
     // leaves it alone.
     syncAofFromLinkedSetup(row);
     if(row.win_loss) syncPostBEFromWinLoss(row.win_loss);
+    // Unconditional, unlike the line above: a blank Exit Type is exactly the
+    // case that has to settle to N/A, so gating this on `row.exit_type` would
+    // leave the field empty and red on every ordinary new trade.
+    syncPostCutlossFromExitType(row.exit_type);
   }
 }
 
@@ -11816,6 +12043,16 @@ function _collectDrawerPatch(){
   if(!patch.post_be_result){
     const implied = _impliedPostBE(patch);
     if(implied) patch.post_be_result = implied;
+  }
+
+  // Nothing can be inferred for a real cut, but everything that is NOT a cut
+  // has exactly one correct value. Settling it here rather than only in the
+  // drawer covers the paths that never open one — Easy Add, the multi-account
+  // queue, a bulk paste — so those rows do not arrive blank and then get
+  // counted as unanswered cuts.
+  if(!patch.post_cutloss_result && patch.exit_type &&
+     String(patch.exit_type).trim().toLowerCase() !== 'cut loss'){
+    patch.post_cutloss_result = 'N/A';
   }
 
   // Create only. This flag exists to catch a moved stop the trader didn't
@@ -15675,6 +15912,10 @@ function syncExitTypeFromWinLoss(winLossValue){
   const sel = document.querySelector('#drawerBody [data-field="exit_type"]');
   if(sel){ sel.value = 'BE Hit'; sel.dispatchEvent(new Event('change', { bubbles: true })); }
   syncPostBEFromExitType('BE Hit');
+  // Setting the value above does not fire the select's own onchange, so the
+  // cut-loss field has to be told too — otherwise a trade corrected to
+  // Breakeven keeps whatever cut-loss answer was sitting there.
+  syncPostCutlossFromExitType('BE Hit');
 }
 
 // Exit Type settles Post-BE Result whenever it is "BE Hit", so the drawer stops
@@ -15688,6 +15929,27 @@ function syncPostBEFromExitType(exitTypeValue){
   sel.dispatchEvent(new Event('change', { bubbles: true }));
   const row = sel.closest('.field-row');
   if(row) row.classList.remove('needs-input');
+}
+
+// Post-Cutloss Result is the Post-BE pattern hung off Exit Type instead of
+// Win/Loss: only a manual cut can answer it, everything else is N/A. Unlike
+// Post-BE there is nothing to infer — what price did after you were out is not
+// on the trade — so a Cut Loss clears any stale N/A and goes red until it is
+// actually answered, which is the whole point: an unanswered cut is a cut
+// whose worth was never checked.
+function syncPostCutlossFromExitType(exitTypeValue){
+  const sel = document.querySelector('#drawerBody [data-field="post_cutloss_result"]');
+  if(!sel) return;
+  if(String(exitTypeValue || '').trim().toLowerCase() !== 'cut loss'){
+    sel.value = 'N/A';
+    sel.dispatchEvent(new Event('change', { bubbles: true }));
+    const row = sel.closest('.field-row');
+    if(row) row.classList.remove('needs-input');
+    return;
+  }
+  if(sel.value === 'N/A') sel.value = '';
+  const row = sel.closest('.field-row');
+  if(row) row.classList.toggle('needs-input', sel.value.trim() === '');
 }
 
 // Derives all the compliance/progress numbers for one account from the real
@@ -17461,6 +17723,13 @@ function _bulkJournalRows(shared){
       if(auto) patch.exit_type = auto;
     }
     _applyMovedStopFlags(patch);
+    // Also per row, because the Exit Type it depends on was just decided per
+    // row above. Same rule as the single-trade path: settle everything that is
+    // not a cut, leave a real cut blank so the journal asks for it.
+    if(!patch.post_cutloss_result && patch.exit_type &&
+       String(patch.exit_type).trim().toLowerCase() !== 'cut loss'){
+      patch.post_cutloss_result = 'N/A';
+    }
     JOURNAL_COMPUTED_KEYS.forEach(k => delete patch[k]);
     return patch;
   });
