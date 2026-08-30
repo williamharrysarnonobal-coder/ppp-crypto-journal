@@ -560,10 +560,7 @@
   }
   .wr-head-meta{font-size:12px;color:var(--muted);margin-top:5px;}
   .wr-good{--wr-tone:var(--win);}
-  .wr-bad{--wr-tone:var(--loss);}
-  .wr-neutral{--wr-tone:var(--muted);}
-
-  /* The one-glance panel: right and wrong side by side, before any prose. */
+  .wr-bad{--wr-tone:var(--loss);}  /* The one-glance panel: right and wrong side by side, before any prose. */
   .wr-glance{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px;}
   .wr-col{
     flex:1;min-width:210px;border-radius:9px;padding:12px 14px;
@@ -583,17 +580,7 @@
     width:5px;height:5px;border-radius:50%;background:var(--wr-tone);
   }
   .wr-bullet-empty{color:var(--muted);font-style:italic;}
-  .wr-bullet-empty::before{opacity:.4;}
-
-  .wr-sub-head{
-    font-size:10.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;
-    margin:12px 0 4px;color:var(--wr-tone);
-  }
-  .wr-sub-head:first-child{margin-top:0;}
-  .wr-sub-head.wr-good{--wr-tone:var(--win);color:var(--win);}
-  .wr-sub-head.wr-bad{--wr-tone:var(--loss);color:var(--loss);}
-
-  .wr-sec{
+  .wr-bullet-empty::before{opacity:.4;}  .wr-sec{
     border:1px solid var(--rule);border-left:3px solid var(--wr-tone);
     border-radius:8px;padding:13px 15px;margin-bottom:14px;background:var(--surface);
   }
@@ -1062,14 +1049,7 @@
   /* Confluence bands nested under a pattern — indented and dimmer so the
      pattern rows still read as the list and these as its working. */
   table.breakdown tr.sr-sub{cursor:default;}
-  table.breakdown tr.sr-sub td{color:var(--muted);border-bottom-style:dotted;}
-  /* Hour-of-day magnitude bar. Width carries the number; colour carries the
-     sign, so a losing hour is legible without reading the figure. */
-  .hod-bar{display:block;height:6px;border-radius:3px;min-width:2px;}
-  .hod-bar.pos{background:var(--win);}
-  .hod-bar.neg{background:var(--loss);}
-
-  /* Trade card footer: the trade's own details, and the chart it was taken on. */
+  table.breakdown tr.sr-sub td{color:var(--muted);border-bottom-style:dotted;}  /* Trade card footer: the trade's own details, and the chart it was taken on. */
   .tc-actions{display:flex;align-items:center;gap:14px;margin-top:8px;}
   .tc-details-btn{
     background:none;border:none;padding:0;margin:0;
@@ -1757,42 +1737,7 @@
     color:var(--accent);font-size:12px;font-weight:700;
     font-family:'IBM Plex Mono',monospace;
   }
-  .ps-account-table td{vertical-align:middle;}
-  /* Breakeven Protection verdict — the "is SL-to-BE actually working?" answer,
-     placed above the stat grid because it's the only line most reads need. */
-  .be-verdict{
-    border:1px solid color-mix(in srgb, var(--be-tone) 40%, var(--rule));
-    border-left:3px solid var(--be-tone);border-radius:9px;
-    background:color-mix(in srgb, var(--be-tone) 7%, var(--surface));
-    padding:14px 16px;margin-bottom:16px;
-  }
-  .be-verdict-good{--be-tone:var(--win);}
-  .be-verdict-bad{--be-tone:var(--loss);}
-  .be-verdict-neutral{--be-tone:var(--muted);}
-  .be-verdict-head{
-    display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap;
-    font-size:13px;color:var(--ink);margin-bottom:12px;
-  }
-  .be-verdict-word{
-    font-size:14px;font-weight:800;letter-spacing:.07em;color:var(--be-tone);flex-shrink:0;
-  }
-  /* Three columns: worst case, what happened, best case. */
-  .be-verdict-range{display:flex;gap:12px;flex-wrap:wrap;text-align:center;}
-  .be-verdict-side, .be-verdict-mid{flex:1;min-width:130px;}
-  .be-verdict-mid{
-    border-left:1px solid var(--rule);border-right:1px solid var(--rule);
-  }
-  .be-verdict-num{
-    font-family:'IBM Plex Mono',monospace;font-size:18px;font-weight:700;
-    font-variant-numeric:tabular-nums;color:var(--ink);
-  }
-  .be-verdict-lbl{font-size:10.5px;color:var(--muted);line-height:1.45;margin-top:3px;padding:0 6px;}
-  .be-verdict-line{
-    font-size:12.5px;color:var(--ink);line-height:1.6;
-    margin-top:13px;padding-top:11px;border-top:1px solid var(--rule);
-  }
-  .be-verdict-note{font-size:11.5px;color:var(--muted);line-height:1.55;margin-top:7px;}
-  @media (max-width: 560px){
+  .ps-account-table td{vertical-align:middle;}  @media (max-width: 560px){
     .be-verdict-mid{border-left:none;border-right:none;}
   }
 
@@ -1838,32 +1783,6 @@
     .mood-recent-line{flex-direction:column;gap:1px;}
     .mood-recent-tag{min-width:0;}
   }
-
-  /* Both of these panels answer ONE question, and both had buried that answer
-     under the working that produced it. The verdict line is the whole panel
-     for most reads; everything that used to sit on the page is still here,
-     one click away, so nothing was removed — only ranked. */
-  .verdict-line{
-    display:flex;align-items:center;gap:12px;flex-wrap:wrap;
-    padding:14px 16px;border-radius:9px;margin-bottom:12px;
-    border:1px solid color-mix(in srgb, var(--v-tone) 40%, var(--rule));
-    border-left:3px solid var(--v-tone);
-    background:color-mix(in srgb, var(--v-tone) 7%, var(--surface));
-    --v-tone:var(--muted);
-  }
-  .verdict-line.good{--v-tone:var(--win);}
-  .verdict-line.bad{--v-tone:var(--loss);}
-  .verdict-line.thin{--v-tone:var(--muted);}
-  .verdict-word{
-    font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:700;
-    letter-spacing:.08em;text-transform:uppercase;color:var(--v-tone);
-    border:1px solid color-mix(in srgb, var(--v-tone) 45%, transparent);
-    border-radius:5px;padding:4px 10px;white-space:nowrap;flex-shrink:0;
-  }
-  .verdict-say{font-size:14px;color:var(--ink);flex:1;min-width:220px;line-height:1.5;}
-  .verdict-say .q{color:var(--muted);display:block;font-size:11.5px;
-    text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;
-    font-family:'IBM Plex Mono',monospace;}
 
   .panel-details{border-top:1px solid var(--rule);margin-top:14px;}
   .panel-details > summary{
@@ -2066,65 +1985,7 @@
     .rec-avg{grid-column:2;text-align:left;}
     .rec-meta{grid-column:2;}
   }
-  body.mobile-mode .rec-open-btn{width:100%;justify-content:center;}
-
-  /* Confluence Edge + Breakeven Protection dashboard panels */
-  .cfe-grid{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-bottom:16px;}
-  /* These were the same muted grey, the same size and the same casing as the
-     column labels directly beneath them, so a heading and a table header read
-     as one continuous run of small grey text — you couldn't tell where one
-     section stopped and the next began. Accent colour (which follows the theme),
-     a rule under it, and real space above: now it reads as a heading. */
-  .cfe-subhead{
-    font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;
-    color:var(--accent);margin:26px 0 10px;padding-bottom:6px;
-    border-bottom:1px solid color-mix(in srgb, var(--accent) 28%, var(--rule));
-  }
-  .cfe-grid .cfe-subhead:first-child{margin-top:0;}
-  .panel-details-body > .cfe-subhead:first-child{margin-top:0;}
-
-  /* Pick a sequence position to narrow the split-by-setup table below. */
-  .cfe-seq-row{cursor:pointer;}
-  .cfe-seq-row:hover td{background:var(--surface-2);}
-  .cfe-seq-row.is-picked td{
-    background:color-mix(in srgb, var(--accent) 12%, transparent);
-    box-shadow:inset 2px 0 0 var(--accent);
-  }
-  .cfe-seq-note{font-size:11.5px;color:var(--muted);margin:-4px 0 10px;}
-  /* Data that needs repairing, not an observation — it sits outside the
-     disclosure and carries the warning tone rather than the neutral one. */
-  .cfe-insight-warn{
-    border-left:3px solid var(--warn);
-    background:color-mix(in srgb, var(--warn) 8%, var(--surface));
-  }
-  /* Three states that all used to render as a grey dash, now each with its own
-     mark: a rate, "n/a" (traded but nothing decided), and "—" (never traded). */
-  .cfe-cell-n{color:var(--muted);font-size:11px;}
-  .cfe-cell-wl{font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--ink-2,var(--ink));}
-  .cfe-cell-na{color:var(--muted);font-style:italic;font-size:11.5px;}
-  .cfe-cell-none{color:var(--rule);}
-  .cfe-legend{
-    display:flex;flex-wrap:wrap;gap:6px 20px;margin-top:10px;padding-top:9px;
-    border-top:1px solid var(--rule);font-size:11px;color:var(--muted);
-  }
-  .cfe-legend b{color:var(--ink);font-family:'IBM Plex Mono',monospace;}
-  .cfe-seq-clear{color:var(--accent);cursor:pointer;text-decoration:underline;text-underline-offset:2px;}
-  .cfe-seq-clear:hover{color:var(--ink);}
-  .cfe-bar-wrap{display:flex;align-items:center;gap:8px;font-family:'IBM Plex Mono',monospace;}
-  .cfe-bar-track{flex:1;height:7px;background:var(--surface-2);border-radius:4px;overflow:hidden;min-width:56px;}
-  .cfe-bar-fill{height:100%;border-radius:4px;}
-  .cfe-insight{
-    border:1px solid var(--rule);border-left:3px solid var(--accent);
-    background:var(--surface-2);border-radius:7px;padding:10px 13px;
-    font-size:12.5px;color:var(--ink);line-height:1.6;margin-top:12px;
-  }
-  .be-stat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:16px;}
-  .be-stat{background:var(--surface-2);border:1px solid var(--rule);border-radius:8px;padding:13px 15px;}
-  .be-stat-label{font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:4px;}
-  .be-stat-value{font-size:22px;font-weight:700;font-family:'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums;}
-  .be-stat-note{font-size:11px;color:var(--muted);margin-top:4px;line-height:1.5;}
-
-  /* ---------- Salary vs Trading Goal ---------- */
+  body.mobile-mode .rec-open-btn{width:100%;justify-content:center;}  /* ---------- Salary vs Trading Goal ---------- */
   /* Built from the app's own tokens, so it follows the light/dark toggle
      instead of hard-coding one theme. */
   /* ---- Payslip vs P&L: one question, four things ---- */
@@ -2698,10 +2559,7 @@
   body.mobile-mode .ps-account-table .poscalc-accent-btn{
     padding:7px 10px;font-size:11.5px;white-space:nowrap;
   }
-  body.mobile-mode .ps-lev-badge{padding:3px 8px;font-size:11px;}
-  body.mobile-mode .cfe-grid{grid-template-columns:1fr;}
-  body.mobile-mode .be-stat-grid{grid-template-columns:1fr;}
-  /* Side by side doesn't fit a phone — stack them, with the "vs" becoming a
+  body.mobile-mode .ps-lev-badge{padding:3px 8px;font-size:11px;}  /* Side by side doesn't fit a phone — stack them, with the "vs" becoming a
      horizontal divider between the two halves instead of a vertical one. */
   body.mobile-mode .sal-input-grid{grid-template-columns:1fr;}
   body.mobile-mode .sal-answer{padding:20px 16px;}

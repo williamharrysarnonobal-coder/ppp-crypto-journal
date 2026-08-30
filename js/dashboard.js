@@ -4072,8 +4072,6 @@ function _canonicalTags(v){
   return out;
 }
 
-const _TAG_NEUTRAL_SET = new Set(
-  [...TAG_SENTINELS, ...TAG_OBSERVATIONS].map(s => s.toLowerCase()));
 const _TAG_OBSERVATION_SET = new Set(TAG_OBSERVATIONS.map(s => s.toLowerCase()));
 const _TAG_SENTINEL_SET = new Set(TAG_SENTINELS.map(s => s.toLowerCase()));
 // Anything not named above is a breach, so an option added later in the Options
@@ -4132,17 +4130,12 @@ const _ruleGroupOf = t => {
   return _RULE_GROUP_OF.get(live.toLowerCase()) || live;
 };
 
-// Kept as the union of the two neutral kinds so the older call sites that ask
-// "is this tag a mark against him" keep reading the same way.
-const RULES_FOLLOWED_POSITIVE = [...TAG_SENTINELS, ...TAG_OBSERVATIONS];
-
 // unfollowed_rules is one comma-joined text column holding breaches, the
 // sentinel that means "nothing was broken", and observations that mean nothing
 // about discipline either way. Every count of discipline has to strip the last
 // two first — these are the shared answer.
 const _ruleTags = v => String(v || '').split(/[,;]/).map(s => s.trim()).filter(Boolean);
 const _brokenRuleTags = v => _ruleTags(v).filter(r => _tagKind(r) === 'breach');
-const _observationTags = v => _ruleTags(v).filter(r => _tagKind(r) === 'observation');
 // Answered, and nothing broken — a blank field is "not logged", not "clean".
 // An observation on its own still counts as answered: "I did not move to BE at
 // prev high/low" is a complete, clean record of the trade.
@@ -4219,11 +4212,24 @@ function loadOptionsConfig(){
       // so a blind overwrite means new options never reach anyone who has
       // ever opened the Options editor — and an auto-flag that references a
       // missing option would silently fail to tick.
+      //
+      // But the merge has to respect retirement, or it undoes it: a copy saved
+      // before a tag was merged away still lists it, and pushing that straight
+      // back in puts "Entered Early" beside "Entered Without Confirmation" in
+      // the checklist again — both offered, both meaning the same thing, which
+      // is exactly the state the merge was meant to end. Anything aliased or
+      // retired is dropped on the way in.
+      const gone = o => {
+        const k = String(o).trim().toLowerCase();
+        return Object.prototype.hasOwnProperty.call(TAG_ALIASES, k) ||
+               Object.prototype.hasOwnProperty.call(TAG_RETIRED, k);
+      };
+      const keptSaved = savedUnfollowed.filter(o => !gone(o));
       const missing = UNFOLLOWED_RULES_OPTIONS.filter(o =>
-        !savedUnfollowed.some(s => String(s).trim().toLowerCase() === o.toLowerCase())
+        !keptSaved.some(s => String(s).trim().toLowerCase() === o.toLowerCase())
       );
       UNFOLLOWED_RULES_OPTIONS.length = 0;
-      UNFOLLOWED_RULES_OPTIONS.push(...savedUnfollowed, ...missing);
+      UNFOLLOWED_RULES_OPTIONS.push(...keptSaved, ...missing);
     }
   }catch(e){}
 }
