@@ -3232,7 +3232,8 @@ function _emDimensions(){
     // against all three, so this card's counts exceed the trade total.
     { key:'rules', label:'What you did wrong', q:'the mistake', multi:true, lead:true,
       of: t => _brokenRuleTags(t.unfollowed_rules) },
-    { key:'trade_setup',  label:'Setup',        q:'what to look for', of: t => t.trade_setup },
+    { key:'hour',         label:'Hour opened',  q:'exactly when',
+      of: t => t.open_date ? `${String(t.open_date.getHours()).padStart(2,'0')}:00` : null },
     { key:'pattern_type', label:'Pattern',      q:'which one',        of: t => t.pattern_type },
     { key:'seq',          label:'Sequence',     q:'how many HL/LH in',
       of: t => answerBy(t, it => it.select) },
@@ -3257,11 +3258,13 @@ function _emDimensions(){
     { key:'afterloss', label:'Order in the day', q:'revenge trading',
       of: t => pos.get(t) || null },
     { key:'session',      label:'Session',      q:'when',        of: t => t.session },
-    { key:'hour',         label:'Hour opened',  q:'exactly when',
-      of: t => t.open_date ? `${String(t.open_date.getHours()).padStart(2,'0')}:00` : null },
+    { key:'trade_setup',  label:'Setup',        q:'what to look for', of: t => t.trade_setup },
     { key:'exit_type',    label:'Exit type',    q:'how it ended', of: t => t.exit_type },
     { key:'day_of_week',  label:'Day of week',  q:'which day',    of: t => t.day_of_week },
-    { key:'account',      label:'Account',      q:'where',        of: t => t.account },
+    // No Account card. Which account a trade ran on is a fact about position
+    // size, not about the trade — and the whole reason this page ranks on win
+    // rate rather than money is that account size must not be part of the
+    // answer. My Accounts already covers per-account performance properly.
   ];
 }
 
@@ -3400,8 +3403,14 @@ function renderEdgeMap(){
         <span class="em-n">${r.n}</span>
       </div>`;
     }).join('');
+    // The baseline printed on every card, not just once in the legend. Red
+    // does NOT mean a negative win rate — there is no such thing — it means
+    // below this number, and that only reads at a glance if the number is
+    // right there next to the bars it explains.
     return `<div class="em-card${d.lead?' lead':''}">
-      <div class="em-card-head"><h3>${escapeHtml(d.label)}</h3><span class="q">${escapeHtml(d.q)}</span></div>
+      <div class="em-card-head"><h3>${escapeHtml(d.label)}</h3>
+        <span class="q">${escapeHtml(d.q)}</span>
+        <span class="em-base">vs your ${fmtNum(base,0)}%</span></div>
       ${lines}</div>`;
   }).join('');
 
