@@ -925,14 +925,10 @@ function normalizeTrade(r){
     pattern_type: r.pattern_type || "Unspecified",
     execution_tf: r.execution_tf || "Unspecified",
     exit_type: r.exit_type || "",
-    // Filled from Exit Type when it was never answered. "BE Hit" means the
-    // trade ended AT the breakeven stop, and there is no second possibility to
-    // choose between — so leaving it blank was asking for a decision that the
-    // Exit Type had already made. Only ever fills a blank; a stored answer wins.
-    post_be_result: r.post_be_result || _impliedPostBE(r) || "",
-    // No equivalent of _impliedPostBE here, and there cannot be one: what price
-    // did after you cut is not recorded anywhere on the trade. Only you saw it.
-    // A blank stays blank so the journal can ask for it.
+    // Both of these read straight through. What price did after a stop or a cut
+    // took you out is not on the trade — a blank stays blank so the journal can
+    // ask for it rather than answer it for you.
+    post_be_result: r.post_be_result || "",
     post_cutloss_result: r.post_cutloss_result || "",
     chart_pattern: r.chart_pattern || "",
     confluence_answers: (r.confluence_answers && typeof r.confluence_answers === 'object') ? r.confluence_answers : null,
@@ -953,17 +949,26 @@ function normalizeTrade(r){
   };
 }
 
-// Post-BE Result implied by Exit Type. Only ONE direction is safe:
-//   "BE Hit" -> the trade closed at the breakeven stop -> SL After BE.
-// The other direction is NOT derivable — a trade that closed at TP may or may
-// not have had its stop moved to breakeven first, and nothing in the row says
-// which. So "TP Hit" is deliberately left alone rather than guessed at.
-// A BE stop set a few ticks above entry to cover fees still closes slightly
-// green; that is still SL After BE, which is why this reads Exit Type and not
-// the sign of the P&L.
-function _impliedPostBE(row){
-  return String(row.exit_type || '').trim().toLowerCase() === 'be hit' ? 'SL After BE' : null;
-}
+// There was an _impliedPostBE here that turned Exit Type "BE Hit" into a
+// stored "SL After BE". It was built on a misreading and had to go.
+//
+// Post-BE Result is not a restatement of how the trade ended. Exit Type "BE
+// Hit" already says the breakeven stop closed it. Post-BE Result says what
+// price did NEXT — ran on to target without you (TP After BE, the stop cost
+// you the trade) or carried on down to where your original stop was (SL After
+// BE, the stop saved you). Nothing on the row records that: it happened after
+// you were out. Only you saw it.
+//
+// So "BE Hit" implies nothing, and inferring "SL After BE" from it invented an
+// answer to the exact question the column exists to ask — then wrote that
+// invention to the database on the next save, where it was indistinguishable
+// from a real answer and fed straight into the breakeven verdict.
+//
+// The trade ended at breakeven. Whether that was worth it is a separate fact,
+// and the journal now asks for it instead of guessing.
+const _postBEApplies = row =>
+  String(row.win_loss || '').trim().toLowerCase() === 'breakeven' ||
+  String(row.exit_type || '').trim().toLowerCase() === 'be hit';
 
 /* ---------------- Computed fields (mirrors the AppSheet formulas) ---------------- */
 function computeObjective(row){
@@ -1046,7 +1051,7 @@ function computeTradeSummary(row){
     `<b>Rules Result:</b>`,
     `<hr>`,
     `<b>Rules Followed?:</b> ${val(row.rules_followed)}`,
-    `<b>Unfollowed Rules:</b> ${val(row.unfollowed_rules)}`,
+    `<b>Trade Tags:</b> ${val(row.unfollowed_rules)}`,
     ``,
     `<b>Notes:</b>`,
     `<hr>`,
@@ -1972,7 +1977,7 @@ const PANEL_INFO = {
     `<b>How many trades</b> you took per session, not how much you made. When the
      Session field is blank it is worked out from the open time.`],
   radar: ['Discipline radar',
-    `Scores built from <b>Unfollowed Rules</b>, <b>Win/Loss</b> and
+    `Scores built from <b>Trade Tags</b>, <b>Win/Loss</b> and
      <b>Profit/Loss</b> — how often you followed your own rules and what it cost
      when you didn't. A trade with no rules recorded counts as unanswered, not
      as clean.`],
@@ -2493,8 +2498,8 @@ function _weekReviewHtml(trades, label, periodName){
   closed.forEach(t => {
     let countedClean = false;
     _ruleTags(t.unfollowed_rules).forEach(r => {
-      if(_RULES_POSITIVE_SET.has(r.toLowerCase())){
-        // Both sentinels on one trade still describe ONE clean trade.
+      if(_tagKind(r) !== 'breach'){
+        // Several neutral tags on one trade still describe ONE clean trade.
         if(countedClean) return;
         countedClean = true;
         cleanEntry = cleanEntry || { n:0, net:0 };
@@ -2741,155 +2746,12 @@ function renderAccountCompare(){
 /* ---------------- Trades after a loss ----------------
    Sequence within the DAY, ordered by open time — the second trade after a
    red one is where revenge trading lives, and nothing here measured it. */
-function renderAfterLoss(){
-  const body = document.getElementById('afterLossBody');
-  if(!body) return;
 
-  const byDay = {};
-  FILTERED.forEach(t => {
-    const d = t.open_date || t.close_date;
-    if(!d) return;
-    const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-    (byDay[key] = byDay[key] || []).push(t);
-  });
-
-  const buckets = { first: [], afterWin: [], afterLoss: [] };
-  Object.values(byDay).forEach(list => {
-    const ordered = [...list].sort((a,b) => {
-      const ad = a.open_date || a.close_date, bd = b.open_date || b.close_date;
-      return ad - bd;
-    });
-    ordered.forEach((t, i) => {
-      if(i === 0){ buckets.first.push(t); return; }
-      const prev = ordered[i-1];
-      if(_isLoss(prev)) buckets.afterLoss.push(t);
-      else if(_isWin(prev)) buckets.afterWin.push(t);
-    });
-  });
-
-  const stat = arr => ({
-    n: arr.length,
-    net: arr.reduce((s,t) => s + netPnl(t), 0),
-    winRate: _winRateOf(arr),
-    avg: arr.length ? arr.reduce((s,t) => s + netPnl(t), 0) / arr.length : 0
-  });
-  const first = stat(buckets.first), aw = stat(buckets.afterWin), al = stat(buckets.afterLoss);
-
-  if(al.n < 3){
-    body.innerHTML = `<div class="empty-state">Not enough back-to-back trades yet — needs at least 3 taken straight after a losing one.</div>`;
-    return;
-  }
-
-  const row = (label, s, cls) => `
-    <tr class="${cls||''}">
-      <td style="font-family:'Public Sans',sans-serif;">${label}</td>
-      <td>${s.n}</td>
-      <td class="${s.net>=0?'pos':'neg'}">${fmtMoney(s.net)}</td>
-      <td class="${s.avg>=0?'pos':'neg'}">${fmtMoney(s.avg)}</td>
-      <td>${s.winRate === null ? '—' : fmtNum(s.winRate,0)+'%'}</td>
-    </tr>`;
-
-  // Only worth a verdict when both sides have enough trades to mean anything.
-  let verdict = '';
-  if(al.n >= 5 && first.n >= 5){
-    const gap = al.avg - first.avg;
-    verdict = gap < 0
-      ? `Your next trade after a loss averages ${fmtMoney(Math.abs(gap))} worse than your first of the day. That is the cost of not stopping.`
-      : `Trades after a loss hold up — no sign of chasing.`;
-  }
-
-  body.innerHTML = `
-    <table class="breakdown">
-      <tr><th></th><th>Trades</th><th>Net</th><th>Avg / trade</th><th>Win rate</th></tr>
-      ${row('First of the day', first)}
-      ${row('After a win', aw)}
-      ${row('After a loss', al)}
-    </table>
-    ${verdict ? `<div style="margin-top:10px;font-size:11.5px;color:var(--muted);line-height:1.55;">${verdict}</div>` : ''}`;
-}
 
 /* ---------------- Where the stop actually gets hit ----------------
    exit_type is filled in after the fact, so this is what really happened,
    not what the setup was supposed to do. */
-function renderStopReality(){
-  const body = document.getElementById('stopRealityBody');
-  if(!body) return;
 
-  const groups = {};
-  FILTERED.forEach(t => {
-    const key = t.pattern_type || 'Unspecified';
-    (groups[key] = groups[key] || []).push(t);
-  });
-
-  const rows = Object.entries(groups).map(([pattern, trades]) => {
-    const withExit = trades.filter(t => (t.exit_type||'').trim() !== '');
-    const sl = withExit.filter(t => (t.exit_type||'').toLowerCase() === 'sl hit');
-    const tp = withExit.filter(t => (t.exit_type||'').toLowerCase() === 'tp hit');
-    return {
-      pattern, n: trades.length, known: withExit.length,
-      sl: sl.length, tp: tp.length,
-      slPct: withExit.length ? sl.length / withExit.length * 100 : null,
-      net: trades.reduce((s,t) => s + netPnl(t), 0)
-    };
-  }).filter(r => r.known > 0).sort((a,b) => (b.slPct ?? -1) - (a.slPct ?? -1));
-
-  if(!rows.length){
-    body.innerHTML = `<div class="empty-state">No trades with an Exit Type recorded yet.</div>`;
-    return;
-  }
-
-  // Pattern alone only ever says "avoid this pattern". Split each one by how
-  // complete the confluence was and the question changes to one you can act
-  // on: is the pattern broken, or is it fine and you keep taking it early?
-  const bandOf = (t) => {
-    const s = _confluenceScoreFor(t);
-    if(s === null) return null;
-    return s >= 0.8 ? 'high' : (s >= 0.6 ? 'mid' : 'low');
-  };
-  const BAND_LABEL = { high: 'confluence 80%+', mid: '60–79%', low: 'under 60%' };
-
-  const subRows = (trades) => {
-    const byBand = { high: [], mid: [], low: [] };
-    trades.forEach(t => {
-      const b = bandOf(t);
-      if(b) byBand[b].push(t);
-    });
-    // Nothing to compare against if only one band has trades.
-    const filled = Object.entries(byBand).filter(([, arr]) => arr.length);
-    if(filled.length < 2) return '';
-    return filled.map(([band, arr]) => {
-      const withExit = arr.filter(t => (t.exit_type||'').trim() !== '');
-      const sl = withExit.filter(t => (t.exit_type||'').toLowerCase() === 'sl hit').length;
-      const pct = withExit.length ? sl / withExit.length * 100 : null;
-      const net = arr.reduce((s,t) => s + netPnl(t), 0);
-      return `
-        <tr class="sr-sub">
-          <td style="font-family:'Public Sans',sans-serif;padding-left:22px;color:var(--muted);">${BAND_LABEL[band]}</td>
-          <td>${withExit.length}</td>
-          <td>${sl}</td>
-          <td>${withExit.length - sl}</td>
-          <td class="${pct !== null && pct >= 60 ? 'neg' : ''}">${pct === null ? '—' : fmtNum(pct,0)+'%'}</td>
-          <td class="${net>=0?'pos':'neg'}">${fmtMoney(net)}</td>
-        </tr>`;
-    }).join('');
-  };
-
-  body.innerHTML = `
-    <div style="overflow-x:auto;"><table class="breakdown">
-      <tr><th>Pattern</th><th>With exit type</th><th>SL hit</th><th>Other exits</th><th>SL rate</th><th>Net</th></tr>
-      ${rows.map(r => `
-        <tr onclick="showCategoryTrades('pattern_type', ${escapeHtml(JSON.stringify(r.pattern))})">
-          <td style="font-family:'Public Sans',sans-serif;">${escapeHtml(r.pattern)}</td>
-          <td>${r.known}${r.known < r.n ? ` <span style="color:var(--muted);">of ${r.n}</span>` : ''}</td>
-          <td>${r.sl}</td>
-          <td>${r.known - r.sl}</td>
-          <td class="${r.slPct >= 60 ? 'neg' : ''}">${r.slPct === null ? '—' : fmtNum(r.slPct,0)+'%'}</td>
-          <td class="${r.net>=0?'pos':'neg'}">${fmtMoney(r.net)}</td>
-        </tr>
-        ${subRows(groups[r.pattern])}`).join('')}
-    </table></div>
-    <div style="margin-top:8px;font-size:10.5px;color:var(--muted);line-height:1.5;">Counted only on trades with an Exit Type recorded. The indented rows split a pattern by how complete its confluence was — they appear once a pattern has trades in more than one band.</div>`;
-}
 
 /* The collapsible dashboard groups are gone. They existed because sixteen
    panels was more than anyone scrolls through — five of those panels have
@@ -2904,48 +2766,7 @@ function renderStopReality(){
 /* ---------------- Hour of day ----------------
    Session is eight hours wide, which is too coarse to act on. This is the
    hour the trade was OPENED — the decision point, not the exit. */
-function renderHourOfDay(){
-  const body = document.getElementById('hourOfDayBody');
-  if(!body) return;
 
-  const hours = {};
-  FILTERED.forEach(t => {
-    if(!t.open_date) return;
-    const hr = t.open_date.getHours();
-    (hours[hr] = hours[hr] || []).push(t);
-  });
-
-  const entries = Object.entries(hours).map(([hr, arr]) => ({
-    hr: Number(hr), n: arr.length,
-    net: arr.reduce((s,t) => s + netPnl(t), 0),
-    winRate: _winRateOf(arr)
-  })).sort((a,b) => a.hr - b.hr);
-
-  if(entries.length < 2){
-    body.innerHTML = `<div class="empty-state">Needs trades opened in at least two different hours.</div>`;
-    return;
-  }
-
-  const worst = [...entries].filter(e => e.n >= 3).sort((a,b) => a.net - b.net)[0];
-  const best  = [...entries].filter(e => e.n >= 3).sort((a,b) => b.net - a.net)[0];
-  const label = hr => `${String(hr).padStart(2,'0')}:00`;
-  const max = Math.max(...entries.map(e => Math.abs(e.net)), 1);
-
-  body.innerHTML = `
-    <div style="overflow-x:auto;"><table class="breakdown">
-      <tr><th>Hour opened</th><th>Trades</th><th>Net</th><th>Win rate</th><th style="width:34%;"></th></tr>
-      ${entries.map(e => `
-        <tr>
-          <td style="font-family:'IBM Plex Mono',monospace;">${label(e.hr)}</td>
-          <td>${e.n}</td>
-          <td class="${e.net>=0?'pos':'neg'}">${fmtMoney(e.net)}</td>
-          <td>${e.winRate === null ? '—' : fmtNum(e.winRate,0)+'%'}</td>
-          <td><span class="hod-bar ${e.net>=0?'pos':'neg'}" style="width:${Math.abs(e.net)/max*100}%;"></span></td>
-        </tr>`).join('')}
-    </table></div>
-    ${(worst && best && worst.hr !== best.hr) ? `<div style="margin-top:10px;font-size:11.5px;color:var(--muted);line-height:1.55;">Best hour ${label(best.hr)} (${fmtMoney(best.net)} over ${best.n} trades) · worst ${label(worst.hr)} (${fmtMoney(worst.net)} over ${worst.n}). Hours with fewer than 3 trades are ignored for this line.</div>` : ''}
-    <div style="margin-top:6px;font-size:10.5px;color:var(--muted);">Your device's local time, taken from Open Date.</div>`;
-}
 
 /* ---------------- How long you hold ----------------
    Held time against outcome. Cutting winners early and sitting in losers are
@@ -3254,8 +3075,33 @@ function _emDimensions(){
     // First card, and the only one naming something he DID rather than a
     // circumstance he was in. Multi: a trade breaking three rules counts
     // against all three, so this card's counts exceed the trade total.
+    // Grouped into the five rules the tags actually describe. Six tags all
+    // meaning "I did not follow my confluence checklist" read as six separate
+    // problems; as one line they read as the one problem they are. A trade
+    // breaking two tags in the SAME group counts once for that group — the
+    // Set — otherwise the rule it broke would look twice as common as it is.
     { key:'rules', label:'What you did wrong', q:'the mistake', multi:true, lead:true,
-      of: t => _brokenRuleTags(t.unfollowed_rules) },
+      of: t => [...new Set(_brokenRuleTags(t.unfollowed_rules).map(_ruleGroupOf))],
+      expand: name => {
+        const g = RULE_GROUPS.find(x => x.name === name);
+        return g ? g.tags.join(', ') : name;
+      } },
+    // The A/B test: at previous high/low, is moving the stop to breakeven worth
+    // it, or is it better to let the trade run to TP or SL? Both arms are
+    // observations, neither is a fault, and the only reason this can be asked
+    // at all is that they now sit in the same bin.
+    { key:'beprev', label:'BE at prev high/low', q:'move it or let it run', outcome:true,
+      of: t => {
+        const tags = _ruleTags(t.unfollowed_rules).map(s => s.toLowerCase());
+        const moved = tags.includes("be'd at prev high/low");
+        // "Would Have BE'd Out" is the same decision as "No BE at Prev
+        // High/Low" — he just tags the ones that paid off differently. Both
+        // mean he left the stop alone.
+        const left = tags.includes('no be at prev high/low') ||
+                     tags.includes("would have be'd out");
+        if(moved === left) return null;      // neither, or contradictory
+        return moved ? 'Moved to BE' : 'Let it run';
+      } },
     // `say` is how a finding names this dimension in a sentence. "Stop taking
     // hour opened 09:00" is not English; "Stop taking trades opened at 09:00"
     // is an instruction. Every dimension the briefing can name needs one.
@@ -3283,8 +3129,12 @@ function _emDimensions(){
     // phrased as the comparison it actually is.
     { key:'be', label:'Stop to breakeven', q:'is it helping', outcome:true,
       of: t => {
-        if(t.post_be_result === 'TP After BE') return 'Ran on to TP after BE';
-        if(t.post_be_result === 'SL After BE') return 'Stopped at BE';
+        // Both of these were stopped at breakeven. What separates them is what
+        // price did next, which is the only thing that says whether the stop
+        // was worth moving. The old labels read as if one of them escaped.
+        if(t.post_be_result === 'TP After BE') return 'BE stop cost the trade';
+        if(t.post_be_result === 'SL After BE') return 'BE stop saved the loss';
+        if(_postBEApplies(t)) return 'BE stop, outcome unknown';
         // The control group, and the sharper half of it: trades he tagged as
         // ones a breakeven stop WOULD have closed. Their P&L is what leaving
         // the stop alone was worth, which is the question from the other side.
@@ -3338,13 +3188,17 @@ function _emFindings(table, dims){
   const solid = r => r && r.priced >= EM_MIN_N && r.ret !== null;
   const pct = v => (v >= 0 ? '+' : '−') + Math.abs(v).toFixed(2) + '%';
 
-  // 1. The most expensive broken rule — his own tagged mistakes, by total damage.
+  // 1. The most expensive rule he breaks. Named by the rule now rather than by
+  //    one of the six tags that all describe it, so the instruction is the one
+  //    he can actually act on.
   const mistakes = rowsOf('What you did wrong').filter(solid);
   if(mistakes.length){
     const w = mistakes[0];
+    const grp = RULE_GROUPS.find(g => g.name === w.name);
     if(w.ret < 0) out.push({ tone:'bad', weight: Math.abs(w.ret) * w.priced,
-      head: `Stop breaking "${w.name}"`,
-      body: `Trades where you tagged it return ${pct(w.ret)} of the account each. ${w.wins}W ${w.losses}L across ${w.n}.`,
+      head: grp ? `The rule costing you most: ${grp.name.toLowerCase()}` : `Stop breaking "${w.name}"`,
+      body: `Trades where you broke it return ${pct(w.ret)} of the account each — ${w.wins}W ${w.losses}L across ${w.n}.${
+        grp ? ` Tagged as: ${grp.tags.join(', ')}.` : ''}`,
       key:'rules', value:w.name });
   }
 
@@ -3387,18 +3241,32 @@ function _emFindings(table, dims){
   }
 
   // 5. Moving the stop to breakeven — was a whole panel, is one sentence.
-  const beStopped = get('Stop to breakeven', 'Stopped at BE');
-  const beNever = get('Stop to breakeven', 'Stop never moved');
-  if(solid(beStopped) && solid(beNever)){
-    out.push(beNever.ret > beStopped.ret
-      ? { tone:'warn', weight: (beNever.ret - beStopped.ret) * beStopped.priced,
-          head: `You are moving the stop up too early`,
-          body: `Trades you left alone return ${pct(beNever.ret)}; the ones you pulled to breakeven return ${pct(beStopped.ret)} across ${beStopped.n}. The stop is closing trades that were going to work.`,
-          key:'be', value:'Stopped at BE' }
-      : { tone:'good', weight: (beStopped.ret - beNever.ret) * beStopped.priced,
-          head: `Keep moving the stop to breakeven`,
-          body: `It is doing its job — ${pct(beStopped.ret)} against ${pct(beNever.ret)} on the ones you left alone.`,
-          key:'be', value:'Stopped at BE' });
+  //    The comparison that answers it is NOT "BE-stopped trades vs trades you
+  //    left alone": those are different trades and prove nothing. It is, of the
+  //    trades the BE stop actually closed, how many were about to come back.
+  //    Exactly the cut-loss question, one column over.
+  const beCost = get('Stop to breakeven', 'BE stop cost the trade');
+  const beSaved = get('Stop to breakeven', 'BE stop saved the loss');
+  const beCostN = beCost ? beCost.n : 0;
+  const beSavedN = beSaved ? beSaved.n : 0;
+  const beTotal = beCostN + beSavedN;
+  if(beTotal >= EM_MIN_N){
+    const costPct = beCostN / beTotal * 100;
+    if(costPct >= 40) out.push({ tone:'warn', weight: beCostN + 1,
+      head: `You are moving the stop up too early`,
+      body: `${beCostN} of your ${beTotal} breakeven stops took you out of a trade that then ran to target — ${Math.round(costPct)}% of them. The stop is closing trades that were going to work.`,
+      key:'be', value:'BE stop cost the trade' });
+    else out.push({ tone:'good', weight: beSavedN + 1,
+      head: `Keep moving the stop to breakeven`,
+      body: `${beSavedN} of your ${beTotal} breakeven stops took you out of a trade that was heading for your original stop — only ${beCostN} would have paid. It is doing its job.`,
+      key:'be', value:'BE stop saved the loss' });
+  }
+  const beUnknown = get('Stop to breakeven', 'BE stop, outcome unknown');
+  if(beUnknown && beUnknown.n >= EM_MIN_N && beUnknown.n > beTotal){
+    out.push({ tone:'note', weight: 0.01,
+      head: `${beUnknown.n} breakeven stops have no result logged`,
+      body: `Until they carry a Post-BE Result there is no way to tell whether the stop saved you a loss or cost you a winner. Open one and answer TP After BE or SL After BE.`,
+      key:'be', value:'BE stop, outcome unknown' });
   }
 
   // 6. Is cutting the loss working — the question the new column was added to
@@ -3435,7 +3303,35 @@ function _emFindings(table, dims){
       key:'cutloss', value:'Cut, outcome unknown' });
   }
 
-  // 7. The catch-all, and deliberately last to be written: the single best and
+  // 7. The experiment he is actually running on himself: at previous high/low,
+  //    move the stop to breakeven, or leave it and let the trade reach TP or
+  //    SL? Both arms are his own tags, both neutral, and the comparison is a
+  //    straight one — same situation, two different choices.
+  const beMoved = get('BE at prev high/low', 'Moved to BE');
+  const beLeft  = get('BE at prev high/low', 'Let it run');
+  if(solid(beMoved) && solid(beLeft)){
+    const better = beLeft.ret > beMoved.ret ? beLeft : beMoved;
+    const worse  = better === beLeft ? beMoved : beLeft;
+    const gap = better.ret - worse.ret;
+    if(gap > 0.15) out.push({ tone:'good', weight: gap * Math.min(better.priced, worse.priced),
+      head: better === beLeft
+        ? `Leave the stop alone at previous high/low`
+        : `Move the stop to breakeven at previous high/low`,
+      body: `Letting it run returns ${pct(beLeft.ret)} a trade across ${beLeft.n}; moving to breakeven returns ${pct(beMoved.ret)} across ${beMoved.n}. Same situation, and ${better === beLeft ? 'holding' : 'moving'} is ${pct(gap).replace('+','')} better per trade.`,
+      key:'beprev', value:better.name });
+    else out.push({ tone:'note', weight: 0.02,
+      head: `Breakeven at previous high/low is a coin flip so far`,
+      body: `Letting it run returns ${pct(beLeft.ret)} across ${beLeft.n} trades; moving to breakeven ${pct(beMoved.ret)} across ${beMoved.n}. Too close to call — keep tagging both and this will separate.`,
+      key:'beprev', value:better.name });
+  }else if((beMoved || beLeft) && !(solid(beMoved) && solid(beLeft))){
+    const have = solid(beMoved) ? beMoved : (solid(beLeft) ? beLeft : null);
+    if(have) out.push({ tone:'note', weight: 0.015,
+      head: `Only one side of the breakeven test has data`,
+      body: `You have ${have.n} trades tagged "${have.name}" but not enough of the other. Tag both choices at previous high/low and the journal can tell you which one pays.`,
+      key:'beprev', value:have.name });
+  }
+
+  // 8. The catch-all, and deliberately last to be written: the single best and
   //    single worst thing across every dimension nothing above already spoke
   //    for. It runs last so the hand-written findings claim their subject
   //    first — otherwise this says "stop taking Order in the day After a loss"
@@ -3597,7 +3493,11 @@ function renderEdgeMap(){
       // not because it is uninteresting.
       return `<div class="em-row${on?' on':''}${dimmed?' off':''}"
           onclick="toggleEdgeFilter('${d.key}', ${escapeHtml(JSON.stringify(r.name))})"
-          title="${escapeHtml(r.name)} — ${r.wins}W ${r.losses}L${
+          title="${escapeHtml(r.name)}${
+            // A grouped row names the tags inside it, so the specific reason is
+            // never more than a hover away — the grouping is a reading of the
+            // checklist, never a replacement for it.
+            d.expand ? ` (${escapeHtml(d.expand(r.name))})` : ''} — ${r.wins}W ${r.losses}L${
             r.n > r.decided ? `, ${r.n - r.decided} with no result` : ''}${
             has ? ` · ${(r.ret>=0?'+':'−')}${Math.abs(r.ret).toFixed(2)}% of account per trade` : ' · no account size, cannot measure'}${
             thin && has ? ` · only ${r.priced} trades, held back toward zero` : ''} · ${fmtMoney(r.net)} in total">
@@ -3953,14 +3853,6 @@ function _staleConfluenceItems(t){
   }).filter(Boolean);
 }
 
-function _cfeStats(trades){
-  const pnl = trades.reduce((s,t) => s + netPnl(t), 0);
-  return {
-    count: trades.length,
-    winRate: _winRateOf(trades),
-    avgPnl: trades.length ? pnl / trades.length : null
-  };
-}
 
 // Colour a win rate by the win rate. Shared so the calendar summary and this
 // panel can never disagree about what "good" looks like.
@@ -3977,330 +3869,10 @@ function _winRateTint(rate, count){
   return 'var(--loss)';
 }
 
-function _cfeBarCell(winRate, color){
-  if(winRate === null) return '—';
-  return `<div class="cfe-bar-wrap">
-    <div class="cfe-bar-track"><div class="cfe-bar-fill" style="width:${winRate.toFixed(0)}%;background:${color};"></div></div>
-    <span style="color:${color};">${fmtNum(winRate,0)}%</span>
-  </div>`;
-}
 
-const CFE_SEQ_ORDER = ['1st','2nd','3rd','4th','5th'];
-// Which sequence position the split-by-setup table is narrowed to; null shows
-// every column. Picking the same one again clears it.
-let CFE_SEQ_PICK = null;
 
-// Built on its own so a pick can swap just this table. Reads the tally stashed
-// by renderConfluenceEdge rather than taking it as an argument, because the
-// click handler has no way to get at that local.
-function _cfeSeqMatrixHTML(){
-  const byPattern = window._cfeSeqByPattern || {};
-  const cols = CFE_SEQ_PICK ? [CFE_SEQ_PICK] : CFE_SEQ_ORDER;
-  // With a column picked, a setup that never answered THAT position has nothing
-  // to say — dropping the row is the whole point of narrowing.
-  const patterns = Object.keys(byPattern).sort()
-    .filter(p => cols.some(o => byPattern[p][o]));
 
-  if(!patterns.length){
-    return `<tr><td colspan="${cols.length + 2}" style="color:var(--muted);padding:14px 0;">No setup has a ${CFE_SEQ_PICK} yet.</td></tr>`;
-  }
 
-  // Every cell carries its win rate — showing it on some and not others made
-  // the table look arbitrary, and the threshold that decided it was invisible.
-  // The counts sit right beside the rate instead, so "100%" is never read
-  // without "1W 0L" next to it saying how thin it is.
-  const tally = arr => {
-    const wins = arr.filter(_isWin).length;
-    const losses = arr.filter(_isLoss).length;
-    const decided = wins + losses;
-    return { wins, losses, decided, rate: decided ? wins / decided * 100 : null,
-             blanks: arr.filter(t => !String(t.win_loss || '').trim()).length,
-             count: arr.length };
-  };
-  const allOf = p => cols.reduce((acc, o) => acc.concat(byPattern[p][o] || []), []);
-
-  // Sorted best-first on the rate being shown: the picked column when one is
-  // picked, the row's own total otherwise. A setup with nothing decided has no
-  // rate to rank on and goes last rather than being treated as 0%.
-  const sortKey = p => tally(CFE_SEQ_PICK ? (byPattern[p][CFE_SEQ_PICK] || []) : allOf(p));
-  patterns.sort((a,b) => {
-    const ta = sortKey(a), tb = sortKey(b);
-    const ra = ta.rate === null ? -1 : ta.rate;
-    const rb = tb.rate === null ? -1 : tb.rate;
-    if(rb !== ra) return rb - ra;
-    // Ties broken by sample size, not alphabetically. Several setups sit at
-    // 100% early on, and "which of these actually wins" is answered by the one
-    // that got there over more trades — putting a 1-0 above a 4-0 would rank
-    // the least evidence first, which is the opposite of the question.
-    return tb.decided - ta.decided || a.localeCompare(b);
-  });
-
-  const rateSpan = t => t.rate === null ? ''
-    : ` <span style="color:${_winRateTint(t.rate)};font-weight:600;">${fmtNum(t.rate,0)}%</span>`;
-
-  const head = `<tr><th>Setup</th>${cols.map(o => `<th>${o}</th>`).join('')}${
-    CFE_SEQ_PICK ? '' : '<th>All</th>'}</tr>`;
-  const rows = patterns.map(p => {
-    const cells = cols.map(o => {
-      const arr = byPattern[p][o];
-      // Nothing was ever traded at this position. A bare dash, no count.
-      if(!arr) return `<td><span class="cfe-cell-none" title="No trades at this position">—</span></td>`;
-
-      const t = tally(arr);
-      const avg = CFE_SEQ_PICK ? ` <span class="cfe-cell-n">· ${fmtMoney(_cfeStats(arr).avgPnl)}</span>` : '';
-
-      // Nothing here has a Win or a Loss: every one is breakeven, or the result
-      // was never filled in. Naming which of the two is the point — one is a
-      // real outcome, the other is a gap he can close.
-      if(t.decided === 0){
-        const what = t.blanks ? `${t.blanks} unset` : `${t.count} BE`;
-        return `<td><span class="cfe-cell-na" title="${
-          t.blanks ? 'Win/Loss was never set on these — nothing to measure until it is'
-                   : 'All breakeven, so there is no win or loss to rate'}">${what}</span>${avg}</td>`;
-      }
-
-      return `<td><span class="cfe-cell-wl" title="${
-        t.wins} win${t.wins===1?'':'s'}, ${t.losses} loss${t.losses===1?'':'es'}${
-        t.blanks ? `, ${t.blanks} with no result set` : ''}">${t.wins}W ${t.losses}L</span>${rateSpan(t)}${avg}</td>`;
-    }).join('');
-
-    // The row's own total, so the sort order is visible rather than something
-    // the reader has to take on trust.
-    let totalCell = '';
-    if(!CFE_SEQ_PICK){
-      const t = tally(allOf(p));
-      totalCell = t.decided === 0
-        ? `<td><span class="cfe-cell-na">—</span></td>`
-        : `<td><span class="cfe-cell-wl">${t.wins}W ${t.losses}L</span>${rateSpan(t)}</td>`;
-    }
-    return `<tr><td style="white-space:nowrap;">${escapeHtml(p)}</td>${cells}${totalCell}</tr>`;
-  }).join('');
-  return head + rows;
-}
-
-function pickCfeSequence(pos){
-  CFE_SEQ_PICK = (CFE_SEQ_PICK === pos) ? null : pos;
-  const tbl = document.getElementById('cfeSeqMatrix');
-  if(tbl) tbl.innerHTML = _cfeSeqMatrixHTML();
-  const note = document.getElementById('cfeSeqMatrixNote');
-  if(note){
-    note.innerHTML = CFE_SEQ_PICK
-      ? `Showing <strong>${CFE_SEQ_PICK}</strong> only &mdash; <span class="cfe-seq-clear" onclick="pickCfeSequence('${CFE_SEQ_PICK}')">show every position</span>`
-      : `Click a row in the table above to narrow this to one position.`;
-  }
-  document.querySelectorAll('.cfe-seq-row').forEach(tr => {
-    const on = CFE_SEQ_PICK && tr.textContent.trim().startsWith(CFE_SEQ_PICK);
-    tr.classList.toggle('is-picked', !!on);
-  });
-}
-
-// Answers the question the checklist exists for: do high-confluence trades
-// actually win more? Groups the trades in view by score bucket, by sequence
-// position across every setup that asks for one, and by entry trigger
-// (zero-line cross vs retest).
-function renderConfluenceEdge(){
-  const body = document.getElementById('confluenceEdgeBody');
-  if(!body) return;
-
-  const scored = FILTERED
-    .map(t => ({ t, score: _confluenceScoreFor(t) }))
-    .filter(x => x.score !== null);
-
-  if(!scored.length){
-    body.innerHTML = `<div class="empty-state">No trades with confluence answers yet — fill in the Confluence checklist when journaling and this panel wakes up.</div>`;
-    return;
-  }
-
-  // --- score buckets ---
-  const buckets = [
-    { label: '80–100%', pill: 'pill-green', color: 'var(--win)',  match: s => s >= 0.8 },
-    { label: '50–80%',  pill: 'pill-orange', color: 'var(--warn)', match: s => s >= 0.5 && s < 0.8 },
-    { label: '0–50%',   pill: 'pill-red',  color: 'var(--loss)', match: s => s < 0.5 }
-  ].map(b => ({ ...b, stats: _cfeStats(scored.filter(x => b.match(x.score)).map(x => x.t)) }));
-
-  const bucketRows = buckets.map(b => `
-    <tr>
-      <td><span class="pill ${b.pill}">${b.label}</span></td>
-      <td>${b.stats.count}</td>
-      <td>${_cfeBarCell(b.stats.winRate, b.color)}</td>
-      <td class="${b.stats.avgPnl === null ? '' : (b.stats.avgPnl >= 0 ? 'pos' : 'neg')}">${b.stats.avgPnl === null ? '—' : fmtMoney(b.stats.avgPnl)}</td>
-    </tr>`).join('');
-
-  // --- sequence position ("Which 15m HL is this?" and its siblings) ---
-  // Found by `it.select`, which every setup carrying a Sequence question has —
-  // 5 mins, 15 mins, 1 hour and Invalidation alike. This was never 5-minute
-  // only; the heading said so and the heading was wrong. The per-pattern split
-  // below exists because a 1st HL on the 5 minute chart and a 1st HL on the
-  // hourly are not the same trade, and pooling them hides exactly that.
-  const seqTally = {};
-  const seqByPattern = {};
-  scored.forEach(({ t }) => {
-    // Validated, same as the recommendation popup: an answer the question
-    // could not have produced is stale, not data.
-    const ans = _confluenceAnswerAt(t, it => it.select);
-    if(!ans) return;
-    (seqTally[ans] = seqTally[ans] || []).push(t);
-    const p = t.pattern_type || 'Unspecified';
-    (seqByPattern[p] = seqByPattern[p] || {});
-    (seqByPattern[p][ans] = seqByPattern[p][ans] || []).push(t);
-  });
-  const seqOrder = CFE_SEQ_ORDER;
-  const seqRows = seqOrder.filter(o => seqTally[o]).map(o => {
-    const s = _cfeStats(seqTally[o]);
-    const tint = _sequenceTint(seqOrder.indexOf(o));
-    const picked = CFE_SEQ_PICK === o;
-    return `<tr class="cfe-seq-row${picked ? ' is-picked' : ''}" onclick="pickCfeSequence('${o}')" title="Show only ${o} in the split below">
-      <td><span style="color:${tint};font-weight:700;font-family:'IBM Plex Mono',monospace;">${o}</span></td>
-      <td>${s.count}</td>
-      <td>${_cfeBarCell(s.winRate, tint)}</td>
-      <td class="${s.avgPnl >= 0 ? 'pos' : 'neg'}">${fmtMoney(s.avgPnl)}</td>
-    </tr>`;
-  }).join('');
-
-  // Stashed so picking a sequence can rebuild ONLY the matrix. Re-running the
-  // whole panel would reset the <details> the matrix lives inside — you would
-  // click a row and the thing you were reading would fold shut.
-  window._cfeSeqByPattern = seqByPattern;
-  const seqPatterns = Object.keys(seqByPattern).sort();
-  // Only worth drawing once more than one pattern has actually answered a
-  // Sequence — with a single pattern it would just restate the table above.
-  const seqMatrixHtml = seqPatterns.length > 1 ? _cfeSeqMatrixHTML() : '';
-
-  // --- entry trigger (the Execution retest-enabled item) ---
-  const trigTally = {};
-  scored.forEach(({ t }) => {
-    const ans = _confluenceAnswerAt(t, it => it.retest, ['yes','no','almost','retest']);
-    if(!ans) return;
-    (trigTally[ans] = trigTally[ans] || []).push(t);
-  });
-  const trigMeta = {
-    yes:    { label: 'Zero-line Cross', color: 'var(--win)' },
-    retest: { label: 'Retest',          color: 'var(--info)' },
-    almost: { label: 'Almost',          color: 'var(--warn)' },
-    no:     { label: 'No',              color: 'var(--loss)' }
-  };
-  const trigRows = Object.keys(trigMeta).filter(k => trigTally[k]).map(k => {
-    const s = _cfeStats(trigTally[k]);
-    return `<tr>
-      <td style="color:${trigMeta[k].color};font-weight:600;">${trigMeta[k].label}</td>
-      <td>${s.count}</td>
-      <td>${_cfeBarCell(s.winRate, trigMeta[k].color)}</td>
-      <td class="${s.avgPnl >= 0 ? 'pos' : 'neg'}">${fmtMoney(s.avgPnl)}</td>
-    </tr>`;
-  }).join('');
-
-  // --- honest, sample-size-guarded insights ---
-  const insights = [];
-  const hi = buckets[0].stats, rest = _cfeStats(scored.filter(x => x.score < 0.8).map(x => x.t));
-  if(hi.count >= 5 && rest.count >= 5 && hi.winRate !== null && rest.winRate !== null){
-    if(hi.winRate >= rest.winRate + 15){
-      insights.push(`Your checklist is earning its keep — ${fmtNum(hi.winRate,0)}% win rate at 80%+ confluence vs ${fmtNum(rest.winRate,0)}% below it. Skipping low-confluence trades is free money.`);
-    }else if(rest.winRate >= hi.winRate + 15){
-      insights.push(`Unexpected: your sub-80% confluence trades are winning MORE (${fmtNum(rest.winRate,0)}% vs ${fmtNum(hi.winRate,0)}%). Worth reviewing whether some checklist items actually matter for your edge.`);
-    }
-  }
-  const lateSeq = [...(seqTally['4th']||[]), ...(seqTally['5th']||[])];
-  if(lateSeq.length >= 3){
-    const s = _cfeStats(lateSeq);
-    if(s.winRate !== null && s.winRate < 40) insights.push(`Late-sequence entries (4th/5th HL/LH) are underperforming at ${fmtNum(s.winRate,0)}% — the data agrees with your red color-coding. Consider skipping them.`);
-  }
-  if((trigTally.retest||[]).length >= 5 && (trigTally.yes||[]).length >= 5){
-    const r = _cfeStats(trigTally.retest), y = _cfeStats(trigTally.yes);
-    insights.push(r.winRate >= y.winRate
-      ? `Retest entries are holding up (${fmtNum(r.winRate,0)}% vs ${fmtNum(y.winRate,0)}% on the direct cross) — entering on the retest is a valid entry for you.`
-      : `Retest entries win less than the direct zero-line cross (${fmtNum(r.winRate,0)}% vs ${fmtNum(y.winRate,0)}%) — be pickier with retest entries.`);
-  }
-  if(!insights.length) insights.push(`Only ${scored.length} trade${scored.length===1?'':'s'} with confluence data so far — patterns here get trustworthy around 15–20 trades. Keep filling in the checklist.`);
-
-  // Trades whose stored answers no longer line up with their own checklist.
-  // Named, because nothing else can fix them: the answers were given against a
-  // different set of questions, so the only repair is to re-open the Confluence
-  // and answer it again against the pattern the trade actually carries now.
-  const stale = scored
-    .map(({ t }) => ({ t, bad: _staleConfluenceItems(t) }))
-    .filter(x => x.bad.length);
-  const staleHtml = stale.length ? `
-    <div class="cfe-insight cfe-insight-warn">⚠ ${stale.length} trade${stale.length===1?'':'s'}
-      ${stale.length===1?'has':'have'} confluence answers that its current checklist cannot accept —
-      the Pattern Type was changed after the answers were saved, so they are being read against
-      different questions. ${stale.slice(0,5).map(x =>
-        `<strong>${escapeHtml(x.t.symbol || '—')} ${x.t.close_date ? x.t.close_date.toLocaleDateString(undefined,{day:'numeric',month:'short'}) : ''}</strong>`
-      ).join(', ')}${stale.length > 5 ? `, and ${stale.length - 5} more` : ''}.
-      ${stale.length===1?'It is':'They are'} left out of the sequence and trigger tables rather than
-      counted wrongly, and ${stale.length===1?'its':'their'} confluence score is under-counted.
-      Re-open the Confluence on ${stale.length===1?'it':'them'} and answer it against the pattern
-      ${stale.length===1?'it carries':'they carry'} now.</div>` : '';
-
-  // The panel's title asks "does your checklist pay?", so answer that first
-  // and in one line. The three tables are how the answer was reached, not the
-  // answer — they move behind a disclosure.
-  const lo = rest;   // everything under 80%
-  let vTone, vWord, vSay;
-  if(hi.count < 5 || lo.count < 5 || hi.winRate === null || lo.winRate === null){
-    vTone = 'thin'; vWord = 'Too early to say';
-    vSay = `${scored.length} trade${scored.length===1?'':'s'} have a filled-in checklist. Comparing high against low confluence needs about 5 on each side — keep answering it and this will settle.`;
-  }else{
-    const gap = hi.winRate - lo.winRate;
-    if(gap >= 10){
-      vTone = 'good'; vWord = 'It pays';
-      vSay = `At 80%+ confluence you win ${fmtNum(hi.winRate,0)}% of the time, against ${fmtNum(lo.winRate,0)}% below it — ${fmtNum(gap,0)} points better. The checklist is doing real work; the low-confluence trades are the ones to skip.`;
-    }else if(gap <= -10){
-      vTone = 'bad'; vWord = "It doesn't";
-      vSay = `Your lower-confluence trades are winning MORE (${fmtNum(lo.winRate,0)}% against ${fmtNum(hi.winRate,0)}%). Either some checklist items aren't earning their place, or the full-confluence setups are ones you take too late.`;
-    }else{
-      vTone = 'thin'; vWord = 'No clear edge';
-      vSay = `${fmtNum(hi.winRate,0)}% at 80%+ confluence against ${fmtNum(lo.winRate,0)}% below it — close enough to be noise across ${scored.length} trades. The checklist isn't hurting, but it isn't yet separating the good setups from the rest either.`;
-    }
-  }
-
-  body.innerHTML = `
-    <div class="verdict-line ${vTone}">
-      <span class="verdict-word">${vWord}</span>
-      <span class="verdict-say"><span class="q">Does a fuller checklist win more?</span>${vSay}</span>
-    </div>
-    ${staleHtml}
-    <details class="panel-details">
-      <summary>Show the breakdown &mdash; by score, by sequence, by entry trigger</summary>
-      <div class="panel-details-body">
-        <div class="cfe-grid">
-          <div>
-            <div class="cfe-subhead">By confluence score</div>
-            <table class="breakdown">
-              <tr><th>Score</th><th>Trades</th><th>Win rate</th><th>Avg Net P&amp;L</th></tr>
-              ${bucketRows}
-            </table>
-          </div>
-          <div>
-            <div class="cfe-subhead">By sequence position &mdash; all setups</div>
-            ${seqRows ? `<table class="breakdown">
-              <tr><th>Sequence</th><th>Trades</th><th>Win rate</th><th>Avg Net P&amp;L</th></tr>
-              ${seqRows}
-            </table>` : `<div class="empty-state" style="padding:20px 0;">No sequence answers yet — the Confluence checklist asks &ldquo;which HL/LH is this?&rdquo; on every setup except the 4 Hour ones.</div>`}
-          </div>
-        </div>
-        ${seqMatrixHtml ? `
-          <div class="cfe-subhead">Split by setup &mdash; win rate, then trade count</div>
-          <div class="cfe-seq-note" id="cfeSeqMatrixNote">${
-            CFE_SEQ_PICK
-              ? `Showing <strong>${CFE_SEQ_PICK}</strong> only &mdash; <span class="cfe-seq-clear" onclick="pickCfeSequence('${CFE_SEQ_PICK}')">show every position</span>`
-              : `Click a row in the table above to narrow this to one position.`}</div>
-          <div style="overflow-x:auto;">
-            <table class="breakdown" id="cfeSeqMatrix">${seqMatrixHtml}</table>
-          </div>
-          <div class="cfe-legend">
-            <span>Best win rate first &mdash; by the <b>All</b> column, or by the position you pick. The counts sit beside each rate, so a 100% off one trade never reads like a 100% off twelve.</span>
-          </div>` : ''}
-        ${trigRows ? `
-          <div class="cfe-subhead">By entry trigger</div>
-          <table class="breakdown">
-            <tr><th>Trigger</th><th>Trades</th><th>Win rate</th><th>Avg Net P&amp;L</th></tr>
-            ${trigRows}
-          </table>` : ''}
-        ${insights.map(i => `<div class="cfe-insight">💡 ${i}</div>`).join('')}
-      </div>
-    </details>
-  `;
-}
 
 // What a BE stop actually saved on one trade: the exact dollars the ORIGINAL
 // stop would have cost, |entry - sl| x quantity. Exact whenever the trade
@@ -4332,316 +3904,6 @@ function _beAvoidedLoss(t){
   };
 }
 
-// Was moving the stop to breakeven worth it? Pairs what the BE stops really
-// cost you (winners cut short) against what they really saved (full losses
-// avoided) — both in real dollars wherever the trade has entry/SL/quantity.
-function renderBEProtection(){
-  const body = document.getElementById('beProtectionBody');
-  if(!body) return;
-
-  const tpAfter = FILTERED.filter(t => t.post_be_result === 'TP After BE');
-  const slAfter = FILTERED.filter(t => t.post_be_result === 'SL After BE');
-
-  // A trade marked Breakeven in Win/Loss but with Post-BE Result never
-  // answered belongs in this panel and was invisible to it: every population
-  // here is keyed on post_be_result alone, so the row simply wasn't there.
-  // Counted separately and said out loud — it is missing input, not an absence
-  // of trades, and it is the one thing here he can actually fix.
-  const beUnanswered = FILTERED.filter(t =>
-    String(t.win_loss || '').trim().toLowerCase() === 'breakeven' &&
-    !['TP After BE','SL After BE'].includes(t.post_be_result));
-
-  // The other half of this panel's question, and it had nowhere to appear.
-  // "Would Have BE'd Out" is ticked on a trade where the stop was NOT moved to
-  // breakeven but would have closed it if it had been. Those trades are the
-  // control group: their net P&L is what NOT moving the stop was worth. It
-  // counts as clean discipline, which is why it never showed up among the
-  // broken rules — clean is not the same as invisible.
-  const wouldHave = FILTERED.filter(t =>
-    _ruleTags(t.unfollowed_rules).some(r => r.toLowerCase() === "would have be'd out"));
-  const wouldHaveNet = wouldHave.reduce((s,t) => s + netPnl(t), 0);
-  const wouldHaveWins = wouldHave.filter(_isWin).length;
-  const wouldHaveHtml = wouldHave.length ? `
-      <div class="be-stat">
-        <div class="be-stat-label">Would have BE'd out</div>
-        <div class="be-stat-value" style="color:${wouldHaveNet >= 0 ? 'var(--win)' : 'var(--loss)'};">${fmtMoney(wouldHaveNet)}</div>
-        <div class="be-stat-note">${wouldHave.length} trade${wouldHave.length===1?'':'s'} you did <em>not</em> move to breakeven that would have stopped there${
-          wouldHaveWins ? `, ${wouldHaveWins} of which went on to win` : ''}. ${
-          wouldHaveNet >= 0
-            ? 'Leaving the stop alone paid, on these.'
-            : 'Moving to breakeven would have saved this.'}</div>
-      </div>` : '';
-
-  if(!tpAfter.length && !slAfter.length){
-    // Still worth showing the "would have" group — it stands on its own and
-    // needs no Post-BE data at all.
-    body.innerHTML = (beUnanswered.length
-      ? `<div class="empty-state">${beUnanswered.length} trade${beUnanswered.length===1?' is':'s are'} marked Breakeven but ${beUnanswered.length===1?'has':'have'} no Post-BE Result set, so there is nothing to measure yet. Open ${beUnanswered.length===1?'it':'them'} and answer TP After BE or SL After BE.</div>`
-      : `<div class="empty-state">No Post-BE Result data yet — this fills in once you journal trades that reached breakeven.</div>`)
-      + (wouldHaveHtml ? `<div class="be-stat-grid">${wouldHaveHtml}</div>` : '');
-    return;
-  }
-
-  // Real dollars captured on trades that survived BE and ran to TP.
-  const capturedTotal = tpAfter.reduce((s,t) => s + netPnl(t), 0);
-
-  // Measured only — no averages, no extrapolation. A trade contributes to
-  // Loss Avoided only if it carries real entry/SL/quantity AND those numbers
-  // come out plausible. Everything else is reported as "not counted", never
-  // filled in with a guess.
-  const rows = slAfter.map(t => ({ t, calc: _beAvoidedLoss(t) }));
-  const good = rows.filter(r => r.calc && !r.calc.suspect);
-  const suspect = rows.filter(r => r.calc && r.calc.suspect);
-  const missing = rows.filter(r => !r.calc).length;
-  const notCounted = missing + suspect.length;
-
-  const protectedTotal = good.reduce((s,r) => s + r.calc.value, 0);
-  const canShowProtected = good.length > 0;
-
-  // Deliberately hedged. This is NOT a measurement: the trade stopped at
-  // breakeven, so whether price would have carried on to the original stop is
-  // unknowable. The old copy said "what your original stop would really have
-  // cost", and that "really" claimed certainty the data can't support.
-  const protectedNote = !canShowProtected
-    ? `Not measurable yet — none of these ${slAfter.length} trade${slAfter.length===1?'':'s'} carry a usable entry, SL and quantity.`
-    : notCounted === 0
-      ? `The risk you had on, across all ${good.length} BE-stopped trade${good.length===1?'':'s'}. What you'd have lost IF price had carried on to your original stop — it stopped at breakeven, so that part is an assumption, not a measurement.`
-      : `From ${good.length} of ${rows.length} BE-stopped trades — the other ${notCounted} ${notCounted===1?'is':'are'} not counted (see below). This is the risk you had on, not a measured saving: price stopped at breakeven, so it never reached the original stop.`;
-
-  // The risk you PLANNED in the calculator, for trades journaled from a Pending
-  // Setup. The trade itself has no risk_amount column — it's recomputed from
-  // the logged prices — so this is the only place the two can be compared, and
-  // the gap between them is the interesting part: it's the difference between
-  // the size you decided on and the size you actually ended up with.
-  const plannedRiskFor = t => {
-    if(!t.linked_setup_id) return null;
-    const s = SAVED_SETUPS.find(x => x.id === t.linked_setup_id);
-    const v = s ? Number(s.risk_amount) : NaN;
-    return Number.isFinite(v) && v > 0 ? v : null;
-  };
-
-  // Per-trade working, so the headline number is never a black box.
-  const workingRows = rows.map(r => {
-    const sym = escapeHtml(r.t.symbol || '—');
-    const when = r.t.close_date ? r.t.close_date.toLocaleDateString(undefined,{day:'numeric',month:'short'}) : '—';
-    if(!r.calc) return `<tr><td>${sym}</td><td>${when}</td><td colspan="4" style="color:var(--muted);">missing entry / SL / quantity</td><td style="color:var(--muted);">not counted</td></tr>`;
-    const c = r.calc;
-    const planned = plannedRiskFor(r.t);
-    let plannedCell = '<span style="color:var(--muted);">—</span>';
-    if(planned !== null){
-      const diff = c.value - planned;
-      const off = Math.abs(diff) / planned > 0.1;   // more than 10% adrift
-      plannedCell = `$${planned.toLocaleString(undefined,{maximumFractionDigits:2})}` +
-        (off ? ` <span style="color:var(--warn);font-size:11px;">${diff > 0 ? '+' : ''}${(diff/planned*100).toFixed(0)}%</span>` : '');
-    }
-    return `<tr>
-      <td>${sym}</td>
-      <td>${when}</td>
-      <td>${Number(r.t.entry_price).toLocaleString(undefined,{maximumFractionDigits:2})} → ${Number(r.t.sl_price).toLocaleString(undefined,{maximumFractionDigits:2})}</td>
-      <td>${fmtNum(c.stopPct,2)}%</td>
-      <td>${Number(r.t.position_size).toLocaleString(undefined,{maximumFractionDigits:6})}</td>
-      <td>${plannedCell}</td>
-      <td class="${c.suspect ? '' : 'pos'}" style="${c.suspect ? 'color:var(--loss);' : ''}">$${c.value.toLocaleString(undefined,{maximumFractionDigits:2})}${c.suspect ? ' ⚠' : ''}</td>
-    </tr>`;
-  }).join('');
-
-  // ---- Was moving to breakeven worth it? ----
-  // A BE-stopped trade ended at $0. Without the BE stop it could only have
-  // finished at TP or at the original SL, and both of those prices are on the
-  // trade — so the two ends of the range ARE measurable even though which one
-  // would have happened is not.
-  //   without BE = p x reward - (1-p) x risk,  where p = share that recover
-  //   with BE    = 0
-  // Setting them equal gives the break-even recovery rate: p = risk/(risk+reward).
-  // Below that rate the BE stop pays for itself; above it, it's cutting
-  // winners. That single percentage is the whole "worth it?" question.
-  const beReward = t => {
-    if(t.entry_price == null || t.tp_price == null || t.position_size == null) return null;
-    const entry = Number(t.entry_price), tp = Number(t.tp_price), qty = Number(t.position_size);
-    if(![entry, tp, qty].every(Number.isFinite) || !qty || entry === tp) return null;
-    return Math.abs(tp - entry) * qty;
-  };
-  const bounded = good.map(r => ({ risk: r.calc.value, reward: beReward(r.t) })).filter(x => x.reward !== null);
-  const riskSum = bounded.reduce((s,x) => s + x.risk, 0);
-  const rewardSum = bounded.reduce((s,x) => s + x.reward, 0);
-  const breakEvenRate = (riskSum + rewardSum) > 0 ? riskSum / (riskSum + rewardSum) * 100 : null;
-  // The closest measured analogue: of the trades that DID reach breakeven, how
-  // many carried on to TP. Not the same population as "would the stopped ones
-  // have recovered", so it's labelled as a reference, not an answer.
-  const reachedBE = tpAfter.length + slAfter.length;
-  const survivedRate = reachedBE ? tpAfter.length / reachedBE * 100 : null;
-
-  let verdictHtml = '';
-  if(bounded.length && breakEvenRate !== null){
-    const worthIt = survivedRate === null ? null : survivedRate < breakEvenRate;
-    const tone = worthIt === null ? 'neutral' : (worthIt ? 'good' : 'bad');
-    const verdictWord = worthIt === null ? 'NOT ENOUGH DATA' : (worthIt ? 'EFFECTIVE' : 'COSTING YOU');
-    verdictHtml = `
-      <div class="be-verdict be-verdict-${tone}">
-        <div class="be-verdict-head">
-          <span>Moving your stop to breakeven</span>
-          <span class="be-verdict-word">${verdictWord}</span>
-        </div>
-        <div class="be-verdict-range">
-          <div class="be-verdict-side">
-            <div class="be-verdict-num" style="color:var(--loss);">−$${riskSum.toLocaleString(undefined,{maximumFractionDigits:0})}</div>
-            <div class="be-verdict-lbl">if every one had run to your original stop</div>
-          </div>
-          <div class="be-verdict-mid">
-            <div class="be-verdict-num">$0</div>
-            <div class="be-verdict-lbl">what actually happened, across ${bounded.length} BE-stopped trade${bounded.length===1?'':'s'}</div>
-          </div>
-          <div class="be-verdict-side">
-            <div class="be-verdict-num" style="color:var(--win);">+$${rewardSum.toLocaleString(undefined,{maximumFractionDigits:0})}</div>
-            <div class="be-verdict-lbl">if every one had recovered and hit TP</div>
-          </div>
-        </div>
-        <div class="be-verdict-line">
-          Moving to breakeven pays for itself as long as fewer than
-          <strong>${breakEvenRate.toFixed(0)}%</strong> of these would have come back and reached TP.
-        </div>
-        ${survivedRate !== null ? `<div class="be-verdict-note">
-          For reference, <strong>${survivedRate.toFixed(0)}%</strong> of the ${reachedBE} trades that reached breakeven went on to TP anyway${worthIt ? ` — below ${breakEvenRate.toFixed(0)}%, so the BE stop looks like it's earning its place.` : ` — above ${breakEvenRate.toFixed(0)}%, which hints the BE stop may be cutting winners short.`}
-          That's a different set of trades from the ones that stopped out, so read it as a pointer, not proof.
-        </div>` : ''}
-      </div>`;
-  }
-
-  // One line on whether you actually size the way you planned to.
-  const planPairs = good
-    .map(r => ({ planned: plannedRiskFor(r.t), actual: r.calc.value }))
-    .filter(x => x.planned !== null);
-  let planInsight = '';
-  if(planPairs.length >= 3){
-    const offBy = planPairs.map(x => (x.actual - x.planned) / x.planned);
-    const drifted = offBy.filter(v => Math.abs(v) > 0.1).length;
-    const avg = offBy.reduce((s,v) => s + v, 0) / offBy.length * 100;
-    planInsight = drifted === 0
-      ? `You sized every one of these ${planPairs.length} trades within 10% of the risk you set in the calculator. The plan and the position are the same thing.`
-      : `${drifted} of ${planPairs.length} of these trades ended up more than 10% away from the risk you planned in the calculator (${avg >= 0 ? '+' : ''}${avg.toFixed(0)}% on average). Worth checking whether it's fills drifting or the size being changed at entry.`;
-  }
-
-  const insights = [];
-  const total = tpAfter.length + slAfter.length;
-  if(total >= 5){
-    insights.push(slAfter.length > tpAfter.length * 1.5
-      ? `More trades are dying at breakeven than reaching TP after it (${slAfter.length} vs ${tpAfter.length}) — you may be moving your stop to BE too early, cutting winners before they run.`
-      : `Healthy BE timing — ${tpAfter.length} of ${total} trades that reached breakeven went on to hit TP. Your BE stops are protecting capital without choking winners.`);
-  }else{
-    insights.push(`Only ${total} trade${total===1?'':'s'} with Post-BE data so far — this verdict gets reliable around 10+.`);
-  }
-  if(canShowProtected && capturedTotal > 0){
-    insights.push(`Moving to breakeven has been net positive: ${fmtMoney(capturedTotal)} genuinely captured on winners that survived it, and $${protectedTotal.toLocaleString(undefined,{maximumFractionDigits:0})} of risk taken off the table on the ones that didn't. The captured figure is real money; the risk figure is what was exposed, not a proven saving.`);
-  }
-  if(capturedTotal < 0){
-    insights.push(`Your "TP After BE" trades add up to ${fmtMoney(capturedTotal)} — negative, which shouldn't happen if they truly ran to take-profit. Check whether one of them is tagged "TP After BE" but actually closed at a loss.`);
-  }
-  // A trade cannot both have exited AT the breakeven stop and have carried on
-  // to take-profit. When Exit Type and Post-BE Result say exactly that, the
-  // stored Post-BE Result is kept — overwriting an answer the trader gave is
-  // not this panel's job — but the trade is named, because it is silently
-  // sitting in "Ran on to TP" and inflating the one number the verdict leans on.
-  const contradictory = tpAfter.filter(t =>
-    String(t.exit_type || '').trim().toLowerCase() === 'be hit');
-  if(contradictory.length){
-    const naming = contradictory.slice(0,4).map(t =>
-      `${escapeHtml(t.symbol || '—')} ${t.close_date ? t.close_date.toLocaleDateString(undefined,{day:'numeric',month:'short'}) : ''}`.trim()
-    ).join(', ');
-    insights.push(`${contradictory.length} trade${contradictory.length===1?' is':'s are'} tagged <strong>TP After BE</strong> but ${contradictory.length===1?'has':'have'} an Exit Type of <strong>BE Hit</strong> — a trade cannot stop at breakeven and also run on to take-profit. ${naming}${contradictory.length>4?', …':''}. ${contradictory.length===1?'It is':'They are'} being counted under "Ran on to TP", which is what the ${fmtNum(survivedRate ?? 0,0)}% above is built from. Open ${contradictory.length===1?'it':'them'} and set Post-BE Result to "SL After BE" if the stop was what closed ${contradictory.length===1?'it':'them'}.`);
-  }
-  if(suspect.length){
-    insights.push(`${suspect.length} BE-stopped trade${suspect.length===1?' has':'s have'} numbers that can't be right (stop more than 25% from entry, or a position size implying a multi-million-dollar notional) — flagged ⚠ below and excluded. Usually a placeholder SL, or a Position Size holding dollars instead of a unit quantity. Fix the trade and this figure corrects itself.`);
-  }
-  if(missing > 0){
-    insights.push(`${missing} BE-stopped trade${missing===1?' is':'s are'} missing entry/SL/quantity and ${missing===1?'is':'are'} excluded rather than guessed at. Trades journaled from a Pending Setup fill these in automatically.`);
-  }
-
-  // The one line this panel exists to produce. Everything below it is the
-  // working, and the working is what made the panel hard to read — so it moves
-  // behind a disclosure rather than being deleted.
-  const worthIt = (bounded.length && breakEvenRate !== null && survivedRate !== null)
-    ? survivedRate < breakEvenRate : null;
-  // BOTH sides have to be worth trusting, and they are counted separately.
-  // survivedRate comes from every trade that reached breakeven; breakEvenRate
-  // comes only from the BE-stopped trades that carry entry, SL, TP and
-  // quantity — often far fewer. Gating on the first number alone let a verdict
-  // built on two trades be stated against a rate built on fourteen.
-  const enough = reachedBE >= 10 && bounded.length >= 5;
-  let vTone, vWord, vSay;
-  if(worthIt === null || !enough){
-    vTone = 'thin'; vWord = 'Too early to say';
-    if(bounded.length < 5 && reachedBE >= 10){
-      vSay = `${reachedBE} trades have reached breakeven, but only ${bounded.length} of the ${slAfter.length} that stopped there carry the entry, stop, TP and quantity needed to work out whether it was worth it. A break-even rate built on ${bounded.length} trade${bounded.length===1?'':'s'} is noise, so this stays unanswered until more of them are filled in.`;
-    }else{
-      vSay = `Only ${reachedBE} trade${reachedBE===1?'':'s'} have reached breakeven so far. This reads properly at about 10 — keep filling in Post-BE Result and it will answer itself.`;
-    }
-    if(beUnanswered.length){
-      vSay += ` ${beUnanswered.length} more ${beUnanswered.length===1?'is':'are'} marked Breakeven with no Post-BE Result set.`;
-    }
-  }else if(worthIt){
-    vTone = 'good'; vWord = 'Working';
-    vSay = `Of the trades that reached breakeven, ${survivedRate.toFixed(0)}% carried on to TP — under the ${breakEvenRate.toFixed(0)}% it would take for the BE stop to be costing you. Moving your stop up is protecting more than it gives away.`;
-  }else{
-    vTone = 'bad'; vWord = 'Cutting winners';
-    vSay = `Of the trades that reached breakeven, ${survivedRate.toFixed(0)}% carried on to TP — above the ${breakEvenRate.toFixed(0)}% break-even point. You are moving the stop up too early and stopping trades that would have paid.`;
-  }
-
-  body.innerHTML = `
-    <div class="verdict-line ${vTone}">
-      <span class="verdict-word">${vWord}</span>
-      <span class="verdict-say"><span class="q">Is moving your stop to breakeven helping?</span>${vSay}</span>
-    </div>
-    <div class="be-stat-grid">
-      <div class="be-stat">
-        <div class="be-stat-label">Ran on to TP</div>
-        <div class="be-stat-value" style="color:var(--win);">${tpAfter.length}</div>
-        <div class="be-stat-note">Survived breakeven and reached take-profit.</div>
-      </div>
-      <div class="be-stat">
-        <div class="be-stat-label">Stopped at BE</div>
-        <div class="be-stat-value" style="color:var(--info);">${slAfter.length}</div>
-        <div class="be-stat-note">Closed flat instead of at the original stop.${
-          good.length < slAfter.length
-            ? ` <strong>${good.length} of ${slAfter.length}</strong> carry the prices this panel can measure.`
-            : ''}</div>
-      </div>
-      ${wouldHaveHtml}
-      ${beUnanswered.length ? `
-      <div class="be-stat">
-        <div class="be-stat-label">Not answered</div>
-        <div class="be-stat-value" style="color:var(--warn);">${beUnanswered.length}</div>
-        <div class="be-stat-note">Marked Breakeven, but Post-BE Result was never set — so ${beUnanswered.length===1?'it is':'they are'} missing from everything above.</div>
-      </div>` : ''}
-    </div>
-    <details class="panel-details">
-      <summary>Show the working &mdash; the money, the assumptions, and every trade behind it</summary>
-      <div class="panel-details-body">
-        ${verdictHtml}
-        <div class="be-stat-grid">
-          <div class="be-stat">
-            <div class="be-stat-label">Captured on winners</div>
-            <div class="be-stat-value" style="color:var(--win);">${fmtMoney(capturedTotal)}</div>
-            <div class="be-stat-note">Real money made by trades that survived breakeven.</div>
-          </div>
-          <div class="be-stat">
-            <div class="be-stat-label">Risk Amount at stake</div>
-            <div class="be-stat-value" style="color:var(--win);">${!canShowProtected ? '—' : '$' + protectedTotal.toLocaleString(undefined,{maximumFractionDigits:0})}</div>
-            <div class="be-stat-note">${protectedNote}</div>
-          </div>
-        </div>
-        ${[...insights, planInsight].filter(Boolean).map(i => `<div class="cfe-insight">💡 ${i}</div>`).join('')}
-        ${workingRows ? `
-          <div class="cfe-subhead">Per BE-stopped trade</div>
-          <div style="overflow-x:auto;">
-            <table class="breakdown">
-              <tr><th>Symbol</th><th>Closed</th><th>Entry → SL</th><th>Stop distance</th><th>Quantity</th><th>Planned risk</th><th>Risk amount</th></tr>
-              ${workingRows}
-            </table>
-          </div>` : ''}
-      </div>
-    </details>
-  `;
-}
 
 function renderBarChart(labels, values, colors, onClick){
   const canvas = document.getElementById('breakdownChart');
@@ -4705,30 +3967,94 @@ const UNFOLLOWED_RULES_OPTIONS = [
   'Revenge Trade','Ignored Trend','Against Daily Bias / HTF Bias',
   'FOMO Entry','No BE at Prev High/Low','Ignored No-Trade Decision',
   'Non-BnB Setup','No Scalping Trade','Moved Take Profit','Lack of Confluence','BTC Only',
-  'Changing Plan','No Cutloss 3mins Breakout'
+  'Changing Plan','No Cutloss 3mins Breakout',
+  // The other arm of the breakeven experiment. Without it "did not move to BE"
+  // has nothing to be compared against, and the question it exists to answer —
+  // is moving the stop to breakeven worth it — has only one side.
+  "BE'd at Prev High/Low"
 ];
 
-// The two entries that describe a trade that went RIGHT. "Rules Followed? =
-// Yes" shows only these; "No" shows everything else. Held as its own list
-// rather than inferred from the wording, so an option added later in the
-// Options editor lands on the broken-rule side — which is where all but these
-// two belong. "Would Have BE'd Out" records that the trade would have stopped
-// at breakeven had the rule been applied, and it still counts as clean.
-const RULES_FOLLOWED_POSITIVE = ['Rules Followed',"Would Have BE'd Out"];
+/* This column holds two different kinds of thing, and treating them as one was
+   a real bug in the data.
 
-// unfollowed_rules is one comma-joined text column holding BOTH the breaches
-// and the sentinels that mean "nothing was broken". Every count of discipline
-// has to strip the sentinels first. Before "Would Have BE'd Out"
-// existed there was only one, so the old checks compared the whole string to
-// "rules followed" — a clean trade carrying both sentinels no longer matches
-// that, and would be counted as a breach. These three are the shared answer.
-const _RULES_POSITIVE_SET = new Set(RULES_FOLLOWED_POSITIVE.map(s => s.toLowerCase()));
+   A BREACH is something he chose to do against his own plan. It counts against
+   discipline and the goal is to drive it to zero.
+
+   An OBSERVATION is a fact about the trade — what price did, or a decision he
+   has not yet decided is right. It counts against nothing. The goal is to learn
+   from it, not to stop doing it.
+
+   The two that forced this apart: "Would Have BE'd Out" (reached prev high/low,
+   did NOT move to BE, price came back to entry then ran to TP — good thing he
+   held) and "No BE at Prev High/Low" (reached prev high/low, did NOT move to
+   BE, price ran to his stop — should have moved it). Same decision, opposite
+   outcomes. One counted as clean, the other as a breach, so his discipline rate
+   moved with his luck rather than his behaviour — and the question "should I
+   move to breakeven at all?" could never be answered, because the two halves of
+   the evidence sat in bins with opposite meanings. */
+const TAG_OBSERVATIONS = [
+  "Would Have BE'd Out",
+  'No BE at Prev High/Low',
+  "BE'd at Prev High/Low"
+];
+// "Nothing was broken" — answered, and clean. Not an observation: it is the
+// absence of a breach rather than a fact about the trade.
+const TAG_SENTINELS = ['Rules Followed'];
+
+const _TAG_NEUTRAL_SET = new Set(
+  [...TAG_SENTINELS, ...TAG_OBSERVATIONS].map(s => s.toLowerCase()));
+const _TAG_OBSERVATION_SET = new Set(TAG_OBSERVATIONS.map(s => s.toLowerCase()));
+const _TAG_SENTINEL_SET = new Set(TAG_SENTINELS.map(s => s.toLowerCase()));
+// Anything not named above is a breach, so an option added later in the Options
+// editor lands on the breach side — which is where all but these belong.
+const _tagKind = t => {
+  const k = String(t).trim().toLowerCase();
+  return _TAG_SENTINEL_SET.has(k) ? 'sentinel'
+       : _TAG_OBSERVATION_SET.has(k) ? 'observation' : 'breach';
+};
+
+/* The five rules the seventeen breach tags actually describe. Six different
+   tags all saying "I did not follow my confluence checklist" read as six
+   separate problems on a panel; grouped, they read as the one problem they are.
+   Display only — nothing is renamed, merged or removed from the list above, and
+   a tag missing from every group still counts, it just shows on its own. */
+const RULE_GROUPS = [
+  { name:'Follow the confluence checklist',
+    tags:['Lack of Confluence','No Confirmation','Entered Early','Non-BnB Setup',
+          'Against Daily Bias / HTF Bias','Ignored Trend'] },
+  { name:'Do not touch an open trade',
+    tags:['Moved Stop Loss','Moved Take Profit','Changing Plan','Early TP'] },
+  { name:'Do not trade on emotion',
+    tags:['Revenge Trade','FOMO Entry','Ignored No-Trade Decision'] },
+  { name:'Respect size and instrument',
+    tags:['Overleveraged','BTC Only','No Scalping Trade'] },
+  { name:'Follow the exit rules',
+    tags:['No Cutloss 3mins Breakout'] },
+];
+const _RULE_GROUP_OF = (() => {
+  const m = new Map();
+  RULE_GROUPS.forEach(g => g.tags.forEach(t => m.set(t.toLowerCase(), g.name)));
+  return m;
+})();
+const _ruleGroupOf = t => _RULE_GROUP_OF.get(String(t).trim().toLowerCase()) || String(t).trim();
+
+// Kept as the union of the two neutral kinds so the older call sites that ask
+// "is this tag a mark against him" keep reading the same way.
+const RULES_FOLLOWED_POSITIVE = [...TAG_SENTINELS, ...TAG_OBSERVATIONS];
+
+// unfollowed_rules is one comma-joined text column holding breaches, the
+// sentinel that means "nothing was broken", and observations that mean nothing
+// about discipline either way. Every count of discipline has to strip the last
+// two first — these are the shared answer.
 const _ruleTags = v => String(v || '').split(/[,;]/).map(s => s.trim()).filter(Boolean);
-const _brokenRuleTags = v => _ruleTags(v).filter(r => !_RULES_POSITIVE_SET.has(r.toLowerCase()));
+const _brokenRuleTags = v => _ruleTags(v).filter(r => _tagKind(r) === 'breach');
+const _observationTags = v => _ruleTags(v).filter(r => _tagKind(r) === 'observation');
 // Answered, and nothing broken — a blank field is "not logged", not "clean".
+// An observation on its own still counts as answered: "I did not move to BE at
+// prev high/low" is a complete, clean record of the trade.
 const _isCleanRules = v => {
   const tags = _ruleTags(v);
-  return tags.length > 0 && tags.every(r => _RULES_POSITIVE_SET.has(r.toLowerCase()));
+  return tags.length > 0 && !tags.some(r => _tagKind(r) === 'breach');
 };
 
 // `keepSelected` protects an already-saved row whose two fields disagree: a
@@ -4738,11 +4064,15 @@ const _isCleanRules = v => {
 function _unfollowedOptionsFor(rulesFollowed, keepSelected){
   const v = String(rulesFollowed || '').trim().toLowerCase();
   const norm = s => String(s).trim().toLowerCase();
-  const isPositive = o => RULES_FOLLOWED_POSITIVE.some(p => norm(p) === norm(o));
   // Unanswered shows the whole list rather than pre-emptively hiding half.
+  //
+  // Observations appear on BOTH answers, and that is the point of splitting the
+  // kinds: "price reached prev high/low and I did not move to BE" is equally
+  // true of a disciplined trade and a sloppy one. Hiding it behind "Rules
+  // Followed? = No" was what forced it to read as a fault.
   let opts = UNFOLLOWED_RULES_OPTIONS.slice();
-  if(v === 'yes') opts = opts.filter(isPositive);
-  else if(v === 'no') opts = opts.filter(o => !isPositive(o));
+  if(v === 'yes') opts = opts.filter(o => _tagKind(o) !== 'breach');
+  else if(v === 'no') opts = opts.filter(o => _tagKind(o) !== 'sentinel');
   (keepSelected || []).forEach(s => {
     if(!opts.some(o => norm(o) === norm(s))) opts.push(s);
   });
@@ -4763,7 +4093,7 @@ const OPTIONS_FIELD_META = [
   {key:'post_cutloss_result', label:'Post-Cutloss Result'},
   {key:'session', label:'Session'},
   {key:'day_of_week', label:'Day of Week'},
-  {key:'unfollowed_rules', label:'Unfollowed Rules (checklist)'}
+  {key:'unfollowed_rules', label:'Trade Tags (checklist)'}
 ];
 
 function getOptionsArray(key){
@@ -4877,7 +4207,7 @@ const ALL_DRAWER_FIELDS = [
   {key:'execution_tf', label:'Execution TF', widget:'select', editable:true, options:FIELD_OPTIONS.execution_tf},
   {key:'aof_phase', label:'AOF Phase', widget:'select', editable:true, options:FIELD_OPTIONS.aof_phase},
   {key:'rules_followed', label:'Rules Followed?', widget:'select', editable:true, options:FIELD_OPTIONS.rules_followed},
-  {key:'unfollowed_rules', label:'Unfollowed Rules', widget:'checklist', editable:true, options:UNFOLLOWED_RULES_OPTIONS},
+  {key:'unfollowed_rules', label:'Trade Tags', widget:'checklist', editable:true, options:UNFOLLOWED_RULES_OPTIONS},
   {key:'exit_type', label:'Exit Type', widget:'select', editable:true, options:FIELD_OPTIONS.exit_type},
   {key:'post_be_result', label:'Post-BE Result', widget:'select', editable:true, options:FIELD_OPTIONS.post_be_result},
   {key:'post_cutloss_result', label:'Post-Cutloss Result', widget:'select', editable:true, options:FIELD_OPTIONS.post_cutloss_result},
@@ -4972,7 +4302,7 @@ const ALL_JOURNAL_COLUMNS = [
   {key:'sl_price', label:'SL Price'},
   {key:'position_size', label:'Quantity'},
   {key:'rules_followed', label:'Rules Followed?'},
-  {key:'unfollowed_rules', label:'Unfollowed Rules'},
+  {key:'unfollowed_rules', label:'Trade Tags'},
   {key:'exit_type', label:'Exit Type'},
   {key:'post_be_result', label:'Post-BE Result'},
   {key:'post_cutloss_result', label:'Post-Cutloss Result'},
@@ -10502,17 +9832,16 @@ function _journalInvalidFields(r){
     }
   });
 
-  // Two fields that cannot both be true. A trade that exited AT the breakeven
-  // stop did not also run on to take-profit. This used to be caught inside the
-  // Breakeven Protection panel; that panel is gone, and the check belongs here
-  // anyway — it is a repair, not a reading.
-  if(String(r.exit_type || '').trim().toLowerCase() === 'be hit' &&
-     r.post_be_result === 'TP After BE'){
-    bad.push({ key:'post_be_result', label:'Post-BE Result',
-               value:'TP After BE, but Exit Type says BE Hit' });
-  }
+  // There was a "contradiction" check here calling Exit Type "BE Hit" plus
+  // Post-BE Result "TP After BE" impossible. It was not: it is the single most
+  // informative row in the journal. Post-BE Result does not describe how the
+  // trade ended — Exit Type already says that — it describes what price did
+  // AFTER the breakeven stop closed you out. "BE Hit + TP After BE" means the
+  // stop took you out and the move then ran to target without you, which is
+  // exactly the cost this column exists to measure. Same reading as
+  // post_cutloss_result below. The check flagged correct data as broken.
 
-  // The same shape one column over. A real answer here is a statement about
+  // A real answer here is a statement about
   // what happened after a manual cut, so it cannot stand on a trade that was
   // not cut — that answer belongs to a different exit and would quietly join
   // the cut-loss numbers, making the cut look better or worse than it was.
@@ -10539,6 +9868,27 @@ function _journalInvalidFields(r){
                value:`${staleAnswers.length} answer${staleAnswers.length===1?'':'s'} from a different checklist` });
   }
 
+  // Rules Followed? and the tags beside it, disagreeing.
+  //
+  // This mostly exists because of the reclassification: "No BE at Prev High/Low"
+  // used to be a breach, and the checklist only showed breaches when the answer
+  // was No — so every trade carrying it was forced to No. Now that it counts as
+  // an observation those trades say "I broke a rule" while naming none, and the
+  // discipline figures would keep counting them against him.
+  //
+  // Both directions, because the opposite disagreement is just as wrong and was
+  // always possible on a hand-edited row.
+  const rf = String(r.rules_followed || '').trim().toLowerCase();
+  const brokenTags = _brokenRuleTags(r.unfollowed_rules);
+  if(rf === 'no' && _ruleTags(r.unfollowed_rules).length && !brokenTags.length){
+    bad.push({ key:'rules_followed', label:'Rules Followed?',
+               value:'No, but nothing here is a broken rule any more' });
+  }
+  if(rf === 'yes' && brokenTags.length){
+    bad.push({ key:'rules_followed', label:'Rules Followed?',
+               value:`Yes, but "${brokenTags[0]}" is a broken rule` });
+  }
+
   return bad;
 }
 
@@ -10562,14 +9912,11 @@ function _journalMissingFields(r){
     missing.push(labelOf('unfollowed_rules'));
   }
   // Same shape, and it was missing: a Breakeven trade with no Post-BE Result
-  // is invisible to the whole Breakeven Protection panel — it appears in
-  // neither "ran on to TP" nor "stopped at BE" — yet the journal gave no hint
-  // anything was wrong with the row. Conditional, because on any other result
-  // the field is legitimately N/A. Exit Type "BE Hit" already fills it in on
-  // read, so this only fires where nothing can be inferred.
-  if(String(r.win_loss || '').trim().toLowerCase() === 'breakeven' &&
-     visible.has('post_be_result') && isBlank('post_be_result') &&
-     !_impliedPostBE(r)){
+  // is a breakeven stop whose worth was never checked. Now fires on Exit Type
+  // "BE Hit" too, not just Win/Loss "Breakeven": both mean the stop is what
+  // closed the trade, and the "BE Hit" half used to be silently answered for
+  // him by an inference that was making the answer up.
+  if(_postBEApplies(r) && visible.has('post_be_result') && isBlank('post_be_result')){
     missing.push(labelOf('post_be_result'));
   }
   // And the same for a manual cut. Nothing on the trade can infer this one, so
@@ -11968,10 +11315,11 @@ function renderDrawerFields(){
     // Last, so the fixed "5 mins Scalping" above is already in place and this
     // leaves it alone.
     syncAofFromLinkedSetup(row);
-    if(row.win_loss) syncPostBEFromWinLoss(row.win_loss);
-    // Unconditional, unlike the line above: a blank Exit Type is exactly the
-    // case that has to settle to N/A, so gating this on `row.exit_type` would
-    // leave the field empty and red on every ordinary new trade.
+    // Both unconditional: a blank Win/Loss or Exit Type is exactly the case
+    // that has to settle to N/A, so gating on the row's value would leave the
+    // field empty and red on every ordinary new trade. _syncPostBE reads both
+    // halves off the form itself, so it needs no argument.
+    syncPostBEFromWinLoss();
     syncPostCutlossFromExitType(row.exit_type);
   }
 }
@@ -12037,13 +11385,10 @@ function _collectDrawerPatch(){
     if(auto) patch.exit_type = auto;
   }
 
-  // Same "fill a blank, never overwrite" rule as Exit Type above. Runs on edit
-  // too: it is reading a fact off Exit Type, not making the judgment call the
-  // red flag was asking for.
-  if(!patch.post_be_result){
-    const implied = _impliedPostBE(patch);
-    if(implied) patch.post_be_result = implied;
-  }
+  // Post-BE Result is deliberately NOT filled in here. It used to be, from Exit
+  // Type "BE Hit", and that wrote a guess into the database that then looked
+  // exactly like an answer. What price did after the stop closed you is not
+  // derivable from anything on the trade.
 
   // Nothing can be inferred for a real cut, but everything that is NOT a cut
   // has exactly one correct value. Settling it here rather than only in the
@@ -12112,10 +11457,12 @@ function _applyMovedStopFlags(patch){
   const existing = String(patch.unfollowed_rules || '')
     .split(/[,;]/).map(s => s.trim()).filter(Boolean);
   const merged = [...new Set([...existing, 'Moved Stop Loss', 'Changing Plan'])]
-    // Both sentinels mean "nothing was broken" — neither can stand alongside a
-    // breach, and rules_followed is being set to No right below, which is the
-    // half of the checklist that no longer offers them at all.
-    .filter(r => !_RULES_POSITIVE_SET.has(r.toLowerCase()));
+    // Only the sentinel goes. "Rules Followed" means nothing was broken and
+    // cannot stand beside a breach — but an observation can, and must: "price
+    // reached prev high/low and I did not move to BE" stays true whether or not
+    // the stop was later moved somewhere else. Stripping observations here
+    // would delete the evidence the breakeven experiment runs on.
+    .filter(r => _tagKind(r) !== 'sentinel');
   patch.unfollowed_rules = merged.join(', ');
   patch.rules_followed = 'No';
 }
@@ -14593,12 +13940,16 @@ function computeChallenges(trades, achRows){
     current: hasVisionBoard ? 1 : 0, target: 1, done: hasVisionBoard
   };
 
-  // 22. Breakeven Saver — trades where you secured profit after moving SL to breakeven
-  const beSaves = closed.filter(t => t.post_be_result === 'TP After BE').length;
+  // 22. Breakeven Saver — BE stops that took you out of a trade heading for the
+  //     original stop. This counted "TP After BE" and called it securing a
+  //     profit, which is backwards: that value means the stop closed you and
+  //     the move then ran to target WITHOUT you. The achievement was awarding
+  //     points for the breakeven stop costing him the trade.
+  const beSaves = closed.filter(t => t.post_be_result === 'SL After BE').length;
   const c22 = {
     icon:'check-circle', title:'Breakeven Saver', points:70,
-    desc:'Trades where you secured profit after moving SL to breakeven.',
-    howTo:'Counts trades where your "Post-BE Result" is "TP After BE" — meaning you moved your stop to breakeven and still walked away with profit instead of just avoiding a loss. Levels: 2, 5, 10, 20, 30 trades.',
+    desc:'Losses your breakeven stop got you out of.',
+    howTo:'Counts trades where your "Post-BE Result" is "SL After BE" — the stop took you out at breakeven and price then carried on to where your original stop was, so moving it saved you the full loss. Levels: 2, 5, 10, 20, 30 trades.',
     current: beSaves, tiers: [2, 5, 10, 20, 30], target: 30, done: beSaves >= 30
   };
 
@@ -15884,24 +15235,33 @@ function syncUnfollowedRulesFromFollowed(rulesFollowedValue){
   box.dispatchEvent(new Event('change', { bubbles: true }));
 }
 
-// Post-BE Result only means something when the trade actually reached
-// breakeven — anything else (Win/Loss/Liquidated) defaults to N/A. Breakeven
-// itself needs a REAL answer (TP After BE / SL After BE), so instead of
-// leaving it blank and easy to forget, clear any stale "N/A" and flag the
-// row red until it's actually answered — same red flag Create mode already
-// uses for empty fields, just triggered here so it also works while editing.
-function syncPostBEFromWinLoss(winLossValue){
+// Post-BE Result only means something when the breakeven stop is what closed
+// the trade — that is Win/Loss "Breakeven" or Exit Type "BE Hit". Anything else
+// never reached the stop, so N/A. When it DOES apply the answer is a real one
+// only the trader has (did the move run on to target without you, or carry on
+// to where your original stop was), so a stale "N/A" is cleared and the row
+// goes red until it is given, rather than being guessed at.
+//
+// Both callers pass only the half they just changed, so each reads the other
+// half off the form.
+function _syncPostBE(){
   const sel = document.querySelector('#drawerBody [data-field="post_be_result"]');
   if(!sel) return;
-  if(winLossValue !== 'Breakeven'){
+  const valOf = k => {
+    const el = document.querySelector(`#drawerBody [data-field="${k}"]`);
+    return el ? el.value : '';
+  };
+  const row = sel.closest('.field-row');
+  if(!_postBEApplies({ win_loss: valOf('win_loss'), exit_type: valOf('exit_type') })){
     sel.value = 'N/A';
     sel.dispatchEvent(new Event('change', { bubbles: true }));
+    if(row) row.classList.remove('needs-input');
     return;
   }
   if(sel.value === 'N/A') sel.value = '';
-  const row = sel.closest('.field-row');
   if(row) row.classList.toggle('needs-input', sel.value.trim() === '');
 }
+function syncPostBEFromWinLoss(){ _syncPostBE(); }
 
 // Breakeven trades exit via a BE stop — pre-select "BE Hit" as Exit Type the
 // moment Win/Loss is set to Breakeven, so it doesn't sit on whatever was
@@ -15918,18 +15278,10 @@ function syncExitTypeFromWinLoss(winLossValue){
   syncPostCutlossFromExitType('BE Hit');
 }
 
-// Exit Type settles Post-BE Result whenever it is "BE Hit", so the drawer stops
-// flagging a field red that the answer above it has already decided.
-function syncPostBEFromExitType(exitTypeValue){
-  const implied = _impliedPostBE({ exit_type: exitTypeValue });
-  if(!implied) return;
-  const sel = document.querySelector('#drawerBody [data-field="post_be_result"]');
-  if(!sel || sel.value) return;   // never overwrite an answer already given
-  sel.value = implied;
-  sel.dispatchEvent(new Event('change', { bubbles: true }));
-  const row = sel.closest('.field-row');
-  if(row) row.classList.remove('needs-input');
-}
+// Exit Type "BE Hit" makes Post-BE Result apply just as surely as Win/Loss
+// "Breakeven" does, so it runs the same check. It used to fill the field in
+// instead — see the note where _impliedPostBE used to live.
+function syncPostBEFromExitType(){ _syncPostBE(); }
 
 // Post-Cutloss Result is the Post-BE pattern hung off Exit Type instead of
 // Win/Loss: only a manual cut can answer it, everything else is N/A. Unlike
