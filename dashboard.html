@@ -17,7 +17,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<link rel="stylesheet" href="css/style.css?v=251">
+<link rel="stylesheet" href="css/style.css?v=252">
 </head>
 <body>
 
@@ -194,9 +194,15 @@
     </div>
   </div>
 <div class="panel" style="margin-bottom:20px;">
-    <h2>Edge Map — where your money actually comes from<button type="button" class="panel-info-btn" title="How this is worked out" onclick="event.stopPropagation(); openPanelInfo('edgemap')"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button></h2>
-    <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:14px;">Every dimension at once. Right of the centre line makes money, left of it loses. Click any value and every other card re-reads itself against it.</div>
-    <div id="edgeMapBody"></div>
+    <h2>Discipline &amp; Experiments<button type="button" class="panel-info-btn" title="How this is worked out" onclick="event.stopPropagation(); openPanelInfo('discipline')"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button></h2>
+    <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:14px;">Your Trade Tags, read as the two different things they are: faults to drive to zero, and open questions to answer.</div>
+    <div id="disciplineBody"></div>
+  </div>
+
+<div class="panel" style="margin-bottom:20px;">
+    <h2>Pattern, Session &amp; Confluence<button type="button" class="panel-info-btn" title="How this is worked out" onclick="event.stopPropagation(); openPanelInfo('setupedge')"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button></h2>
+    <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:14px;">The three things you choose before taking a trade, scored on return per trade as a percent of the account.</div>
+    <div id="setupEdgeBody"></div>
   </div>
 
 <div class="panel" style="margin-bottom:20px;">
@@ -2105,6 +2111,6 @@
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=2"></script>
-<script src="js/dashboard.js?v=436"></script>
+<script src="js/dashboard.js?v=437"></script>
 </body>
 </html>

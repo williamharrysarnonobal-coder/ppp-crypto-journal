@@ -1282,12 +1282,12 @@ function applyFilters(){
   renderSessionFrequencyChart();
   renderBreakdownTabs();
   renderBreakdown();
-  // Confluence Edge, Breakeven Protection, Trades after a loss, Where the stop
-  // gets hit and Hour of day all folded into this one panel — each of them was
-  // a slice of the same question, and none of them could be crossed with the
-  // others. Their data-integrity warnings moved to the Trade Journal, which is
-  // where the trades get fixed.
-  renderEdgeMap();
+  // The Edge Map ranked every dimension in one list, which put "stop moving
+  // your stop" beside "is a 3rd HL/LH worse" as though they were the same
+  // kind of statement. They are not: one is a fault with a target of zero,
+  // the other is an open question. Two panels, split on that line.
+  renderDisciplinePanel();
+  renderSetupPanel();
   renderAccountCompare();
   renderHoldTime();
   document.getElementById('aiOutput').style.display = 'none';
@@ -2078,18 +2078,34 @@ const PANEL_INFO = {
     `Groups your trades by whichever tab is selected and totals the
      <b>net P&amp;L</b> of each group. <b>Unspecified</b> means that field is
      empty on those trades — the warning icon in the Trade Journal marks them.`],
-  edgemap: ['Edge Map',
-    `Every dimension your journal holds, each value drawn as a bar around a
-     zero line: right of centre it makes money per trade, left of centre it
-     loses. Ranked by <b>average net P&amp;L per trade</b>, not win rate — a 41%
-     win rate with a wide R beats a 70% one that scratches, and ranking on win
-     rate would recommend the wrong month. The two figures printed are win
-     rate and trade count; the money is the bar, and the bar is what the order
-     follows. Anything under 5 trades is hatched. Click a value and every other
-     card re-reads itself against it. Replaces the old Confluence Edge,
-     Breakeven Protection, Trades after a loss, Where the stop gets hit and
-     Hour of day panels — their data-integrity warnings moved to the Trade
-     Journal, beside the incomplete and invalid counts.`],
+  discipline: ['Discipline & Experiments',
+    `Your Trade Tags split into the two different things they are.<br><br>
+     <b>The top half</b> is the breach tags — the ones that name something you
+     did against your own plan. They are grouped into the rules they actually
+     describe, because six tags that all mean "I did not follow the checklist"
+     read as six problems when they are one. A trade that broke two tags inside
+     the same rule counts once for that rule. Ranked by what they cost, and the
+     target is zero.<br><br>
+     <b>The bottom half</b> is the observation tags and the two exit columns
+     (Post-BE Result, Post-Cutloss Result), read as experiments. Nothing here is
+     a fault: each is a question you have not answered yet, so the panel
+     compares the two choices rather than judging either. Scored on
+     <b>return per trade as a percent of the account</b>, so a 50K account
+     cannot outrank a 5K one on position size alone. Each side needs at least
+     5 measurable trades, and a gap under 0.15% is reported as too close to
+     call rather than as a winner.`],
+  setupedge: ['Pattern, Session & Confluence',
+    `The three things you choose before taking a trade, plus which play you
+     took. Same metric as the experiments panel — return per trade as a percent
+     of the account the trade ran on — so the two panels can be read against
+     each other.<br><br>
+     Bars are centred on zero: right of centre grew the account, left of it
+     shrank it. Values are pulled toward zero until roughly 20 trades stand
+     behind them, so 100% off three cannot outrank 60% off forty; anything
+     under 5 measurable trades is hatched, and the true figure is always on the
+     tooltip. The Confluence rows are bands, not raw scores, because the
+     checklists differ in length — each trade is judged against
+     <b>that setup's own bar</b>, the same way the journal colours it.`],
   cfledge: ['Confluence Edge',
     `Win rate and average net P&amp;L grouped by how much of the checklist you
      had answered at entry, read from the saved <b>confluence answers</b>. Only
@@ -3129,152 +3145,356 @@ const EM_PRIOR = 20;
 // Null when the account size is unknown — never guessed, and such trades are
 // counted in `n` but left out of the return so one unmapped account cannot
 // quietly drag a group's number toward zero.
+/* ============================ Discipline & Experiments ====================
+
+   The two halves of this panel are the two kinds of Trade Tag, and they answer
+   different questions, so they are never mixed into one ranking:
+
+     breaches      things to STOP. The target is zero, and the measure is what
+                   they cost.
+     observations  things being TESTED. There is no target — there is an answer,
+                   and it is not known yet. The measure is which choice pays.
+
+   Everything below is scored on return as a percent of the account the trade
+   ran on, so a 50K account cannot outrank a 5K one on position size alone. */
+
+// Two arms of one decision, compared head to head.
+//
+// Grouped by WHEN the decision is made, because that is what makes them
+// actionable: the first group changes whether you take the trade, the second
+// changes what you do once you are in it.
+const TRADE_EXPERIMENTS = [
+  { group:'Before you enter', items:[
+    // No opposite arm exists for these — the comparison is against every trade
+    // that did NOT carry the tag, which is the honest counterfactual.
+    { id:'ewc',  title:'Entering without confirmation',
+      q:'Trades you tagged against every trade you did not.',
+      solo:'Entered Without Confirmation' },
+    { id:'chase', title:'Chasing an extended move',
+      q:'The 3rd HL/LH onward, against everything else.',
+      solo:'Chased Extended Move' },
+    { id:'level', title:'Trading into a key level',
+      q:'Entries at a level that should stop the move, against everything else.',
+      solo:'Traded Into Key Level' },
+  ]},
+  { group:'After you are in', items:[
+    { id:'beprev', title:'Breakeven at previous high/low',
+      q:'Price reached prev high/low — move the stop up, or leave it?',
+      a:{ label:'Left it alone', tags:['No BE at Prev High/Low',"Would Have BE'd Out"] },
+      b:{ label:'Moved to BE',   tags:["BE'd at Prev High/Low"] } },
+    { id:'inval', title:'When the setup invalidates',
+      q:'A 15 mins HL becomes a 1 hour HL — hold, or get out?',
+      a:{ label:'Held through it',   tags:['Held Through Invalidation'] },
+      b:{ label:'Cut when it broke', tags:['Cut on Invalidation'] } },
+    // Not a choice between two arms but a verdict on one: of the times the
+    // stop actually fired, how often was firing the right thing? Counted, not
+    // averaged — "9 of 14 saved you" is the whole answer.
+    { id:'postbe', title:'Was the breakeven stop worth it?',
+      q:'Of the trades it closed, what did price do next?',
+      ratio:{ field:'post_be_result',
+              right:{ value:'SL After BE', label:'saved the loss' },
+              wrong:{ value:'TP After BE', label:'cost the trade' },
+              keep:'Keep moving the stop to breakeven',
+              drop:'You are moving the stop up too early' } },
+    { id:'postcut', title:'Was cutting the loss worth it?',
+      q:'Of the trades you cut, what did price do next?',
+      ratio:{ field:'post_cutloss_result',
+              right:{ value:'SL After Cutloss', label:'saved the rest of the loss' },
+              wrong:{ value:'TP After Cutloss', label:'cost you the trade' },
+              keep:'Keep cutting the loss',
+              drop:'You are cutting too early' } },
+  ]},
+];
+
+// Mean return for a set of trades, and the counts behind it. `priced` is how
+// many could be measured at all — a trade on an account with no size has no
+// return, and is absent rather than zero.
+function _tagArmStats(trades){
+  const pcts = trades.map(_emReturnPct).filter(v => v !== null);
+  return {
+    n: trades.length,
+    wins: trades.filter(_isWin).length,
+    losses: trades.filter(_isLoss).length,
+    net: trades.reduce((s,t) => s + netPnl(t), 0),
+    priced: pcts.length,
+    ret: pcts.length ? pcts.reduce((s,v) => s + v, 0) / pcts.length : null,
+  };
+}
+
+const _hasTag = (t, names) => {
+  const on = _canonicalTags(t.unfollowed_rules).map(s => s.toLowerCase());
+  return names.some(n => on.includes(n.toLowerCase()));
+};
+
+// Works out one experiment against the trades in view. Returns null when the
+// experiment has nothing at all to say, so an empty one takes no space.
+function _runExperiment(exp, trades){
+  if(exp.ratio){
+    const { field, right, wrong } = exp.ratio;
+    const r = trades.filter(t => t[field] === right.value);
+    const w = trades.filter(t => t[field] === wrong.value);
+    const total = r.length + w.length;
+    if(!total) return null;
+    return { kind:'ratio', exp, right:r.length, wrong:w.length, total,
+             rightNet: r.reduce((s,t) => s + netPnl(t), 0),
+             wrongNet: w.reduce((s,t) => s + netPnl(t), 0),
+             enough: total >= EM_MIN_N };
+  }
+  let A, B, aLabel, bLabel;
+  if(exp.solo){
+    A = trades.filter(t => _hasTag(t, [exp.solo]));
+    if(!A.length) return null;
+    B = trades.filter(t => !_hasTag(t, [exp.solo]));
+    aLabel = 'Tagged'; bLabel = 'Every other trade';
+  }else{
+    A = trades.filter(t => _hasTag(t, exp.a.tags) && !_hasTag(t, exp.b.tags));
+    B = trades.filter(t => _hasTag(t, exp.b.tags) && !_hasTag(t, exp.a.tags));
+    if(!A.length && !B.length) return null;
+    aLabel = exp.a.label; bLabel = exp.b.label;
+  }
+  const a = { ..._tagArmStats(A), label:aLabel };
+  const b = { ..._tagArmStats(B), label:bLabel };
+  const enough = a.priced >= EM_MIN_N && b.priced >= EM_MIN_N;
+  const gap = (a.ret !== null && b.ret !== null) ? a.ret - b.ret : null;
+  return { kind:'ab', exp, a, b, enough, gap,
+           // A gap smaller than this is noise at these sample sizes; saying
+           // "too close to call" is the honest reading, not a coin toss.
+           decided: enough && gap !== null && Math.abs(gap) > 0.15 };
+}
+
 function _emReturnPct(t){
   const acc = TRADING_ACCOUNTS.find(a => a.account_name === t.account);
   const size = acc ? Number(acc.account_size) : NaN;
   if(!Number.isFinite(size) || size <= 0) return null;
   return netPnl(t) / size * 100;
 }
-let EM_FILTERS = {};
 
-// Where a trade sat in its own day: the first one, the one after a win, or the
-// one after a loss. Not a column on the trade — it only exists relative to the
-// trades around it, which is why this is computed rather than read.
-function _emPositionInDay(trades){
-  const byDay = {};
+/* One row per rule, not per tag. Six tags that all mean "I did not follow the
+   checklist" read as six problems; as one line they read as the one problem
+   they are. A trade that broke two tags inside the SAME rule counts once for
+   that rule — otherwise the rule looks twice as frequent as it is. */
+function _disciplineStats(trades){
+  const byRule = {};
+  RULE_GROUPS.forEach(g => { byRule[g.name] = { name:g.name, tags:{}, trades:[] }; });
   trades.forEach(t => {
-    const d = t.open_date || t.close_date;
-    if(!d) return;
-    const k = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-    (byDay[k] = byDay[k] || []).push(t);
-  });
-  const pos = new Map();
-  Object.values(byDay).forEach(list => {
-    const ordered = [...list].sort((a,b) =>
-      (a.open_date || a.close_date) - (b.open_date || b.close_date));
-    ordered.forEach((t, i) => {
-      if(i === 0){ pos.set(t, 'First of the day'); return; }
-      const prev = ordered[i-1];
-      pos.set(t, _isLoss(prev) ? 'After a loss' : (_isWin(prev) ? 'After a win' : 'After a breakeven'));
+    const broken = _brokenRuleTags(t.unfollowed_rules);
+    if(!broken.length) return;
+    const rules = new Set();
+    broken.forEach(tag => {
+      const rule = _ruleGroupOf(tag);
+      rules.add(rule);
+      byRule[rule] = byRule[rule] || { name:rule, tags:{}, trades:[] };
+      byRule[rule].tags[tag] = (byRule[rule].tags[tag] || 0) + 1;
     });
+    rules.forEach(r => byRule[r].trades.push(t));
   });
-  return pos;
+  // Every tag in the rule is listed even at zero, because "you have not broken
+  // this one at all" is worth seeing next to the ones you have.
+  RULE_GROUPS.forEach(g => g.tags.forEach(tag => {
+    if(byRule[g.name].tags[tag] === undefined) byRule[g.name].tags[tag] = 0;
+  }));
+  return Object.values(byRule).map(r => ({
+    name: r.name,
+    tags: Object.entries(r.tags).sort((a,b) => b[1] - a[1]),
+    n: r.trades.length,
+    share: trades.length ? r.trades.length / trades.length * 100 : 0,
+    net: r.trades.reduce((s,t) => s + netPnl(t), 0),
+  })).sort((a,b) => a.net - b.net || b.n - a.n);
 }
 
-function _emDimensions(){
-  const pos = _emPositionInDay(FILTERED);
-  const answerBy = _confluenceAnswerAt;
-  return [
-    // First card, and the only one naming something he DID rather than a
-    // circumstance he was in. Multi: a trade breaking three rules counts
-    // against all three, so this card's counts exceed the trade total.
-    // Grouped into the five rules the tags actually describe. Six tags all
-    // meaning "I did not follow my confluence checklist" read as six separate
-    // problems; as one line they read as the one problem they are. A trade
-    // breaking two tags in the SAME group counts once for that group — the
-    // Set — otherwise the rule it broke would look twice as common as it is.
-    { key:'rules', label:'What you did wrong', q:'the mistake', multi:true, lead:true,
-      of: t => [...new Set(_brokenRuleTags(t.unfollowed_rules).map(_ruleGroupOf))],
-      expand: name => {
-        const g = RULE_GROUPS.find(x => x.name === name);
-        return g ? g.tags.join(', ') : name;
-      } },
-    // The A/B test: at previous high/low, is moving the stop to breakeven worth
-    // it, or is it better to let the trade run to TP or SL? Both arms are
-    // observations, neither is a fault, and the only reason this can be asked
-    // at all is that they now sit in the same bin.
-    { key:'beprev', label:'BE at prev high/low', q:'move it or let it run', outcome:true,
-      of: t => {
-        const tags = _canonicalTags(t.unfollowed_rules).map(s => s.toLowerCase());
-        const moved = tags.includes("be'd at prev high/low");
-        // "Would Have BE'd Out" is the same decision as "No BE at Prev
-        // High/Low" — he just tags the ones that paid off differently. Both
-        // mean he left the stop alone.
-        const left = tags.includes('no be at prev high/low') ||
-                     tags.includes("would have be'd out");
-        if(moved === left) return null;      // neither, or contradictory
-        return moved ? 'Moved to BE' : 'Let it run';
-      } },
-    // `say` is how a finding names this dimension in a sentence. "Stop taking
-    // hour opened 09:00" is not English; "Stop taking trades opened at 09:00"
-    // is an instruction. Every dimension the briefing can name needs one.
-    { key:'hour',         label:'Hour opened',  q:'exactly when',
-      say: v => `trades opened at ${v}`,
-      of: t => t.open_date ? `${String(t.open_date.getHours()).padStart(2,'0')}:00` : null },
-    { key:'pattern_type', label:'Pattern',      q:'which one',
-      say: v => `the ${v} pattern`, of: t => t.pattern_type },
-    { key:'seq',          label:'Sequence',     q:'how many HL/LH in',
-      say: v => `the ${v} HL/LH of the move`,
-      of: t => answerBy(t, it => it.select) },
-    { key:'score',        label:'Confluence score', q:'is the checklist worth it',
-      say: v => `trades at ${v} confluence`,
-      of: t => { const s = _confluenceScoreFor(t);
-        return s === null ? null : (s >= 0.8 ? '80–100%' : (s >= 0.5 ? '50–80%' : 'under 50%')); } },
-    { key:'trigger',      label:'Entry trigger', q:'how you got in',
-      say: v => `${v} entries`,
-      of: t => { const a = answerBy(t, it => it.retest, ['yes','no','almost','retest']);
-        return a ? ({ yes:'Zero-line cross', retest:'Retest', almost:'Almost', no:'No confirmation' }[a] || null) : null; } },
-    // The Breakeven Protection question, with the control group it never had:
-    // what happened on the trades where the stop was NOT moved up.
-    // `outcome` — how the trade ended, not something chosen before entry. The
-    // briefing must never write "stop taking Stopped at BE": you do not pick
-    // that, and reading it as advice is circular. It has its own finding below,
-    // phrased as the comparison it actually is.
-    { key:'be', label:'Stop to breakeven', q:'is it helping', outcome:true,
-      of: t => {
-        // Both of these were stopped at breakeven. What separates them is what
-        // price did next, which is the only thing that says whether the stop
-        // was worth moving. The old labels read as if one of them escaped.
-        if(t.post_be_result === 'TP After BE') return 'BE stop cost the trade';
-        if(t.post_be_result === 'SL After BE') return 'BE stop saved the loss';
-        if(_postBEApplies(t)) return 'BE stop, outcome unknown';
-        // The control group, and the sharper half of it: trades he tagged as
-        // ones a breakeven stop WOULD have closed. Their P&L is what leaving
-        // the stop alone was worth, which is the question from the other side.
-        return _ruleTags(t.unfollowed_rules).some(r => r.toLowerCase() === "would have be'd out")
-          ? "Would have BE'd out" : 'Stop never moved';
-      } },
-    // The cut-loss counterpart, and the same question from the other side: once
-    // you were out, did price go on to prove you right or wrong? The control
-    // group is the losses you did NOT cut — without it "my cuts lose money" is
-    // trivially true, because every cut is a loss.
-    { key:'cutloss', label:'Cutting the loss', q:'is it helping', outcome:true,
-      of: t => {
-        if(t.post_cutloss_result === 'SL After Cutloss') return 'Cut, SL would have hit';
-        if(t.post_cutloss_result === 'TP After Cutloss') return 'Cut, TP would have hit';
-        if(String(t.exit_type || '').trim().toLowerCase() === 'cut loss') return 'Cut, outcome unknown';
-        return _isLoss(t) ? 'Loss, let it run' : null;
-      } },
-    // The second experiment, same shape as the breakeven one: the setup broke
-    // mid-trade, and the only choice was to sit or to get out.
-    { key:'invalid', label:'When the setup invalidates', q:'hold or cut', outcome:true,
-      of: t => {
-        const tags = _canonicalTags(t.unfollowed_rules).map(s => s.toLowerCase());
-        const held = tags.includes('held through invalidation');
-        const cut  = tags.includes('cut on invalidation');
-        if(held === cut) return null;      // neither, or contradictory
-        return held ? 'Held through it' : 'Cut when it broke';
-      } },
-    // Also an outcome in the wildcard's eyes — "after a loss" is a position you
-    // land in, and its finding below is the before-and-after comparison.
-    { key:'afterloss', label:'Order in the day', q:'revenge trading', outcome:true,
-      of: t => pos.get(t) || null },
-    { key:'session',      label:'Session',      q:'when',
-      say: v => `the ${v} session`, of: t => t.session },
-    { key:'trade_setup',  label:'Setup',        q:'what to look for',
-      say: v => `${v} setups`, of: t => t.trade_setup },
-    // How the trade ended is the result, never the decision. "Stop taking exit
-    // type SL Hit" is a tautology dressed as advice.
-    { key:'exit_type',    label:'Exit type',    q:'how it ended', outcome:true,
-      of: t => t.exit_type },
-    { key:'day_of_week',  label:'Day of week',  q:'which day',
-      say: v => `${v} trades`, of: t => t.day_of_week },
-    // No Account card. Which account a trade ran on is a fact about position
-    // size, not about the trade — and the whole reason this page ranks on
-    // percent of account rather than dollars is that account size must not be
-    // part of the answer. My Accounts already covers per-account performance.
-  ];
+function renderDisciplinePanel(){
+  const body = document.getElementById('disciplineBody');
+  if(!body) return;
+  if(!FILTERED.length){ body.innerHTML = `<div class="empty-state">No trades in view.</div>`; return; }
+
+  const rules = _disciplineStats(FILTERED);
+  const worst = Math.min(...rules.map(r => r.net), 0);
+  const clean = FILTERED.filter(t => _isCleanRules(t.unfollowed_rules)).length;
+  const tagged = FILTERED.filter(t => _ruleTags(t.unfollowed_rules).length).length;
+
+  const rulesHtml = rules.map(r => {
+    const quiet = r.n === 0;
+    const w = worst < 0 ? Math.max(2, r.net / worst * 100) : 2;
+    return `<div class="dx-rule${quiet ? ' quiet' : ''}">
+      <div class="dx-r-head">
+        <span class="dx-r-name">${escapeHtml(r.name)}</span>
+        <span class="dx-r-n">${quiet ? 'never' : `${r.n} trade${r.n===1?'':'s'} · ${Math.round(r.share)}%`}</span>
+        <span class="dx-r-cost">${quiet ? '—' : fmtMoney(r.net)}</span>
+      </div>
+      <div class="dx-r-bar"><i style="width:${w.toFixed(0)}%"></i></div>
+      <div class="dx-r-tags">${r.tags.map(([tag, n]) =>
+        `<span class="dx-tag${n ? '' : ' zero'}">${escapeHtml(tag)}<em>${n}</em></span>`).join('')}</div>
+    </div>`;
+  }).join('');
+
+  const groupsHtml = TRADE_EXPERIMENTS.map(g => {
+    const items = g.items.map(e => _runExperiment(e, FILTERED)).filter(Boolean);
+    if(!items.length) return '';
+    return `<div class="dx-exp-group"><div class="dx-exp-group-name">${escapeHtml(g.group)}</div>${
+      items.map(_experimentHtml).join('')}</div>`;
+  }).join('');
+
+  body.innerHTML = `
+    <div class="dx-half">
+      <div class="dx-half-head"><span class="dx-dot bad"></span>
+        <h3>What you are doing wrong</h3>
+        <span class="dx-half-sub">${clean} of ${tagged || FILTERED.length} tagged trades clean</span></div>
+      <p class="dx-lead">Your ${RULE_GROUPS.reduce((s,g) => s + g.tags.length, 0)} breach tags, grouped
+        into the ${RULE_GROUPS.length} rules they actually describe, costliest first. The target here is zero.</p>
+      ${rulesHtml}
+    </div>
+    <div class="dx-half">
+      <div class="dx-half-head"><span class="dx-dot note"></span>
+        <h3>What you should be doing</h3></div>
+      <p class="dx-lead">Your observation tags and the two exit columns, read as experiments. Nothing here
+        is a fault — each one is a question, measured on <b>return per trade as a percent of the account</b>.</p>
+      ${groupsHtml || `<div class="empty-state">Nothing tagged yet — tick the observation tags as you journal and the answers build themselves.</div>`}
+    </div>`;
 }
+
+/* ======================== Setup: Pattern · Session · Confluence ===========
+
+   Where the money comes from, on the three things chosen before a trade is
+   taken. Same metric as the experiments above so the two panels can be read
+   against each other, and the same honesty about small samples: a value is
+   pulled toward zero until roughly EM_PRIOR trades stand behind it, so 100%
+   off three cannot outrank 60% off forty. The true figure is always printed
+   beside the bar — nothing is hidden, only ranked carefully. */
+function _setupStats(trades, keyOf){
+  const g = {};
+  trades.forEach(t => {
+    const k = keyOf(t);
+    if(k === null || k === undefined || k === '' || k === 'Unspecified') return;
+    (g[k] = g[k] || []).push(t);
+  });
+  return Object.entries(g).map(([name, arr]) => {
+    const s = _tagArmStats(arr);
+    return { name, ...s,
+      rate: (s.wins + s.losses) ? s.wins / (s.wins + s.losses) * 100 : null,
+      shown: s.ret === null ? null : s.priced * s.ret / (s.priced + EM_PRIOR) };
+  }).sort((a, b) => {
+    const thin = r => r.shown === null || r.priced < EM_MIN_N;
+    return (thin(a) - thin(b)) || ((b.shown ?? -Infinity) - (a.shown ?? -Infinity));
+  });
+}
+
+const SETUP_DIMENSIONS = [
+  { key:'pattern_type', label:'Pattern',  q:'which setup pays',   of:t => t.pattern_type },
+  { key:'session',      label:'Session',  q:'when to be at the desk', of:t => t.session },
+  { key:'trade_setup',  label:'Play',     q:'bounce, rejection or invalidation', of:t => t.trade_setup },
+  // Bands, not raw scores: the checklists differ in length, so only the
+  // percentage is comparable — and the band each trade falls in is judged
+  // against that setup's OWN bar, the same way the journal colours it.
+  { key:'confluence',   label:'Confluence', q:'does the checklist pay',
+    of: t => { const d = _confluenceCellData(t);
+      return d ? ({ pass:'Passed the bar', near:'Just under', fail:'Well under' })[d.state] : null; } },
+];
+
+function renderSetupPanel(){
+  const body = document.getElementById('setupEdgeBody');
+  if(!body) return;
+  if(!FILTERED.length){ body.innerHTML = `<div class="empty-state">No trades in view.</div>`; return; }
+
+  const table = SETUP_DIMENSIONS.map(d => ({ d, rows:_setupStats(FILTERED, d.of) }));
+  let max = 0.01;
+  table.forEach(({ rows }) => rows.forEach(r => {
+    if(r.shown !== null) max = Math.max(max, Math.abs(r.shown));
+  }));
+
+  // The one line per card that says what to do with it, rather than leaving
+  // the reader to compare bars.
+  const headline = rows => {
+    const solid = rows.filter(r => r.priced >= EM_MIN_N && r.ret !== null);
+    if(solid.length < 2) return null;
+    const best = solid[0], worst = solid[solid.length - 1];
+    if(best.ret <= 0) return { tone:'bad', txt:`Nothing here is paying. Best is <b>${escapeHtml(best.name)}</b> at ${_pctTxt(best.ret)} across ${best.n}.` };
+    if(worst.ret >= 0) return { tone:'good', txt:`All of these pay. <b>${escapeHtml(best.name)}</b> leads at ${_pctTxt(best.ret)} across ${best.n}.` };
+    return { tone:'good', txt:`<b>${escapeHtml(best.name)}</b> at ${_pctTxt(best.ret)} against <b>${escapeHtml(worst.name)}</b> at ${_pctTxt(worst.ret)}. That is where the difference is.` };
+  };
+
+  const cards = table.map(({ d, rows }) => {
+    if(!rows.length) return '';
+    const h = headline(rows);
+    const lines = rows.map(r => {
+      const has = r.shown !== null;
+      const w = has ? Math.min(50, Math.abs(r.shown) / max * 50) : 0;
+      const thin = r.priced < EM_MIN_N;
+      const col = !has ? 'var(--muted)' : (r.shown >= 0 ? 'var(--win)' : 'var(--loss)');
+      return `<div class="sx-row" title="${escapeHtml(r.name)} — ${r.wins}W ${r.losses}L${
+          has ? ` · ${_pctTxt(r.ret)} of account per trade` : ' · no account size, cannot measure'}${
+          thin && has ? ` · only ${r.priced} trades, held back toward zero` : ''} · ${fmtMoney(r.net)} in total">
+        <span class="sx-name">${escapeHtml(r.name)}</span>
+        <span class="sx-bar"><i class="zero"></i>${has ? `<i class="fill${thin?' thin':''}" style="${
+          r.shown >= 0 ? `left:50%;width:${w}%` : `right:50%;width:${w}%`};background-color:${col}"></i>` : ''}</span>
+        <span class="sx-rate">${r.rate === null ? '—' : Math.round(r.rate) + '%'}</span>
+        <span class="sx-n">${r.n}</span>
+      </div>`;
+    }).join('');
+    return `<div class="sx-card">
+      <div class="sx-card-head"><h4>${escapeHtml(d.label)}</h4><span class="sx-q">${escapeHtml(d.q)}</span></div>
+      ${h ? `<div class="sx-headline ${h.tone}">${h.txt}</div>` : ''}
+      ${lines}</div>`;
+  }).join('');
+
+  body.innerHTML = `<div class="sx-grid">${cards}</div>
+    <div class="sx-legend">
+      <span>Bars are <b>return on the account per trade</b>. Centre is zero — right of it grew the account, left of it shrank it.</span>
+      <span><i class="sw hatch"></i><b>hatched</b> = under ${EM_MIN_N} measurable trades, and pulled toward zero until about ${EM_PRIOR} stand behind it</span>
+      <span>The two figures are <b>win rate</b> then <b>trade count</b>. Hover any row for the real return and the dollars.</span>
+    </div>`;
+}
+
+const _pctTxt = v => (v >= 0 ? '+' : '−') + Math.abs(v).toFixed(2) + '%';
+
+function _experimentHtml(r){
+  const pct = v => (v >= 0 ? '+' : '−') + Math.abs(v).toFixed(2) + '%';
+
+  if(r.kind === 'ratio'){
+    const { exp } = r, cfg = exp.ratio;
+    const wrongPct = Math.round(r.wrong / r.total * 100);
+    const good = wrongPct < 40;
+    const verdict = !r.enough
+      ? { cls:'wait', mark:'·', txt:`Only ${r.total} answered so far. This needs ${EM_MIN_N} before it means anything.` }
+      : { cls: good ? 'good' : 'bad', mark:'→',
+          txt:`<b>${good ? cfg.keep : cfg.drop}.</b> ${r.right} of ${r.total} ${cfg.right.label}; ${r.wrong} ${cfg.wrong.label}.` };
+    return `<div class="dx-exp">
+      <h4>${escapeHtml(exp.title)}</h4><div class="dx-exp-q">${escapeHtml(exp.q)}</div>
+      <div class="dx-arms">
+        <div class="dx-arm ${good ? 'lead' : 'trail'}"><div class="dx-a-name">${escapeHtml(cfg.right.label)}</div>
+          <div class="dx-a-val">${r.right}</div><div class="dx-a-n">${fmtMoney(r.rightNet)}</div></div>
+        <div class="dx-arm ${good ? 'trail' : 'lead'}"><div class="dx-a-name">${escapeHtml(cfg.wrong.label)}</div>
+          <div class="dx-a-val">${r.wrong}</div><div class="dx-a-n">${fmtMoney(r.wrongNet)}</div></div>
+      </div>
+      <div class="dx-verdict ${verdict.cls}"><span class="dx-v-mark">${verdict.mark}</span>
+        <span class="dx-v-txt">${verdict.txt}</span></div></div>`;
+  }
+
+  const { exp, a, b } = r;
+  const aLead = r.decided && r.gap > 0;
+  const bLead = r.decided && r.gap < 0;
+  const arm = (s, lead, trail) => `<div class="dx-arm ${lead ? 'lead' : (trail ? 'trail' : '')}">
+      <div class="dx-a-name">${escapeHtml(s.label)}</div>
+      <div class="dx-a-val">${s.ret === null ? '—' : pct(s.ret)}</div>
+      <div class="dx-a-n">${s.n} trade${s.n===1?'':'s'} · ${s.wins}W ${s.losses}L</div></div>`;
+
+  const better = r.gap > 0 ? a : b;
+  const verdict = !r.enough
+    ? { cls:'wait', mark:'·',
+        txt:`${a.n} against ${b.n}. Each side needs ${EM_MIN_N} measurable trades before this can say anything.` }
+    : !r.decided
+    ? { cls:'wait', mark:'·',
+        txt:`Too close to call — ${pct(a.ret)} against ${pct(b.ret)}. Keep tagging both and it will separate.` }
+    : { cls:'good', mark:'→',
+        txt:`<b>${escapeHtml(better.label)}.</b> ${pct(Math.abs(r.gap)).replace('+','')} better per trade across ${a.n + b.n} trades.` };
+
+  return `<div class="dx-exp">
+    <h4>${escapeHtml(exp.title)}</h4><div class="dx-exp-q">${escapeHtml(exp.q)}</div>
+    <div class="dx-arms">${arm(a, aLead, bLead)}${arm(b, bLead, aLead)}</div>
+    <div class="dx-verdict ${verdict.cls}"><span class="dx-v-mark">${verdict.mark}</span>
+      <span class="dx-v-txt">${verdict.txt}</span></div></div>`;
+}
+
+
 
 /* Findings — the part that is actually an instruction.
 
@@ -3284,393 +3504,13 @@ function _emDimensions(){
    evidence attached to each so it can be argued with. Nothing is written
    unless it clears EM_MIN_N, and every line carries its own counts, because a
    confident sentence off four trades is worse than no sentence. */
-function _emFindings(table, dims){
-  const out = [];
-  const rowsOf = label => (table.find(x => x.d.label === label) || {}).rows || [];
-  const get = (label, name) => rowsOf(label).find(r => r.name === name);
-  const solid = r => r && r.priced >= EM_MIN_N && r.ret !== null;
-  const pct = v => (v >= 0 ? '+' : '−') + Math.abs(v).toFixed(2) + '%';
 
-  // 1. The most expensive rule he breaks. Named by the rule now rather than by
-  //    one of the six tags that all describe it, so the instruction is the one
-  //    he can actually act on.
-  const mistakes = rowsOf('What you did wrong').filter(solid);
-  if(mistakes.length){
-    const w = mistakes[0];
-    const grp = RULE_GROUPS.find(g => g.name === w.name);
-    if(w.ret < 0) out.push({ tone:'bad', weight: Math.abs(w.ret) * w.priced,
-      head: grp ? `The rule costing you most: ${grp.name.toLowerCase()}` : `Stop breaking "${w.name}"`,
-      body: `Trades where you broke it return ${pct(w.ret)} of the account each — ${w.wins}W ${w.losses}L across ${w.n}.${
-        grp ? ` Tagged as: ${grp.tags.join(', ')}.` : ''}`,
-      key:'rules', value:w.name });
-  }
 
-  // 2. Revenge trading — the one comparison that is about behaviour, not setup.
-  const first = get('Order in the day', 'First of the day');
-  const after = get('Order in the day', 'After a loss');
-  if(solid(first) && solid(after) && after.ret < first.ret - 0.15){
-    out.push({ tone:'bad', weight: Math.abs(after.ret - first.ret) * after.priced,
-      head: `Stop trading after a loss`,
-      body: `Your first trade of the day returns ${pct(first.ret)}; the one after a red trade returns ${pct(after.ret)}. That gap across ${after.n} trades is revenge trading, not variance.`,
-      key:'afterloss', value:'After a loss' });
-  }
 
-  // 3. Does the checklist pay — the question the Confluence panel used to ask.
-  const hi = get('Confluence score', '80–100%');
-  const lo = get('Confluence score', 'under 50%');
-  if(solid(hi) && solid(lo)){
-    const gap = hi.ret - lo.ret;
-    if(gap > 0.15) out.push({ tone:'good', weight: gap * Math.min(hi.priced, lo.priced),
-      head: `Wait for the full checklist`,
-      body: `At 80%+ confluence you return ${pct(hi.ret)} a trade; under 50% you return ${pct(lo.ret)}. Skipping the thin ones is the cheapest edge you have.`,
-      key:'score', value:'80–100%' });
-    else if(gap < -0.15) out.push({ tone:'warn', weight: Math.abs(gap) * Math.min(hi.priced, lo.priced),
-      head: `Your checklist is not paying`,
-      body: `Low-confluence trades return ${pct(lo.ret)} against ${pct(hi.ret)} for the full ones. Worth asking which items on that list actually matter.`,
-      key:'score', value:'under 50%' });
-  }
 
-  // 4. Late in the sequence — his own colour-coding says 4th and 5th are bad.
-  const late = ['3rd','4th','5th'].map(s => get('Sequence', s)).filter(solid);
-  const early = ['1st','2nd'].map(s => get('Sequence', s)).filter(solid);
-  if(late.length && early.length){
-    const lr = late.reduce((s,r) => s + r.ret * r.priced, 0) / late.reduce((s,r) => s + r.priced, 0);
-    const er = early.reduce((s,r) => s + r.ret * r.priced, 0) / early.reduce((s,r) => s + r.priced, 0);
-    const lateN = late.reduce((s,r) => s + r.n, 0);
-    if(lr < er - 0.15) out.push({ tone:'bad', weight: Math.abs(er - lr) * lateN,
-      head: `Stop taking the 3rd HL/LH onward`,
-      body: `The 1st and 2nd return ${pct(er)} a trade; the 3rd and later return ${pct(lr)} across ${lateN}. The move is already spent by then.`,
-      key:'seq', value:late.sort((a,b) => a.ret - b.ret)[0].name });
-  }
 
-  // 5. Moving the stop to breakeven — was a whole panel, is one sentence.
-  //    The comparison that answers it is NOT "BE-stopped trades vs trades you
-  //    left alone": those are different trades and prove nothing. It is, of the
-  //    trades the BE stop actually closed, how many were about to come back.
-  //    Exactly the cut-loss question, one column over.
-  const beCost = get('Stop to breakeven', 'BE stop cost the trade');
-  const beSaved = get('Stop to breakeven', 'BE stop saved the loss');
-  const beCostN = beCost ? beCost.n : 0;
-  const beSavedN = beSaved ? beSaved.n : 0;
-  const beTotal = beCostN + beSavedN;
-  if(beTotal >= EM_MIN_N){
-    const costPct = beCostN / beTotal * 100;
-    if(costPct >= 40) out.push({ tone:'warn', weight: beCostN + 1,
-      head: `You are moving the stop up too early`,
-      body: `${beCostN} of your ${beTotal} breakeven stops took you out of a trade that then ran to target — ${Math.round(costPct)}% of them. The stop is closing trades that were going to work.`,
-      key:'be', value:'BE stop cost the trade' });
-    else out.push({ tone:'good', weight: beSavedN + 1,
-      head: `Keep moving the stop to breakeven`,
-      body: `${beSavedN} of your ${beTotal} breakeven stops took you out of a trade that was heading for your original stop — only ${beCostN} would have paid. It is doing its job.`,
-      key:'be', value:'BE stop saved the loss' });
-  }
-  const beUnknown = get('Stop to breakeven', 'BE stop, outcome unknown');
-  if(beUnknown && beUnknown.n >= EM_MIN_N && beUnknown.n > beTotal){
-    out.push({ tone:'note', weight: 0.01,
-      head: `${beUnknown.n} breakeven stops have no result logged`,
-      body: `Until they carry a Post-BE Result there is no way to tell whether the stop saved you a loss or cost you a winner. Open one and answer TP After BE or SL After BE.`,
-      key:'be', value:'BE stop, outcome unknown' });
-  }
 
-  // 6. Is cutting the loss working — the question the new column was added to
-  //    answer. Not "do my cuts lose money" (every cut is a loss, so that says
-  //    nothing) but: of the trades you cut, how many were about to come back?
-  //    That ratio is the whole verdict, and it needs no control group.
-  const cutRight = get('Cutting the loss', 'Cut, SL would have hit');
-  const cutWrong = get('Cutting the loss', 'Cut, TP would have hit');
-  const cutRightN = cutRight ? cutRight.n : 0;
-  const cutWrongN = cutWrong ? cutWrong.n : 0;
-  const cutTotal = cutRightN + cutWrongN;
-  if(cutTotal >= EM_MIN_N){
-    const wrongPct = cutWrongN / cutTotal * 100;
-    // Saved is what the cut spared you; given up is what it cost. Both are real
-    // money already in the journal, so the verdict is a comparison, not a guess.
-    const saved = cutRight ? cutRight.net : 0;
-    const gaveUp = cutWrong ? cutWrong.net : 0;
-    if(wrongPct >= 40) out.push({ tone:'bad', weight: Math.abs(gaveUp) / 100 + cutWrongN,
-      head: `You are cutting too early`,
-      body: `${cutWrongN} of your ${cutTotal} cut losses would have reached TP — ${Math.round(wrongPct)}% of them. Those cuts turned winning trades into ${fmtMoney(gaveUp)}. Give the trade its stop.`,
-      key:'cutloss', value:'Cut, TP would have hit' });
-    else out.push({ tone:'good', weight: Math.abs(saved) / 100 + cutRightN,
-      head: `Keep cutting the loss`,
-      body: `${cutRightN} of your ${cutTotal} cuts were about to hit the stop anyway — only ${cutWrongN} would have come back. Cutting is saving you the rest of those losses.`,
-      key:'cutloss', value:'Cut, SL would have hit' });
-  }
-  // Unanswered cuts are not a verdict, they are a gap — say so rather than
-  // quietly computing the ratio off whichever half happens to be filled in.
-  const cutUnknown = get('Cutting the loss', 'Cut, outcome unknown');
-  if(cutUnknown && cutUnknown.n >= EM_MIN_N && cutUnknown.n > cutTotal){
-    out.push({ tone:'note', weight: 0.01,
-      head: `${cutUnknown.n} cut losses have no result logged`,
-      body: `Until they carry a Post-Cutloss Result there is no way to tell whether cutting saved you money or cost it. Set Exit Type to Cut Loss on a trade and the journal will ask for it.`,
-      key:'cutloss', value:'Cut, outcome unknown' });
-  }
 
-  // 7. The experiment he is actually running on himself: at previous high/low,
-  //    move the stop to breakeven, or leave it and let the trade reach TP or
-  //    SL? Both arms are his own tags, both neutral, and the comparison is a
-  //    straight one — same situation, two different choices.
-  const beMoved = get('BE at prev high/low', 'Moved to BE');
-  const beLeft  = get('BE at prev high/low', 'Let it run');
-  if(solid(beMoved) && solid(beLeft)){
-    const better = beLeft.ret > beMoved.ret ? beLeft : beMoved;
-    const worse  = better === beLeft ? beMoved : beLeft;
-    const gap = better.ret - worse.ret;
-    if(gap > 0.15) out.push({ tone:'good', weight: gap * Math.min(better.priced, worse.priced),
-      head: better === beLeft
-        ? `Leave the stop alone at previous high/low`
-        : `Move the stop to breakeven at previous high/low`,
-      body: `Letting it run returns ${pct(beLeft.ret)} a trade across ${beLeft.n}; moving to breakeven returns ${pct(beMoved.ret)} across ${beMoved.n}. Same situation, and ${better === beLeft ? 'holding' : 'moving'} is ${pct(gap).replace('+','')} better per trade.`,
-      key:'beprev', value:better.name });
-    else out.push({ tone:'note', weight: 0.02,
-      head: `Breakeven at previous high/low is a coin flip so far`,
-      body: `Letting it run returns ${pct(beLeft.ret)} across ${beLeft.n} trades; moving to breakeven ${pct(beMoved.ret)} across ${beMoved.n}. Too close to call — keep tagging both and this will separate.`,
-      key:'beprev', value:better.name });
-  }else if((beMoved || beLeft) && !(solid(beMoved) && solid(beLeft))){
-    const have = solid(beMoved) ? beMoved : (solid(beLeft) ? beLeft : null);
-    if(have) out.push({ tone:'note', weight: 0.015,
-      head: `Only one side of the breakeven test has data`,
-      body: `You have ${have.n} trades tagged "${have.name}" but not enough of the other. Tag both choices at previous high/low and the journal can tell you which one pays.`,
-      key:'beprev', value:have.name });
-  }
-
-  // 7b. The other experiment he is running: when the setup invalidates
-  //     mid-trade — a 15 mins HL turning into a 1 hour HL — is it better to sit
-  //     through it or to get out? Same straight comparison as the breakeven
-  //     one, and possible for the same reason: both arms are neutral tags.
-  const invHeld = get('When the setup invalidates', 'Held through it');
-  const invCut  = get('When the setup invalidates', 'Cut when it broke');
-  if(solid(invHeld) && solid(invCut)){
-    const better = invHeld.ret > invCut.ret ? invHeld : invCut;
-    const gap = Math.abs(invHeld.ret - invCut.ret);
-    if(gap > 0.15) out.push({ tone:'good', weight: gap * Math.min(invHeld.priced, invCut.priced),
-      head: better === invHeld
-        ? `Sitting through an invalidation is working`
-        : `Get out when the setup invalidates`,
-      body: `Holding through it returns ${pct(invHeld.ret)} a trade across ${invHeld.n}; cutting when it broke returns ${pct(invCut.ret)} across ${invCut.n}. ${better === invHeld ? 'Holding' : 'Cutting'} is ${pct(gap).replace('+','')} better per trade.`,
-      key:'invalid', value:better.name });
-    else out.push({ tone:'note', weight: 0.02,
-      head: `Holding through an invalidation is a coin flip so far`,
-      body: `Holding returns ${pct(invHeld.ret)} across ${invHeld.n} trades; cutting ${pct(invCut.ret)} across ${invCut.n}. Too close to call — keep tagging both.`,
-      key:'invalid', value:better.name });
-  }else if((invHeld || invCut) && !(solid(invHeld) && solid(invCut))){
-    const have = solid(invHeld) ? invHeld : (solid(invCut) ? invCut : null);
-    if(have) out.push({ tone:'note', weight: 0.015,
-      head: `Only one side of the invalidation test has data`,
-      body: `You have ${have.n} trades tagged "${have.name}" but not enough of the other. Tag both choices and the journal can tell you which one pays.`,
-      key:'invalid', value:have.name });
-  }
-
-  // 8. The catch-all, and deliberately last to be written: the single best and
-  //    single worst thing across every dimension nothing above already spoke
-  //    for. It runs last so the hand-written findings claim their subject
-  //    first — otherwise this says "stop taking Order in the day After a loss"
-  //    one line above the revenge-trading finding, in worse English, about the
-  //    same trades. `outcome` dimensions are skipped entirely: you do not
-  //    choose your exit type, so ranking it can only produce a tautology.
-  const claimed = new Set(out.map(f => f.key));
-  let worst = null, best = null;
-  table.forEach(({ d, rows }) => {
-    if(d.multi || d.outcome || !d.say || claimed.has(d.key)) return;
-    rows.forEach(r => {
-      if(!solid(r)) return;
-      if(!worst || r.shown < worst.shown) worst = { ...r, d };
-      if(!best  || r.shown > best.shown)  best  = { ...r, d };
-    });
-  });
-  if(worst && worst.ret < 0) out.push({ tone:'bad', weight: Math.abs(worst.ret) * worst.priced,
-    head: `Stop taking ${worst.d.say(worst.name)}`,
-    body: `They return ${pct(worst.ret)} of the account each — ${worst.wins}W ${worst.losses}L across ${worst.n}. Nothing else you choose costs you more.`,
-    key:worst.d.key, value:worst.name });
-  if(best && best.ret > 0 && !(worst && best.name === worst.name && best.d.key === worst.d.key))
-    out.push({ tone:'good', weight: best.ret * best.priced,
-      head: `Take more of ${best.d.say(best.name)}`,
-      body: `${pct(best.ret)} of the account each, ${best.wins}W ${best.losses}L across ${best.n}. Your strongest single edge.`,
-      key:best.d.key, value:best.name });
-
-  // Biggest lesson first: how bad it is, times how often it happens.
-  out.sort((a,b) => b.weight - a.weight);
-  return out;
-}
-
-const _emMatches = (val, v) => Array.isArray(val) ? val.includes(v) : val === v;
-
-function _emFiltered(dims, exceptKey){
-  return FILTERED.filter(t => Object.entries(EM_FILTERS).every(([k, v]) => {
-    if(k === exceptKey) return true;
-    const d = dims.find(x => x.key === k);
-    return d ? _emMatches(d.of(t), v) : true;
-  }));
-}
-
-function _emStats(dims, dim){
-  // The card's own filter is excluded, so picking "15 mins HL" leaves the
-  // Pattern card showing every pattern — otherwise the card you just clicked
-  // collapses to one row and there is no way to change your mind.
-  const rows = _emFiltered(dims, dim.key);
-  const g = {};
-  rows.forEach(t => {
-    const v = dim.of(t);
-    const keys = dim.multi ? (v || []) : [v];
-    keys.forEach(k => {
-      if(k === null || k === undefined || k === '' || k === 'Unspecified') return;
-      (g[k] = g[k] || []).push(t);
-    });
-  });
-  const out = Object.entries(g).map(([name, arr]) => {
-    const wins = arr.filter(_isWin).length;
-    const losses = arr.filter(_isLoss).length;
-    const decided = wins + losses;
-    const net = arr.reduce((s,t) => s + netPnl(t), 0);
-    const n = arr.length;
-    const rate = decided ? wins / decided * 100 : null;
-    // Only the trades whose account size is known can carry a return.
-    const pcts = arr.map(_emReturnPct).filter(v => v !== null);
-    const ret = pcts.length ? pcts.reduce((s,v) => s + v, 0) / pcts.length : null;
-    return { name, n, wins, losses, decided, net, rate,
-             ret, priced: pcts.length,
-             // What the bar draws and the sort follows. Shrunk on the count of
-             // trades that actually have a return behind them.
-             shown: ret === null ? null : pcts.length * ret / (pcts.length + EM_PRIOR) };
-  });
-  // Best to worst on every card, worst-first on the mistakes card. A group
-  // with no measurable return goes last rather than being read as zero.
-  //
-  // Under EM_MIN_N a row can never lead, whatever it returns. Shrinkage alone
-  // was not enough: three trades at +10% each survive being pulled toward zero
-  // and still outrank forty at +1.7%, which is exactly the nonsense he
-  // objected to. The row keeps its true numbers and its hatching — it just
-  // sits below everything that has enough behind it to be worth reading first.
-  const thin = r => r.shown === null || r.priced < EM_MIN_N;
-  const key = r => r.shown === null ? (dim.multi ? Infinity : -Infinity) : r.shown;
-  const cmp = dim.multi ? (a,b) => key(a) - key(b) : (a,b) => key(b) - key(a);
-  out.sort((a,b) => (thin(a) - thin(b)) || cmp(a,b));
-  return out;
-}
-
-function toggleEdgeFilter(key, value){
-  if(EM_FILTERS[key] === value) delete EM_FILTERS[key]; else EM_FILTERS[key] = value;
-  renderEdgeMap();
-}
-function clearEdgeFilters(){ EM_FILTERS = {}; renderEdgeMap(); }
-
-function renderEdgeMap(){
-  const body = document.getElementById('edgeMapBody');
-  if(!body) return;
-
-  const dims = _emDimensions();
-  const shown = _emFiltered(dims);
-
-  if(!FILTERED.length){
-    body.innerHTML = `<div class="empty-state">No trades in view.</div>`;
-    return;
-  }
-
-  // Zero is the centre. Right of it a group grew the account, left of it it
-  // shrank it — an absolute statement, not a comparison against his own
-  // average, which was always going to leave half the bars green whatever he
-  // did and so could never be an instruction.
-  //
-  // One scale across the whole page, so a bar on one card is directly
-  // comparable with a bar on another. Rescaling per card would make the
-  // weakest dimension look as strong as the best.
-  let max = 0.01;
-  const table = dims.map(d => ({ d, rows: _emStats(dims, d) }));
-  table.forEach(({ rows }) => rows.forEach(r => {
-    if(r.shown !== null) max = Math.max(max, Math.abs(r.shown));
-  }));
-
-  const findings = _emFindings(table, dims);
-
-  const chips = Object.entries(EM_FILTERS);
-  const chipHtml = chips.length
-    ? chips.map(([k,v]) => {
-        const d = dims.find(x => x.key === k);
-        return `<button class="em-chip" onclick="toggleEdgeFilter('${k}', ${escapeHtml(JSON.stringify(v))})">${
-          escapeHtml(d ? d.label : k)}: ${escapeHtml(v)} <span class="x">✕</span></button>`;
-      }).join('')
-    : `<span class="em-nofilter">Nothing picked — click any bar below.</span>`;
-
-  const shownNet = shown.reduce((s,t) => s + netPnl(t), 0);
-  const sw = shown.filter(_isWin).length, sl = shown.filter(_isLoss).length;
-
-  const findingsHtml = findings.length
-    ? findings.map((f, i) => `
-        <div class="em-find ${f.tone}" onclick="toggleEdgeFilter('${f.key}', ${escapeHtml(JSON.stringify(f.value))})"
-             title="Show only these trades">
-          <span class="em-find-n">${i + 1}</span>
-          <div class="em-find-txt">
-            <div class="em-find-head">${escapeHtml(f.head)}</div>
-            <div class="em-find-body">${escapeHtml(f.body)}</div>
-          </div>
-        </div>`).join('')
-    : `<div class="em-find thin"><span class="em-find-n">—</span><div class="em-find-txt">
-         <div class="em-find-head">Nothing worth acting on yet</div>
-         <div class="em-find-body">Every rule here needs at least ${EM_MIN_N} trades with a known account behind it before it will say anything. Keep journalling and this fills itself in.</div>
-       </div></div>`;
-
-  const cards = table.map(({ d, rows }) => {
-    if(!rows.length) return '';
-    const lines = rows.map(r => {
-      const has = r.shown !== null;
-      const w = has ? Math.min(50, Math.abs(r.shown) / max * 50) : 0;
-      const thin = r.priced < EM_MIN_N;
-      const col = !has ? 'var(--muted)' : (r.shown >= 0 ? 'var(--win)' : 'var(--loss)');
-      const on = EM_FILTERS[d.key] === r.name;
-      const dimmed = EM_FILTERS[d.key] && !on;
-      // The tooltip carries the raw return, the win rate, the counts AND the
-      // dollars — the ranking sets money aside because account sizes differ,
-      // not because it is uninteresting.
-      return `<div class="em-row${on?' on':''}${dimmed?' off':''}"
-          onclick="toggleEdgeFilter('${d.key}', ${escapeHtml(JSON.stringify(r.name))})"
-          title="${escapeHtml(r.name)}${
-            // A grouped row names the tags inside it, so the specific reason is
-            // never more than a hover away — the grouping is a reading of the
-            // checklist, never a replacement for it.
-            d.expand ? ` (${escapeHtml(d.expand(r.name))})` : ''} — ${r.wins}W ${r.losses}L${
-            r.n > r.decided ? `, ${r.n - r.decided} with no result` : ''}${
-            has ? ` · ${(r.ret>=0?'+':'−')}${Math.abs(r.ret).toFixed(2)}% of account per trade` : ' · no account size, cannot measure'}${
-            thin && has ? ` · only ${r.priced} trades, held back toward zero` : ''} · ${fmtMoney(r.net)} in total">
-        <span class="em-name">${escapeHtml(r.name)}</span>
-        <span class="em-bar"><i class="zero"></i>${has ? `<i class="fill${thin?' thin':''}" style="${
-          r.shown >= 0 ? `left:50%;width:${w}%` : `right:50%;width:${w}%`};background-color:${col}"></i>` : ''}</span>
-        <span class="em-rate">${r.rate === null ? '—' : fmtNum(r.rate,0) + '%'}</span>
-        <span class="em-n">${r.n}</span>
-      </div>`;
-    }).join('');
-    return `<div class="em-card${d.lead?' lead':''}">
-      <div class="em-card-head"><h3>${escapeHtml(d.label)}</h3>
-        <span class="q">${escapeHtml(d.q)}</span></div>
-      ${lines}</div>`;
-  }).join('');
-
-  body.innerHTML = `
-    <div class="em-findings">
-      <div class="em-findings-head">What the journal is telling you
-        <span>${shown.length} trades${(sw+sl) ? ` · ${Math.round(sw/(sw+sl)*100)}% win rate` : ''} · ${fmtMoney(shownNet)}</span>
-      </div>
-      ${findingsHtml}
-    </div>
-    <div class="em-filterbar">
-      <span class="em-lbl">Filter</span>${chipHtml}
-      <button class="em-clear" onclick="clearEdgeFilters()">Clear all</button>
-    </div>
-    <details class="panel-details" ${Object.keys(EM_FILTERS).length ? 'open' : ''}>
-      <summary>Show the working — every dimension, every value</summary>
-      <div class="panel-details-body">
-        <div class="em-grid">${cards}</div>
-        <div class="em-legend">
-          <span>Bars are <b>return on the account per trade</b> — each trade's P&amp;L as a percent of the account it ran on. Centre is zero.</span>
-          <span><i class="sw" style="background:var(--win)"></i>grew the account</span>
-          <span><i class="sw" style="background:var(--loss)"></i>shrank it</span>
-          <span><i class="sw hatch"></i><b>hatched</b> = under ${EM_MIN_N} trades</span>
-          <span>The two figures are <b>win rate</b> then <b>trade count</b>.</span>
-          <span><b>Percent of account, not dollars</b>, so a 50K account cannot outrank a 5K one on position size alone. Few trades draw a short bar on purpose — each value is held back toward zero until about ${EM_PRIOR} trades stand behind it.</span>
-          <span>Click a value to read every other card against it.</span>
-        </div>
-      </div>
-    </details>`;
-}
 
 /* ---------------- "What should I trade?" ----------------
    Ranked by AVERAGE NET P&L PER TRADE, not win rate. His own August is the
