@@ -1503,15 +1503,34 @@ function _renderCalGoal(monthTrades, y, m){
   const holder = document.getElementById('calGoalBar');
   if(!holder) return;
 
+  /* Three different situations used to render as the same "goal not set", which
+     is why this said you had no salary when you plainly did:
+
+       - the profile has not come back yet   -> we do not KNOW, so claim nothing
+       - it came back with no salary in it   -> genuinely not set
+       - the fetch failed, or the column is missing (supabase_salary_goal.sql
+         never run) -> also PROFILE_DATA null, and indistinguishable from the
+         first without saying so
+
+     _salarySettings() folds all three together, because it falls back to
+     SALARY_DEFAULTS — where monthly_salary is null. So the state is read here
+     from PROFILE_DATA directly, and the hover names which one it is. */
+  if(!PROFILE_DATA){
+    holder.innerHTML = `<span class="cal-goal empty"
+      title="Still loading your profile — the goal bar appears once it arrives. If it never does, the profile fetch failed; check the console."
+      >goal loading…</span>`;
+    return;
+  }
+
   const v = _salarySettings();
   const aed = Number(v.aed_per_usd) > 0 ? Number(v.aed_per_usd) : SALARY_DEFAULTS.aed_per_usd;
   const salary = Number(v.monthly_salary);
-  // No salary set yet. In the header there is no room for a sentence, so the
-  // bar simply stays away and the reason lives on the hover of a quiet hint.
   if(!Number.isFinite(salary) || salary <= 0){
-    holder.innerHTML = `<span class="cal-goal empty"
-      title="Set your monthly salary on the Salary vs Trading page and this becomes a goal bar."
-      >goal not set</span>`;
+    const hasCol = PROFILE_DATA && 'salary_settings' in PROFILE_DATA;
+    holder.innerHTML = `<span class="cal-goal empty" title="${escapeHtml(hasCol
+      ? 'Your profile loaded, but no monthly salary is saved in it. Set it on the Salary vs Trading page.'
+      : 'Your profile has no salary_settings column — run supabase_salary_goal.sql in Supabase, then set your salary on the Salary vs Trading page.')}"
+      >${hasCol ? 'goal not set' : 'run the SQL'}</span>`;
     return;
   }
 
@@ -15421,10 +15440,17 @@ async function loadProfile(){
   }
   // Same race, one page over. The Calendar's salary bar reads this profile too,
   // and the trades fetch reliably beats this one — so the bar rendered while
-  // PROFILE_DATA was still null and said "set your monthly salary" to someone
-  // who had already set it. Nothing re-drew it, because only the salary page
-  // was being refreshed here. Draw it now that the real values exist.
-  if(currentView === 'dashboard' && document.getElementById('calGrid')) renderCalendar();
+  // PROFILE_DATA was still null. Nothing re-drew it, because only the salary
+  // page was being refreshed here.
+  //
+  // NOT gated on currentView. At boot, loadProfile() is called on line 770 and
+  // switchView() — the only thing that ever sets currentView away from its
+  // "profile" default — does not run until line 787. Whether this fetch
+  // resolves before or after that line is a race, and gating on it made the fix
+  // itself intermittent. The element test is the honest condition: the grid
+  // exists only where there is a calendar to redraw, and redrawing a hidden one
+  // costs nothing.
+  if(document.getElementById('calGrid')) renderCalendar();
   await renderProfile();
 }
 
