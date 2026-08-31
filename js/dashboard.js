@@ -1574,8 +1574,9 @@ function _renderCalGoal(monthTrades, y, m){
   ].filter(Boolean).join('\n');
 
   holder.innerHTML = `<span class="cal-goal ${tone}" title="${escapeHtml(tip)}">
-    <span class="cal-goal-track"><i style="width:${pct.toFixed(1)}%"></i></span>
-    <b>${Math.round(made / need * 100)}%</b>
+    <span class="cal-goal-label">Goal</span>
+    <span class="cal-goal-track"><i style="width:${pct.toFixed(1)}%"></i><b>${
+      Math.round(made / need * 100)}%</b></span>
     ${filtered ? '<em class="cal-goal-flag" title="An account filter is on">•</em>' : ''}
   </span>`;
 }

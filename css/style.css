@@ -384,20 +384,28 @@
      the block version was too much furniture for one number. Colour carries
      the state (green hit it, amber still running, red closed short) and the
      whole sentence lives on the hover. */
-  /* Two things this has to survive, both learned the hard way:
+  /* Reads as:  Calendar ⓘ   Goal [████████ 74% ░░░]
+                                                        [Review] ‹ month ›
 
-     .panel h2 is display:flex, so without flex:none the 86px track is squeezed
-     to nothing and only the "74%" text survives — the bar simply vanishes.
+     .panel-info-btn carries margin:0 auto 0 0 — it takes every pixel of free
+     space on its right so it can sit beside its own title. Anything after it
+     gets thrown to the far edge of the header, which is how this bar first
+     ended up wedged against the Review button. The goal bar wants to sit after
+     the ⓘ, so in THIS header the auto margin moves onto the bar instead; the
+     .cal-h2 class exists for exactly that swap and nothing else.
 
-     .panel-info-btn carries margin:0 auto 0 0, taking every pixel of free space
-     to its right so it can sit beside its title. Anything placed AFTER it is
-     thrown to the far edge of the header, against the Review button. So this
-     sits BEFORE the ⓘ, between the title and the icon, where it was asked for
-     and where no auto margin can reach it. */
+     flex:none is not optional either: .panel h2 is display:flex, and without it
+     the track is squeezed to zero width and only the number survives. */
+  .cal-h2 > .panel-info-btn{margin-right:0;}
+  .cal-h2 > #calGoalBar{margin-right:auto;}
+
   .cal-goal{
-    display:inline-flex;align-items:center;gap:8px;flex:none;
-    margin-left:12px;padding:3px 9px 3px 8px;cursor:default;
-    border:1px solid var(--rule);border-radius:999px;background:var(--surface-2);
+    display:inline-flex;align-items:center;gap:9px;flex:none;
+    margin-left:14px;cursor:default;
+  }
+  .cal-goal-label{
+    font-size:10px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;
+    color:var(--muted);
   }
   .cal-goal.hit{--gt:var(--win);}
   .cal-goal.now{--gt:var(--accent);}
@@ -406,19 +414,30 @@
   .cal-goal.empty{font-size:10px;font-weight:500;letter-spacing:.05em;
     text-transform:uppercase;color:var(--muted);padding:3px 10px;}
 
+  /* The number sits INSIDE the track, so the fill has to stay translucent —
+     a solid win-green under solid ink is unreadable at 10px. Mixing the state
+     colour into the surface keeps the digits legible over both the filled and
+     the empty half, with no blend modes or duplicated text. */
   .cal-goal-track{
-    display:block;width:72px;height:5px;border-radius:999px;
-    background:var(--surface);overflow:hidden;flex:none;
+    position:relative;display:flex;align-items:center;justify-content:center;
+    width:150px;height:18px;border-radius:999px;overflow:hidden;flex:none;
+    background:var(--surface);border:1px solid var(--rule);
   }
   .cal-goal-track i{
-    display:block;height:100%;border-radius:999px;
-    background:var(--gt,var(--muted));
-    transition:width .5s cubic-bezier(.22,.8,.3,1);
+    position:absolute;left:0;top:0;bottom:0;
+    background:color-mix(in srgb, var(--gt,var(--muted)) 48%, var(--surface));
+    border-right:1px solid var(--gt,var(--muted));
+    transition:width .6s cubic-bezier(.22,.8,.3,1);
   }
-  .cal-goal b{
-    font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:600;
-    font-variant-numeric:tabular-nums;color:var(--gt,var(--muted));
+  .cal-goal-track b{
+    position:relative;font-family:'IBM Plex Mono',monospace;font-size:10.5px;
+    font-weight:700;font-variant-numeric:tabular-nums;color:var(--ink);
+    letter-spacing:.02em;
   }
+  /* At 0% there is no fill to sit against, so the digits would float on bare
+     track — the state colour carries the meaning instead. */
+  .cal-goal.missed .cal-goal-track b{color:var(--loss);}
+  .cal-goal.ahead  .cal-goal-track b{color:var(--muted);}
   .cal-goal-flag{font-style:normal;color:var(--warn);font-size:14px;line-height:1;}
 
   /* The month still has days left to run, so the fill keeps moving — a sheen
@@ -426,7 +445,7 @@
      animates; a finished month is finished and should sit still. */
   .cal-goal.now .cal-goal-track i{
     background-image:linear-gradient(100deg,
-      transparent 20%, rgba(255,255,255,.42) 50%, transparent 80%);
+      transparent 20%, rgba(255,255,255,.30) 50%, transparent 80%);
     background-size:220% 100%;
     animation:calGoalSheen 2.4s linear infinite;
   }
@@ -1925,7 +1944,12 @@
      this size a year is read as a pattern of red and green, and the figures
      that matter are on the month's own header and footer. */
   .yo-box{max-width:min(96vw,1180px);max-height:88vh;overflow-y:auto;}
-  .yo-nav{display:flex;align-items:center;gap:10px;margin:-4px 0 16px;}
+  /* The year picker rides in the title row, pushed right. .modal-close is
+     absolutely positioned at right:20px, so the row reserves 46px on that side
+     rather than letting the ›  slide underneath the ✕. */
+  .yo-head{display:flex;align-items:center;gap:14px;margin:0 46px 16px 0;}
+  .yo-head h3{margin:0;}
+  .yo-nav{display:flex;align-items:center;gap:10px;margin-left:auto;}
   .yo-nav button{font:inherit;font-size:16px;line-height:1;cursor:pointer;
     width:28px;height:28px;border-radius:6px;
     background:var(--surface-2);border:1px solid var(--rule);color:var(--ink);}

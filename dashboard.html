@@ -17,7 +17,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<link rel="stylesheet" href="css/style.css?v=259">
+<link rel="stylesheet" href="css/style.css?v=260">
 </head>
 <body>
 
@@ -112,7 +112,7 @@
 
   <div class="row chart-row-eq" style="grid-template-columns:1.3fr 1fr;align-items:stretch;">
     <div class="panel panel-fixed-h">
-      <h2>Calendar<span id="calGoalBar"></span><button type="button" class="panel-info-btn" title="How this is worked out" onclick="event.stopPropagation(); openPanelInfo('calendar')"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button>
+      <h2 class="cal-h2">Calendar<button type="button" class="panel-info-btn" title="How this is worked out" onclick="event.stopPropagation(); openPanelInfo('calendar')"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button><span id="calGoalBar"></span>
         <span class="cal-head-actions">
           <button class="poscalc-accent-btn" id="monthReviewBtn" onclick="openMonthReview()">Review trades</button>
           <span class="nav">
@@ -1258,11 +1258,13 @@
 <div class="modal-overlay" id="yearOverviewModal" onclick="if(event.target===this) closeYearOverview()">
   <div class="modal-box yo-box" style="position:relative;">
     <button class="modal-close" onclick="closeYearOverview()">✕</button>
-    <h3 style="margin-right:30px;">Year overview</h3>
-    <div class="yo-nav">
-      <button type="button" onclick="shiftOverviewYear(-1)" title="Previous year">‹</button>
-      <span id="yearOverviewLabel">—</span>
-      <button type="button" onclick="shiftOverviewYear(1)" title="Next year">›</button>
+    <div class="yo-head">
+      <h3>Year overview</h3>
+      <div class="yo-nav">
+        <button type="button" onclick="shiftOverviewYear(-1)" title="Previous year">‹</button>
+        <span id="yearOverviewLabel">—</span>
+        <button type="button" onclick="shiftOverviewYear(1)" title="Next year">›</button>
+      </div>
     </div>
     <div id="yearOverviewBody"></div>
   </div>
@@ -2128,6 +2130,6 @@
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=2"></script>
-<script src="js/dashboard.js?v=448"></script>
+<script src="js/dashboard.js?v=449"></script>
 </body>
 </html>
