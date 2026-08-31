@@ -396,8 +396,24 @@
 
      flex:none is not optional either: .panel h2 is display:flex, and without it
      the track is squeezed to zero width and only the number survives. */
-  .cal-h2 > .panel-info-btn{margin-right:0;}
-  .cal-h2 > #calGoalBar{margin-right:auto;}
+  /* .panel h2 is display:flex with justify-content:space-between. With four
+     items in the row — title, ⓘ, the bar, the actions — the browser inserts a
+     gap between EVERY pair. That is why the bar kept floating out near the
+     Review button whichever auto margin was applied: space-between had already
+     spent the free space, so no margin had any left to claim, and the
+     shrinkable item absorbed the deficit instead.
+
+     So this header opts out of space-between and lays itself out explicitly:
+     title, icon, bar, then the actions pushed right on their own auto margin.
+
+     #calGoalBar needs flex:none in its OWN right. It is the flex item of the
+     h2; .cal-goal sits inside it, and flex:none there does nothing to stop the
+     h2 from squeezing the wrapper — which collapsed the track to nothing and
+     left only the medallion and the number showing. */
+  .cal-h2{justify-content:flex-start;}
+  .cal-h2 > .panel-info-btn{margin:0;}
+  .cal-h2 > #calGoalBar{flex:none;margin-left:16px;}
+  .cal-h2 > .cal-head-actions{margin-left:auto;}
 
   /* Built after the game-HUD reference: a medallion on the left, then a framed
      track with a glossy fill. The brass of the original is dropped — it would
@@ -405,8 +421,7 @@
      ring uses the accent gold this theme already owns, so it reads as designed
      rather than imported. */
   .cal-goal{
-    display:inline-flex;align-items:center;gap:0;flex:none;
-    margin-left:14px;cursor:default;
+    display:inline-flex;align-items:center;gap:0;flex:none;cursor:default;
   }
 
   /* The medallion. Overlaps the track by 6px so the two read as one object,
@@ -414,7 +429,7 @@
   .cal-goal-badge{
     position:relative;z-index:2;flex:none;
     display:inline-flex;align-items:center;justify-content:center;
-    width:24px;height:24px;border-radius:50%;margin-right:-6px;
+    width:30px;height:30px;border-radius:50%;margin-right:-9px;
     color:var(--gt,var(--muted));
     background:radial-gradient(circle at 32% 26%,
       color-mix(in srgb, var(--surface-2) 88%, white), var(--bg) 82%);
@@ -433,8 +448,8 @@
      down inside it rather than on top. */
   .cal-goal-track{
     position:relative;display:flex;align-items:center;justify-content:center;
-    width:158px;height:20px;border-radius:999px;overflow:hidden;flex:none;
-    padding-left:8px;                       /* clears the medallion overlap */
+    width:180px;height:24px;border-radius:999px;overflow:hidden;flex:none;
+    padding-left:12px;                      /* clears the medallion overlap */
     background:linear-gradient(180deg, var(--bg), var(--surface));
     border:1.5px solid var(--accent);
     box-shadow:inset 0 2px 4px rgba(0,0,0,.55);
