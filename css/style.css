@@ -470,33 +470,44 @@
   box-shadow:0 0 8px color-mix(in srgb, var(--gt,var(--muted)) 60%, transparent);
   transition:width .6s cubic-bezier(.22,.8,.3,1);
 }
+/* Both end dots sit FLUSH inside the rail — translateY only. They used to be
+   centred on the rail's ends with translate(±50%), which hung half of each one
+   outside the track box and made the right one look clipped. */
 .cal-goal-track i::before{
-  content:'';position:absolute;left:-1px;top:50%;width:13px;height:13px;
-  transform:translate(-50%,-50%);border-radius:50%;
+  content:'';position:absolute;left:0;top:50%;width:14px;height:14px;
+  transform:translateY(-50%);border-radius:50%;
   background:var(--gt,var(--muted));
   box-shadow:inset 0 0 0 3px var(--surface),
              0 0 8px color-mix(in srgb, var(--gt,var(--muted)) 55%, transparent);
 }
 
-/* The right end dot stays dim until the goal is actually reached, so the far
-   end of the rail reads as somewhere you have not got to yet. */
+/* The far end is the TARGET, so it is drawn as a hollow ring rather than a
+   dot: an outline you have not filled in yet. It was solid var(--rule) before,
+   which is two shades off the rail itself and effectively invisible — the ring
+   is var(--muted), light enough to actually read against a dark bar.
+
+   Reaching the goal fills it in. That is the one moment the far end stops
+   being a target and becomes a result, and the bar should show it. */
 .cal-goal-track::after{
-  content:'';position:absolute;right:0;top:50%;width:13px;height:13px;
-  transform:translate(50%,-50%);border-radius:50%;z-index:1;
-  background:var(--rule);box-shadow:inset 0 0 0 3px var(--surface);
+  content:'';position:absolute;right:0;top:50%;width:14px;height:14px;
+  transform:translateY(-50%);border-radius:50%;z-index:1;
+  background:var(--bg);
+  box-shadow:inset 0 0 0 2px var(--muted);
 }
 .cal-goal.hit .cal-goal-track::after{
   background:var(--win);
   box-shadow:inset 0 0 0 3px var(--surface),
-             0 0 9px color-mix(in srgb, var(--win) 60%, transparent);
+             0 0 10px color-mix(in srgb, var(--win) 65%, transparent);
 }
 
 /* The pill rides the fill's edge. clamp() keeps it on the rail: at 0% or 100%
    a centred pill would hang half of itself off the end, and only CSS knows how
    wide the pill actually is. */
 .cal-goal-track b{
-  position:absolute;top:50%;left:clamp(26px, var(--p,0%), calc(100% - 26px));
-  transform:translate(-50%,-50%);z-index:2;
+  /* 30px of clearance at each end, not 26 — the end dots grew to 14px and the
+     pill was landing on top of the right one as the fill approached 100%. */
+  position:absolute;top:50%;left:clamp(30px, var(--p,0%), calc(100% - 30px));
+  transform:translate(-50%,-50%);z-index:3;
   padding:2px 8px;border-radius:999px;
   font-family:'IBM Plex Mono',monospace;font-size:10.5px;font-weight:700;
   font-variant-numeric:tabular-nums;letter-spacing:.02em;
