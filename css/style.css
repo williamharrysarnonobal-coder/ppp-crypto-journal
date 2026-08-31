@@ -379,36 +379,54 @@
   @media(max-width:900px){
     .cal-total-summary{flex-wrap:wrap;}
 
-  /* ---------- Salary goal, inside the Calendar box ----------
-     Sits between the month summary and the grid, on the same target as the
-     Salary vs Trading page. The left border carries the state so the answer
-     lands before any number is read: green hit it, amber still running,
-     red closed short. */
+  /* ---------- Salary goal, in the Calendar heading ----------
+     A slim bar beside the title and the ⓘ, not a second panel above the grid —
+     the block version was too much furniture for one number. Colour carries
+     the state (green hit it, amber still running, red closed short) and the
+     whole sentence lives on the hover. */
   .cal-goal{
-    border:1px solid var(--rule);border-left:3px solid var(--gt,var(--muted));
-    border-radius:7px;background:var(--surface-2);
-    padding:10px 13px 11px;margin:0 0 12px;flex-shrink:0;
+    display:inline-flex;align-items:center;gap:7px;vertical-align:middle;
+    margin-left:10px;cursor:default;
   }
   .cal-goal.hit{--gt:var(--win);}
   .cal-goal.now{--gt:var(--accent);}
   .cal-goal.missed{--gt:var(--loss);}
   .cal-goal.ahead{--gt:var(--muted);}
-  .cal-goal.empty{border-left-color:var(--rule);font-size:12px;color:var(--muted);line-height:1.5;}
+  .cal-goal.empty{font-size:10.5px;font-weight:500;letter-spacing:.04em;
+    text-transform:uppercase;color:var(--muted);opacity:.7;}
 
-  .cal-goal-head{display:flex;align-items:baseline;gap:10px;margin-bottom:7px;flex-wrap:wrap;}
-  .cal-goal-label{font-size:10.5px;font-weight:600;text-transform:uppercase;
-    letter-spacing:.07em;color:var(--muted);}
-  .cal-goal-nums{margin-left:auto;font-family:'IBM Plex Mono',monospace;font-size:12px;
-    color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap;}
-  .cal-goal-nums b{font-size:14px;font-weight:600;color:var(--ink);}
-  .cal-goal-nums em{font-style:normal;margin-left:7px;color:var(--gt,var(--muted));font-weight:600;}
+  .cal-goal-track{
+    display:block;width:86px;height:5px;border-radius:999px;
+    background:var(--surface);overflow:hidden;flex:none;
+  }
+  .cal-goal-track i{
+    display:block;height:100%;border-radius:999px;
+    background:var(--gt,var(--muted));
+    transition:width .5s cubic-bezier(.22,.8,.3,1);
+  }
+  .cal-goal b{
+    font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:600;
+    font-variant-numeric:tabular-nums;color:var(--gt,var(--muted));
+  }
+  .cal-goal-flag{font-style:normal;color:var(--warn);font-size:14px;line-height:1;}
 
-  .cal-goal-track{height:6px;border-radius:999px;background:var(--surface);overflow:hidden;}
-  .cal-goal-track i{display:block;height:100%;border-radius:999px;
-    background:var(--gt,var(--muted));transition:width .25s ease;}
-
-  .cal-goal-note{margin-top:7px;font-size:12.5px;line-height:1.45;}
-  .cal-goal-warn{margin-top:5px;font-size:11.5px;color:var(--warn);line-height:1.45;}
+  /* The month still has days left to run, so the fill keeps moving — a sheen
+     travelling across it, not the width jumping about. Only the "now" state
+     animates; a finished month is finished and should sit still. */
+  .cal-goal.now .cal-goal-track i{
+    background-image:linear-gradient(100deg,
+      transparent 20%, rgba(255,255,255,.42) 50%, transparent 80%);
+    background-size:220% 100%;
+    animation:calGoalSheen 2.4s linear infinite;
+  }
+  @keyframes calGoalSheen{
+    from{background-position:220% 0;}
+    to{background-position:-120% 0;}
+  }
+  @media (prefers-reduced-motion: reduce){
+    .cal-goal.now .cal-goal-track i{animation:none;background-image:none;}
+    .cal-goal-track i{transition:none;}
+  }
     .cal-sum-cell{flex:1 1 33%;border-bottom:1px solid var(--rule);}
   }
   .tc-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:2px;vertical-align:1px;}
@@ -1913,6 +1931,7 @@
     font-variant-numeric:tabular-nums;}
   .yo-s-v.win{color:var(--win);}
   .yo-s-v.loss{color:var(--loss);}
+  .yo-s-v.be{color:var(--info);}
   .yo-line{font-size:12.5px;color:var(--muted);margin-bottom:16px;line-height:1.5;}
   .yo-line b{color:var(--ink);font-weight:600;}
 
@@ -1929,15 +1948,30 @@
   .yo-month.up .yo-m-net{color:var(--win);}
   .yo-month.down .yo-m-net{color:var(--loss);}
 
+  /* The date is printed in every cell, so a traded day is tinted rather than
+     filled solid — a solid win-green block would swallow its own number. */
   .yo-days{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;}
-  .yo-d{display:block;aspect-ratio:1;border-radius:2px;background:var(--surface);}
+  .yo-d{display:flex;align-items:center;justify-content:center;aspect-ratio:1;
+    border-radius:3px;background:var(--surface);font-style:normal;
+    font-family:'IBM Plex Mono',monospace;font-size:9px;line-height:1;
+    color:var(--muted);font-variant-numeric:tabular-nums;}
   .yo-d.pad{background:transparent;}
-  .yo-d.up{background:var(--win);}
-  .yo-d.down{background:var(--loss);}
-  .yo-d.flat{background:var(--muted);}
+  .yo-d.up{background:color-mix(in srgb, var(--win) 26%, var(--surface));
+    color:var(--win);font-weight:600;box-shadow:inset 0 0 0 1px var(--win);}
+  .yo-d.down{background:color-mix(in srgb, var(--loss) 26%, var(--surface));
+    color:var(--loss);font-weight:600;box-shadow:inset 0 0 0 1px var(--loss);}
+  .yo-d.flat{background:color-mix(in srgb, var(--info) 22%, var(--surface));
+    color:var(--info);font-weight:600;box-shadow:inset 0 0 0 1px var(--info);}
 
-  .yo-m-foot{margin-top:8px;font-family:'IBM Plex Mono',monospace;font-size:10px;
-    color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .yo-m-foot{margin-top:8px;display:flex;gap:5px;align-items:center;flex-wrap:wrap;}
+  .yo-m-foot.empty{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--muted);}
+  .yo-c{font-family:'IBM Plex Mono',monospace;font-size:10px;font-weight:600;
+    padding:2px 5px;border-radius:4px;background:var(--surface);
+    font-variant-numeric:tabular-nums;white-space:nowrap;}
+  .yo-c.win{color:var(--win);}
+  .yo-c.loss{color:var(--loss);}
+  .yo-c.be{color:var(--info);}
+  .yo-c.rate{margin-left:auto;color:var(--ink);background:transparent;padding-right:0;}
 
   /* ---------- The two questions ----------
      One block per decision: the sides you have evidence for, then the answer
@@ -1968,35 +2002,41 @@
   .dx-q-out.bad{--qt:var(--loss);}
   .dx-q-out.wait{--qt:var(--muted);color:var(--muted);}
 
+  /* ---------- What loses you trades ----------
+     A table, not a stack of paragraphs. Eight tags each explaining the same
+     three numbers in prose was a page of reading for something meant to be
+     scanned in one pass — so the numbers align in columns and the only words
+     left are the tag and a two-word verdict. */
+  .dx-tbl{width:100%;border-collapse:collapse;font-size:13px;}
+  .dx-tbl th{font-size:9.5px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;
+    color:var(--muted);text-align:left;padding:0 10px 7px 0;border-bottom:1px solid var(--rule);}
+  .dx-tbl th.n{text-align:right;}
+  .dx-tbl td{padding:8px 10px 8px 0;border-bottom:1px solid var(--rule);vertical-align:middle;}
+  .dx-tbl tr:last-child td{border-bottom:0;}
+  .dx-tbl tr:hover td{background:var(--surface-2);}
+  .dx-tbl td.n{text-align:right;font-family:'IBM Plex Mono',monospace;
+    font-variant-numeric:tabular-nums;white-space:nowrap;width:1%;}
+  .dx-tbl td.lost{color:var(--muted);}
+  .dx-tbl td.rate{font-weight:600;}
+  .dx-tbl td.v{text-align:right;font-size:11px;color:var(--muted);white-space:nowrap;
+    width:1%;padding-right:0;}
+
+  /* Colour lands on the two cells that carry the verdict, not the whole row —
+     a fully tinted row at eight rows deep reads as an error state. */
+  .dx-tbl tr.bad td.lost,
+  .dx-tbl tr.bad td.rate,
+  .dx-tbl tr.bad td.v{color:var(--loss);}
+  .dx-tbl tr.good td.rate,
+  .dx-tbl tr.good td.v{color:var(--win);}
+
   /* Marks a tag that is also a rule breach, so the list can stay one list. */
-  .dx-breach{font-style:normal;font-size:9.5px;font-weight:600;letter-spacing:.05em;
-    text-transform:uppercase;color:var(--loss);margin-left:7px;}
+  .dx-breach{font-style:normal;font-size:9px;font-weight:600;letter-spacing:.06em;
+    text-transform:uppercase;color:var(--loss);margin-left:8px;
+    border:1px solid var(--loss);border-radius:3px;padding:1px 4px;
+    vertical-align:middle;opacity:.75;}
 
   @media(max-width:560px){ .dx-q-arms{grid-template-columns:1fr;} }
 
-
-  /* ---------- Discipline: findings as sentences ----------
-     Bars and averages were the part that did not land. A finding is a sentence
-     with the count that backs it sitting quietly to its right — read the line,
-     glance at the number only if you want the proof. */
-.dx-find{display:flex;gap:16px;align-items:flex-start;justify-content:space-between;
-    padding:13px 15px;margin-bottom:9px;
-    border:1px solid var(--rule);border-radius:9px;background:var(--surface-2);}
-.dx-f-body{min-width:0;}
-.dx-f-rule{display:block;font-size:10.5px;font-weight:600;text-transform:uppercase;
-    letter-spacing:.07em;color:var(--muted);margin-bottom:4px;}
-.dx-f-txt{margin:0;font-size:14px;line-height:1.5;max-width:62ch;}
-.dx-f-txt b{font-weight:650;}
-.dx-f-num{flex:none;text-align:right;display:flex;flex-direction:column;gap:2px;
-    font-family:'IBM Plex Mono',monospace;}
-.dx-f-num b{font-size:15px;font-weight:600;white-space:nowrap;}
-.dx-f-num span{font-size:11px;color:var(--muted);white-space:nowrap;}
-.dx-f-num.bad b{color:var(--loss);}
-.dx-f-num.good b{color:var(--win);}
-.dx-f-num.warn b{color:var(--warn);}
-.dx-f-num.quiet b{color:var(--muted);font-weight:500;}
-/* A rule never broken still earns its line — "zero here" is worth seeing. */
-.dx-find.quiet{opacity:.55;}
 
 /* ---------- Discipline: the one-glance strip ----------
      The panel used to open straight into two long lists, and reading it was a

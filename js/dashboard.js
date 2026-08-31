@@ -1506,10 +1506,12 @@ function _renderCalGoal(monthTrades, y, m){
   const v = _salarySettings();
   const aed = Number(v.aed_per_usd) > 0 ? Number(v.aed_per_usd) : SALARY_DEFAULTS.aed_per_usd;
   const salary = Number(v.monthly_salary);
-  // No salary set yet — say what to do rather than showing an empty bar.
+  // No salary set yet. In the header there is no room for a sentence, so the
+  // bar simply stays away and the reason lives on the hover of a quiet hint.
   if(!Number.isFinite(salary) || salary <= 0){
-    holder.innerHTML = `<div class="cal-goal empty">Set your monthly salary on the
-      <b>Salary vs Trading</b> page and this becomes a goal bar.</div>`;
+    holder.innerHTML = `<span class="cal-goal empty"
+      title="Set your monthly salary on the Salary vs Trading page and this becomes a goal bar."
+      >goal not set</span>`;
     return;
   }
 
@@ -1544,17 +1546,19 @@ function _renderCalGoal(monthTrades, y, m){
   }
 
   const filtered = FILTERED.length !== ALL_TRADES.length;
-  holder.innerHTML = `<div class="cal-goal ${tone}">
-    <div class="cal-goal-head">
-      <span class="cal-goal-label">Salary goal</span>
-      <span class="cal-goal-nums"><b>${_salMoney(made, 'USD')}</b> of ${_salMoney(need, 'USD')}
-        <em>${Math.round(made / need * 100)}%</em></span>
-    </div>
-    <div class="cal-goal-track"><i style="width:${pct.toFixed(1)}%"></i></div>
-    <div class="cal-goal-note">${note}</div>
-    ${filtered ? `<div class="cal-goal-warn">An account filter is on — this is part of your
-      income, not all of it.</div>` : ''}
-  </div>`;
+  // Everything the block used to spell out now rides on the hover, so the
+  // header keeps one slim bar instead of a second panel above the grid.
+  const tip = [
+    `Salary goal — ${_salMoney(made, 'USD')} of ${_salMoney(need, 'USD')}`,
+    note.replace(/\s+/g, ' ').trim(),
+    filtered ? 'An account filter is on — this is part of your income, not all of it.' : '',
+  ].filter(Boolean).join('\n');
+
+  holder.innerHTML = `<span class="cal-goal ${tone}" title="${escapeHtml(tip)}">
+    <span class="cal-goal-track"><i style="width:${pct.toFixed(1)}%"></i></span>
+    <b>${Math.round(made / need * 100)}%</b>
+    ${filtered ? '<em class="cal-goal-flag" title="An account filter is on">•</em>' : ''}
+  </span>`;
 }
 
 /* ======================== Year overview ==============================
@@ -1629,7 +1633,7 @@ function renderYearOverview(){
     ${stat('Trades', yr.n)}
     ${stat('Win', yr.wins, 'win')}
     ${stat('Loss', yr.losses, 'loss')}
-    ${stat('BE', yr.bes)}
+    ${stat('BE', yr.bes, 'be')}
     ${stat('Win rate', yr.rate === null ? '—' : Math.round(yr.rate) + '%')}
     ${stat('Green months', `${green} of ${traded.length}`, green * 2 >= traded.length ? 'win' : 'loss')}
   </div>
@@ -1645,23 +1649,31 @@ function renderYearOverview(){
         <span class="yo-m-net">${mo.n ? fmtMoney(mo.net) : '—'}</span>
       </div>
       ${_yearMiniGrid(y, mo.m, mo.trades)}
-      <div class="yo-m-foot">${mo.n
-        ? `${mo.n} trade${mo.n === 1 ? '' : 's'} · ${mo.wins}W ${mo.losses}L${
-            mo.bes ? ` ${mo.bes}BE` : ''} · ${mo.rate === null ? '—' : Math.round(mo.rate) + '%'}`
-        : 'no trades'}</div>
+      ${mo.n ? `<div class="yo-m-foot">
+        <span class="yo-c win" title="${mo.wins} won">${mo.wins}W</span>
+        <span class="yo-c loss" title="${mo.losses} lost">${mo.losses}L</span>
+        <span class="yo-c be" title="${mo.bes} breakeven">${mo.bes}BE</span>
+        <span class="yo-c rate" title="${mo.wins} of ${mo.settled} settled trades won"
+          >${mo.rate === null ? '—' : Math.round(mo.rate) + '%'}</span>
+      </div>` : `<div class="yo-m-foot empty">no trades</div>`}
     </div>`;
   }).join('');
 
   body.innerHTML = head + `<div class="yo-grid">${grid}</div>`;
 }
 
-/* One month as a small day grid. Same week layout as the Calendar (Sunday
-   first) and the same red/green reading, so the shape is already familiar. */
+/* One month as a small day grid, with the date printed in every cell. Same week
+   layout as the Calendar (Sunday first) and the same red/green reading, so the
+   shape is already familiar — the numbers make it a calendar you can actually
+   read a date off rather than a heat map. The day's P&L and trade count stay on
+   the hover: twelve months of amounts printed at once would be unreadable. */
 function _yearMiniGrid(y, m, trades){
   const byDay = {};
   trades.forEach(t => {
     const d = t.close_date.getDate();
-    byDay[d] = (byDay[d] || 0) + netPnl(t);
+    if(!byDay[d]) byDay[d] = { pnl: 0, n: 0 };
+    byDay[d].pnl += netPnl(t);
+    byDay[d].n += 1;
   });
   const first = new Date(y, m, 1).getDay();
   const last  = new Date(y, m + 1, 0).getDate();
@@ -1669,9 +1681,10 @@ function _yearMiniGrid(y, m, trades){
   for(let i = 0; i < first; i++) cells.push('<i class="yo-d pad"></i>');
   for(let d = 1; d <= last; d++){
     const v = byDay[d];
-    const cls = v === undefined ? '' : (v > 0 ? ' up' : v < 0 ? ' down' : ' flat');
-    const title = v === undefined ? `${d}` : `${d} — ${fmtMoney(v)}`;
-    cells.push(`<i class="yo-d${cls}" title="${escapeHtml(title)}"></i>`);
+    const cls = !v ? '' : (v.pnl > 0 ? ' up' : v.pnl < 0 ? ' down' : ' flat');
+    const title = !v ? `${d}`
+      : `${d} — ${fmtMoney(v.pnl)} · ${v.n} trade${v.n === 1 ? '' : 's'}`;
+    cells.push(`<i class="yo-d${cls}" title="${escapeHtml(title)}">${d}</i>`);
   }
   return `<div class="yo-days">${cells.join('')}</div>`;
 }
@@ -3653,32 +3666,36 @@ function renderDisciplinePanel(){
   const board = _tagLeaderboard(FILTERED);
   const baseTxt = board.length && board[0].base !== null ? Math.round(board[0].base) : null;
 
-  const boardHtml = board.map(r => {
-    const d = r.delta;
-    const tone = r.losses === 0 ? 'good' : (d !== null && d < -EM_MIN_GAP) ? 'bad'
-               : (d !== null && d > EM_MIN_GAP) ? 'good' : 'warn';
-    const sentence = r.losses === 0
-      ? `You have done this ${r.n} time${r.n === 1 ? '' : 's'} and never lost.`
-      : r.settled < EM_MIN_N
-      ? `${r.losses} of your ${r.n} were losses. Too few to read much into yet.`
-      : d !== null && d < -EM_MIN_GAP
-      ? `You lost ${r.losses} of ${r.settled}. You win ${Math.round(r.rate)}% doing this
-         against your ${baseTxt}% average — <b>this is one to cut out</b>.`
-      : d !== null && d > EM_MIN_GAP
-      ? `You win ${Math.round(r.rate)}% doing this, against your ${baseTxt}% average.
-         This one is working for you.`
-      : `You win ${Math.round(r.rate)}% doing this — about your ${baseTxt}% average.`;
-    return `<div class="dx-find">
-      <div class="dx-f-body">
-        <span class="dx-f-rule">${escapeHtml(r.tag)}${
-          r.kind === 'breach' ? ' <i class="dx-breach">breaks a rule</i>' : ''}</span>
-        <p class="dx-f-txt">${sentence}</p>
-      </div>
-      <div class="dx-f-num ${tone}">
-        <b>${r.n} trade${r.n === 1 ? '' : 's'}</b><span>${r.losses} lost</span>
-      </div>
-    </div>`;
-  }).join('');
+  /* A table, not paragraphs. Each row was a sentence explaining the same three
+     numbers every time, which made a list of eight tags a page of reading for
+     something meant to be scanned. The numbers are the point; the only prose
+     left is the verdict word at the end of the row, and the detail is on the
+     hover. Columns are aligned and tabular so the eye can run down them. */
+  const boardHtml = !board.length ? '' : `<table class="dx-tbl">
+    <thead><tr>
+      <th>What you did</th><th class="n">Trades</th><th class="n">Lost</th>
+      <th class="n">Won</th><th></th>
+    </tr></thead>
+    <tbody>${board.map(r => {
+      const d = r.delta;
+      const thin = r.settled < EM_MIN_N;
+      const tone = thin ? '' : (d !== null && d < -EM_MIN_GAP) ? 'bad'
+                 : (d !== null && d > EM_MIN_GAP) ? 'good' : '';
+      const verdict = thin ? 'too few'
+                    : tone === 'bad' ? 'cut this out'
+                    : tone === 'good' ? 'keep it' : 'no effect';
+      const tip = `${r.tag} — ${r.wins} won, ${r.losses} lost${r.bes ? `, ${r.bes} breakeven` : ''}`
+        + ` of ${r.n}. ${r.rate === null ? '' : `Wins ${Math.round(r.rate)}% against your ${baseTxt}% average.`}`
+        + (thin ? ` Under ${EM_MIN_N} settled trades, so this is not yet a reading.` : '');
+      return `<tr class="${tone}" title="${escapeHtml(tip)}">
+        <td>${escapeHtml(r.tag)}${r.kind === 'breach' ? '<i class="dx-breach" title="Breaks one of your rules">rule</i>' : ''}</td>
+        <td class="n">${r.n}</td>
+        <td class="n lost">${r.losses || '—'}</td>
+        <td class="n rate">${r.rate === null ? '—' : Math.round(r.rate) + '%'}</td>
+        <td class="v">${verdict}</td>
+      </tr>`;
+    }).join('')}</tbody>
+  </table>`;
 
   const questionsHtml = TAG_QUESTIONS.map(q => _questionHtml(_answerQuestion(q, FILTERED))).join('');
 
@@ -3720,10 +3737,9 @@ function renderDisciplinePanel(){
       <div class="dx-half-head"><span class="dx-dot bad"></span>
         <h3>What loses you trades</h3>
         <span class="dx-half-sub">${clean} of ${tagged || FILTERED.length} tagged trades clean</span></div>
-      <p class="dx-lead">Every tag you tick, ranked by <b>how many trades you lost while it was on</b>. Each one
-        is measured against your own ${baseTxt === null ? 'average' : baseTxt + '% average'} — a tag is not bad
-        for winning 45%, it is bad for winning 45% when you normally win more. Counted in trades, never in money,
-        so the 5K and the 50K weigh the same.</p>
+      <p class="dx-lead">Every tag you tick, worst first. <b>Won</b> is compared against your own
+        ${baseTxt === null ? 'average' : `<b>${baseTxt}% average</b>`} — a tag is not bad for winning 45%,
+        it is bad for winning 45% when you normally win more. Hover any row for the full breakdown.</p>
       ${boardHtml || `<div class="empty-state">Nothing tagged yet — tick the Trade Tags as you journal and this fills itself in.</div>`}
     </div>
     </div>
