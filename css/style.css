@@ -434,6 +434,23 @@
   color:var(--muted);
 }
 
+/* --gt is the state colour, and EVERY piece of the bar reads from it: the rail
+   fill, both end dots, the glow, the pill's border and its text. Eight places.
+   Define it here or the whole thing falls back to var(--muted) and renders
+   grey — which is exactly what happened when this block was rewritten and
+   these four lines were left behind.
+
+   Green when the goal is met, the theme's own gold while the month is still
+   running and in profit, red the moment the month is negative. */
+.cal-goal.hit{--gt:var(--win);}
+.cal-goal.now{--gt:var(--accent);}
+.cal-goal.missed{--gt:var(--loss);}
+.cal-goal.ahead{--gt:var(--muted);}
+.cal-goal.empty{
+  font-size:10px;font-weight:500;letter-spacing:.05em;
+  text-transform:uppercase;color:var(--muted);
+}
+
 /* The track is a 26px-tall box, not a line — it has to contain the dots and
    the pill. The rail itself is drawn as ::before, centred inside it. */
 .cal-goal-track{
@@ -504,23 +521,28 @@
 
    Only the live month moves. A closed month is settled and should sit still,
    and a red month should not sparkle at you. */
+/* Slow, and with a pause between passes. This sits in the corner of your eye
+   for as long as the dashboard is open, so it has to be something you notice
+   once and then stop seeing — at a couple of seconds a loop it read as a
+   flicker rather than a shine. The gradient is narrow and the cycle long, so
+   most of each loop is the bar simply sitting still. */
 .cal-goal.now .cal-goal-track i::after{
   content:'';position:absolute;inset:0;border-radius:999px;
   background:linear-gradient(100deg,
-    transparent 25%, rgba(255,255,255,.85) 50%, transparent 75%);
-  background-size:260% 100%;
-  animation:calGoalSheen 2.2s linear infinite;
+    transparent 40%, rgba(255,255,255,.6) 50%, transparent 60%);
+  background-size:420% 100%;
+  animation:calGoalSheen 6s linear infinite;
 }
 @keyframes calGoalSheen{
-  from{background-position:260% 0;}
-  to{background-position:-140% 0;}
+  from{background-position:420% 0;}
+  to{background-position:-160% 0;}
 }
-/* The pill breathes with it, so the eye is drawn to the number rather than to
-   a stripe travelling along a thin line. */
-.cal-goal.now .cal-goal-track b{animation:calGoalPulse 2.2s ease-in-out infinite;}
+/* The pill breathes on the same slow cycle, so the eye is drawn to the number
+   rather than to a stripe travelling along a thin line. */
+.cal-goal.now .cal-goal-track b{animation:calGoalPulse 6s ease-in-out infinite;}
 @keyframes calGoalPulse{
-  0%,100%{box-shadow:0 0 0 0 color-mix(in srgb, var(--gt) 55%, transparent);}
-  50%    {box-shadow:0 0 0 4px color-mix(in srgb, var(--gt) 0%, transparent);}
+  0%,72%,100%{box-shadow:0 0 0 0 color-mix(in srgb, var(--gt) 50%, transparent);}
+  86%        {box-shadow:0 0 0 4px color-mix(in srgb, var(--gt) 0%, transparent);}
 }
 @media (prefers-reduced-motion: reduce){
   .cal-goal.now .cal-goal-track i::after{animation:none;background:none;}
