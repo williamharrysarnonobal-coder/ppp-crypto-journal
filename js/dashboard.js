@@ -1713,14 +1713,16 @@ function renderYearOverview(){
   // Same filter as the Calendar summary: a missing RR is absent, not zero.
   const yrRrs = pool.map(t => t.rr).filter(v => v !== null && !isNaN(v));
   const yrRr = yrRrs.length ? yrRrs.reduce((s, v) => s + v, 0) / yrRrs.length : null;
-  /* "Avg trades" is per MONTH you traded. Per trading day was the first read
-     and it was the wrong one: 2.7 answers "how many positions do I open in a
-     sitting", which is not a question about the year. Months you never traded
-     are left out of the divisor so a gap does not read as a quiet month.
+  /* Distinct dates with a closed trade, keyed on the LOCAL month and day —
+     the same basis as the per-month chips and the calendar grid itself.
+     It was keyed on _dayKeyUTC, which is a different day for any trade closed
+     late in the evening: the year total and the twelve monthly counts could
+     disagree by a day or two and nothing would say why.
 
-     The per-day figure survives on the hover, and the distinct-day count feeds
-     the per-month Days chips either way. */
-  const yrDays = new Set(pool.map(t => _dayKeyUTC(t.close_date))).size;
+     Months you never traded stay out of the divisor, so a gap in the year does
+     not read as a quiet month. */
+  const yrDays = new Set(
+    pool.map(t => t.close_date.getMonth() + '-' + t.close_date.getDate())).size;
   const MN = ['January','February','March','April','May','June',
               'July','August','September','October','November','December'];
 
@@ -1743,10 +1745,11 @@ function renderYearOverview(){
     ${stat('BE', yr.bes, 'be')}
     ${stat('Avg RR', yrRr === null ? '—' : fmtNum(yrRr, 2))}
     ${stat('Win rate', yrRate === null ? '—' : Math.round(yrRate) + '%')}
-    ${stat('Avg trades', traded.length ? fmtNum(yr.n / traded.length, 1) : '—', '',
-        traded.length ? `${fmtNum(yr.n / traded.length, 1)} trades in an average MONTH — `
-          + `${yr.n} trades across the ${traded.length} month${traded.length === 1 ? '' : 's'} `
-          + `you traded. Per trading day, that is ${fmtNum(yr.n / yrDays, 1)}.` : '')}
+    ${stat('Avg trading days', traded.length ? fmtNum(yrDays / traded.length, 1) : '—', '',
+        traded.length ? `${fmtNum(yrDays / traded.length, 1)} trading days in an average month — `
+          + `${yrDays} day${yrDays === 1 ? '' : 's'} across the ${traded.length} `
+          + `month${traded.length === 1 ? '' : 's'} you traded. On a day you traded you took `
+          + `${fmtNum(yr.n / yrDays, 1)} trades.` : '')}
     ${stat('Green months', `${green} of ${traded.length}`, green * 2 >= traded.length ? 'win' : 'loss')}
     ${goalUsd === null ? '' : stat('Goals hit', `${goalsHit} of ${traded.length}`,
         // Same half-or-better rule as Green months beside it. It used to go
@@ -1857,15 +1860,16 @@ function _yearGoalBar(mo, goalUsd){
       <span class="yo-bar-end">${_GOAL_TROPHY}</span></div>`;
   }
   const pct = Math.max(0, Math.min(100, mo.goalPct));
-  // Same rule as the header bar: at 100% the pill has no edge left to mark and
-  // would sit on the trophy, so it comes off and the percentage moves to the
-  // hover — where it is stated even for a month that doubled the target.
+  /* Same end-cap rule as both other bars, and it was missing here: the trophy
+     marks a target, so a month that HIT its goal shows the percentage it
+     reached instead. With the pill also gone at 100% — it has no leading edge
+     left to mark — a reached month was showing no number at all. */
   const tip = `${mo.hitGoal ? 'Salary goal reached' : 'Short of the salary goal'} — `
     + `${Math.round(mo.goalPct)}% · ${fmtMoney(mo.net)} against ${_salMoney(goalUsd, 'USD')}`;
   return `<div class="yo-bar ${mo.goalTone}" title="${escapeHtml(tip)}">
     <i style="width:${pct.toFixed(1)}%"></i>
     ${mo.hitGoal ? '' : `<b style="--p:${pct.toFixed(1)}%">${Math.round(mo.goalPct)}%</b>`}
-    <span class="yo-bar-end">${_GOAL_TROPHY}</span>
+    <span class="yo-bar-end">${mo.hitGoal ? `${Math.round(mo.goalPct)}%` : _GOAL_TROPHY}</span>
   </div>`;
 }
 
