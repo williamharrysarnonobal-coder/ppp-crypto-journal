@@ -1592,18 +1592,20 @@ function _renderCalGoal(monthTrades, y, m){
   // it away from both ends — at 2% or 99% a centred pill would hang off the
   // rail, and clamping needs to happen in CSS where the pill's own width is
   // known.
-  /* No pill once the goal is reached. The pill marks the fill's leading EDGE,
-     and at 100% there is no edge left to mark — it just piles onto the trophy,
-     which is what the overlap was. The trophy is the statement at that point;
-     the exact overshoot stays on the hover. */
+  /* The pill marks the fill's leading EDGE. At 100% there is no edge left to
+     mark, so it piled onto the trophy — that was the overlap. It does not get
+     dropped though: the percentage moves OUTSIDE the bar and sits beside it,
+     where 203% has room to be read and nothing to collide with. */
   const done = made >= need;
+  const shown = Math.round(made / need * 100);
   holder.innerHTML = `<span class="cal-goal ${tone}" title="${escapeHtml(tip)}">
     <span class="cal-goal-label">Goal</span>
     <span class="cal-goal-track">
       <i style="width:${pct.toFixed(1)}%"></i>
-      ${done ? '' : `<b style="--p:${pct.toFixed(1)}%">${Math.round(made / need * 100)}%</b>`}
+      ${done ? '' : `<b style="--p:${pct.toFixed(1)}%">${shown}%</b>`}
       <span class="cal-goal-end">${_GOAL_TROPHY}</span>
     </span>
+    ${done ? `<span class="cal-goal-pct">${shown}%</span>` : ''}
     ${filtered ? '<em class="cal-goal-flag" title="An account filter is on">•</em>' : ''}
   </span>`;
 }
@@ -1696,6 +1698,7 @@ function renderYearOverview(){
       : isNow ? 'now'
       : isPast ? 'missed' : 'ahead';
     return { m, trades: ts, ...s, rate: _winRateOf(ts), net,
+             days: new Set(ts.map(t => t.close_date.getDate())).size,
              rr: rrs.length ? rrs.reduce((a, v) => a + v, 0) / rrs.length : null,
              rrN: rrs.length,
              goalPct: goalUsd ? Math.max(0, net / goalUsd * 100) : null,
@@ -1710,6 +1713,11 @@ function renderYearOverview(){
   // Same filter as the Calendar summary: a missing RR is absent, not zero.
   const yrRrs = pool.map(t => t.rr).filter(v => v !== null && !isNaN(v));
   const yrRr = yrRrs.length ? yrRrs.reduce((s, v) => s + v, 0) / yrRrs.length : null;
+  /* Distinct dates with a closed trade, across the whole year. "Avg trades" is
+     per TRADING DAY, not per month — a month you never opened the platform
+     would otherwise drag the figure down and make a busy year look quiet. The
+     per-month reading is on the hover for when that is the question. */
+  const yrDays = new Set(pool.map(t => _dayKeyUTC(t.close_date))).size;
   const MN = ['January','February','March','April','May','June',
               'July','August','September','October','November','December'];
 
@@ -1718,7 +1726,7 @@ function renderYearOverview(){
     return;
   }
 
-  const stat = (k, v, cls) => `<div class="yo-stat">
+  const stat = (k, v, cls, tip) => `<div class="yo-stat"${tip ? ` title="${escapeHtml(tip)}"` : ''}>
       <span class="yo-s-k">${k}</span><span class="yo-s-v ${cls || ''}">${v}</span></div>`;
 
   const head = `<div class="yo-stats">
@@ -1729,6 +1737,10 @@ function renderYearOverview(){
     ${stat('BE', yr.bes, 'be')}
     ${stat('Avg RR', yrRr === null ? '—' : fmtNum(yrRr, 2))}
     ${stat('Win rate', yrRate === null ? '—' : Math.round(yrRate) + '%')}
+    ${stat('Avg trades', yrDays ? fmtNum(yr.n / yrDays, 1) : '—', '',
+        yrDays ? `${fmtNum(yr.n / yrDays, 1)} trades on an average day you traded — `
+          + `${yr.n} trades over ${yrDays} trading day${yrDays === 1 ? '' : 's'}. `
+          + `Per month traded, that is ${fmtNum(yr.n / traded.length, 1)}.` : '')}
     ${stat('Green months', `${green} of ${traded.length}`, green * 2 >= traded.length ? 'win' : 'loss')}
     ${goalUsd === null ? '' : stat('Goals hit', `${goalsHit} of ${traded.length}`,
         // Same half-or-better rule as Green months beside it. It used to go
@@ -1737,6 +1749,7 @@ function renderYearOverview(){
         // same shape, sitting next to each other.
         goalsHit * 2 >= traded.length ? 'win' : 'loss')}
   </div>
+  ${_yearGoalStrip(y, net, goalUsd, today)}
   ${best && worst && best !== worst ? `<div class="yo-line">
     Best month <b>${MN[best.m]}</b> at ${fmtMoney(best.net)} · worst
     <b>${MN[worst.m]}</b> at ${fmtMoney(worst.net)}.</div>` : ''}`;
@@ -1754,6 +1767,8 @@ function renderYearOverview(){
           <span class="yo-c win" title="${mo.wins} won">${mo.wins}W</span>
           <span class="yo-c loss" title="${mo.losses} lost">${mo.losses}L</span>
           <span class="yo-c be" title="${mo.bes} breakeven">${mo.bes}BE</span>
+          <span class="yo-c days" title="${mo.days} day${mo.days === 1 ? '' : 's'} with a closed trade — ${
+            fmtNum(mo.n / mo.days, 1)} trades on an average day you traded">${mo.days}d</span>
           <span class="yo-c rr" title="${mo.rrN
             ? `Average planned RR across the ${mo.rrN} of ${mo.n} trades that have one recorded`
             : 'No trade this month has an RR recorded'}"
@@ -1768,6 +1783,56 @@ function renderYearOverview(){
   }).join('');
 
   body.innerHTML = head + `<div class="yo-grid">${grid}</div>`;
+}
+
+/* The whole year against a whole year's salary — the monthly target twelve
+   times over. Same bar as everywhere else, wider.
+
+   One thing this has to be careful about: for the year you are IN, twelve
+   months is the honest target but a punishing one to look at. Three months
+   into a perfect year still reads 25%, which says "you are failing" about a
+   year that is going exactly to plan. So the bar shows the true fraction of a
+   full year, and the hover carries the PACE — what a full year at this rate
+   finishes at — which is the number that actually answers "am I on track".
+   Showing pace as the bar instead would be the opposite lie: a single good
+   January would fill it to 100%. */
+function _yearGoalStrip(y, net, goalUsd, today){
+  if(goalUsd === null) return '';
+  const yearGoal = goalUsd * 12;
+  const pctTrue = net / yearGoal * 100;
+  const pct = Math.max(0, Math.min(100, pctTrue));
+  const hit = net >= yearGoal;
+
+  const isNow  = y === today.getFullYear();
+  const isPast = y < today.getFullYear();
+  const tone = hit ? 'hit'
+    : net < 0 ? 'missed'
+    : isNow ? 'now'
+    : isPast ? 'missed' : 'ahead';
+
+  // Months elapsed, counting the one you are in — you are part-way through it
+  // and its trades already count toward the total.
+  const elapsed = isNow ? today.getMonth() + 1 : 12;
+  const pace = (isNow && elapsed > 0 && net > 0)
+    ? (net / elapsed * 12) / yearGoal * 100 : null;
+
+  const tip = [
+    `Year goal — twelve months of salary, ${_salMoney(yearGoal, 'USD')}.`,
+    `You are at ${fmtMoney(net)}, ${Math.round(pctTrue)}% of it.`,
+    pace !== null
+      ? `${elapsed} month${elapsed === 1 ? '' : 's'} in — a full year at this rate finishes at ${Math.round(pace)}%.`
+      : '',
+  ].filter(Boolean).join('\n');
+
+  return `<div class="yo-year-goal">
+    <span class="yo-yg-label">Year goal</span>
+    <div class="yo-bar year ${tone}" title="${escapeHtml(tip)}">
+      <i style="width:${pct.toFixed(1)}%"></i>
+      ${hit ? '' : `<b style="--p:${pct.toFixed(1)}%">${Math.round(pctTrue)}%</b>`}
+      <span class="yo-bar-end">${_GOAL_TROPHY}</span>
+    </div>
+    <span class="yo-yg-amt">${fmtMoney(net)} <em>of ${_salMoney(yearGoal, 'USD')}</em></span>
+  </div>`;
 }
 
 /* The month's salary goal, built the same way as the Calendar's header bar:
@@ -1891,6 +1956,9 @@ function renderCalendar(){
       // unparseable ratio is absent, never zero.
       const rrVals = monthTrades.map(t => t.rr).filter(v => v !== null && !isNaN(v));
       const avgRR = rrVals.length ? rrVals.reduce((s, v) => s + v, 0) / rrVals.length : null;
+      // Days you actually traded, not days in the month — the count of dates
+      // that carry at least one closed trade.
+      const tradedDays = new Set(monthTrades.map(t => t.close_date.getDate())).size;
       const cell = (k, v, opts = {}) => `
         <div class="cal-sum-cell${opts.lead ? ' lead' : ''}${opts.click ? ' clickable' : ''}"${
           opts.click ? ` onclick="${opts.click}"` : ''}${opts.title ? ` title="${opts.title}"` : ''}>
@@ -1923,6 +1991,10 @@ function renderCalendar(){
             ? 'No trade this month has an RR recorded'
             : `Average planned RR across the ${rrVals.length} of ${monthTrades.length} `
               + `trade${monthTrades.length === 1 ? '' : 's'} that have one recorded` }) +
+        cell('Days traded', tradedDays, {
+          title: `${tradedDays} day${tradedDays === 1 ? '' : 's'} this month have at least one `
+            + `closed trade — ${fmtNum(monthTrades.length / tradedDays, 1)} trades on an average `
+            + `day you traded` }) +
         cell('Win rate', winPct + '%', { color:rateColor });
     }
   }

@@ -506,15 +506,23 @@
              0 0 11px color-mix(in srgb, var(--win) 70%, transparent);
 }
 
+/* The percentage once the goal is reached, sitting outside the rail. Inside,
+   it had nowhere to go but on top of the trophy. */
+.cal-goal-pct{
+  font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:700;
+  font-variant-numeric:tabular-nums;color:var(--gt,var(--win));
+  margin-left:10px;white-space:nowrap;
+}
+
 /* ---------- The glint ----------
    A light sweeps across the trophy, then a small star pops just behind it —
    the way a cut stone catches the light.
 
-   Only while the goal is still OUT OF REACH. The glint is bait; once the
-   trophy is won it stops being something to chase and a permanent twinkle on
-   an achievement would just be noise. A reached month gets the steady green
-   glow above instead. */
-.cal-goal:not(.hit) .cal-goal-end::before{
+   It runs in BOTH states. While the goal is out of reach it is bait; once the
+   trophy is won it is the thing announcing that you won it, and that is worth
+   more than the quiet it costs. (It was gated to the unreached state before,
+   which meant the bar went still at exactly the moment worth celebrating.) */
+.cal-goal .cal-goal-end::before{
   content:'';position:absolute;inset:0;border-radius:50%;z-index:1;
   pointer-events:none;
   background:linear-gradient(115deg,
@@ -532,7 +540,7 @@
 
 /* The four-point star, fired just after the light passes — the two together
    read as a glint; either alone reads as a loading spinner. */
-.cal-goal:not(.hit) .cal-goal-end::after{
+.cal-goal .cal-goal-end::after{
   content:'';position:absolute;top:-3px;right:-2px;width:9px;height:9px;
   z-index:2;pointer-events:none;background:#fff;
   clip-path:polygon(50% 0%, 58% 42%, 100% 50%, 58% 58%,
@@ -607,8 +615,8 @@
   .cal-goal.now .cal-goal-track b{animation:none;}
   /* The glint goes entirely — the sparkle is decoration and carries no
      information the steady state does not already show. */
-  .cal-goal:not(.hit) .cal-goal-end::before,
-  .cal-goal:not(.hit) .cal-goal-end::after{animation:none;background:none;opacity:0;}
+  .cal-goal .cal-goal-end::before,
+  .cal-goal .cal-goal-end::after{animation:none;background:none;opacity:0;}
   .cal-goal-track i,
   .cal-goal-track b{transition:none;}
 }
@@ -2122,6 +2130,24 @@
   .yo-s-v.win{color:var(--win);}
   .yo-s-v.loss{color:var(--loss);}
   .yo-s-v.be{color:var(--info);}
+  /* The year's own goal bar, sitting under the stat row it summarises. Same
+     build as the month bars, given room to be the headline it is. */
+  .yo-year-goal{display:flex;align-items:center;gap:14px;margin:0 0 12px;
+    padding:10px 14px;border:1px solid var(--rule);border-radius:8px;
+    background:var(--surface-2);}
+  .yo-yg-label{font-size:10px;font-weight:600;letter-spacing:.09em;
+    text-transform:uppercase;color:var(--muted);white-space:nowrap;}
+  .yo-yg-amt{font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:600;
+    font-variant-numeric:tabular-nums;white-space:nowrap;margin-left:auto;}
+  .yo-yg-amt em{font-style:normal;font-weight:500;color:var(--muted);}
+  .yo-bar.year{flex:1;height:26px;margin-top:0;min-width:120px;}
+  .yo-bar.year::before, .yo-bar.year i{height:6px;}
+  .yo-bar.year i::before{width:13px;height:13px;}
+  .yo-bar.year b{font-size:10.5px;padding:2px 7px;
+    left:clamp(28px, var(--p,0%), calc(100% - 34px));}
+  .yo-bar.year .yo-bar-end{width:20px;height:20px;}
+  .yo-bar.year .yo-bar-end svg{width:12px;height:12px;}
+
   .yo-line{font-size:12.5px;color:var(--muted);margin-bottom:16px;line-height:1.5;}
   .yo-line b{color:var(--ink);font-weight:600;}
 
@@ -2170,6 +2196,7 @@
   .yo-c.be{color:var(--info);}
   /* RR and win rate share the right side now that the goal moved to its own
      bar — RR takes the free space, the rate sits flush against the edge. */
+  .yo-c.days{color:var(--accent);}
   .yo-c.rr{margin-left:auto;color:var(--muted);background:transparent;padding-right:2px;}
   .yo-c.rate{color:var(--ink);background:transparent;padding-right:0;}
 
