@@ -1663,17 +1663,34 @@ function renderYearOverview(){
      experiment in Discipline, where moving a stop to BE converts losses into
      breakevens and dropping them would let that habit flatter itself. A month
      summary has no such trap, so it follows the rest of the app. */
+  // The same salary target the Calendar's goal bar uses, so a month marked as
+  // reached here is the same month the bar turned green.
+  const sv = _salarySettings();
+  const aedRate = Number(sv.aed_per_usd) > 0 ? Number(sv.aed_per_usd) : SALARY_DEFAULTS.aed_per_usd;
+  const salaryAed = Number(sv.monthly_salary);
+  const goalUsd = (PROFILE_DATA && Number.isFinite(salaryAed) && salaryAed > 0)
+    ? salaryAed / aedRate : null;
+
   const months = Array.from({ length: 12 }, (_, m) => {
     const ts = pool.filter(t => t.close_date.getMonth() === m);
     const s = _tagArmStats(ts);
-    return { m, trades: ts, ...s, rate: _winRateOf(ts),
-             net: ts.reduce((a, t) => a + netPnl(t), 0) };
+    const net = ts.reduce((a, t) => a + netPnl(t), 0);
+    const rrs = ts.map(t => t.rr).filter(v => v !== null && !isNaN(v));
+    return { m, trades: ts, ...s, rate: _winRateOf(ts), net,
+             rr: rrs.length ? rrs.reduce((a, v) => a + v, 0) / rrs.length : null,
+             rrN: rrs.length,
+             goalPct: goalUsd ? Math.max(0, net / goalUsd * 100) : null,
+             hitGoal: goalUsd ? net >= goalUsd : null };
   });
 
   const traded = months.filter(mo => mo.n > 0);
   const best  = traded.slice().sort((a, b) => b.net - a.net)[0] || null;
   const worst = traded.slice().sort((a, b) => a.net - b.net)[0] || null;
   const green = traded.filter(mo => mo.net > 0).length;
+  const goalsHit = traded.filter(mo => mo.hitGoal).length;
+  // Same filter as the Calendar summary: a missing RR is absent, not zero.
+  const yrRrs = pool.map(t => t.rr).filter(v => v !== null && !isNaN(v));
+  const yrRr = yrRrs.length ? yrRrs.reduce((s, v) => s + v, 0) / yrRrs.length : null;
   const MN = ['January','February','March','April','May','June',
               'July','August','September','October','November','December'];
 
@@ -1691,8 +1708,11 @@ function renderYearOverview(){
     ${stat('Win', yr.wins, 'win')}
     ${stat('Loss', yr.losses, 'loss')}
     ${stat('BE', yr.bes, 'be')}
+    ${stat('Avg RR', yrRr === null ? '—' : fmtNum(yrRr, 2))}
     ${stat('Win rate', yrRate === null ? '—' : Math.round(yrRate) + '%')}
     ${stat('Green months', `${green} of ${traded.length}`, green * 2 >= traded.length ? 'win' : 'loss')}
+    ${goalUsd === null ? '' : stat('Goals hit', `${goalsHit} of ${traded.length}`,
+        goalsHit ? 'win' : 'loss')}
   </div>
   ${best && worst && best !== worst ? `<div class="yo-line">
     Best month <b>${MN[best.m]}</b> at ${fmtMoney(best.net)} · worst
@@ -1707,12 +1727,26 @@ function renderYearOverview(){
       </div>
       ${_yearMiniGrid(y, mo.m, mo.trades)}
       ${mo.n ? `<div class="yo-m-foot">
-        <span class="yo-c win" title="${mo.wins} won">${mo.wins}W</span>
-        <span class="yo-c loss" title="${mo.losses} lost">${mo.losses}L</span>
-        <span class="yo-c be" title="${mo.bes} breakeven">${mo.bes}BE</span>
-        <span class="yo-c rate" title="${mo.wins} won of ${mo.wins + mo.losses} decided${
-          mo.bes ? ` — the ${mo.bes} breakeven${mo.bes === 1 ? '' : 's'} are not counted, same as the Calendar` : ''}"
-          >${mo.rate === null ? '—' : Math.round(mo.rate) + '%'}</span>
+        <div class="yo-f-row">
+          <span class="yo-c win" title="${mo.wins} won">${mo.wins}W</span>
+          <span class="yo-c loss" title="${mo.losses} lost">${mo.losses}L</span>
+          <span class="yo-c be" title="${mo.bes} breakeven">${mo.bes}BE</span>
+          <span class="yo-c rr" title="${mo.rrN
+            ? `Average planned RR across the ${mo.rrN} of ${mo.n} trades that have one recorded`
+            : 'No trade this month has an RR recorded'}"
+            >RR ${mo.rr === null ? '—' : fmtNum(mo.rr, 2)}</span>
+        </div>
+        <div class="yo-f-row">
+          ${mo.hitGoal === null
+            ? `<span class="yo-goal none" title="Set your monthly salary on the Salary vs Trading page">goal —</span>`
+            : `<span class="yo-goal ${mo.hitGoal ? 'hit' : ''}" title="${
+                mo.hitGoal ? 'Salary goal reached this month' : 'Short of the salary goal this month'
+              } — ${fmtMoney(mo.net)} against ${_salMoney(goalUsd, 'USD')}">${
+                mo.hitGoal ? _GOAL_TROPHY : ''}${Math.round(mo.goalPct)}%</span>`}
+          <span class="yo-c rate" title="${mo.wins} won of ${mo.wins + mo.losses} decided${
+            mo.bes ? ` — the ${mo.bes} breakeven${mo.bes === 1 ? '' : 's'} are not counted, same as the Calendar` : ''}"
+            >${mo.rate === null ? '—' : Math.round(mo.rate) + '%'}</span>
+        </div>
       </div>` : `<div class="yo-m-foot empty">no trades</div>`}
     </div>`;
   }).join('');
@@ -1744,6 +1778,13 @@ function _yearMiniGrid(y, m, trades){
       : `${d} — ${fmtMoney(v.pnl)} · ${v.n} trade${v.n === 1 ? '' : 's'}`;
     cells.push(`<i class="yo-d${cls}" title="${escapeHtml(title)}">${d}</i>`);
   }
+  /* Always six rows. A month needs anywhere from four (28 days starting on a
+     Sunday) to six (31 days starting on a Saturday), and letting each grid take
+     its natural height made twelve cards of three different sizes — the row of
+     stats under each one landed at a different place every time, so there was
+     no line to read across. Padding to a fixed 42 cells costs a blank row on
+     short months and makes every card identical. */
+  while(cells.length < 42) cells.push('<i class="yo-d pad"></i>');
   return `<div class="yo-days">${cells.join('')}</div>`;
 }
 

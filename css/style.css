@@ -2052,7 +2052,9 @@
      Twelve months at once. The day squares carry no numbers on purpose — at
      this size a year is read as a pattern of red and green, and the figures
      that matter are on the month's own header and footer. */
-  .yo-box{max-width:min(96vw,1180px);max-height:88vh;overflow-y:auto;}
+  /* Wider than it was: each card now carries a full six-row grid plus two rows
+     of stats, and at the old width three of them fought for the same line. */
+  .yo-box{max-width:min(97vw,1460px);max-height:90vh;overflow-y:auto;}
   /* The year picker rides in the title row, pushed right. .modal-close is
      absolutely positioned at right:20px, so the row reserves 46px on that side
      rather than letting the ›  slide underneath the ✕. */
@@ -2079,7 +2081,7 @@
   .yo-line{font-size:12.5px;color:var(--muted);margin-bottom:16px;line-height:1.5;}
   .yo-line b{color:var(--ink);font-weight:600;}
 
-  .yo-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:11px;}
+  .yo-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(212px,1fr));gap:11px;}
   .yo-month{border:1px solid var(--rule);border-top:2px solid var(--mt,var(--rule));
     border-radius:8px;background:var(--surface-2);padding:10px 11px 9px;}
   .yo-month.up{--mt:var(--win);}
@@ -2107,15 +2109,37 @@
   .yo-d.flat{background:color-mix(in srgb, var(--info) 22%, var(--surface));
     color:var(--info);font-weight:600;box-shadow:inset 0 0 0 1px var(--info);}
 
-  .yo-m-foot{margin-top:8px;display:flex;gap:5px;align-items:center;flex-wrap:wrap;}
-  .yo-m-foot.empty{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--muted);}
+  /* Two rows, always in the same place on every card — that is the whole point
+     of forcing the grids to six rows. Read straight down the column and the
+     same figure is at the same height on all twelve. */
+  .yo-m-foot{margin-top:9px;padding-top:8px;border-top:1px solid var(--rule);
+    display:flex;flex-direction:column;gap:5px;}
+  .yo-m-foot.empty{font-family:'IBM Plex Mono',monospace;font-size:10px;
+    color:var(--muted);border-top:1px solid var(--rule);padding-top:8px;margin-top:9px;}
+  .yo-f-row{display:flex;gap:4px;align-items:center;}
+
   .yo-c{font-family:'IBM Plex Mono',monospace;font-size:10px;font-weight:600;
     padding:2px 5px;border-radius:4px;background:var(--surface);
     font-variant-numeric:tabular-nums;white-space:nowrap;}
   .yo-c.win{color:var(--win);}
   .yo-c.loss{color:var(--loss);}
   .yo-c.be{color:var(--info);}
+  .yo-c.rr{margin-left:auto;color:var(--muted);background:transparent;padding-right:0;}
   .yo-c.rate{margin-left:auto;color:var(--ink);background:transparent;padding-right:0;}
+
+  /* The month's salary goal. The trophy only appears on a month that reached
+     it, so scanning the year for wins is a matter of counting cups rather than
+     comparing twelve percentages. */
+  .yo-goal{display:inline-flex;align-items:center;gap:4px;
+    font-family:'IBM Plex Mono',monospace;font-size:10px;font-weight:600;
+    font-variant-numeric:tabular-nums;white-space:nowrap;
+    padding:2px 6px;border-radius:4px;
+    background:var(--surface);color:var(--muted);}
+  .yo-goal svg{display:block;width:11px;height:11px;}
+  .yo-goal.hit{color:var(--win);
+    background:color-mix(in srgb, var(--win) 16%, var(--surface));
+    box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--win) 45%, transparent);}
+  .yo-goal.none{opacity:.5;}
 
   /* ---------- The two questions ----------
      One block per decision: the sides you have evidence for, then the answer
