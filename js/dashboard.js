@@ -1548,7 +1548,10 @@ function _renderCalGoal(monthTrades, y, m){
   let tone, note;
   if(made >= need){
     tone = 'hit';
-    note = `Goal reached — ${_salMoney(made - need, 'USD')} past it.`;
+    // The percentage comes off the bar at 100%, so it has to land here or the
+    // number is simply gone — and "203% of your salary" is worth knowing.
+    note = `Goal reached — ${Math.round(made / need * 100)}% of it, `
+         + `${_salMoney(made - need, 'USD')} past.`;
   }else if(made < 0){
     // Down on the month reads RED straight away, mid-month included. This used
     // to stay amber until the month closed, so a month running badly looked
@@ -1589,11 +1592,16 @@ function _renderCalGoal(monthTrades, y, m){
   // it away from both ends — at 2% or 99% a centred pill would hang off the
   // rail, and clamping needs to happen in CSS where the pill's own width is
   // known.
+  /* No pill once the goal is reached. The pill marks the fill's leading EDGE,
+     and at 100% there is no edge left to mark — it just piles onto the trophy,
+     which is what the overlap was. The trophy is the statement at that point;
+     the exact overshoot stays on the hover. */
+  const done = made >= need;
   holder.innerHTML = `<span class="cal-goal ${tone}" title="${escapeHtml(tip)}">
     <span class="cal-goal-label">Goal</span>
     <span class="cal-goal-track">
       <i style="width:${pct.toFixed(1)}%"></i>
-      <b style="--p:${pct.toFixed(1)}%">${Math.round(made / need * 100)}%</b>
+      ${done ? '' : `<b style="--p:${pct.toFixed(1)}%">${Math.round(made / need * 100)}%</b>`}
       <span class="cal-goal-end">${_GOAL_TROPHY}</span>
     </span>
     ${filtered ? '<em class="cal-goal-flag" title="An account filter is on">•</em>' : ''}
@@ -1777,11 +1785,14 @@ function _yearGoalBar(mo, goalUsd){
       <span class="yo-bar-end">${_GOAL_TROPHY}</span></div>`;
   }
   const pct = Math.max(0, Math.min(100, mo.goalPct));
+  // Same rule as the header bar: at 100% the pill has no edge left to mark and
+  // would sit on the trophy, so it comes off and the percentage moves to the
+  // hover — where it is stated even for a month that doubled the target.
   const tip = `${mo.hitGoal ? 'Salary goal reached' : 'Short of the salary goal'} — `
-    + `${fmtMoney(mo.net)} against ${_salMoney(goalUsd, 'USD')}`;
+    + `${Math.round(mo.goalPct)}% · ${fmtMoney(mo.net)} against ${_salMoney(goalUsd, 'USD')}`;
   return `<div class="yo-bar ${mo.goalTone}" title="${escapeHtml(tip)}">
     <i style="width:${pct.toFixed(1)}%"></i>
-    <b style="--p:${pct.toFixed(1)}%">${Math.round(mo.goalPct)}%</b>
+    ${mo.hitGoal ? '' : `<b style="--p:${pct.toFixed(1)}%">${Math.round(mo.goalPct)}%</b>`}
     <span class="yo-bar-end">${_GOAL_TROPHY}</span>
   </div>`;
 }
