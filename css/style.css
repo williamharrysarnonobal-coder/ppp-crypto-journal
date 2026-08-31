@@ -384,19 +384,30 @@
      the block version was too much furniture for one number. Colour carries
      the state (green hit it, amber still running, red closed short) and the
      whole sentence lives on the hover. */
+  /* Two things this has to survive, both learned the hard way:
+
+     .panel h2 is display:flex, so without flex:none the 86px track is squeezed
+     to nothing and only the "74%" text survives — the bar simply vanishes.
+
+     .panel-info-btn carries margin:0 auto 0 0, taking every pixel of free space
+     to its right so it can sit beside its title. Anything placed AFTER it is
+     thrown to the far edge of the header, against the Review button. So this
+     sits BEFORE the ⓘ, between the title and the icon, where it was asked for
+     and where no auto margin can reach it. */
   .cal-goal{
-    display:inline-flex;align-items:center;gap:7px;vertical-align:middle;
-    margin-left:10px;cursor:default;
+    display:inline-flex;align-items:center;gap:8px;flex:none;
+    margin-left:12px;padding:3px 9px 3px 8px;cursor:default;
+    border:1px solid var(--rule);border-radius:999px;background:var(--surface-2);
   }
   .cal-goal.hit{--gt:var(--win);}
   .cal-goal.now{--gt:var(--accent);}
   .cal-goal.missed{--gt:var(--loss);}
   .cal-goal.ahead{--gt:var(--muted);}
-  .cal-goal.empty{font-size:10.5px;font-weight:500;letter-spacing:.04em;
-    text-transform:uppercase;color:var(--muted);opacity:.7;}
+  .cal-goal.empty{font-size:10px;font-weight:500;letter-spacing:.05em;
+    text-transform:uppercase;color:var(--muted);padding:3px 10px;}
 
   .cal-goal-track{
-    display:block;width:86px;height:5px;border-radius:999px;
+    display:block;width:72px;height:5px;border-radius:999px;
     background:var(--surface);overflow:hidden;flex:none;
   }
   .cal-goal-track i{

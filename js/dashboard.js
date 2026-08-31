@@ -1623,13 +1623,25 @@ function renderYearOverview(){
   if(label) label.textContent = y;
 
   const pool = _yearOverviewPool().filter(t => t.close_date.getFullYear() === y);
-  const yr = _tagArmStats(pool);
+  const yr = _tagArmStats(pool);          // counts: W / L / BE
+  const yrRate = _winRateOf(pool);        // rate: the app-wide definition
   const net = pool.reduce((s, t) => s + netPnl(t), 0);
 
+  /* Win rate comes from _winRateOf — wins over DECIDED trades, breakevens
+     excluded — because that is what the Calendar box, the KPI row and the
+     salary page all show. This panel briefly used _tagArmStats.rate instead,
+     which counts breakevens in the denominator, and August read 41% in the
+     Calendar and 37% here off the same 23W/33L/7BE.
+
+     Counting breakevens in is right in ONE place only: the breakeven
+     experiment in Discipline, where moving a stop to BE converts losses into
+     breakevens and dropping them would let that habit flatter itself. A month
+     summary has no such trap, so it follows the rest of the app. */
   const months = Array.from({ length: 12 }, (_, m) => {
     const ts = pool.filter(t => t.close_date.getMonth() === m);
     const s = _tagArmStats(ts);
-    return { m, trades: ts, ...s, net: ts.reduce((a, t) => a + netPnl(t), 0) };
+    return { m, trades: ts, ...s, rate: _winRateOf(ts),
+             net: ts.reduce((a, t) => a + netPnl(t), 0) };
   });
 
   const traded = months.filter(mo => mo.n > 0);
@@ -1653,7 +1665,7 @@ function renderYearOverview(){
     ${stat('Win', yr.wins, 'win')}
     ${stat('Loss', yr.losses, 'loss')}
     ${stat('BE', yr.bes, 'be')}
-    ${stat('Win rate', yr.rate === null ? '—' : Math.round(yr.rate) + '%')}
+    ${stat('Win rate', yrRate === null ? '—' : Math.round(yrRate) + '%')}
     ${stat('Green months', `${green} of ${traded.length}`, green * 2 >= traded.length ? 'win' : 'loss')}
   </div>
   ${best && worst && best !== worst ? `<div class="yo-line">
@@ -1672,7 +1684,8 @@ function renderYearOverview(){
         <span class="yo-c win" title="${mo.wins} won">${mo.wins}W</span>
         <span class="yo-c loss" title="${mo.losses} lost">${mo.losses}L</span>
         <span class="yo-c be" title="${mo.bes} breakeven">${mo.bes}BE</span>
-        <span class="yo-c rate" title="${mo.wins} of ${mo.settled} settled trades won"
+        <span class="yo-c rate" title="${mo.wins} won of ${mo.wins + mo.losses} decided${
+          mo.bes ? ` — the ${mo.bes} breakeven${mo.bes === 1 ? '' : 's'} are not counted, same as the Calendar` : ''}"
           >${mo.rate === null ? '—' : Math.round(mo.rate) + '%'}</span>
       </div>` : `<div class="yo-m-foot empty">no trades</div>`}
     </div>`;
@@ -4033,6 +4046,7 @@ function renderSetupPanel(){
       <span>Centre is <b>your own ${base === null ? '—' : Math.round(base) + '%'} win rate</b> over the trades in view, not zero. Right of centre beats your average, left of it falls short.</span>
       <span><i class="sw hatch"></i><b>hatched</b> = under ${EM_MIN_N} settled trades, and held toward your average until about ${EM_PRIOR} stand behind it</span>
       <span>The two figures are the group's <b>win rate</b> then its <b>trade count</b>. Hover any row for the W/L behind it.</span>
+      <span><b>Breakevens count here</b>, unlike the Calendar and the Year overview: moving a stop to breakeven turns losses into breakevens, and dropping them would make that habit look better than it is. So a figure here reads a little lower than the same month elsewhere.</span>
       <span>Under <b>What the checklist said</b>, <b>Met</b> means the answer scored — so a “No” on “Left Hand Present?” reads as Met, because that is the good answer there.</span>
       <span><b>Click any row</b> to narrow every other card to those trades — the card you clicked keeps all its rows so you can switch. Click it again, or use the chips at the top, to undo.</span>
     </div>`;
