@@ -1557,6 +1557,125 @@ function _renderCalGoal(monthTrades, y, m){
   </div>`;
 }
 
+/* ======================== Year overview ==============================
+
+   Twelve months on one screen, so a year reads as a shape rather than as
+   twelve separate visits to the Calendar box.
+
+   Deliberately NOT filtered by the dashboard's year/month selects — the whole
+   point is to step outside them — but it DOES respect the account filter, the
+   same choice the Calendar's goal bar makes, so "5K only" means the same thing
+   everywhere. Close date throughout, matching the Calendar and every other
+   money figure. */
+let YEAR_OVERVIEW = new Date().getFullYear();
+
+function openYearOverview(){
+  // Open on the year you are looking at, not always on today's.
+  const sel = document.getElementById('yearFilter');
+  const picked = sel ? parseInt(sel.value, 10) : NaN;
+  YEAR_OVERVIEW = Number.isFinite(picked) ? picked : new Date().getFullYear();
+  renderYearOverview();
+  document.getElementById('yearOverviewModal').classList.add('open');
+}
+function closeYearOverview(){
+  document.getElementById('yearOverviewModal').classList.remove('open');
+}
+function shiftOverviewYear(n){
+  YEAR_OVERVIEW += n;
+  renderYearOverview();
+}
+
+// The account filter, without the year/month narrowing the dashboard applies.
+function _yearOverviewPool(){
+  const sel = document.getElementById('accountFilter');
+  const acc = sel ? sel.value : 'all';
+  return ALL_TRADES.filter(t => t.close_date && (acc === 'all' || t.account === acc));
+}
+
+function renderYearOverview(){
+  const body = document.getElementById('yearOverviewBody');
+  const label = document.getElementById('yearOverviewLabel');
+  if(!body) return;
+  const y = YEAR_OVERVIEW;
+  if(label) label.textContent = y;
+
+  const pool = _yearOverviewPool().filter(t => t.close_date.getFullYear() === y);
+  const yr = _tagArmStats(pool);
+  const net = pool.reduce((s, t) => s + netPnl(t), 0);
+
+  const months = Array.from({ length: 12 }, (_, m) => {
+    const ts = pool.filter(t => t.close_date.getMonth() === m);
+    const s = _tagArmStats(ts);
+    return { m, trades: ts, ...s, net: ts.reduce((a, t) => a + netPnl(t), 0) };
+  });
+
+  const traded = months.filter(mo => mo.n > 0);
+  const best  = traded.slice().sort((a, b) => b.net - a.net)[0] || null;
+  const worst = traded.slice().sort((a, b) => a.net - b.net)[0] || null;
+  const green = traded.filter(mo => mo.net > 0).length;
+  const MN = ['January','February','March','April','May','June',
+              'July','August','September','October','November','December'];
+
+  if(!pool.length){
+    body.innerHTML = `<div class="empty-state">No closed trades in ${y}.</div>`;
+    return;
+  }
+
+  const stat = (k, v, cls) => `<div class="yo-stat">
+      <span class="yo-s-k">${k}</span><span class="yo-s-v ${cls || ''}">${v}</span></div>`;
+
+  const head = `<div class="yo-stats">
+    ${stat('Profit', fmtMoney(net), net >= 0 ? 'win' : 'loss')}
+    ${stat('Trades', yr.n)}
+    ${stat('Win', yr.wins, 'win')}
+    ${stat('Loss', yr.losses, 'loss')}
+    ${stat('BE', yr.bes)}
+    ${stat('Win rate', yr.rate === null ? '—' : Math.round(yr.rate) + '%')}
+    ${stat('Green months', `${green} of ${traded.length}`, green * 2 >= traded.length ? 'win' : 'loss')}
+  </div>
+  ${best && worst && best !== worst ? `<div class="yo-line">
+    Best month <b>${MN[best.m]}</b> at ${fmtMoney(best.net)} · worst
+    <b>${MN[worst.m]}</b> at ${fmtMoney(worst.net)}.</div>` : ''}`;
+
+  const grid = months.map(mo => {
+    const cls = mo.n === 0 ? 'quiet' : (mo.net > 0 ? 'up' : mo.net < 0 ? 'down' : '');
+    return `<div class="yo-month ${cls}">
+      <div class="yo-m-head">
+        <span class="yo-m-name">${MN[mo.m]}</span>
+        <span class="yo-m-net">${mo.n ? fmtMoney(mo.net) : '—'}</span>
+      </div>
+      ${_yearMiniGrid(y, mo.m, mo.trades)}
+      <div class="yo-m-foot">${mo.n
+        ? `${mo.n} trade${mo.n === 1 ? '' : 's'} · ${mo.wins}W ${mo.losses}L${
+            mo.bes ? ` ${mo.bes}BE` : ''} · ${mo.rate === null ? '—' : Math.round(mo.rate) + '%'}`
+        : 'no trades'}</div>
+    </div>`;
+  }).join('');
+
+  body.innerHTML = head + `<div class="yo-grid">${grid}</div>`;
+}
+
+/* One month as a small day grid. Same week layout as the Calendar (Sunday
+   first) and the same red/green reading, so the shape is already familiar. */
+function _yearMiniGrid(y, m, trades){
+  const byDay = {};
+  trades.forEach(t => {
+    const d = t.close_date.getDate();
+    byDay[d] = (byDay[d] || 0) + netPnl(t);
+  });
+  const first = new Date(y, m, 1).getDay();
+  const last  = new Date(y, m + 1, 0).getDate();
+  const cells = [];
+  for(let i = 0; i < first; i++) cells.push('<i class="yo-d pad"></i>');
+  for(let d = 1; d <= last; d++){
+    const v = byDay[d];
+    const cls = v === undefined ? '' : (v > 0 ? ' up' : v < 0 ? ' down' : ' flat');
+    const title = v === undefined ? `${d}` : `${d} — ${fmtMoney(v)}`;
+    cells.push(`<i class="yo-d${cls}" title="${escapeHtml(title)}"></i>`);
+  }
+  return `<div class="yo-days">${cells.join('')}</div>`;
+}
+
 function renderCalendar(){
   const y = calMonth.getFullYear(), m = calMonth.getMonth();
   document.getElementById('calLabel').textContent = calMonth.toLocaleDateString('en-US',{month:'long', year:'numeric'});
@@ -3283,52 +3402,48 @@ const EM_MIN_GAP = 10;
    Everything below is scored on return as a percent of the account the trade
    ran on, so a 50K account cannot outrank a 5K one on position size alone. */
 
-// Two arms of one decision, compared head to head.
-//
-// Grouped by WHEN the decision is made, because that is what makes them
-// actionable: the first group changes whether you take the trade, the second
-// changes what you do once you are in it.
-const TRADE_EXPERIMENTS = [
-  { group:'Before you enter', items:[
-    // No opposite arm exists for these — the comparison is against every trade
-    // that did NOT carry the tag, which is the honest counterfactual.
-    { id:'ewc',  title:'Entering without confirmation',
-      q:'Trades you tagged against every trade you did not.',
-      solo:'Entered Without Confirmation' },
-    { id:'chase', title:'Chasing an extended move',
-      q:'The 3rd HL/LH onward, against everything else.',
-      solo:'Chased Extended Move' },
-    { id:'level', title:'Trading into a key level',
-      q:'Entries at a level that should stop the move, against everything else.',
-      solo:'Traded Into Key Level' },
-  ]},
-  { group:'After you are in', items:[
-    { id:'beprev', title:'Breakeven at previous high/low',
-      q:'Price reached prev high/low — move the stop up, or leave it?',
-      a:{ label:'Left it alone', tags:['No BE at Prev High/Low',"Would Have BE'd Out"] },
-      b:{ label:'Moved to BE',   tags:["BE'd at Prev High/Low"] } },
-    { id:'inval', title:'When the setup invalidates',
-      q:'A 15 mins HL becomes a 1 hour HL — hold, or get out?',
-      a:{ label:'Held through it',   tags:['Held Through Invalidation'] },
-      b:{ label:'Cut when it broke', tags:['Cut on Invalidation'] } },
-    // Not a choice between two arms but a verdict on one: of the times the
-    // stop actually fired, how often was firing the right thing? Counted, not
-    // averaged — "9 of 14 saved you" is the whole answer.
-    { id:'postbe', title:'Was the breakeven stop worth it?',
-      q:'Of the trades it closed, what did price do next?',
-      ratio:{ field:'post_be_result',
-              right:{ value:'SL After BE', label:'saved the loss' },
-              wrong:{ value:'TP After BE', label:'cost the trade' },
-              keep:'Keep moving the stop to breakeven',
+/* The two decisions worth settling, each stated as the question you actually
+   ask yourself at the screen.
+
+   These used to be run as A/B experiments needing both arms tagged before they
+   would say anything, and the result was "13 v 0 — both need 5 before this can
+   say anything" on every single one. That is a design fault, not missing data:
+   you tag the thing you noticed, and the thing you did NOT do leaves no tag
+   behind. So a question now answers from whatever arm it has. One arm and a
+   baseline is a real answer; two arms is a better one.
+
+   `outcome` is the exit column that settles the same question from the other
+   direction — of the times the stop actually fired, was firing right? That is
+   a straight count and never needed two arms. */
+const TAG_QUESTIONS = [
+  { id:'be',
+    q:'Should I move to breakeven when price hits the previous high/low?',
+    arms:[
+      { label:'Left it alone',      tags:['No BE at Prev High/Low'] },
+      { label:'Moved to breakeven', tags:["BE'd at Prev High/Low"] },
+    ],
+    // Not an arm — a count of trades you have already marked as ones a
+    // breakeven stop would have rescued. It argues for moving the stop
+    // regardless of which arm is ahead, so it is stated separately.
+    hint:{ tags:["Would Have BE'd Out"],
+           txt:'you marked as trades a breakeven stop would have saved' },
+    outcome:{ field:'post_be_result',
+              right:{ value:'SL After BE',  label:'saved the loss' },
+              wrong:{ value:'TP After BE',  label:'cost you the trade' },
+              keep:'Moving the stop to breakeven is paying off',
               drop:'You are moving the stop up too early' } },
-    { id:'postcut', title:'Was cutting the loss worth it?',
-      q:'Of the trades you cut, what did price do next?',
-      ratio:{ field:'post_cutloss_result',
+
+  { id:'inval',
+    q:'Should I cut when the setup invalidates?',
+    arms:[
+      { label:'Held through it',   tags:['Held Through Invalidation'] },
+      { label:'Cut when it broke', tags:['Cut on Invalidation'] },
+    ],
+    outcome:{ field:'post_cutloss_result',
               right:{ value:'SL After Cutloss', label:'saved the rest of the loss' },
               wrong:{ value:'TP After Cutloss', label:'cost you the trade' },
-              keep:'Keep cutting the loss',
+              keep:'Cutting the loss is paying off',
               drop:'You are cutting too early' } },
-  ]},
 ];
 
 /* Outcomes only. Neither of these two panels touches money anywhere, because a
@@ -3358,6 +3473,90 @@ function _tagArmStats(trades){
   };
 }
 
+/* Every tag you tick, ranked by how many trades you LOST while it was on.
+   This is the whole answer to "what do I keep doing that loses" — one row per
+   thing you actually do, no grouping that hides the individual tag, and no
+   comparison that needs a second tag you never tick.
+
+   Each row is judged against your own win rate over the trades in view, so a
+   tag is not bad for winning 45% — it is bad for winning 45% when you normally
+   win 60%. "Rules Followed" is dropped: it is a statement that nothing went
+   wrong, not a habit that can cost you. */
+function _tagLeaderboard(trades){
+  const overall = _tagArmStats(trades).rate;
+  const by = {};
+  trades.forEach(t => {
+    _canonicalTags(t.unfollowed_rules).forEach(tag => {
+      if(_tagKind(tag) === 'sentinel') return;
+      (by[tag] = by[tag] || []).push(t);
+    });
+  });
+  return Object.entries(by).map(([tag, arr]) => {
+    const s = _tagArmStats(arr);
+    return { tag, kind:_tagKind(tag), rule:_ruleGroupOf(tag), ...s,
+             base: overall,
+             delta: (s.rate === null || overall === null) ? null : s.rate - overall };
+  }).sort((a, b) => b.losses - a.losses || b.n - a.n);
+}
+
+// Stats for one side of a question, from the tags that mark it.
+function _armFor(trades, tags){
+  return _tagArmStats(trades.filter(t => _hasTag(t, tags)));
+}
+
+/* One question, answered from whatever evidence exists. The order matters:
+   two arms beat one, one arm beats none, and the exit column is reported
+   alongside rather than folded in, because it answers the same question from
+   the other end and can disagree. */
+function _answerQuestion(q, trades){
+  const arms = q.arms.map(a => ({ ...a, ..._armFor(trades, a.tags) }));
+  const live = arms.filter(a => a.settled > 0);
+  const base = _tagArmStats(trades).rate;
+
+  let verdict = null;
+  if(live.length === 2 && live.every(a => a.settled >= EM_MIN_N)){
+    const [hi, lo] = [...live].sort((x, y) => y.rate - x.rate);
+    verdict = Math.abs(hi.rate - lo.rate) > EM_MIN_GAP
+      ? { tone:'good', txt:`<b>${escapeHtml(hi.label)}.</b> You won ${hi.wins} of ${hi.settled}
+          that way, against ${lo.wins} of ${lo.settled} the other way.` }
+      : { tone:'wait', txt:`Too close to call — ${hi.wins} of ${hi.settled} against
+          ${lo.wins} of ${lo.settled}. Keep tagging both.` };
+  }else if(live.length === 1 && live[0].settled >= EM_MIN_N && base !== null){
+    // One arm and your own average. Not as good as a head-to-head, but it is a
+    // real answer and it is the situation you are actually in.
+    const a = live[0], gap = a.rate - base;
+    const missing = arms.find(x => x !== a);
+    verdict = Math.abs(gap) <= EM_MIN_GAP
+      ? { tone:'wait', txt:`“${escapeHtml(a.label)}” wins ${Math.round(a.rate)}% — about your
+          ${Math.round(base)}% average, so it is neither helping nor hurting.
+          ${missing ? `Tag “${escapeHtml(missing.label)}” a few times to settle it.` : ''}` }
+      : gap < 0
+      ? { tone:'bad', txt:`<b>Stop doing this.</b> “${escapeHtml(a.label)}” wins only
+          ${Math.round(a.rate)}% — you lost ${a.losses} of ${a.settled} — against your
+          ${Math.round(base)}% average.
+          ${missing ? `Try “${escapeHtml(missing.label)}” instead and tag it.` : ''}` }
+      : { tone:'good', txt:`<b>Keep doing this.</b> “${escapeHtml(a.label)}” wins
+          ${Math.round(a.rate)}%, against your ${Math.round(base)}% average.` };
+  }else{
+    const n = arms.reduce((s, a) => s + a.settled, 0);
+    verdict = { tone:'wait', txt: n
+      ? `Only ${n} tagged trade${n === 1 ? '' : 's'} so far. Tag a few more and this answers itself.`
+      : `Nothing tagged yet. Tick these tags as you journal and this answers itself.` };
+  }
+
+  const hint = q.hint ? _armFor(trades, q.hint.tags) : null;
+  let outcome = null;
+  if(q.outcome){
+    const c = q.outcome;
+    const right = trades.filter(t => t[c.field] === c.right.value).length;
+    const wrong = trades.filter(t => t[c.field] === c.wrong.value).length;
+    const total = right + wrong;
+    if(total) outcome = { right, wrong, total, cfg:c, enough: total >= EM_MIN_N,
+                          good: wrong / total < 0.4 };
+  }
+  return { q, arms, verdict, hint, outcome };
+}
+
 const _hasTag = (t, names) => {
   const on = _canonicalTags(t.unfollowed_rules).map(s => s.toLowerCase());
   return names.some(n => on.includes(n.toLowerCase()));
@@ -3365,39 +3564,7 @@ const _hasTag = (t, names) => {
 
 // Works out one experiment against the trades in view. Returns null when the
 // experiment has nothing at all to say, so an empty one takes no space.
-function _runExperiment(exp, trades){
-  if(exp.ratio){
-    const { field, right, wrong } = exp.ratio;
-    const r = trades.filter(t => t[field] === right.value);
-    const w = trades.filter(t => t[field] === wrong.value);
-    const total = r.length + w.length;
-    if(!total) return null;
-    return { kind:'ratio', exp, right:r.length, wrong:w.length, total,
-             enough: total >= EM_MIN_N };
-  }
-  let A, B, aLabel, bLabel;
-  if(exp.solo){
-    A = trades.filter(t => _hasTag(t, [exp.solo]));
-    if(!A.length) return null;
-    B = trades.filter(t => !_hasTag(t, [exp.solo]));
-    aLabel = 'Tagged'; bLabel = 'Every other trade';
-  }else{
-    A = trades.filter(t => _hasTag(t, exp.a.tags) && !_hasTag(t, exp.b.tags));
-    B = trades.filter(t => _hasTag(t, exp.b.tags) && !_hasTag(t, exp.a.tags));
-    if(!A.length && !B.length) return null;
-    aLabel = exp.a.label; bLabel = exp.b.label;
-  }
-  const a = { ..._tagArmStats(A), label:aLabel };
-  const b = { ..._tagArmStats(B), label:bLabel };
-  const enough = a.settled >= EM_MIN_N && b.settled >= EM_MIN_N;
-  const gap = (a.rate !== null && b.rate !== null) ? a.rate - b.rate : null;
-  return { kind:'ab', exp, a, b, enough, gap,
-           // Gaps are in percentage POINTS of win rate now. At ten or twenty
-           // trades a side, anything under this is a couple of trades landing
-           // differently — "too close to call" is the honest reading of it,
-           // not a coin toss dressed up as a verdict.
-           decided: enough && gap !== null && Math.abs(gap) > EM_MIN_GAP };
-}
+
 
 /* One row per rule, not per tag. Six tags that all mean "I did not follow the
    checklist" read as six problems; as one line they read as the one problem
@@ -3460,14 +3627,14 @@ function _disciplineSummary(trades, rules){
 
   const worst = rules.find(r => r.losses > 0) || null;
 
-  // The habit with the widest decided gap — the single change with the most
-  // evidence behind it right now.
-  let best = null;
-  TRADE_EXPERIMENTS.forEach(g => g.items.forEach(e => {
-    const res = _runExperiment(e, trades);
-    if(!res || res.kind !== 'ab' || !res.decided) return;
-    if(!best || Math.abs(res.gap) > Math.abs(best.gap)) best = res;
-  }));
+  // The tag that beats your average by the most, with enough trades behind it
+  // to mean something — the single thing worth doing more of. Read off the same
+  // leaderboard as the list below, so the headline can never name something the
+  // list contradicts.
+  const best = _tagLeaderboard(trades)
+    .filter(r => r.settled >= EM_MIN_N && r.delta !== null && r.delta > EM_MIN_GAP)
+    .sort((a, b) => b.delta - a.delta)[0] || null;
+
   return { rate, state, worst, best, tagged: tagged.length, breached: breached.length };
 }
 
@@ -3480,38 +3647,40 @@ function renderDisciplinePanel(){
   const clean = FILTERED.filter(t => _isCleanRules(t.unfollowed_rules)).length;
   const tagged = FILTERED.filter(t => _ruleTags(t.unfollowed_rules).length).length;
 
-  const rulesHtml = rules.map((r, i) => {
-    const quiet = r.n === 0;
-    // A sentence first, the count second. Bars and percentages were the part
-    // that did not land — a rule you have broken nine times is a thing you did,
-    // not a length, and it reads faster written out than drawn.
-    const what = RULE_PHRASE[r.name] || `Breaking “${r.name}”`;
-    const sentence = quiet
-      ? `You have never broken this one. Keep it that way.`
-      : i === 0 && r.losses > 0
-      ? `${what} is costing you the most trades right now.`
-      : r.losses > 0
-      ? `${what} lost you ${r.losses} of the ${r.n} trade${r.n===1?'':'s'} it appeared on.`
-      : `${what} has not cost you a trade yet — ${r.n} time${r.n===1?'':'s'} and you got away with it.`;
-    return `<div class="dx-find${quiet ? ' quiet' : ''}">
+  // ONE list: every tag you tick, worst first. This replaced a rule-group
+  // roll-up that hid the individual tag and a set of A/B experiments that
+  // needed a second tag you never tick.
+  const board = _tagLeaderboard(FILTERED);
+  const baseTxt = board.length && board[0].base !== null ? Math.round(board[0].base) : null;
+
+  const boardHtml = board.map(r => {
+    const d = r.delta;
+    const tone = r.losses === 0 ? 'good' : (d !== null && d < -EM_MIN_GAP) ? 'bad'
+               : (d !== null && d > EM_MIN_GAP) ? 'good' : 'warn';
+    const sentence = r.losses === 0
+      ? `You have done this ${r.n} time${r.n === 1 ? '' : 's'} and never lost.`
+      : r.settled < EM_MIN_N
+      ? `${r.losses} of your ${r.n} were losses. Too few to read much into yet.`
+      : d !== null && d < -EM_MIN_GAP
+      ? `You lost ${r.losses} of ${r.settled}. You win ${Math.round(r.rate)}% doing this
+         against your ${baseTxt}% average — <b>this is one to cut out</b>.`
+      : d !== null && d > EM_MIN_GAP
+      ? `You win ${Math.round(r.rate)}% doing this, against your ${baseTxt}% average.
+         This one is working for you.`
+      : `You win ${Math.round(r.rate)}% doing this — about your ${baseTxt}% average.`;
+    return `<div class="dx-find">
       <div class="dx-f-body">
-        <span class="dx-f-rule">${escapeHtml(r.name)}</span>
-        <p class="dx-f-txt">${escapeHtml(sentence)}</p>
-        <div class="dx-r-tags">${r.tags.map(([tag, n]) =>
-          `<span class="dx-tag${n ? '' : ' zero'}">${escapeHtml(tag)}<em>${n}</em></span>`).join('')}</div>
+        <span class="dx-f-rule">${escapeHtml(r.tag)}${
+          r.kind === 'breach' ? ' <i class="dx-breach">breaks a rule</i>' : ''}</span>
+        <p class="dx-f-txt">${sentence}</p>
       </div>
-      <div class="dx-f-num ${quiet ? 'quiet' : (r.losses ? 'bad' : 'warn')}">
-        ${quiet ? `<b>never</b>` : `<b>${r.n} trade${r.n===1?'':'s'}</b><span>${r.losses} lost</span>`}
+      <div class="dx-f-num ${tone}">
+        <b>${r.n} trade${r.n === 1 ? '' : 's'}</b><span>${r.losses} lost</span>
       </div>
     </div>`;
   }).join('');
 
-  const groupsHtml = TRADE_EXPERIMENTS.map(g => {
-    const items = g.items.map(e => _runExperiment(e, FILTERED)).filter(Boolean);
-    if(!items.length) return '';
-    return `<div class="dx-exp-group"><div class="dx-exp-group-name">${escapeHtml(g.group)}</div>${
-      items.map(_experimentHtml).join('')}</div>`;
-  }).join('');
+  const questionsHtml = TAG_QUESTIONS.map(q => _questionHtml(_answerQuestion(q, FILTERED))).join('');
 
   const s = _disciplineSummary(FILTERED, rules);
   const card = (cls, k, v, m) => `<div class="dx-s-card ${cls}">
@@ -3531,40 +3700,69 @@ function renderDisciplinePanel(){
         : card('good', 'Losing you the most trades', 'Nothing',
                'No rule has cost you a losing trade')}
       ${s.best
-        ? card('good', 'Working best for you',
-               escapeHtml((s.best.gap > 0 ? s.best.a : s.best.b).label),
-               `${escapeHtml(s.best.exp.title.toLowerCase())} · ${Math.round(Math.abs(s.best.gap))} points higher win rate`)
-        : card('wait', 'Working best for you', 'Not decided yet',
-               `No experiment has ${EM_MIN_N} settled trades on both sides`)}
+        ? card('good', 'Working best for you', escapeHtml(s.best.tag),
+               `${s.best.wins} of ${s.best.settled} won · ${Math.round(s.best.delta)} points above your average`)
+        : card('wait', 'Working best for you', 'Nothing yet',
+               `No tag is clearly beating your average on ${EM_MIN_N}+ trades`)}
     </div>
   </div>`;
 
   body.innerHTML = summaryHtml + `
+  <div class="dx-half">
+    <div class="dx-half-head"><span class="dx-dot note"></span>
+      <h3>Your two questions</h3></div>
+    ${questionsHtml}
+  </div>
   <details class="dx-detail">
-    <summary><span>Show the working</span></summary>
+    <summary><span>Show every tag</span></summary>
     <div class="dx-halves">
     <div class="dx-half">
       <div class="dx-half-head"><span class="dx-dot bad"></span>
-        <h3>What you are doing wrong</h3>
+        <h3>What loses you trades</h3>
         <span class="dx-half-sub">${clean} of ${tagged || FILTERED.length} tagged trades clean</span></div>
-      <p class="dx-lead">Your ${RULE_GROUPS.reduce((s,g) => s + g.tags.length, 0)} breach tags, grouped
-        into the ${RULE_GROUPS.length} rules they actually describe, ranked by <b>how many trades you lost while
-        breaking each one</b>. The target here is zero.</p>
-      ${rulesHtml}
-    </div>
-    <div class="dx-half">
-      <div class="dx-half-head"><span class="dx-dot note"></span>
-        <h3>What you should be doing</h3></div>
-      <p class="dx-lead">Your observation tags and the two exit columns, read as experiments. Nothing here is a
-        fault — each one is a question. <b>Everything is counted in trades, never in money</b>, because the same
-        good decision is worth ten times more on the 50K than on the 5K and the ranking would only be measuring
-        account size. The figure is your <b>win rate</b>: of the settled trades on that side, how many ended as a
-        win. Breakevens are counted in — moving a stop to breakeven turns losses into breakevens, so dropping
-        them would let that habit flatter itself.</p>
-      ${groupsHtml || `<div class="empty-state">Nothing tagged yet — tick the observation tags as you journal and the answers build themselves.</div>`}
+      <p class="dx-lead">Every tag you tick, ranked by <b>how many trades you lost while it was on</b>. Each one
+        is measured against your own ${baseTxt === null ? 'average' : baseTxt + '% average'} — a tag is not bad
+        for winning 45%, it is bad for winning 45% when you normally win more. Counted in trades, never in money,
+        so the 5K and the 50K weigh the same.</p>
+      ${boardHtml || `<div class="empty-state">Nothing tagged yet — tick the Trade Tags as you journal and this fills itself in.</div>`}
     </div>
     </div>
   </details>`;
+}
+
+/* One question, laid out as: the sides you have data for, then the answer.
+   Deliberately never says "needs 5 on each side" as its whole output — that
+   was the old behaviour and it was the same non-answer every time. */
+function _questionHtml(a){
+  const arms = a.arms.map(x => `<div class="dx-q-arm${x.settled ? '' : ' none'}">
+      <span class="dx-q-a-name">${escapeHtml(x.label)}</span>
+      <span class="dx-q-a-val">${x.settled
+        ? `${x.wins} of ${x.settled} won`
+        : 'never tagged'}</span>
+    </div>`).join('');
+
+  const hint = a.hint && a.hint.n
+    ? `<div class="dx-q-hint"><b>${a.hint.n} trade${a.hint.n === 1 ? '' : 's'}</b>
+       ${escapeHtml(a.q.hint.txt)}.</div>` : '';
+
+  let outcome = '';
+  if(a.outcome){
+    const o = a.outcome, c = o.cfg;
+    outcome = o.enough
+      ? `<div class="dx-q-out ${o.good ? 'good' : 'bad'}">
+          <b>${escapeHtml(o.good ? c.keep : c.drop)}.</b> Of the ${o.total} that closed this way,
+          ${o.right} ${escapeHtml(c.right.label)} and ${o.wrong} ${escapeHtml(c.wrong.label)}.</div>`
+      : `<div class="dx-q-out wait">Only ${o.total} closed this way so far —
+          ${EM_MIN_N} will start to tell you something.</div>`;
+  }
+
+  return `<div class="dx-q">
+    <h4>${escapeHtml(a.q.q)}</h4>
+    <div class="dx-q-arms">${arms}</div>
+    ${hint}
+    <div class="dx-q-verdict ${a.verdict.tone}">${a.verdict.txt}</div>
+    ${outcome}
+  </div>`;
 }
 
 /* ======================== Setup: Pattern · Session · Confluence ===========
@@ -3807,52 +4005,7 @@ function renderSetupPanel(){
 
 const _rateTxt = v => Math.round(v) + '%';
 
-function _experimentHtml(r){
-  const rate = v => Math.round(v) + '%';
 
-  // One sentence saying what to do, with the count that backs it sitting
-  // quietly beside it. No bars, no averages — the finding is the thing to read.
-  const find = (tone, sentence, big, small) => `<div class="dx-find">
-      <div class="dx-f-body"><p class="dx-f-txt">${sentence}</p></div>
-      <div class="dx-f-num ${tone}"><b>${big}</b>${small ? `<span>${small}</span>` : ''}</div>
-    </div>`;
-
-  if(r.kind === 'ratio'){
-    const { exp } = r, cfg = exp.ratio;
-    const good = Math.round(r.wrong / r.total * 100) < 40;
-    if(!r.enough)
-      return find('quiet', `${escapeHtml(exp.title)} — only ${r.total} answered so far.
-        This needs ${EM_MIN_N} before it can tell you anything.`,
-        `${r.total} of ${EM_MIN_N}`, 'answered');
-    return find(good ? 'good' : 'bad',
-      `<b>${escapeHtml(good ? cfg.keep : cfg.drop)}.</b> ${r.right} of the ${r.total}
-       ${escapeHtml(cfg.right.label)}, and ${r.wrong} ${escapeHtml(cfg.wrong.label)}.`,
-      `${r.right} of ${r.total}`, escapeHtml(cfg.right.label));
-  }
-
-  const { exp, a, b } = r;
-  if(!r.enough)
-    return find('quiet', `${escapeHtml(exp.title)} — ${a.settled} settled trades on one side,
-      ${b.settled} on the other. Both need ${EM_MIN_N} before this can say anything.`,
-      `${a.settled} v ${b.settled}`, `needs ${EM_MIN_N} each`);
-
-  const better = r.gap > 0 ? a : b;
-  const behind = r.gap > 0 ? b : a;
-  if(!r.decided)
-    return find('quiet', `${escapeHtml(exp.title)} is still too close to call —
-      ${better.wins} of ${better.settled} against ${behind.wins} of ${behind.settled}.
-      Keep tagging both and it will separate.`,
-      'too close', 'keep tagging');
-
-  // "You won 9 of 14 doing it this way, against 4 of 17 the other way" is the
-  // same fact as a gap in percentage points, in the units the decision is
-  // actually made in.
-  return find('good',
-    `<b>${escapeHtml(better.label)}.</b> You won ${better.wins} of ${better.settled} that way,
-     against ${behind.wins} of ${behind.settled} when you ${escapeHtml(behind.label.toLowerCase())}.
-     Do this one.`,
-    rate(better.rate), `against ${rate(behind.rate)}`);
-}
 
 
 
@@ -15250,6 +15403,12 @@ async function loadProfile(){
     renderSalaryGoal();
     if(PROFILE_DATA && _fxIsStale()) fetchFxRates(false);
   }
+  // Same race, one page over. The Calendar's salary bar reads this profile too,
+  // and the trades fetch reliably beats this one — so the bar rendered while
+  // PROFILE_DATA was still null and said "set your monthly salary" to someone
+  // who had already set it. Nothing re-drew it, because only the salary page
+  // was being refreshed here. Draw it now that the real values exist.
+  if(currentView === 'dashboard' && document.getElementById('calGrid')) renderCalendar();
   await renderProfile();
 }
 

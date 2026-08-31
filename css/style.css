@@ -1891,21 +1891,89 @@
   .dx-dot.note{background:var(--info);}
   .dx-lead{font-size:13px;color:var(--muted);margin:0 0 16px;max-width:640px;line-height:1.55;}
 
-  /* The tag chips survived the redesign — they name the actual things ticked
-     in the journal, which is the one part of the old rule card that was
-     concrete. Everything around them (head, cost column, bar, and the whole
-     two-arm experiment card) is gone in favour of .dx-find sentences below. */
-  .dx-r-tags{display:flex;flex-wrap:wrap;gap:6px;}
-  .dx-tag{font-family:'IBM Plex Mono',monospace;font-size:11px;padding:3px 9px;border-radius:5px;
-    border:1px solid var(--rule);background:var(--surface);color:var(--ink-2, var(--muted));white-space:nowrap;}
-  .dx-tag em{font-style:normal;color:var(--loss);font-weight:600;margin-left:6px;}
-  .dx-tag.zero{opacity:.5;}
-  .dx-tag.zero em{color:var(--muted);}
+  /* ---------- Year overview ----------
+     Twelve months at once. The day squares carry no numbers on purpose — at
+     this size a year is read as a pattern of red and green, and the figures
+     that matter are on the month's own header and footer. */
+  .yo-box{max-width:min(96vw,1180px);max-height:88vh;overflow-y:auto;}
+  .yo-nav{display:flex;align-items:center;gap:10px;margin:-4px 0 16px;}
+  .yo-nav button{font:inherit;font-size:16px;line-height:1;cursor:pointer;
+    width:28px;height:28px;border-radius:6px;
+    background:var(--surface-2);border:1px solid var(--rule);color:var(--ink);}
+  .yo-nav button:hover{border-color:var(--muted);}
+  .yo-nav span{font-size:17px;font-weight:650;font-variant-numeric:tabular-nums;}
 
-  .dx-exp-group{margin-bottom:18px;}
-  .dx-exp-group:last-child{margin-bottom:0;}
-  .dx-exp-group-name{font-family:'IBM Plex Mono',monospace;font-size:10px;font-weight:600;
-    letter-spacing:.13em;text-transform:uppercase;color:var(--muted);margin-bottom:9px;}
+  .yo-stats{display:flex;flex-wrap:wrap;border:1px solid var(--rule);border-radius:7px;
+    overflow:hidden;background:var(--surface-2);margin-bottom:10px;}
+  .yo-stat{flex:1 1 96px;padding:9px 13px;border-right:1px solid var(--rule);
+    display:flex;flex-direction:column;gap:3px;}
+  .yo-stat:last-child{border-right:0;}
+  .yo-s-k{font-size:9.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);}
+  .yo-s-v{font-family:'IBM Plex Mono',monospace;font-size:15px;font-weight:600;
+    font-variant-numeric:tabular-nums;}
+  .yo-s-v.win{color:var(--win);}
+  .yo-s-v.loss{color:var(--loss);}
+  .yo-line{font-size:12.5px;color:var(--muted);margin-bottom:16px;line-height:1.5;}
+  .yo-line b{color:var(--ink);font-weight:600;}
+
+  .yo-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:11px;}
+  .yo-month{border:1px solid var(--rule);border-top:2px solid var(--mt,var(--rule));
+    border-radius:8px;background:var(--surface-2);padding:10px 11px 9px;}
+  .yo-month.up{--mt:var(--win);}
+  .yo-month.down{--mt:var(--loss);}
+  .yo-month.quiet{opacity:.5;}
+  .yo-m-head{display:flex;align-items:baseline;gap:8px;margin-bottom:8px;}
+  .yo-m-name{font-size:12.5px;font-weight:600;}
+  .yo-m-net{margin-left:auto;font-family:'IBM Plex Mono',monospace;font-size:11.5px;
+    font-weight:600;font-variant-numeric:tabular-nums;color:var(--muted);}
+  .yo-month.up .yo-m-net{color:var(--win);}
+  .yo-month.down .yo-m-net{color:var(--loss);}
+
+  .yo-days{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;}
+  .yo-d{display:block;aspect-ratio:1;border-radius:2px;background:var(--surface);}
+  .yo-d.pad{background:transparent;}
+  .yo-d.up{background:var(--win);}
+  .yo-d.down{background:var(--loss);}
+  .yo-d.flat{background:var(--muted);}
+
+  .yo-m-foot{margin-top:8px;font-family:'IBM Plex Mono',monospace;font-size:10px;
+    color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+
+  /* ---------- The two questions ----------
+     One block per decision: the sides you have evidence for, then the answer
+     in a sentence. A side you have never tagged says so plainly instead of
+     turning the whole block into "needs 5 on each side". */
+  .dx-q{border:1px solid var(--rule);border-radius:9px;background:var(--surface-2);
+    padding:14px 16px 15px;margin-bottom:11px;}
+  .dx-q h4{font-size:14.5px;font-weight:600;margin:0 0 11px;line-height:1.35;}
+  .dx-q-arms{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:10px;}
+  .dx-q-arm{background:var(--surface);border:1px solid var(--rule);border-radius:7px;
+    padding:9px 12px;display:flex;flex-direction:column;gap:3px;}
+  .dx-q-a-name{font-size:12px;color:var(--muted);}
+  .dx-q-a-val{font-family:'IBM Plex Mono',monospace;font-size:14px;font-weight:600;}
+  .dx-q-arm.none .dx-q-a-val{color:var(--muted);font-weight:500;font-size:12.5px;}
+
+  .dx-q-hint{font-size:12.5px;color:var(--muted);margin-bottom:9px;line-height:1.45;}
+  .dx-q-hint b{color:var(--warn);font-weight:600;}
+
+  .dx-q-verdict{font-size:13.5px;line-height:1.5;padding:10px 13px;border-radius:7px;
+    background:var(--surface);border-left:3px solid var(--qt,var(--muted));}
+  .dx-q-verdict.good{--qt:var(--win);}
+  .dx-q-verdict.bad{--qt:var(--loss);}
+  .dx-q-verdict.wait{--qt:var(--muted);color:var(--muted);}
+
+  .dx-q-out{margin-top:9px;font-size:12.5px;line-height:1.5;padding:9px 13px;border-radius:7px;
+    background:var(--surface);border-left:3px solid var(--qt,var(--muted));}
+  .dx-q-out.good{--qt:var(--win);}
+  .dx-q-out.bad{--qt:var(--loss);}
+  .dx-q-out.wait{--qt:var(--muted);color:var(--muted);}
+
+  /* Marks a tag that is also a rule breach, so the list can stay one list. */
+  .dx-breach{font-style:normal;font-size:9.5px;font-weight:600;letter-spacing:.05em;
+    text-transform:uppercase;color:var(--loss);margin-left:7px;}
+
+  @media(max-width:560px){ .dx-q-arms{grid-template-columns:1fr;} }
+
 
   /* ---------- Discipline: findings as sentences ----------
      Bars and averages were the part that did not land. A finding is a sentence
@@ -1929,7 +1997,6 @@
 .dx-f-num.quiet b{color:var(--muted);font-weight:500;}
 /* A rule never broken still earns its line — "zero here" is worth seeing. */
 .dx-find.quiet{opacity:.55;}
-.dx-find .dx-r-tags{margin-top:8px;}
 
 /* ---------- Discipline: the one-glance strip ----------
      The panel used to open straight into two long lists, and reading it was a

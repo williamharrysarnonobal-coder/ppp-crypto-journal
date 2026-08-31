@@ -17,7 +17,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<link rel="stylesheet" href="css/style.css?v=255">
+<link rel="stylesheet" href="css/style.css?v=256">
 </head>
 <body>
 
@@ -95,6 +95,10 @@
       <button class="rec-open-btn" onclick="openRecommendations()" title="What the data says to look for, and what to skip">
         <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2Z"/></svg>
         What should I trade?
+      </button>
+      <button class="rec-open-btn" onclick="openYearOverview()" title="Every month of a year on one screen">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+        Year overview
       </button>
       <select id="yearFilter" onchange="onDashYearChange()"></select>
       <select id="monthFilter" onchange="applyFilters()"></select>
@@ -1252,6 +1256,19 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="yearOverviewModal" onclick="if(event.target===this) closeYearOverview()">
+  <div class="modal-box yo-box" style="position:relative;">
+    <button class="modal-close" onclick="closeYearOverview()">✕</button>
+    <h3 style="margin-right:30px;">Year overview</h3>
+    <div class="yo-nav">
+      <button type="button" onclick="shiftOverviewYear(-1)" title="Previous year">‹</button>
+      <span id="yearOverviewLabel">—</span>
+      <button type="button" onclick="shiftOverviewYear(1)" title="Next year">›</button>
+    </div>
+    <div id="yearOverviewBody"></div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="weekReviewModal" onclick="if(event.target===this) closeWeekReview()">
   <div class="modal-box wr-box" style="position:relative;">
     <button class="modal-close" onclick="closeWeekReview()">✕</button>
@@ -2112,6 +2129,6 @@
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=2"></script>
-<script src="js/dashboard.js?v=443"></script>
+<script src="js/dashboard.js?v=444"></script>
 </body>
 </html>
