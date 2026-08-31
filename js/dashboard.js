@@ -1574,12 +1574,18 @@ function _renderCalGoal(monthTrades, y, m){
   ].filter(Boolean).join('\n');
 
   holder.innerHTML = `<span class="cal-goal ${tone}" title="${escapeHtml(tip)}">
-    <span class="cal-goal-label">Goal</span>
+    <span class="cal-goal-badge">${_GOAL_ICON}</span>
     <span class="cal-goal-track"><i style="width:${pct.toFixed(1)}%"></i><b>${
       Math.round(made / need * 100)}%</b></span>
     ${filtered ? '<em class="cal-goal-flag" title="An account filter is on">•</em>' : ''}
   </span>`;
 }
+
+// The medallion's face. A target, because that is what the bar is filling
+// toward — inheriting currentColor so the state tints the icon with it.
+const _GOAL_ICON = `<svg viewBox="0 0 24 24" width="13" height="13" fill="none"
+  stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"
+  ><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.2"/><circle cx="12" cy="12" r="0.6"/></svg>`;
 
 /* ======================== Year overview ==============================
 
