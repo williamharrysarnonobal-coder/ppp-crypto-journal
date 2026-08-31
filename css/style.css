@@ -506,6 +506,46 @@
              0 0 11px color-mix(in srgb, var(--win) 70%, transparent);
 }
 
+/* ---------- The glint ----------
+   A light sweeps across the trophy, then a small star pops just behind it —
+   the way a cut stone catches the light.
+
+   Only while the goal is still OUT OF REACH. The glint is bait; once the
+   trophy is won it stops being something to chase and a permanent twinkle on
+   an achievement would just be noise. A reached month gets the steady green
+   glow above instead. */
+.cal-goal:not(.hit) .cal-goal-end::before{
+  content:'';position:absolute;inset:0;border-radius:50%;z-index:1;
+  pointer-events:none;
+  background:linear-gradient(115deg,
+    transparent 40%, rgba(255,255,255,.55) 50%, transparent 60%);
+  background-size:320% 100%;
+  animation:calGoalGlint 6s linear infinite;
+}
+/* The sweep takes under a third of the cycle and the rest is stillness. At a
+   steady sweep it read as a strobe in the corner of the eye. */
+@keyframes calGoalGlint{
+  0%       {background-position:320% 0;}
+  28%      {background-position:-180% 0;}
+  100%     {background-position:-180% 0;}
+}
+
+/* The four-point star, fired just after the light passes — the two together
+   read as a glint; either alone reads as a loading spinner. */
+.cal-goal:not(.hit) .cal-goal-end::after{
+  content:'';position:absolute;top:-3px;right:-2px;width:9px;height:9px;
+  z-index:2;pointer-events:none;background:#fff;
+  clip-path:polygon(50% 0%, 58% 42%, 100% 50%, 58% 58%,
+                    50% 100%, 42% 58%, 0% 50%, 42% 42%);
+  opacity:0;
+  animation:calGoalSparkle 6s ease-in-out infinite;
+}
+@keyframes calGoalSparkle{
+  0%, 16%   {opacity:0; transform:scale(.3) rotate(-40deg);}
+  25%       {opacity:1; transform:scale(1)  rotate(0deg);}
+  40%, 100% {opacity:0; transform:scale(.3) rotate(40deg);}
+}
+
 /* The pill rides the fill's edge. clamp() keeps it on the rail: at 0% or 100%
    a centred pill would hang half of itself off the end, and only CSS knows how
    wide the pill actually is. */
@@ -565,6 +605,10 @@
 @media (prefers-reduced-motion: reduce){
   .cal-goal.now .cal-goal-track i::after{animation:none;background:none;}
   .cal-goal.now .cal-goal-track b{animation:none;}
+  /* The glint goes entirely — the sparkle is decoration and carries no
+     information the steady state does not already show. */
+  .cal-goal:not(.hit) .cal-goal-end::before,
+  .cal-goal:not(.hit) .cal-goal-end::after{animation:none;background:none;opacity:0;}
   .cal-goal-track i,
   .cal-goal-track b{transition:none;}
 }
