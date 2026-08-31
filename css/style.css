@@ -481,32 +481,39 @@
              0 0 8px color-mix(in srgb, var(--gt,var(--muted)) 55%, transparent);
 }
 
-/* The far end is the TARGET, so it is drawn as a hollow ring rather than a
-   dot: an outline you have not filled in yet. It was solid var(--rule) before,
-   which is two shades off the rail itself and effectively invisible — the ring
-   is var(--muted), light enough to actually read against a dark bar.
+/* The far end carries a trophy, not a dot. A plain circle only said "the line
+   stops here"; the trophy says what the line is FOR, and it is unmistakably
+   the other end even at a glance.
 
-   Reaching the goal fills it in. That is the one moment the far end stops
-   being a target and becomes a result, and the bar should show it. */
-.cal-goal-track::after{
-  content:'';position:absolute;right:0;top:50%;width:14px;height:14px;
-  transform:translateY(-50%);border-radius:50%;z-index:1;
-  background:var(--bg);
-  box-shadow:inset 0 0 0 2px var(--muted);
+   It stays outlined and grey while the month is short — a prize you have not
+   won — and fills solid the moment the goal is reached. That is the one point
+   where the far end stops being a target and becomes a result.
+
+   A real element, not ::after: a pseudo-element cannot hold an SVG, and an
+   emoji trophy would drag in its own colours and its own font. */
+.cal-goal-end{
+  position:absolute;right:0;top:50%;transform:translateY(-50%);z-index:2;
+  width:20px;height:20px;border-radius:50%;
+  display:inline-flex;align-items:center;justify-content:center;
+  background:var(--bg);color:var(--muted);
+  box-shadow:inset 0 0 0 1.5px var(--muted);
+  transition:color .3s ease, background .3s ease;
 }
-.cal-goal.hit .cal-goal-track::after{
-  background:var(--win);
-  box-shadow:inset 0 0 0 3px var(--surface),
-             0 0 10px color-mix(in srgb, var(--win) 65%, transparent);
+.cal-goal-end svg{display:block;}
+.cal-goal.hit .cal-goal-end{
+  background:var(--win);color:var(--bg);
+  box-shadow:inset 0 0 0 1.5px var(--win),
+             0 0 11px color-mix(in srgb, var(--win) 70%, transparent);
 }
 
 /* The pill rides the fill's edge. clamp() keeps it on the rail: at 0% or 100%
    a centred pill would hang half of itself off the end, and only CSS knows how
    wide the pill actually is. */
 .cal-goal-track b{
-  /* 30px of clearance at each end, not 26 — the end dots grew to 14px and the
-     pill was landing on top of the right one as the fill approached 100%. */
-  position:absolute;top:50%;left:clamp(30px, var(--p,0%), calc(100% - 30px));
+  /* 36px of clearance on the right — the trophy disc is 20px wide and the pill
+     is about 46px, so anything less and the two overlap as the fill nears the
+     end, which is exactly when you most want to read both. */
+  position:absolute;top:50%;left:clamp(30px, var(--p,0%), calc(100% - 36px));
   transform:translate(-50%,-50%);z-index:3;
   padding:2px 8px;border-radius:999px;
   font-family:'IBM Plex Mono',monospace;font-size:10.5px;font-weight:700;

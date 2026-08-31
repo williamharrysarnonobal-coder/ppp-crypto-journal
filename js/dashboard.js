@@ -1594,10 +1594,17 @@ function _renderCalGoal(monthTrades, y, m){
     <span class="cal-goal-track">
       <i style="width:${pct.toFixed(1)}%"></i>
       <b style="--p:${pct.toFixed(1)}%">${Math.round(made / need * 100)}%</b>
+      <span class="cal-goal-end">${_GOAL_TROPHY}</span>
     </span>
     ${filtered ? '<em class="cal-goal-flag" title="An account filter is on">•</em>' : ''}
   </span>`;
 }
+
+/* The far end of the goal bar. A filled shape rather than a stroked one —
+   at 12px a 2px outline turns to mush, while a solid silhouette still reads
+   as a trophy. currentColor, so the disc around it decides the tint. */
+const _GOAL_TROPHY = `<svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor"
+  aria-hidden="true"><path d="M17 3V2H7v1H3v3a4 4 0 0 0 4 4h.3A6 6 0 0 0 11 13.9V17H7v2h10v-2h-4v-3.1A6 6 0 0 0 16.7 10H17a4 4 0 0 0 4-4V3h-4Zm2 3a2 2 0 0 1-2 2V5h2v1ZM5 6V5h2v3a2 2 0 0 1-2-2Z"/></svg>`;
 
 /* ======================== Year overview ==============================
 
