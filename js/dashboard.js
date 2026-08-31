@@ -1671,16 +1671,27 @@ function renderYearOverview(){
   const goalUsd = (PROFILE_DATA && Number.isFinite(salaryAed) && salaryAed > 0)
     ? salaryAed / aedRate : null;
 
+  const today = new Date();
   const months = Array.from({ length: 12 }, (_, m) => {
     const ts = pool.filter(t => t.close_date.getMonth() === m);
     const s = _tagArmStats(ts);
     const net = ts.reduce((a, t) => a + netPnl(t), 0);
     const rrs = ts.map(t => t.rr).filter(v => v !== null && !isNaN(v));
+    const hit = goalUsd ? net >= goalUsd : null;
+    // The same four states the Calendar's bar uses, read the same way — a
+    // month is only "still running" if it is the one you are actually in.
+    const isNow  = y === today.getFullYear() && m === today.getMonth();
+    const isPast = y < today.getFullYear() || (y === today.getFullYear() && m < today.getMonth());
+    const goalTone = goalUsd === null ? 'none'
+      : hit ? 'hit'
+      : net < 0 ? 'missed'
+      : isNow ? 'now'
+      : isPast ? 'missed' : 'ahead';
     return { m, trades: ts, ...s, rate: _winRateOf(ts), net,
              rr: rrs.length ? rrs.reduce((a, v) => a + v, 0) / rrs.length : null,
              rrN: rrs.length,
              goalPct: goalUsd ? Math.max(0, net / goalUsd * 100) : null,
-             hitGoal: goalUsd ? net >= goalUsd : null };
+             hitGoal: hit, goalTone };
   });
 
   const traded = months.filter(mo => mo.n > 0);
@@ -1739,23 +1750,40 @@ function renderYearOverview(){
             ? `Average planned RR across the ${mo.rrN} of ${mo.n} trades that have one recorded`
             : 'No trade this month has an RR recorded'}"
             >RR ${mo.rr === null ? '—' : fmtNum(mo.rr, 2)}</span>
-        </div>
-        <div class="yo-f-row">
-          ${mo.hitGoal === null
-            ? `<span class="yo-goal none" title="Set your monthly salary on the Salary vs Trading page">goal —</span>`
-            : `<span class="yo-goal ${mo.hitGoal ? 'hit' : 'miss'}" title="${
-                mo.hitGoal ? 'Salary goal reached this month' : 'Short of the salary goal this month'
-              } — ${fmtMoney(mo.net)} against ${_salMoney(goalUsd, 'USD')}">${
-                mo.hitGoal ? _GOAL_TROPHY : ''}${Math.round(mo.goalPct)}%</span>`}
           <span class="yo-c rate" title="${mo.wins} won of ${mo.wins + mo.losses} decided${
             mo.bes ? ` — the ${mo.bes} breakeven${mo.bes === 1 ? '' : 's'} are not counted, same as the Calendar` : ''}"
             >${mo.rate === null ? '—' : Math.round(mo.rate) + '%'}</span>
         </div>
+        ${_yearGoalBar(mo, goalUsd)}
       </div>` : `<div class="yo-m-foot empty">no trades</div>`}
     </div>`;
   }).join('');
 
   body.innerHTML = head + `<div class="yo-grid">${grid}</div>`;
+}
+
+/* The month's salary goal, built the same way as the Calendar's header bar:
+   one rail, a fill, the percentage in a pill on its edge, and the trophy at
+   the far end. Same four colours, read from the same rules.
+
+   What it deliberately does NOT copy is the glint. Twelve sparkling trophies
+   on one screen is the flicker this whole bar was slowed down to avoid — the
+   header is the one live thing, and these twelve are a record. */
+function _yearGoalBar(mo, goalUsd){
+  if(goalUsd === null){
+    return `<div class="yo-bar none"
+      title="Set your monthly salary on the Salary vs Trading page and this fills in."
+      ><i style="width:0%"></i><b style="--p:0%">—</b>
+      <span class="yo-bar-end">${_GOAL_TROPHY}</span></div>`;
+  }
+  const pct = Math.max(0, Math.min(100, mo.goalPct));
+  const tip = `${mo.hitGoal ? 'Salary goal reached' : 'Short of the salary goal'} — `
+    + `${fmtMoney(mo.net)} against ${_salMoney(goalUsd, 'USD')}`;
+  return `<div class="yo-bar ${mo.goalTone}" title="${escapeHtml(tip)}">
+    <i style="width:${pct.toFixed(1)}%"></i>
+    <b style="--p:${pct.toFixed(1)}%">${Math.round(mo.goalPct)}%</b>
+    <span class="yo-bar-end">${_GOAL_TROPHY}</span>
+  </div>`;
 }
 
 /* One month as a small day grid, with the date printed in every cell. Same week

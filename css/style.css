@@ -2168,31 +2168,67 @@
   .yo-c.win{color:var(--win);}
   .yo-c.loss{color:var(--loss);}
   .yo-c.be{color:var(--info);}
-  .yo-c.rr{margin-left:auto;color:var(--muted);background:transparent;padding-right:0;}
-  .yo-c.rate{margin-left:auto;color:var(--ink);background:transparent;padding-right:0;}
+  /* RR and win rate share the right side now that the goal moved to its own
+     bar — RR takes the free space, the rate sits flush against the edge. */
+  .yo-c.rr{margin-left:auto;color:var(--muted);background:transparent;padding-right:2px;}
+  .yo-c.rate{color:var(--ink);background:transparent;padding-right:0;}
 
-  /* The month's salary goal. The trophy only appears on a month that reached
-     it, so scanning the year for wins is a matter of counting cups rather than
-     comparing twelve percentages. */
-  .yo-goal{display:inline-flex;align-items:center;gap:4px;
-    font-family:'IBM Plex Mono',monospace;font-size:10px;font-weight:600;
+  /* ---------- The month's goal bar ----------
+     The Calendar header bar at card scale: same rail-fill-pill-trophy build,
+     same --gt state colour, same reading. Smaller throughout, and with no
+     glint — see _yearGoalBar for why.
+
+     Green when the month reached the goal, gold while the month you are in is
+     still running and in profit, red for a month that closed short or went
+     negative, grey when no salary is set. That last one is not an accusation:
+     there is nothing to have missed. */
+  .yo-bar{position:relative;height:22px;margin-top:2px;}
+  .yo-bar.hit{--gt:var(--win);}
+  .yo-bar.now{--gt:var(--accent);}
+  .yo-bar.missed{--gt:var(--loss);}
+  .yo-bar.ahead{--gt:var(--muted);}
+  .yo-bar.none{--gt:var(--rule);opacity:.55;}
+
+  .yo-bar::before{
+    content:'';position:absolute;left:0;right:0;top:50%;height:4px;
+    transform:translateY(-50%);border-radius:999px;
+    background:var(--surface);box-shadow:inset 0 1px 2px rgba(0,0,0,.4);
+  }
+  .yo-bar i{
+    position:absolute;left:0;top:50%;height:4px;z-index:1;
+    transform:translateY(-50%);border-radius:999px;
+    background:var(--gt,var(--muted));
+    box-shadow:0 0 6px color-mix(in srgb, var(--gt,var(--muted)) 50%, transparent);
+  }
+  /* The start dot, hanging off the fill exactly as it does in the header. */
+  .yo-bar i::before{
+    content:'';position:absolute;left:0;top:50%;width:10px;height:10px;
+    transform:translateY(-50%);border-radius:50%;
+    background:var(--gt,var(--muted));
+    box-shadow:inset 0 0 0 2px var(--surface-2);
+  }
+  .yo-bar b{
+    position:absolute;top:50%;left:clamp(22px, var(--p,0%), calc(100% - 30px));
+    transform:translate(-50%,-50%);z-index:3;
+    padding:1px 5px;border-radius:999px;
+    font-family:'IBM Plex Mono',monospace;font-size:9px;font-weight:700;
     font-variant-numeric:tabular-nums;white-space:nowrap;
-    padding:2px 6px;border-radius:4px;
-    background:var(--surface);color:var(--muted);}
-  .yo-goal svg{display:block;width:11px;height:11px;}
-  .yo-goal.hit{color:var(--win);
-    background:color-mix(in srgb, var(--win) 16%, var(--surface));
-    box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--win) 45%, transparent);}
-  /* A month that fell short is red, not grey. Grey said "no data"; the month
-     has data and the answer is no. `.miss` is set explicitly in the markup
-     rather than left as the default styling, so the three states — hit, miss,
-     and no salary set — each say which one they are. */
-  .yo-goal.miss{color:var(--loss);
-    background:color-mix(in srgb, var(--loss) 14%, var(--surface));
-    box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--loss) 40%, transparent);}
-  /* Only the "no salary set" case stays grey — there is nothing to have
-     missed, so red would be an accusation about a number you never gave it. */
-  .yo-goal.none{opacity:.5;}
+    color:var(--gt,var(--muted));
+    background:var(--surface-2);border:1px solid var(--gt,var(--muted));
+  }
+  .yo-bar-end{
+    position:absolute;right:0;top:50%;transform:translateY(-50%);z-index:2;
+    width:16px;height:16px;border-radius:50%;
+    display:inline-flex;align-items:center;justify-content:center;
+    background:var(--bg);color:var(--muted);
+    box-shadow:inset 0 0 0 1.2px var(--muted);
+  }
+  .yo-bar-end svg{display:block;width:9px;height:9px;}
+  .yo-bar.hit .yo-bar-end{
+    background:var(--win);color:var(--bg);
+    box-shadow:inset 0 0 0 1.2px var(--win),
+               0 0 8px color-mix(in srgb, var(--win) 60%, transparent);
+  }
 
   /* ---------- The two questions ----------
      One block per decision: the sides you have evidence for, then the answer
