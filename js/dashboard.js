@@ -1712,7 +1712,11 @@ function renderYearOverview(){
     ${stat('Win rate', yrRate === null ? '—' : Math.round(yrRate) + '%')}
     ${stat('Green months', `${green} of ${traded.length}`, green * 2 >= traded.length ? 'win' : 'loss')}
     ${goalUsd === null ? '' : stat('Goals hit', `${goalsHit} of ${traded.length}`,
-        goalsHit ? 'win' : 'loss')}
+        // Same half-or-better rule as Green months beside it. It used to go
+        // green on a single hit out of twelve, which read as a pass next to a
+        // stat that demanded half — two different rules on two numbers of the
+        // same shape, sitting next to each other.
+        goalsHit * 2 >= traded.length ? 'win' : 'loss')}
   </div>
   ${best && worst && best !== worst ? `<div class="yo-line">
     Best month <b>${MN[best.m]}</b> at ${fmtMoney(best.net)} · worst
@@ -1739,7 +1743,7 @@ function renderYearOverview(){
         <div class="yo-f-row">
           ${mo.hitGoal === null
             ? `<span class="yo-goal none" title="Set your monthly salary on the Salary vs Trading page">goal —</span>`
-            : `<span class="yo-goal ${mo.hitGoal ? 'hit' : ''}" title="${
+            : `<span class="yo-goal ${mo.hitGoal ? 'hit' : 'miss'}" title="${
                 mo.hitGoal ? 'Salary goal reached this month' : 'Short of the salary goal this month'
               } — ${fmtMoney(mo.net)} against ${_salMoney(goalUsd, 'USD')}">${
                 mo.hitGoal ? _GOAL_TROPHY : ''}${Math.round(mo.goalPct)}%</span>`}

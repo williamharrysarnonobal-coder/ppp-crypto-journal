@@ -2183,6 +2183,15 @@
   .yo-goal.hit{color:var(--win);
     background:color-mix(in srgb, var(--win) 16%, var(--surface));
     box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--win) 45%, transparent);}
+  /* A month that fell short is red, not grey. Grey said "no data"; the month
+     has data and the answer is no. `.miss` is set explicitly in the markup
+     rather than left as the default styling, so the three states — hit, miss,
+     and no salary set — each say which one they are. */
+  .yo-goal.miss{color:var(--loss);
+    background:color-mix(in srgb, var(--loss) 14%, var(--surface));
+    box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--loss) 40%, transparent);}
+  /* Only the "no salary set" case stays grey — there is nothing to have
+     missed, so red would be an accusation about a number you never gave it. */
   .yo-goal.none{opacity:.5;}
 
   /* ---------- The two questions ----------
