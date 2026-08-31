@@ -1543,17 +1543,28 @@ function _renderCalGoal(monthTrades, y, m){
   const isPast = y < today.getFullYear() || (y === today.getFullYear() && m < today.getMonth());
   const short  = need - made;
 
+  const left = isNow ? _tradingDaysLeft(y, m, today) : 0;
+
   let tone, note;
   if(made >= need){
     tone = 'hit';
     note = `Goal reached — ${_salMoney(made - need, 'USD')} past it.`;
+  }else if(made < 0){
+    // Down on the month reads RED straight away, mid-month included. This used
+    // to stay amber until the month closed, so a month running badly looked
+    // exactly like a month running behind — and the colour was reassuring you
+    // while the account went backwards. Being down is not "behind schedule".
+    tone = 'missed';
+    note = isNow && left > 0
+      ? `You are ${_salMoney(Math.abs(made), 'USD')} down this month. ${left} trading
+         day${left === 1 ? '' : 's'} left, and the goal is ${_salMoney(short, 'USD')} away.`
+      : isNow
+      ? `You are ${_salMoney(Math.abs(made), 'USD')} down, with no trading days left this month.`
+      : `The month closed ${_salMoney(Math.abs(made), 'USD')} down.`;
   }else if(isPast){
     tone = 'missed';
-    note = made <= 0
-      ? `Missed. The month closed ${_salMoney(Math.abs(made), 'USD')} down.`
-      : `Missed by ${_salMoney(short, 'USD')}.`;
+    note = `Missed by ${_salMoney(short, 'USD')}.`;
   }else if(isNow){
-    const left = _tradingDaysLeft(y, m, today);
     tone = 'now';
     note = left > 0
       ? `Short by ${_salMoney(short, 'USD')}. ${left} trading day${left === 1 ? '' : 's'}
@@ -1573,19 +1584,20 @@ function _renderCalGoal(monthTrades, y, m){
     filtered ? 'An account filter is on — this is part of your income, not all of it.' : '',
   ].filter(Boolean).join('\n');
 
+  // The bubble rides the fill's leading edge. Its position is handed to CSS as
+  // a custom property rather than a plain `left`, so the stylesheet can clamp
+  // it away from both ends — at 2% or 99% a centred pill would hang off the
+  // rail, and clamping needs to happen in CSS where the pill's own width is
+  // known.
   holder.innerHTML = `<span class="cal-goal ${tone}" title="${escapeHtml(tip)}">
-    <span class="cal-goal-badge">${_GOAL_ICON}</span>
-    <span class="cal-goal-track"><i style="width:${pct.toFixed(1)}%"></i><b>${
-      Math.round(made / need * 100)}%</b></span>
+    <span class="cal-goal-label">Goal</span>
+    <span class="cal-goal-track">
+      <i style="width:${pct.toFixed(1)}%"></i>
+      <b style="--p:${pct.toFixed(1)}%">${Math.round(made / need * 100)}%</b>
+    </span>
     ${filtered ? '<em class="cal-goal-flag" title="An account filter is on">•</em>' : ''}
   </span>`;
 }
-
-// The medallion's face. A target, because that is what the bar is filling
-// toward — inheriting currentColor so the state tints the icon with it.
-const _GOAL_ICON = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none"
-  stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"
-  ><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.2"/><circle cx="12" cy="12" r="0.6"/></svg>`;
 
 /* ======================== Year overview ==============================
 

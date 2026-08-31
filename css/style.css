@@ -418,71 +418,77 @@
 .cal-h2 > #calGoalBar{flex:none;margin-left:16px;}
 .cal-h2 > .cal-head-actions{margin-left:auto;}
 
-/* Built after the game-HUD reference: a medallion on the left, then a framed
-   track with a glossy fill. The brass of the original is dropped — it would
-   be the only ornate object on the page — but the SHAPE is kept, and the
-   ring uses the accent gold this theme already owns, so it reads as designed
-   rather than imported. */
+/* Built to the slider sample: one thin rail, a dot at each end, and the
+   percentage floating in a pill on the fill's leading edge. The game-HUD
+   version before this was too loud — the segment ticks fought the number and
+   the gold frame made a small status read like an ornament.
+
+   Nothing here uses overflow:hidden. The end dots and the pill sit OUTSIDE
+   the 6px rail, so clipping the track would cut all three off; each piece is
+   positioned against the track box instead. */
 .cal-goal{
-  display:inline-flex;align-items:center;gap:0;flex:none;cursor:default;
+  display:inline-flex;align-items:center;gap:11px;flex:none;cursor:default;
+}
+.cal-goal-label{
+  font-size:10px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--muted);
 }
 
-/* The medallion. Overlaps the track by 6px so the two read as one object,
-   exactly as the reference has the icon disc sitting on the bar. */
-.cal-goal-badge{
-  position:relative;z-index:2;flex:none;
-  display:inline-flex;align-items:center;justify-content:center;
-  width:30px;height:30px;border-radius:50%;margin-right:-9px;
-  color:var(--gt,var(--muted));
-  background:radial-gradient(circle at 32% 26%,
-    color-mix(in srgb, var(--surface-2) 88%, white), var(--bg) 82%);
-  border:1.5px solid var(--accent);
-  box-shadow:0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent),
-             inset 0 1px 2px rgba(0,0,0,.55);
-}
-.cal-goal.hit{--gt:var(--win);}
-.cal-goal.now{--gt:var(--accent);}
-.cal-goal.missed{--gt:var(--loss);}
-.cal-goal.ahead{--gt:var(--muted);}
-.cal-goal.empty{font-size:10px;font-weight:500;letter-spacing:.05em;
-  text-transform:uppercase;color:var(--muted);padding:3px 10px;}
-
-/* The track: sunken, gold-rimmed, with a dark inner shadow so the fill sits
-   down inside it rather than on top. */
+/* The track is a 26px-tall box, not a line — it has to contain the dots and
+   the pill. The rail itself is drawn as ::before, centred inside it. */
 .cal-goal-track{
-  position:relative;display:flex;align-items:center;justify-content:center;
-  width:180px;height:24px;border-radius:999px;overflow:hidden;flex:none;
-  padding-left:12px;                      /* clears the medallion overlap */
-  background:linear-gradient(180deg, var(--bg), var(--surface));
-  border:1.5px solid var(--accent);
-  box-shadow:inset 0 2px 4px rgba(0,0,0,.55);
+  position:relative;display:block;width:190px;height:26px;flex:none;
+}
+.cal-goal-track::before{
+  content:'';position:absolute;left:0;right:0;top:50%;height:6px;
+  transform:translateY(-50%);border-radius:999px;
+  background:var(--surface);box-shadow:inset 0 1px 2px rgba(0,0,0,.45);
 }
 
-/* The fill, as a lit tube: bright along the upper third, deeper at the base,
-   with a soft glow spilling past its edge. The segment ticks are the
-   reference's first bar — thin gaps cut straight through the gradient. */
+/* The filled length, plus the left end dot hanging off its start. */
 .cal-goal-track i{
-  position:absolute;left:0;top:2px;bottom:2px;border-radius:999px;
-  background:
-    repeating-linear-gradient(90deg,
-      transparent 0 7px, rgba(0,0,0,.28) 7px 9px),
-    linear-gradient(180deg,
-      color-mix(in srgb, var(--gt,var(--muted)) 55%, white) 0%,
-      var(--gt,var(--muted)) 46%,
-      color-mix(in srgb, var(--gt,var(--muted)) 72%, black) 100%);
-  box-shadow:0 0 7px color-mix(in srgb, var(--gt,var(--muted)) 55%, transparent),
-             inset 0 1px 0 rgba(255,255,255,.45);
+  position:absolute;left:0;top:50%;height:6px;z-index:1;
+  transform:translateY(-50%);border-radius:999px;
+  background:var(--gt,var(--muted));
+  box-shadow:0 0 8px color-mix(in srgb, var(--gt,var(--muted)) 60%, transparent);
   transition:width .6s cubic-bezier(.22,.8,.3,1);
 }
-
-/* White digits over a saturated fill AND over the dark empty track — the
-   shadow is what lets one colour work on both, without blend modes or a
-   second copy of the text clipped to the fill. */
-.cal-goal-track b{
-  position:relative;z-index:1;font-family:'IBM Plex Mono',monospace;
-  font-size:11px;font-weight:700;font-variant-numeric:tabular-nums;
-  color:#fff;letter-spacing:.02em;text-shadow:0 1px 2px rgba(0,0,0,.75);
+.cal-goal-track i::before{
+  content:'';position:absolute;left:-1px;top:50%;width:13px;height:13px;
+  transform:translate(-50%,-50%);border-radius:50%;
+  background:var(--gt,var(--muted));
+  box-shadow:inset 0 0 0 3px var(--surface),
+             0 0 8px color-mix(in srgb, var(--gt,var(--muted)) 55%, transparent);
 }
+
+/* The right end dot stays dim until the goal is actually reached, so the far
+   end of the rail reads as somewhere you have not got to yet. */
+.cal-goal-track::after{
+  content:'';position:absolute;right:0;top:50%;width:13px;height:13px;
+  transform:translate(50%,-50%);border-radius:50%;z-index:1;
+  background:var(--rule);box-shadow:inset 0 0 0 3px var(--surface);
+}
+.cal-goal.hit .cal-goal-track::after{
+  background:var(--win);
+  box-shadow:inset 0 0 0 3px var(--surface),
+             0 0 9px color-mix(in srgb, var(--win) 60%, transparent);
+}
+
+/* The pill rides the fill's edge. clamp() keeps it on the rail: at 0% or 100%
+   a centred pill would hang half of itself off the end, and only CSS knows how
+   wide the pill actually is. */
+.cal-goal-track b{
+  position:absolute;top:50%;left:clamp(26px, var(--p,0%), calc(100% - 26px));
+  transform:translate(-50%,-50%);z-index:2;
+  padding:2px 8px;border-radius:999px;
+  font-family:'IBM Plex Mono',monospace;font-size:10.5px;font-weight:700;
+  font-variant-numeric:tabular-nums;letter-spacing:.02em;
+  color:var(--gt,var(--muted));
+  background:var(--surface-2);border:1.5px solid var(--gt,var(--muted));
+  transition:left .6s cubic-bezier(.22,.8,.3,1);
+  white-space:nowrap;
+}
+
 .cal-goal-flag{font-style:normal;color:var(--warn);font-size:14px;line-height:1;}
 
 /* The month still has days left to run, so the fill keeps moving — a sheen
@@ -492,20 +498,35 @@
    the fill itself would replace all of it — the gloss gradient and the
    segment ticks are background layers too, and they would vanish the moment
    the animation took over. */
+/* The shine, kept from the previous design but retuned for a 6px rail. On its
+   own layer, because the fill's background carries the colour and the glow —
+   animating background-image on the fill itself would wipe both out.
+
+   Only the live month moves. A closed month is settled and should sit still,
+   and a red month should not sparkle at you. */
 .cal-goal.now .cal-goal-track i::after{
   content:'';position:absolute;inset:0;border-radius:999px;
   background:linear-gradient(100deg,
-    transparent 30%, rgba(255,255,255,.5) 50%, transparent 70%);
-  background-size:220% 100%;
-  animation:calGoalSheen 2.4s linear infinite;
+    transparent 25%, rgba(255,255,255,.85) 50%, transparent 75%);
+  background-size:260% 100%;
+  animation:calGoalSheen 2.2s linear infinite;
 }
 @keyframes calGoalSheen{
-  from{background-position:220% 0;}
-  to{background-position:-120% 0;}
+  from{background-position:260% 0;}
+  to{background-position:-140% 0;}
+}
+/* The pill breathes with it, so the eye is drawn to the number rather than to
+   a stripe travelling along a thin line. */
+.cal-goal.now .cal-goal-track b{animation:calGoalPulse 2.2s ease-in-out infinite;}
+@keyframes calGoalPulse{
+  0%,100%{box-shadow:0 0 0 0 color-mix(in srgb, var(--gt) 55%, transparent);}
+  50%    {box-shadow:0 0 0 4px color-mix(in srgb, var(--gt) 0%, transparent);}
 }
 @media (prefers-reduced-motion: reduce){
   .cal-goal.now .cal-goal-track i::after{animation:none;background:none;}
-  .cal-goal-track i{transition:none;}
+  .cal-goal.now .cal-goal-track b{animation:none;}
+  .cal-goal-track i,
+  .cal-goal-track b{transition:none;}
 }
   .tc-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:2px;vertical-align:1px;}
   /* BE is blue, not grey. Grey read as "nothing here" when a breakeven is a
