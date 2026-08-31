@@ -1592,10 +1592,11 @@ function _renderCalGoal(monthTrades, y, m){
   // it away from both ends — at 2% or 99% a centred pill would hang off the
   // rail, and clamping needs to happen in CSS where the pill's own width is
   // known.
-  /* The pill marks the fill's leading EDGE. At 100% there is no edge left to
-     mark, so it piled onto the trophy — that was the overlap. It does not get
-     dropped though: the percentage moves OUTSIDE the bar and sits beside it,
-     where 203% has room to be read and nothing to collide with. */
+  /* The END of the bar always holds the thing that matters, and what that is
+     changes when you get there: a trophy while it is still a target, the
+     achieved percentage once it is a result. That solves the overlap too —
+     the pill marked the fill's leading edge, and at 100% there is no edge left
+     to mark, so it simply became the end cap. Either way it glints. */
   const done = made >= need;
   const shown = Math.round(made / need * 100);
   holder.innerHTML = `<span class="cal-goal ${tone}" title="${escapeHtml(tip)}">
@@ -1603,9 +1604,8 @@ function _renderCalGoal(monthTrades, y, m){
     <span class="cal-goal-track">
       <i style="width:${pct.toFixed(1)}%"></i>
       ${done ? '' : `<b style="--p:${pct.toFixed(1)}%">${shown}%</b>`}
-      <span class="cal-goal-end">${_GOAL_TROPHY}</span>
+      <span class="cal-goal-end">${done ? `${shown}%` : _GOAL_TROPHY}</span>
     </span>
-    ${done ? `<span class="cal-goal-pct">${shown}%</span>` : ''}
     ${filtered ? '<em class="cal-goal-flag" title="An account filter is on">•</em>' : ''}
   </span>`;
 }
@@ -1713,10 +1713,13 @@ function renderYearOverview(){
   // Same filter as the Calendar summary: a missing RR is absent, not zero.
   const yrRrs = pool.map(t => t.rr).filter(v => v !== null && !isNaN(v));
   const yrRr = yrRrs.length ? yrRrs.reduce((s, v) => s + v, 0) / yrRrs.length : null;
-  /* Distinct dates with a closed trade, across the whole year. "Avg trades" is
-     per TRADING DAY, not per month — a month you never opened the platform
-     would otherwise drag the figure down and make a busy year look quiet. The
-     per-month reading is on the hover for when that is the question. */
+  /* "Avg trades" is per MONTH you traded. Per trading day was the first read
+     and it was the wrong one: 2.7 answers "how many positions do I open in a
+     sitting", which is not a question about the year. Months you never traded
+     are left out of the divisor so a gap does not read as a quiet month.
+
+     The per-day figure survives on the hover, and the distinct-day count feeds
+     the per-month Days chips either way. */
   const yrDays = new Set(pool.map(t => _dayKeyUTC(t.close_date))).size;
   const MN = ['January','February','March','April','May','June',
               'July','August','September','October','November','December'];
@@ -1729,7 +1732,10 @@ function renderYearOverview(){
   const stat = (k, v, cls, tip) => `<div class="yo-stat"${tip ? ` title="${escapeHtml(tip)}"` : ''}>
       <span class="yo-s-k">${k}</span><span class="yo-s-v ${cls || ''}">${v}</span></div>`;
 
-  const head = `<div class="yo-stats">
+  // The year's goal leads. It is the one line that says whether the year did
+  // what it was for; the counts underneath are how it got there.
+  const head = `${_yearGoalStrip(y, net, goalUsd, today)}
+  <div class="yo-stats">
     ${stat('Profit', fmtMoney(net), net >= 0 ? 'win' : 'loss')}
     ${stat('Trades', yr.n)}
     ${stat('Win', yr.wins, 'win')}
@@ -1737,10 +1743,10 @@ function renderYearOverview(){
     ${stat('BE', yr.bes, 'be')}
     ${stat('Avg RR', yrRr === null ? '—' : fmtNum(yrRr, 2))}
     ${stat('Win rate', yrRate === null ? '—' : Math.round(yrRate) + '%')}
-    ${stat('Avg trades', yrDays ? fmtNum(yr.n / yrDays, 1) : '—', '',
-        yrDays ? `${fmtNum(yr.n / yrDays, 1)} trades on an average day you traded — `
-          + `${yr.n} trades over ${yrDays} trading day${yrDays === 1 ? '' : 's'}. `
-          + `Per month traded, that is ${fmtNum(yr.n / traded.length, 1)}.` : '')}
+    ${stat('Avg trades', traded.length ? fmtNum(yr.n / traded.length, 1) : '—', '',
+        traded.length ? `${fmtNum(yr.n / traded.length, 1)} trades in an average MONTH — `
+          + `${yr.n} trades across the ${traded.length} month${traded.length === 1 ? '' : 's'} `
+          + `you traded. Per trading day, that is ${fmtNum(yr.n / yrDays, 1)}.` : '')}
     ${stat('Green months', `${green} of ${traded.length}`, green * 2 >= traded.length ? 'win' : 'loss')}
     ${goalUsd === null ? '' : stat('Goals hit', `${goalsHit} of ${traded.length}`,
         // Same half-or-better rule as Green months beside it. It used to go
@@ -1749,7 +1755,6 @@ function renderYearOverview(){
         // same shape, sitting next to each other.
         goalsHit * 2 >= traded.length ? 'win' : 'loss')}
   </div>
-  ${_yearGoalStrip(y, net, goalUsd, today)}
   ${best && worst && best !== worst ? `<div class="yo-line">
     Best month <b>${MN[best.m]}</b> at ${fmtMoney(best.net)} · worst
     <b>${MN[worst.m]}</b> at ${fmtMoney(worst.net)}.</div>` : ''}`;
@@ -1824,12 +1829,14 @@ function _yearGoalStrip(y, net, goalUsd, today){
       : '',
   ].filter(Boolean).join('\n');
 
+  // Same end-cap rule as the Calendar bar: trophy while it is a target, the
+  // achieved percentage once it is a result.
   return `<div class="yo-year-goal">
     <span class="yo-yg-label">Year goal</span>
-    <div class="yo-bar year ${tone}" title="${escapeHtml(tip)}">
+    <div class="yo-bar year live ${tone}" title="${escapeHtml(tip)}">
       <i style="width:${pct.toFixed(1)}%"></i>
       ${hit ? '' : `<b style="--p:${pct.toFixed(1)}%">${Math.round(pctTrue)}%</b>`}
-      <span class="yo-bar-end">${_GOAL_TROPHY}</span>
+      <span class="yo-bar-end">${hit ? `${Math.round(pctTrue)}%` : _GOAL_TROPHY}</span>
     </div>
     <span class="yo-yg-amt">${fmtMoney(net)} <em>of ${_salMoney(yearGoal, 'USD')}</em></span>
   </div>`;

@@ -506,12 +506,14 @@
              0 0 11px color-mix(in srgb, var(--win) 70%, transparent);
 }
 
-/* The percentage once the goal is reached, sitting outside the rail. Inside,
-   it had nowhere to go but on top of the trophy. */
-.cal-goal-pct{
-  font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:700;
-  font-variant-numeric:tabular-nums;color:var(--gt,var(--win));
-  margin-left:10px;white-space:nowrap;
+/* Reached: the disc stops being a circle and becomes a pill holding the
+   achieved percentage. The trophy has done its job — it marked a target, and
+   there is no longer a target — so the number takes the spot instead of
+   crowding in beside it. */
+.cal-goal.hit .cal-goal-end{
+  width:auto;min-width:20px;padding:0 9px;border-radius:999px;
+  font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:700;
+  font-variant-numeric:tabular-nums;letter-spacing:.02em;white-space:nowrap;
 }
 
 /* ---------- The glint ----------
@@ -2147,6 +2149,50 @@
     left:clamp(28px, var(--p,0%), calc(100% - 34px));}
   .yo-bar.year .yo-bar-end{width:20px;height:20px;}
   .yo-bar.year .yo-bar-end svg{width:12px;height:12px;}
+  .yo-bar.hit .yo-bar-end{
+    width:auto;min-width:16px;padding:0 7px;border-radius:999px;
+    font-family:'IBM Plex Mono',monospace;font-size:9.5px;font-weight:700;
+    font-variant-numeric:tabular-nums;white-space:nowrap;
+  }
+  .yo-bar.year.hit .yo-bar-end{font-size:11px;padding:0 9px;}
+
+  /* ---------- The year bar is alive ----------
+     Only this one. The twelve month bars underneath are a record and stay
+     still; animating all thirteen would be the flicker the header bar was
+     slowed down to avoid. `.live` is the opt-in, so nothing animates by
+     accident when another bar reuses these classes. */
+  .yo-bar.live i::after{
+    content:'';position:absolute;inset:0;border-radius:999px;
+    background:linear-gradient(100deg,
+      transparent 40%, rgba(255,255,255,.55) 50%, transparent 60%);
+    background-size:420% 100%;
+    animation:calGoalSheen 6s linear infinite;
+  }
+  .yo-bar.live .yo-bar-end::before{
+    content:'';position:absolute;inset:0;border-radius:999px;z-index:1;
+    pointer-events:none;
+    background:linear-gradient(115deg,
+      transparent 40%, rgba(255,255,255,.55) 50%, transparent 60%);
+    background-size:320% 100%;
+    animation:calGoalGlint 6s linear infinite;
+  }
+  .yo-bar.live .yo-bar-end::after{
+    content:'';position:absolute;top:-3px;right:-2px;width:8px;height:8px;
+    z-index:2;pointer-events:none;background:#fff;
+    clip-path:polygon(50% 0%, 58% 42%, 100% 50%, 58% 58%,
+                      50% 100%, 42% 58%, 0% 50%, 42% 42%);
+    opacity:0;
+    animation:calGoalSparkle 6s ease-in-out infinite;
+  }
+  /* The end cap has to establish a containing block for those two, and clip
+     nothing — the sparkle sits outside its edge. */
+  .yo-bar-end{position:absolute;}
+
+  @media (prefers-reduced-motion: reduce){
+    .yo-bar.live i::after,
+    .yo-bar.live .yo-bar-end::before,
+    .yo-bar.live .yo-bar-end::after{animation:none;background:none;opacity:0;}
+  }
 
   .yo-line{font-size:12.5px;color:var(--muted);margin-bottom:16px;line-height:1.5;}
   .yo-line b{color:var(--ink);font-weight:600;}
