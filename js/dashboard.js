@@ -2085,27 +2085,35 @@ const PANEL_INFO = {
      have actually tagged — an untagged trade is unjournalled, not clean.
      Everything below "Show the working" is the evidence, and it stays closed
      until you want it.<br><br>
-     <b>About the percentages.</b> Every figure in this panel is <b>one trade's
-     average result measured against the size of the account it was taken on</b>.
-     On a $10,000 account, +0.20% is +$20 and −0.39% is −$39. They are small one
-     at a time by nature — that is what a single trade does to a whole account —
-     so each verdict also states what the gap adds up to over the trades that
-     took the losing side, which is the number worth acting on.<br><br>
+     <b>There is no money in this panel.</b> A dollar figure cannot be compared
+     across a 5K and a 50K account — the same good decision is worth ten times
+     more on one than the other, so ranking by money would only be ranking by
+     account size. Everything here is counted in <b>trades</b>: won, lost, or
+     back to breakeven. The percentage is a <b>win rate</b> — of the settled
+     trades on that side, how many ended as a win.<br><br>
+     <b>Breakevens are counted in the denominator</b>, deliberately. Moving a
+     stop to breakeven converts losses into breakevens; if breakevens were
+     dropped, that habit would appear to lift the win rate every time simply
+     because its failures stopped being counted — and the breakeven experiment
+     below is exactly the thing that would be lying to you.<br><br>
+     One thing win rate cannot see: <b>how big the wins and losses were</b>. A
+     setup that wins 40% at 1:3 makes money and will look poor here. Read this
+     panel for which decisions repeat well, and your P&amp;L for the size.<br><br>
      Your Trade Tags are then split into the two different things they are.<br><br>
      <b>The first half</b> is the breach tags — the ones that name something you
      did against your own plan. They are grouped into the rules they actually
      describe, because six tags that all mean "I did not follow the checklist"
      read as six problems when they are one. A trade that broke two tags inside
-     the same rule counts once for that rule. Ranked by what they cost, and the
-     target is zero.<br><br>
+     the same rule counts once for that rule. Ranked by <b>how many trades you
+     lost while breaking each one</b> — a loss is a loss on any account — and
+     the target is zero.<br><br>
      <b>The second half</b> is the observation tags and the two exit columns
      (Post-BE Result, Post-Cutloss Result), read as experiments. Nothing here is
      a fault: each is a question you have not answered yet, so the panel
-     compares the two choices rather than judging either. Scored on
-     <b>return per trade as a percent of the account</b>, so a 50K account
-     cannot outrank a 5K one on position size alone. Each side needs at least
-     5 measurable trades, and a gap under 0.15% is reported as too close to
-     call rather than as a winner.`],
+     compares the two choices rather than judging either. Each side needs at
+     least 5 settled trades, and a gap under 10 percentage points of win rate
+     is reported as too close to call rather than as a winner — at these sample
+     sizes that is a couple of trades landing differently, nothing more.`],
   setupedge: ['Pattern, Session & Confluence',
     `Everything decided before the trade was taken, in three groups.
      <b>The setup you chose</b> — pattern, direction, play, chart pattern.
@@ -2120,13 +2128,14 @@ const PANEL_INFO = {
      being sorted by return, because the trend along it is the whole point.
      <b>Met</b> always means the answer <b>scored</b>, so a "No" on
      "Left Hand Present?" reads as Met — that is the good answer there.<br><br>
-     Same metric as the panel above — return per trade as a percent of the
-     account the trade ran on — so the two can be read against each other.
-     Bars are centred on zero: right of centre grew the account, left of it
-     shrank it. Values are pulled toward zero until roughly 20 trades stand
-     behind them, so 100% off three cannot outrank 60% off forty; anything
-     under 5 measurable trades is hatched, and the true figure is always on the
-     tooltip. The Confluence band rows are bands, not raw scores, because the
+     Same basis as the panel above — <b>trades, never money</b>, so a 5K and a
+     50K account weigh the same. Bars are centred on <b>your own win rate</b>
+     over the trades in view, not on zero: right of centre beats your average,
+     left of it falls short. Values are held toward that average until roughly
+     20 trades stand behind them, so 100% off three cannot outrank 60% off
+     forty; anything under 5 settled trades is hatched, and the true win rate
+     is always in the row and on the tooltip. The Confluence band rows are
+     bands, not raw scores, because the
      checklists differ in length — each trade is judged against
      <b>that setup's own bar</b>, the same way the journal colours it.`],
   cfledge: ['Confluence Edge',
@@ -3161,6 +3170,9 @@ const EM_MIN_N = 5;
 // 20 matches what this app already treats as "enough to read" elsewhere:
 // patterns get trustworthy around 15–20 trades.
 const EM_PRIOR = 20;
+// Percentage POINTS of win rate. Two arms closer than this are not separated
+// by anything a sample this size can see.
+const EM_MIN_GAP = 10;
 
 // A trade's result as a percent of the account it was taken on. This is the
 // whole point of the metric: +$500 on a 50K account is 1%, the same +$500 on
@@ -3229,18 +3241,30 @@ const TRADE_EXPERIMENTS = [
   ]},
 ];
 
-// Mean return for a set of trades, and the counts behind it. `priced` is how
-// many could be measured at all — a trade on an account with no size has no
-// return, and is absent rather than zero.
+/* Outcomes only. Neither of these two panels touches money anywhere, because a
+   dollar figure cannot be compared across a 5K and a 50K account — the same
+   good decision is worth ten times more on one than the other, and the ranking
+   ends up measuring account size instead of skill. What a trade DID is the same
+   fact on every account.
+
+   Breakeven stays IN the denominator rather than being dropped from it, and
+   that is not a technicality. Moving a stop to breakeven converts losses into
+   breakevens; drop breakevens from the count and that habit appears to lift the
+   win rate every single time, purely because its failures stopped being
+   counted — and the breakeven experiment below is precisely the thing that
+   would be lying. Counting every settled trade and asking "how many of these
+   ended as a win" is the only reading that cannot be gamed by hiding losses. */
+const _isBE = t => String(t.win_loss || '').toLowerCase() === 'breakeven';
+
 function _tagArmStats(trades){
-  const pcts = trades.map(_emReturnPct).filter(v => v !== null);
+  const wins    = trades.filter(_isWin).length;
+  const losses  = trades.filter(_isLoss).length;
+  const bes     = trades.filter(_isBE).length;
+  const settled = wins + losses + bes;
   return {
     n: trades.length,
-    wins: trades.filter(_isWin).length,
-    losses: trades.filter(_isLoss).length,
-    net: trades.reduce((s,t) => s + netPnl(t), 0),
-    priced: pcts.length,
-    ret: pcts.length ? pcts.reduce((s,v) => s + v, 0) / pcts.length : null,
+    wins, losses, bes, settled,
+    rate: settled ? wins / settled * 100 : null,
   };
 }
 
@@ -3259,8 +3283,6 @@ function _runExperiment(exp, trades){
     const total = r.length + w.length;
     if(!total) return null;
     return { kind:'ratio', exp, right:r.length, wrong:w.length, total,
-             rightNet: r.reduce((s,t) => s + netPnl(t), 0),
-             wrongNet: w.reduce((s,t) => s + netPnl(t), 0),
              enough: total >= EM_MIN_N };
   }
   let A, B, aLabel, bLabel;
@@ -3277,25 +3299,30 @@ function _runExperiment(exp, trades){
   }
   const a = { ..._tagArmStats(A), label:aLabel };
   const b = { ..._tagArmStats(B), label:bLabel };
-  const enough = a.priced >= EM_MIN_N && b.priced >= EM_MIN_N;
-  const gap = (a.ret !== null && b.ret !== null) ? a.ret - b.ret : null;
+  const enough = a.settled >= EM_MIN_N && b.settled >= EM_MIN_N;
+  const gap = (a.rate !== null && b.rate !== null) ? a.rate - b.rate : null;
   return { kind:'ab', exp, a, b, enough, gap,
-           // A gap smaller than this is noise at these sample sizes; saying
-           // "too close to call" is the honest reading, not a coin toss.
-           decided: enough && gap !== null && Math.abs(gap) > 0.15 };
-}
-
-function _emReturnPct(t){
-  const acc = TRADING_ACCOUNTS.find(a => a.account_name === t.account);
-  const size = acc ? Number(acc.account_size) : NaN;
-  if(!Number.isFinite(size) || size <= 0) return null;
-  return netPnl(t) / size * 100;
+           // Gaps are in percentage POINTS of win rate now. At ten or twenty
+           // trades a side, anything under this is a couple of trades landing
+           // differently — "too close to call" is the honest reading of it,
+           // not a coin toss dressed up as a verdict.
+           decided: enough && gap !== null && Math.abs(gap) > EM_MIN_GAP };
 }
 
 /* One row per rule, not per tag. Six tags that all mean "I did not follow the
    checklist" read as six problems; as one line they read as the one problem
    they are. A trade that broke two tags inside the SAME rule counts once for
    that rule — otherwise the rule looks twice as frequent as it is. */
+/* Each rule as the ACT, so it can open a sentence. "Follow the confluence
+   checklist" is the rule; "Skipping the confluence checklist" is the thing he
+   did, and only the second one can be the subject of a finding. */
+const RULE_PHRASE = {
+  'Follow the confluence checklist': 'Skipping the confluence checklist',
+  'Do not touch an open trade':      'Touching an open trade',
+  'Do not trade on emotion':         'Trading on emotion',
+  'Respect size and instrument':     'Ignoring size and instrument',
+};
+
 function _disciplineStats(trades){
   const byRule = {};
   RULE_GROUPS.forEach(g => { byRule[g.name] = { name:g.name, tags:{}, trades:[] }; });
@@ -3316,13 +3343,15 @@ function _disciplineStats(trades){
   RULE_GROUPS.forEach(g => g.tags.forEach(tag => {
     if(byRule[g.name].tags[tag] === undefined) byRule[g.name].tags[tag] = 0;
   }));
+  // Ranked by how many trades were LOST while breaking the rule, not by what
+  // they cost — a loss is a loss on any account, and counting them keeps a
+  // single bad trade on the 50K from outweighing ten on the 5K.
   return Object.values(byRule).map(r => ({
     name: r.name,
     tags: Object.entries(r.tags).sort((a,b) => b[1] - a[1]),
-    n: r.trades.length,
     share: trades.length ? r.trades.length / trades.length * 100 : 0,
-    net: r.trades.reduce((s,t) => s + netPnl(t), 0),
-  })).sort((a,b) => a.net - b.net || b.n - a.n);
+    ..._tagArmStats(r.trades),
+  })).sort((a,b) => b.losses - a.losses || b.n - a.n);
 }
 
 /* The one-glance read, so the panel answers three questions before any detail
@@ -3339,7 +3368,7 @@ function _disciplineSummary(trades, rules){
     : rate >= 70 ? { tone:'warn', txt:'Your discipline is slipping' }
     :              { tone:'bad',  txt:'Discipline is your biggest problem' };
 
-  const worst = rules.find(r => r.n > 0 && r.net < 0) || null;
+  const worst = rules.find(r => r.losses > 0) || null;
 
   // The habit with the widest decided gap — the single change with the most
   // evidence behind it right now.
@@ -3358,22 +3387,32 @@ function renderDisciplinePanel(){
   if(!FILTERED.length){ body.innerHTML = `<div class="empty-state">No trades in view.</div>`; return; }
 
   const rules = _disciplineStats(FILTERED);
-  const worst = Math.min(...rules.map(r => r.net), 0);
   const clean = FILTERED.filter(t => _isCleanRules(t.unfollowed_rules)).length;
   const tagged = FILTERED.filter(t => _ruleTags(t.unfollowed_rules).length).length;
 
-  const rulesHtml = rules.map(r => {
+  const rulesHtml = rules.map((r, i) => {
     const quiet = r.n === 0;
-    const w = worst < 0 ? Math.max(2, r.net / worst * 100) : 2;
-    return `<div class="dx-rule${quiet ? ' quiet' : ''}">
-      <div class="dx-r-head">
-        <span class="dx-r-name">${escapeHtml(r.name)}</span>
-        <span class="dx-r-n">${quiet ? 'never' : `${r.n} trade${r.n===1?'':'s'} · ${Math.round(r.share)}%`}</span>
-        <span class="dx-r-cost">${quiet ? '—' : fmtMoney(r.net)}</span>
+    // A sentence first, the count second. Bars and percentages were the part
+    // that did not land — a rule you have broken nine times is a thing you did,
+    // not a length, and it reads faster written out than drawn.
+    const what = RULE_PHRASE[r.name] || `Breaking “${r.name}”`;
+    const sentence = quiet
+      ? `You have never broken this one. Keep it that way.`
+      : i === 0 && r.losses > 0
+      ? `${what} is costing you the most trades right now.`
+      : r.losses > 0
+      ? `${what} lost you ${r.losses} of the ${r.n} trade${r.n===1?'':'s'} it appeared on.`
+      : `${what} has not cost you a trade yet — ${r.n} time${r.n===1?'':'s'} and you got away with it.`;
+    return `<div class="dx-find${quiet ? ' quiet' : ''}">
+      <div class="dx-f-body">
+        <span class="dx-f-rule">${escapeHtml(r.name)}</span>
+        <p class="dx-f-txt">${escapeHtml(sentence)}</p>
+        <div class="dx-r-tags">${r.tags.map(([tag, n]) =>
+          `<span class="dx-tag${n ? '' : ' zero'}">${escapeHtml(tag)}<em>${n}</em></span>`).join('')}</div>
       </div>
-      <div class="dx-r-bar"><i style="width:${w.toFixed(0)}%"></i></div>
-      <div class="dx-r-tags">${r.tags.map(([tag, n]) =>
-        `<span class="dx-tag${n ? '' : ' zero'}">${escapeHtml(tag)}<em>${n}</em></span>`).join('')}</div>
+      <div class="dx-f-num ${quiet ? 'quiet' : (r.losses ? 'bad' : 'warn')}">
+        ${quiet ? `<b>never</b>` : `<b>${r.n} trade${r.n===1?'':'s'}</b><span>${r.losses} lost</span>`}
+      </div>
     </div>`;
   }).join('');
 
@@ -3397,15 +3436,16 @@ function renderDisciplinePanel(){
     </div>
     <div class="dx-s-cards">
       ${s.worst
-        ? card('bad', 'Costing you the most', escapeHtml(s.worst.name),
-               `${s.worst.n} trade${s.worst.n===1?'':'s'} · ${fmtMoney(s.worst.net)}`)
-        : card('good', 'Costing you the most', 'Nothing', 'No rule is in the red right now')}
+        ? card('bad', 'Losing you the most trades', escapeHtml(s.worst.name),
+               `${s.worst.losses} of ${s.worst.n} lost · ${Math.round(s.worst.rate)}% won`)
+        : card('good', 'Losing you the most trades', 'Nothing',
+               'No rule has cost you a losing trade')}
       ${s.best
         ? card('good', 'Working best for you',
                escapeHtml((s.best.gap > 0 ? s.best.a : s.best.b).label),
-               `${escapeHtml(s.best.exp.title.toLowerCase())} · ${Math.abs(s.best.gap).toFixed(2)}% better per trade`)
+               `${escapeHtml(s.best.exp.title.toLowerCase())} · ${Math.round(Math.abs(s.best.gap))} points higher win rate`)
         : card('wait', 'Working best for you', 'Not decided yet',
-               `No experiment has ${EM_MIN_N} trades on both sides`)}
+               `No experiment has ${EM_MIN_N} settled trades on both sides`)}
     </div>
   </div>`;
 
@@ -3418,16 +3458,19 @@ function renderDisciplinePanel(){
         <h3>What you are doing wrong</h3>
         <span class="dx-half-sub">${clean} of ${tagged || FILTERED.length} tagged trades clean</span></div>
       <p class="dx-lead">Your ${RULE_GROUPS.reduce((s,g) => s + g.tags.length, 0)} breach tags, grouped
-        into the ${RULE_GROUPS.length} rules they actually describe, costliest first. The target here is zero.</p>
+        into the ${RULE_GROUPS.length} rules they actually describe, ranked by <b>how many trades you lost while
+        breaking each one</b>. The target here is zero.</p>
       ${rulesHtml}
     </div>
     <div class="dx-half">
       <div class="dx-half-head"><span class="dx-dot note"></span>
         <h3>What you should be doing</h3></div>
       <p class="dx-lead">Your observation tags and the two exit columns, read as experiments. Nothing here is a
-        fault — each one is a question. <b>Every percentage below is one trade's average result measured against
-        the size of the account it was taken on</b>: on a $10,000 account, +0.20% is +$20 of that account, and
-        −0.39% is −$39. They look small one at a time; the line under each verdict is what they add up to.</p>
+        fault — each one is a question. <b>Everything is counted in trades, never in money</b>, because the same
+        good decision is worth ten times more on the 50K than on the 5K and the ranking would only be measuring
+        account size. The figure is your <b>win rate</b>: of the settled trades on that side, how many ended as a
+        win. Breakevens are counted in — moving a stop to breakeven turns losses into breakevens, so dropping
+        them would let that habit flatter itself.</p>
       ${groupsHtml || `<div class="empty-state">Nothing tagged yet — tick the observation tags as you journal and the answers build themselves.</div>`}
     </div>
     </div>
@@ -3449,11 +3492,20 @@ function _setupStats(trades, keyOf, order){
     if(k === null || k === undefined || k === '' || k === 'Unspecified') return;
     (g[k] = g[k] || []).push(t);
   });
+  // Your own win rate over everything in view is the reference. A group is not
+  // interesting for winning 55% — it is interesting for winning more or less
+  // than YOU normally do, and that is what the bar draws.
+  const all = _tagArmStats(trades);
+  const base = all.rate === null ? 50 : all.rate;
   return Object.entries(g).map(([name, arr]) => {
     const s = _tagArmStats(arr);
-    return { name, ...s,
-      rate: (s.wins + s.losses) ? s.wins / (s.wins + s.losses) * 100 : null,
-      shown: s.ret === null ? null : s.priced * s.ret / (s.priced + EM_PRIOR) };
+    // Shrunk toward your baseline rather than toward zero. With three trades
+    // behind it the honest estimate of a group's win rate is your own average,
+    // not 0% — shrinking to zero would rank a thin group as a disaster.
+    const shrunk = s.settled
+      ? (s.wins + EM_PRIOR * base / 100) / (s.settled + EM_PRIOR) * 100 : null;
+    return { name, ...s, base,
+      shown: shrunk === null ? null : shrunk - base };
   }).sort((a, b) => {
     // Ordinal dimensions keep their own order. Sorting 1st/2nd/3rd by return
     // would destroy the only thing they are being read for — the trend along
@@ -3462,7 +3514,7 @@ function _setupStats(trades, keyOf, order){
       const at = order.indexOf(a.name), bt = order.indexOf(b.name);
       return (at < 0 ? 99 : at) - (bt < 0 ? 99 : bt);
     }
-    const thin = r => r.shown === null || r.priced < EM_MIN_N;
+    const thin = r => r.shown === null || r.settled < EM_MIN_N;
     return (thin(a) - thin(b)) || ((b.shown ?? -Infinity) - (a.shown ?? -Infinity));
   });
 }
@@ -3526,13 +3578,57 @@ const SETUP_DIMENSIONS = [
   ]},
 ];
 
+/* Cross-filtering, and only inside this panel. Clicking "London" asks the
+   other cards what your London trades look like — which pattern, which
+   sequence, which part of the checklist. The cards belong together because a
+   single trade has all of these at once, so narrowing one narrows the rest.
+
+   The card you clicked keeps ALL of its own rows. Filtering it by its own
+   selection would leave it showing one row and no way back, and you could
+   never switch from London to New York without clearing first. */
+let SX_FILTERS = {};
+
+function _sxFiltered(exceptLabel){
+  const keys = Object.keys(SX_FILTERS).filter(k => k !== exceptLabel);
+  if(!keys.length) return FILTERED;
+  return FILTERED.filter(t => keys.every(k => {
+    const d = _sxDim(k);
+    return d ? d.of(t) === SX_FILTERS[k] : true;
+  }));
+}
+function _sxDim(label){
+  for(const g of SETUP_DIMENSIONS){
+    const d = g.dims.find(x => x.label === label);
+    if(d) return d;
+  }
+  return null;
+}
+/* A JSON string safe to sit inside a double-quoted HTML attribute. The ampersand
+   MUST be escaped first, and it is not hypothetical: 'H&S' and 'Inverse H&S' are
+   real chart patterns here, and an unescaped & makes the browser hunt for an
+   entity in the middle of the argument. */
+const _attrJson = v => JSON.stringify(v)
+  .replace(/&/g, '&amp;').replace(/"/g, '&quot;')
+  .replace(/'/g, '&#39;').replace(/</g, '&lt;');
+
+function toggleSetupFilter(label, value){
+  if(SX_FILTERS[label] === value) delete SX_FILTERS[label];
+  else SX_FILTERS[label] = value;
+  renderSetupPanel();
+}
+function clearSetupFilters(){ SX_FILTERS = {}; renderSetupPanel(); }
+
 function renderSetupPanel(){
   const body = document.getElementById('setupEdgeBody');
   if(!body) return;
   if(!FILTERED.length){ body.innerHTML = `<div class="empty-state">No trades in view.</div>`; return; }
 
+  // A filter naming a dimension that no longer exists would silently drop every
+  // trade, so stale keys are cleared rather than trusted.
+  Object.keys(SX_FILTERS).forEach(k => { if(!_sxDim(k)) delete SX_FILTERS[k]; });
+
   const table = SETUP_DIMENSIONS.map(g => ({ group:g.group,
-    dims: g.dims.map(d => ({ d, rows:_setupStats(FILTERED, d.of, d.order) })) }));
+    dims: g.dims.map(d => ({ d, rows:_setupStats(_sxFiltered(d.label), d.of, d.order) })) }));
   let max = 0.01;
   table.forEach(g => g.dims.forEach(({ rows }) => rows.forEach(r => {
     if(r.shown !== null) max = Math.max(max, Math.abs(r.shown));
@@ -3542,13 +3638,19 @@ function renderSetupPanel(){
   // the reader to compare bars. Best and worst are picked by value, never by
   // position — an ordinal card is not sorted by return.
   const headline = rows => {
-    const solid = rows.filter(r => r.priced >= EM_MIN_N && r.ret !== null)
+    const solid = rows.filter(r => r.settled >= EM_MIN_N && r.rate !== null)
                       .slice().sort((x, y) => y.shown - x.shown);
     if(solid.length < 2) return null;
     const best = solid[0], worst = solid[solid.length - 1];
-    if(best.ret <= 0) return { tone:'bad', txt:`Nothing here is paying. Best is <b>${escapeHtml(best.name)}</b> at ${_pctTxt(best.ret)} across ${best.n}.` };
-    if(worst.ret >= 0) return { tone:'good', txt:`All of these pay. <b>${escapeHtml(best.name)}</b> leads at ${_pctTxt(best.ret)} across ${best.n}.` };
-    return { tone:'good', txt:`<b>${escapeHtml(best.name)}</b> at ${_pctTxt(best.ret)} against <b>${escapeHtml(worst.name)}</b> at ${_pctTxt(worst.ret)}. That is where the difference is.` };
+    const base = Math.round(solid[0].base);
+    if(Math.round(best.rate) <= base) return { tone:'bad',
+      txt:`Nothing here beats your ${base}% average. Best is <b>${escapeHtml(best.name)}</b> at
+           ${_rateTxt(best.rate)} across ${best.n}.` };
+    if(Math.round(worst.rate) >= base) return { tone:'good',
+      txt:`All of these beat your ${base}% average. <b>${escapeHtml(best.name)}</b> leads at
+           ${_rateTxt(best.rate)} across ${best.n}.` };
+    return { tone:'good', txt:`<b>${escapeHtml(best.name)}</b> wins ${_rateTxt(best.rate)} against
+      <b>${escapeHtml(worst.name)}</b> at ${_rateTxt(worst.rate)}. That is where the difference is.` };
   };
 
   const cardHtml = ({ d, rows }) => {
@@ -3557,11 +3659,18 @@ function renderSetupPanel(){
     const lines = rows.map(r => {
       const has = r.shown !== null;
       const w = has ? Math.min(50, Math.abs(r.shown) / max * 50) : 0;
-      const thin = r.priced < EM_MIN_N;
+      const thin = r.settled < EM_MIN_N;
       const col = !has ? 'var(--muted)' : (r.shown >= 0 ? 'var(--win)' : 'var(--loss)');
-      return `<div class="sx-row" title="${escapeHtml(r.name)} — ${r.wins}W ${r.losses}L${
-          has ? ` · ${_pctTxt(r.ret)} of account per trade` : ' · no account size, cannot measure'}${
-          thin && has ? ` · only ${r.priced} trades, held back toward zero` : ''} · ${fmtMoney(r.net)} in total">
+      const on = SX_FILTERS[d.label] === r.name;
+      return `<div class="sx-row${on ? ' on' : ''}" role="button" tabindex="0"
+          onclick="toggleSetupFilter(${_attrJson(d.label)},${_attrJson(r.name)})"
+          onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click();}"
+          title="${escapeHtml(r.name)} — ${r.wins}W ${r.losses}L${
+          r.bes ? ` ${r.bes}BE` : ''}${
+          has ? ` · won ${r.wins} of ${r.settled} settled, ${_rateTxt(r.rate)} against your ${Math.round(r.base)}% average`
+              : ' · nothing settled yet'}${
+          thin && has ? ` · only ${r.settled} settled, held back toward your average` : ''
+          } — click to narrow the other cards to these trades">
         <span class="sx-name">${escapeHtml(r.name)}</span>
         <span class="sx-bar"><i class="zero"></i>${has ? `<i class="fill${thin?' thin':''}" style="${
           r.shown >= 0 ? `left:50%;width:${w}%` : `right:50%;width:${w}%`};background-color:${col}"></i>` : ''}</span>
@@ -3583,69 +3692,76 @@ function renderSetupPanel(){
       <div class="sx-grid">${cards}</div></div>`;
   }).join('');
 
-  body.innerHTML = groups + `
+  const active = Object.keys(SX_FILTERS);
+  const shownTrades = _sxFiltered(null);
+  const chips = active.length ? `<div class="sx-chips">
+      <span class="sx-chip-lead">Showing</span>
+      ${active.map(k => `<button type="button" class="sx-chip"
+        onclick="toggleSetupFilter(${_attrJson(k)},${_attrJson(SX_FILTERS[k])})"
+        title="Remove this one">${escapeHtml(k)}: <b>${escapeHtml(SX_FILTERS[k])}</b><i>×</i></button>`).join('')}
+      <span class="sx-chip-n">${shownTrades.length} trade${shownTrades.length===1?'':'s'}</span>
+      <button type="button" class="sx-chip clear" onclick="clearSetupFilters()">Clear all</button>
+    </div>` : '';
+
+  const base = _tagArmStats(FILTERED).rate;
+  body.innerHTML = chips + groups + `
     <div class="sx-legend">
-      <span>Bars are <b>return on the account per trade</b> — the same measure as the panel above. Centre is zero: right of it grew the account, left of it shrank it.</span>
-      <span><i class="sw hatch"></i><b>hatched</b> = under ${EM_MIN_N} measurable trades, and pulled toward zero until about ${EM_PRIOR} stand behind it</span>
-      <span>The two figures are <b>win rate</b> then <b>trade count</b>. Hover any row for the real return and the dollars.</span>
+      <span>No money anywhere here — everything is counted in <b>trades</b>, so a 5K and a 50K account weigh the same.</span>
+      <span>Centre is <b>your own ${base === null ? '—' : Math.round(base) + '%'} win rate</b> over the trades in view, not zero. Right of centre beats your average, left of it falls short.</span>
+      <span><i class="sw hatch"></i><b>hatched</b> = under ${EM_MIN_N} settled trades, and held toward your average until about ${EM_PRIOR} stand behind it</span>
+      <span>The two figures are the group's <b>win rate</b> then its <b>trade count</b>. Hover any row for the W/L behind it.</span>
       <span>Under <b>What the checklist said</b>, <b>Met</b> means the answer scored — so a “No” on “Left Hand Present?” reads as Met, because that is the good answer there.</span>
+      <span><b>Click any row</b> to narrow every other card to those trades — the card you clicked keeps all its rows so you can switch. Click it again, or use the chips at the top, to undo.</span>
     </div>`;
 }
 
-const _pctTxt = v => (v >= 0 ? '+' : '−') + Math.abs(v).toFixed(2) + '%';
+const _rateTxt = v => Math.round(v) + '%';
 
 function _experimentHtml(r){
-  const pct = v => (v >= 0 ? '+' : '−') + Math.abs(v).toFixed(2) + '%';
+  const rate = v => Math.round(v) + '%';
+
+  // One sentence saying what to do, with the count that backs it sitting
+  // quietly beside it. No bars, no averages — the finding is the thing to read.
+  const find = (tone, sentence, big, small) => `<div class="dx-find">
+      <div class="dx-f-body"><p class="dx-f-txt">${sentence}</p></div>
+      <div class="dx-f-num ${tone}"><b>${big}</b>${small ? `<span>${small}</span>` : ''}</div>
+    </div>`;
 
   if(r.kind === 'ratio'){
     const { exp } = r, cfg = exp.ratio;
-    const wrongPct = Math.round(r.wrong / r.total * 100);
-    const good = wrongPct < 40;
-    const verdict = !r.enough
-      ? { cls:'wait', mark:'·', txt:`Only ${r.total} answered so far. This needs ${EM_MIN_N} before it means anything.` }
-      : { cls: good ? 'good' : 'bad', mark:'→',
-          txt:`<b>${good ? cfg.keep : cfg.drop}.</b> ${r.right} of ${r.total} ${cfg.right.label}; ${r.wrong} ${cfg.wrong.label}.` };
-    return `<div class="dx-exp">
-      <h4>${escapeHtml(exp.title)}</h4><div class="dx-exp-q">${escapeHtml(exp.q)}</div>
-      <div class="dx-arms">
-        <div class="dx-arm ${good ? 'lead' : 'trail'}"><div class="dx-a-name">${escapeHtml(cfg.right.label)}</div>
-          <div class="dx-a-val">${r.right}</div><div class="dx-a-n">${fmtMoney(r.rightNet)}</div></div>
-        <div class="dx-arm ${good ? 'trail' : 'lead'}"><div class="dx-a-name">${escapeHtml(cfg.wrong.label)}</div>
-          <div class="dx-a-val">${r.wrong}</div><div class="dx-a-n">${fmtMoney(r.wrongNet)}</div></div>
-      </div>
-      <div class="dx-verdict ${verdict.cls}"><span class="dx-v-mark">${verdict.mark}</span>
-        <span class="dx-v-txt">${verdict.txt}</span></div></div>`;
+    const good = Math.round(r.wrong / r.total * 100) < 40;
+    if(!r.enough)
+      return find('quiet', `${escapeHtml(exp.title)} — only ${r.total} answered so far.
+        This needs ${EM_MIN_N} before it can tell you anything.`,
+        `${r.total} of ${EM_MIN_N}`, 'answered');
+    return find(good ? 'good' : 'bad',
+      `<b>${escapeHtml(good ? cfg.keep : cfg.drop)}.</b> ${r.right} of the ${r.total}
+       ${escapeHtml(cfg.right.label)}, and ${r.wrong} ${escapeHtml(cfg.wrong.label)}.`,
+      `${r.right} of ${r.total}`, escapeHtml(cfg.right.label));
   }
 
   const { exp, a, b } = r;
-  const aLead = r.decided && r.gap > 0;
-  const bLead = r.decided && r.gap < 0;
-  const arm = (s, lead, trail) => `<div class="dx-arm ${lead ? 'lead' : (trail ? 'trail' : '')}">
-      <div class="dx-a-name">${escapeHtml(s.label)}</div>
-      <div class="dx-a-val">${s.ret === null ? '—' : pct(s.ret)}<em>per trade</em></div>
-      <div class="dx-a-n">${s.n} trade${s.n===1?'':'s'} · ${s.wins}W ${s.losses}L · ${fmtMoney(s.net)}</div></div>`;
+  if(!r.enough)
+    return find('quiet', `${escapeHtml(exp.title)} — ${a.settled} settled trades on one side,
+      ${b.settled} on the other. Both need ${EM_MIN_N} before this can say anything.`,
+      `${a.settled} v ${b.settled}`, `needs ${EM_MIN_N} each`);
 
   const better = r.gap > 0 ? a : b;
   const behind = r.gap > 0 ? b : a;
-  const verdict = !r.enough
-    ? { cls:'wait', mark:'·',
-        txt:`${a.n} against ${b.n}. Each side needs ${EM_MIN_N} measurable trades before this can say anything.` }
-    : !r.decided
-    ? { cls:'wait', mark:'·',
-        txt:`Too close to call — ${pct(a.ret)} against ${pct(b.ret)}. Keep tagging both and it will separate.` }
-    // A gap of half a percent per trade reads as nothing until it is multiplied
-    // by how many trades took the losing side. That product is the number worth
-    // acting on, so the verdict states it rather than leaving it to be worked out.
-    : { cls:'good', mark:'→',
-        txt:`<b>${escapeHtml(better.label)}.</b> ${Math.abs(r.gap).toFixed(2)}% better per trade — over the
-             ${behind.n} trade${behind.n===1?'':'s'} on “${escapeHtml(behind.label.toLowerCase())}” that is about
-             <b>${(Math.abs(r.gap) * behind.n).toFixed(1)}% of an account</b>, ${fmtMoney(behind.net)} in cash.` };
+  if(!r.decided)
+    return find('quiet', `${escapeHtml(exp.title)} is still too close to call —
+      ${better.wins} of ${better.settled} against ${behind.wins} of ${behind.settled}.
+      Keep tagging both and it will separate.`,
+      'too close', 'keep tagging');
 
-  return `<div class="dx-exp">
-    <h4>${escapeHtml(exp.title)}</h4><div class="dx-exp-q">${escapeHtml(exp.q)}</div>
-    <div class="dx-arms">${arm(a, aLead, bLead)}${arm(b, bLead, aLead)}</div>
-    <div class="dx-verdict ${verdict.cls}"><span class="dx-v-mark">${verdict.mark}</span>
-      <span class="dx-v-txt">${verdict.txt}</span></div></div>`;
+  // "You won 9 of 14 doing it this way, against 4 of 17 the other way" is the
+  // same fact as a gap in percentage points, in the units the decision is
+  // actually made in.
+  return find('good',
+    `<b>${escapeHtml(better.label)}.</b> You won ${better.wins} of ${better.settled} that way,
+     against ${behind.wins} of ${behind.settled} when you ${escapeHtml(behind.label.toLowerCase())}.
+     Do this one.`,
+    rate(better.rate), `against ${rate(behind.rate)}`);
 }
 
 
