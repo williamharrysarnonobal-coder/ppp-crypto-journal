@@ -1471,6 +1471,92 @@ function shiftMonth(dir){
   renderCalendar();
 }
 
+/* Which weekdays you actually trade, learned from your own closes rather than
+   assumed. Sunday is a real trading day on crypto and is not on forex, and the
+   "working_days: 21.75" default on the Salary page is a payroll figure, not a
+   record of when you trade. Reading it off your history is right either way,
+   and stays right if your habits change. Monday–Friday only until there is a
+   history to read. */
+function _tradingDaysLeft(y, m, from){
+  const seen = new Set();
+  ALL_TRADES.forEach(t => { if(t.close_date) seen.add(t.close_date.getDay()); });
+  const active = seen.size ? seen : new Set([1, 2, 3, 4, 5]);
+  const last = new Date(y, m + 1, 0).getDate();
+  let n = 0;
+  // Today counts — you can still trade it.
+  for(let d = from.getDate(); d <= last; d++){
+    if(active.has(new Date(y, m, d).getDay())) n++;
+  }
+  return n;
+}
+
+/* The salary bar inside the Calendar box. Deliberately the SAME target as the
+   Salary Goal page — your monthly salary in AED, converted at your own rate —
+   so the app has one goal rather than two that can drift apart. Change it there
+   and this changes with it; there is no second setting and no new column.
+
+   It follows whatever the calendar is showing, account filter included, so the
+   bar always agrees with the total printed directly above it. Under a filter
+   that is a slice of your income rather than all of it, and the note says so
+   outright instead of letting the percentage quietly mislead. */
+function _renderCalGoal(monthTrades, y, m){
+  const holder = document.getElementById('calGoalBar');
+  if(!holder) return;
+
+  const v = _salarySettings();
+  const aed = Number(v.aed_per_usd) > 0 ? Number(v.aed_per_usd) : SALARY_DEFAULTS.aed_per_usd;
+  const salary = Number(v.monthly_salary);
+  // No salary set yet — say what to do rather than showing an empty bar.
+  if(!Number.isFinite(salary) || salary <= 0){
+    holder.innerHTML = `<div class="cal-goal empty">Set your monthly salary on the
+      <b>Salary vs Trading</b> page and this becomes a goal bar.</div>`;
+    return;
+  }
+
+  const need = salary / aed;
+  const made = monthTrades.reduce((s, t) => s + netPnl(t), 0);
+  const pct  = Math.max(0, Math.min(100, made / need * 100));
+
+  const today  = new Date();
+  const isNow  = y === today.getFullYear() && m === today.getMonth();
+  const isPast = y < today.getFullYear() || (y === today.getFullYear() && m < today.getMonth());
+  const short  = need - made;
+
+  let tone, note;
+  if(made >= need){
+    tone = 'hit';
+    note = `Goal reached — ${_salMoney(made - need, 'USD')} past it.`;
+  }else if(isPast){
+    tone = 'missed';
+    note = made <= 0
+      ? `Missed. The month closed ${_salMoney(Math.abs(made), 'USD')} down.`
+      : `Missed by ${_salMoney(short, 'USD')}.`;
+  }else if(isNow){
+    const left = _tradingDaysLeft(y, m, today);
+    tone = 'now';
+    note = left > 0
+      ? `Short by ${_salMoney(short, 'USD')}. ${left} trading day${left === 1 ? '' : 's'}
+         left — ${_salMoney(short / left, 'USD')} a day.`
+      : `Short by ${_salMoney(short, 'USD')}, and no trading days left this month.`;
+  }else{
+    tone = 'ahead';
+    note = `Not started. The bar for this month is ${_salMoney(need, 'USD')}.`;
+  }
+
+  const filtered = FILTERED.length !== ALL_TRADES.length;
+  holder.innerHTML = `<div class="cal-goal ${tone}">
+    <div class="cal-goal-head">
+      <span class="cal-goal-label">Salary goal</span>
+      <span class="cal-goal-nums"><b>${_salMoney(made, 'USD')}</b> of ${_salMoney(need, 'USD')}
+        <em>${Math.round(made / need * 100)}%</em></span>
+    </div>
+    <div class="cal-goal-track"><i style="width:${pct.toFixed(1)}%"></i></div>
+    <div class="cal-goal-note">${note}</div>
+    ${filtered ? `<div class="cal-goal-warn">An account filter is on — this is part of your
+      income, not all of it.</div>` : ''}
+  </div>`;
+}
+
 function renderCalendar(){
   const y = calMonth.getFullYear(), m = calMonth.getMonth();
   document.getElementById('calLabel').textContent = calMonth.toLocaleDateString('en-US',{month:'long', year:'numeric'});
@@ -1494,6 +1580,10 @@ function renderCalendar(){
     byDay[key].count += 1;
     byDay[key].trades.push(t);
   });
+
+  // Same month, same trades, same close-date rule as the grid below — so the
+  // bar can never disagree with the squares it sits on top of.
+  _renderCalGoal(monthTrades, y, m);
 
   let bestDay = null, bestPnl = -Infinity;
   Object.entries(byDay).forEach(([d,v]) => { if(v.pnl > bestPnl){ bestPnl = v.pnl; bestDay = d; } });

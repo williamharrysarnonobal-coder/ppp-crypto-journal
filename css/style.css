@@ -378,6 +378,37 @@
   .cal-sum-cell.clickable:hover .cal-sum-k{color:var(--accent);}
   @media(max-width:900px){
     .cal-total-summary{flex-wrap:wrap;}
+
+  /* ---------- Salary goal, inside the Calendar box ----------
+     Sits between the month summary and the grid, on the same target as the
+     Salary vs Trading page. The left border carries the state so the answer
+     lands before any number is read: green hit it, amber still running,
+     red closed short. */
+  .cal-goal{
+    border:1px solid var(--rule);border-left:3px solid var(--gt,var(--muted));
+    border-radius:7px;background:var(--surface-2);
+    padding:10px 13px 11px;margin:0 0 12px;flex-shrink:0;
+  }
+  .cal-goal.hit{--gt:var(--win);}
+  .cal-goal.now{--gt:var(--accent);}
+  .cal-goal.missed{--gt:var(--loss);}
+  .cal-goal.ahead{--gt:var(--muted);}
+  .cal-goal.empty{border-left-color:var(--rule);font-size:12px;color:var(--muted);line-height:1.5;}
+
+  .cal-goal-head{display:flex;align-items:baseline;gap:10px;margin-bottom:7px;flex-wrap:wrap;}
+  .cal-goal-label{font-size:10.5px;font-weight:600;text-transform:uppercase;
+    letter-spacing:.07em;color:var(--muted);}
+  .cal-goal-nums{margin-left:auto;font-family:'IBM Plex Mono',monospace;font-size:12px;
+    color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap;}
+  .cal-goal-nums b{font-size:14px;font-weight:600;color:var(--ink);}
+  .cal-goal-nums em{font-style:normal;margin-left:7px;color:var(--gt,var(--muted));font-weight:600;}
+
+  .cal-goal-track{height:6px;border-radius:999px;background:var(--surface);overflow:hidden;}
+  .cal-goal-track i{display:block;height:100%;border-radius:999px;
+    background:var(--gt,var(--muted));transition:width .25s ease;}
+
+  .cal-goal-note{margin-top:7px;font-size:12.5px;line-height:1.45;}
+  .cal-goal-warn{margin-top:5px;font-size:11.5px;color:var(--warn);line-height:1.45;}
     .cal-sum-cell{flex:1 1 33%;border-bottom:1px solid var(--rule);}
   }
   .tc-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:2px;vertical-align:1px;}
