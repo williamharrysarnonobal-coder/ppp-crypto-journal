@@ -379,133 +379,134 @@
   @media(max-width:900px){
     .cal-total-summary{flex-wrap:wrap;}
 
-  /* ---------- Salary goal, in the Calendar heading ----------
-     A slim bar beside the title and the ⓘ, not a second panel above the grid —
-     the block version was too much furniture for one number. Colour carries
-     the state (green hit it, amber still running, red closed short) and the
-     whole sentence lives on the hover. */
-  /* Reads as:  Calendar ⓘ   Goal [████████ 74% ░░░]
-                                                        [Review] ‹ month ›
-
-     .panel-info-btn carries margin:0 auto 0 0 — it takes every pixel of free
-     space on its right so it can sit beside its own title. Anything after it
-     gets thrown to the far edge of the header, which is how this bar first
-     ended up wedged against the Review button. The goal bar wants to sit after
-     the ⓘ, so in THIS header the auto margin moves onto the bar instead; the
-     .cal-h2 class exists for exactly that swap and nothing else.
-
-     flex:none is not optional either: .panel h2 is display:flex, and without it
-     the track is squeezed to zero width and only the number survives. */
-  /* .panel h2 is display:flex with justify-content:space-between. With four
-     items in the row — title, ⓘ, the bar, the actions — the browser inserts a
-     gap between EVERY pair. That is why the bar kept floating out near the
-     Review button whichever auto margin was applied: space-between had already
-     spent the free space, so no margin had any left to claim, and the
-     shrinkable item absorbed the deficit instead.
-
-     So this header opts out of space-between and lays itself out explicitly:
-     title, icon, bar, then the actions pushed right on their own auto margin.
-
-     #calGoalBar needs flex:none in its OWN right. It is the flex item of the
-     h2; .cal-goal sits inside it, and flex:none there does nothing to stop the
-     h2 from squeezing the wrapper — which collapsed the track to nothing and
-     left only the medallion and the number showing. */
-  .cal-h2{justify-content:flex-start;}
-  .cal-h2 > .panel-info-btn{margin:0;}
-  .cal-h2 > #calGoalBar{flex:none;margin-left:16px;}
-  .cal-h2 > .cal-head-actions{margin-left:auto;}
-
-  /* Built after the game-HUD reference: a medallion on the left, then a framed
-     track with a glossy fill. The brass of the original is dropped — it would
-     be the only ornate object on the page — but the SHAPE is kept, and the
-     ring uses the accent gold this theme already owns, so it reads as designed
-     rather than imported. */
-  .cal-goal{
-    display:inline-flex;align-items:center;gap:0;flex:none;cursor:default;
-  }
-
-  /* The medallion. Overlaps the track by 6px so the two read as one object,
-     exactly as the reference has the icon disc sitting on the bar. */
-  .cal-goal-badge{
-    position:relative;z-index:2;flex:none;
-    display:inline-flex;align-items:center;justify-content:center;
-    width:30px;height:30px;border-radius:50%;margin-right:-9px;
-    color:var(--gt,var(--muted));
-    background:radial-gradient(circle at 32% 26%,
-      color-mix(in srgb, var(--surface-2) 88%, white), var(--bg) 82%);
-    border:1.5px solid var(--accent);
-    box-shadow:0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent),
-               inset 0 1px 2px rgba(0,0,0,.55);
-  }
-  .cal-goal.hit{--gt:var(--win);}
-  .cal-goal.now{--gt:var(--accent);}
-  .cal-goal.missed{--gt:var(--loss);}
-  .cal-goal.ahead{--gt:var(--muted);}
-  .cal-goal.empty{font-size:10px;font-weight:500;letter-spacing:.05em;
-    text-transform:uppercase;color:var(--muted);padding:3px 10px;}
-
-  /* The track: sunken, gold-rimmed, with a dark inner shadow so the fill sits
-     down inside it rather than on top. */
-  .cal-goal-track{
-    position:relative;display:flex;align-items:center;justify-content:center;
-    width:180px;height:24px;border-radius:999px;overflow:hidden;flex:none;
-    padding-left:12px;                      /* clears the medallion overlap */
-    background:linear-gradient(180deg, var(--bg), var(--surface));
-    border:1.5px solid var(--accent);
-    box-shadow:inset 0 2px 4px rgba(0,0,0,.55);
-  }
-
-  /* The fill, as a lit tube: bright along the upper third, deeper at the base,
-     with a soft glow spilling past its edge. The segment ticks are the
-     reference's first bar — thin gaps cut straight through the gradient. */
-  .cal-goal-track i{
-    position:absolute;left:0;top:2px;bottom:2px;border-radius:999px;
-    background:
-      repeating-linear-gradient(90deg,
-        transparent 0 7px, rgba(0,0,0,.28) 7px 9px),
-      linear-gradient(180deg,
-        color-mix(in srgb, var(--gt,var(--muted)) 55%, white) 0%,
-        var(--gt,var(--muted)) 46%,
-        color-mix(in srgb, var(--gt,var(--muted)) 72%, black) 100%);
-    box-shadow:0 0 7px color-mix(in srgb, var(--gt,var(--muted)) 55%, transparent),
-               inset 0 1px 0 rgba(255,255,255,.45);
-    transition:width .6s cubic-bezier(.22,.8,.3,1);
-  }
-
-  /* White digits over a saturated fill AND over the dark empty track — the
-     shadow is what lets one colour work on both, without blend modes or a
-     second copy of the text clipped to the fill. */
-  .cal-goal-track b{
-    position:relative;z-index:1;font-family:'IBM Plex Mono',monospace;
-    font-size:11px;font-weight:700;font-variant-numeric:tabular-nums;
-    color:#fff;letter-spacing:.02em;text-shadow:0 1px 2px rgba(0,0,0,.75);
-  }
-  .cal-goal-flag{font-style:normal;color:var(--warn);font-size:14px;line-height:1;}
-
-  /* The month still has days left to run, so the fill keeps moving — a sheen
-     travelling across it, not the width jumping about. Only the "now" state
-     animates; a finished month is finished and should sit still. */
-  /* The travelling shine rides on its OWN layer. Animating background-image on
-     the fill itself would replace all of it — the gloss gradient and the
-     segment ticks are background layers too, and they would vanish the moment
-     the animation took over. */
-  .cal-goal.now .cal-goal-track i::after{
-    content:'';position:absolute;inset:0;border-radius:999px;
-    background:linear-gradient(100deg,
-      transparent 30%, rgba(255,255,255,.5) 50%, transparent 70%);
-    background-size:220% 100%;
-    animation:calGoalSheen 2.4s linear infinite;
-  }
-  @keyframes calGoalSheen{
-    from{background-position:220% 0;}
-    to{background-position:-120% 0;}
-  }
-  @media (prefers-reduced-motion: reduce){
-    .cal-goal.now .cal-goal-track i::after{animation:none;background:none;}
-    .cal-goal-track i{transition:none;}
-  }
     .cal-sum-cell{flex:1 1 33%;border-bottom:1px solid var(--rule);}
   }
+
+/* ---------- Salary goal, in the Calendar heading ----------
+   A slim bar beside the title and the ⓘ, not a second panel above the grid —
+   the block version was too much furniture for one number. Colour carries
+   the state (green hit it, amber still running, red closed short) and the
+   whole sentence lives on the hover. */
+/* Reads as:  Calendar ⓘ   Goal [████████ 74% ░░░]
+                                                      [Review] ‹ month ›
+
+   .panel-info-btn carries margin:0 auto 0 0 — it takes every pixel of free
+   space on its right so it can sit beside its own title. Anything after it
+   gets thrown to the far edge of the header, which is how this bar first
+   ended up wedged against the Review button. The goal bar wants to sit after
+   the ⓘ, so in THIS header the auto margin moves onto the bar instead; the
+   .cal-h2 class exists for exactly that swap and nothing else.
+
+   flex:none is not optional either: .panel h2 is display:flex, and without it
+   the track is squeezed to zero width and only the number survives. */
+/* .panel h2 is display:flex with justify-content:space-between. With four
+   items in the row — title, ⓘ, the bar, the actions — the browser inserts a
+   gap between EVERY pair. That is why the bar kept floating out near the
+   Review button whichever auto margin was applied: space-between had already
+   spent the free space, so no margin had any left to claim, and the
+   shrinkable item absorbed the deficit instead.
+
+   So this header opts out of space-between and lays itself out explicitly:
+   title, icon, bar, then the actions pushed right on their own auto margin.
+
+   #calGoalBar needs flex:none in its OWN right. It is the flex item of the
+   h2; .cal-goal sits inside it, and flex:none there does nothing to stop the
+   h2 from squeezing the wrapper — which collapsed the track to nothing and
+   left only the medallion and the number showing. */
+.cal-h2{justify-content:flex-start;}
+.cal-h2 > .panel-info-btn{margin:0;}
+.cal-h2 > #calGoalBar{flex:none;margin-left:16px;}
+.cal-h2 > .cal-head-actions{margin-left:auto;}
+
+/* Built after the game-HUD reference: a medallion on the left, then a framed
+   track with a glossy fill. The brass of the original is dropped — it would
+   be the only ornate object on the page — but the SHAPE is kept, and the
+   ring uses the accent gold this theme already owns, so it reads as designed
+   rather than imported. */
+.cal-goal{
+  display:inline-flex;align-items:center;gap:0;flex:none;cursor:default;
+}
+
+/* The medallion. Overlaps the track by 6px so the two read as one object,
+   exactly as the reference has the icon disc sitting on the bar. */
+.cal-goal-badge{
+  position:relative;z-index:2;flex:none;
+  display:inline-flex;align-items:center;justify-content:center;
+  width:30px;height:30px;border-radius:50%;margin-right:-9px;
+  color:var(--gt,var(--muted));
+  background:radial-gradient(circle at 32% 26%,
+    color-mix(in srgb, var(--surface-2) 88%, white), var(--bg) 82%);
+  border:1.5px solid var(--accent);
+  box-shadow:0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent),
+             inset 0 1px 2px rgba(0,0,0,.55);
+}
+.cal-goal.hit{--gt:var(--win);}
+.cal-goal.now{--gt:var(--accent);}
+.cal-goal.missed{--gt:var(--loss);}
+.cal-goal.ahead{--gt:var(--muted);}
+.cal-goal.empty{font-size:10px;font-weight:500;letter-spacing:.05em;
+  text-transform:uppercase;color:var(--muted);padding:3px 10px;}
+
+/* The track: sunken, gold-rimmed, with a dark inner shadow so the fill sits
+   down inside it rather than on top. */
+.cal-goal-track{
+  position:relative;display:flex;align-items:center;justify-content:center;
+  width:180px;height:24px;border-radius:999px;overflow:hidden;flex:none;
+  padding-left:12px;                      /* clears the medallion overlap */
+  background:linear-gradient(180deg, var(--bg), var(--surface));
+  border:1.5px solid var(--accent);
+  box-shadow:inset 0 2px 4px rgba(0,0,0,.55);
+}
+
+/* The fill, as a lit tube: bright along the upper third, deeper at the base,
+   with a soft glow spilling past its edge. The segment ticks are the
+   reference's first bar — thin gaps cut straight through the gradient. */
+.cal-goal-track i{
+  position:absolute;left:0;top:2px;bottom:2px;border-radius:999px;
+  background:
+    repeating-linear-gradient(90deg,
+      transparent 0 7px, rgba(0,0,0,.28) 7px 9px),
+    linear-gradient(180deg,
+      color-mix(in srgb, var(--gt,var(--muted)) 55%, white) 0%,
+      var(--gt,var(--muted)) 46%,
+      color-mix(in srgb, var(--gt,var(--muted)) 72%, black) 100%);
+  box-shadow:0 0 7px color-mix(in srgb, var(--gt,var(--muted)) 55%, transparent),
+             inset 0 1px 0 rgba(255,255,255,.45);
+  transition:width .6s cubic-bezier(.22,.8,.3,1);
+}
+
+/* White digits over a saturated fill AND over the dark empty track — the
+   shadow is what lets one colour work on both, without blend modes or a
+   second copy of the text clipped to the fill. */
+.cal-goal-track b{
+  position:relative;z-index:1;font-family:'IBM Plex Mono',monospace;
+  font-size:11px;font-weight:700;font-variant-numeric:tabular-nums;
+  color:#fff;letter-spacing:.02em;text-shadow:0 1px 2px rgba(0,0,0,.75);
+}
+.cal-goal-flag{font-style:normal;color:var(--warn);font-size:14px;line-height:1;}
+
+/* The month still has days left to run, so the fill keeps moving — a sheen
+   travelling across it, not the width jumping about. Only the "now" state
+   animates; a finished month is finished and should sit still. */
+/* The travelling shine rides on its OWN layer. Animating background-image on
+   the fill itself would replace all of it — the gloss gradient and the
+   segment ticks are background layers too, and they would vanish the moment
+   the animation took over. */
+.cal-goal.now .cal-goal-track i::after{
+  content:'';position:absolute;inset:0;border-radius:999px;
+  background:linear-gradient(100deg,
+    transparent 30%, rgba(255,255,255,.5) 50%, transparent 70%);
+  background-size:220% 100%;
+  animation:calGoalSheen 2.4s linear infinite;
+}
+@keyframes calGoalSheen{
+  from{background-position:220% 0;}
+  to{background-position:-120% 0;}
+}
+@media (prefers-reduced-motion: reduce){
+  .cal-goal.now .cal-goal-track i::after{animation:none;background:none;}
+  .cal-goal-track i{transition:none;}
+}
   .tc-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:2px;vertical-align:1px;}
   /* BE is blue, not grey. Grey read as "nothing here" when a breakeven is a
      real, deliberate outcome — and the cell is clickable, which a grey dot
