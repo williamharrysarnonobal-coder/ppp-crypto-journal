@@ -1796,6 +1796,10 @@ function renderCalendar(){
       // wrong; only a genuinely thin rate goes red. Same bands the Confluence
       // Edge matrix uses, from the same function.
       const rateColor = _winRateTint(winPct, winTrades + lossTrades);
+      // Same filter as every other RR average in this file: a missing or
+      // unparseable ratio is absent, never zero.
+      const rrVals = monthTrades.map(t => t.rr).filter(v => v !== null && !isNaN(v));
+      const avgRR = rrVals.length ? rrVals.reduce((s, v) => s + v, 0) / rrVals.length : null;
       const cell = (k, v, opts = {}) => `
         <div class="cal-sum-cell${opts.lead ? ' lead' : ''}${opts.click ? ' clickable' : ''}"${
           opts.click ? ` onclick="${opts.click}"` : ''}${opts.title ? ` title="${opts.title}"` : ''}>
@@ -1815,6 +1819,19 @@ function renderCalendar(){
         cell('BE', beTrades, beTrades ? { dot:'be',
           title:'Breakeven, or Win/Loss not set — click to see them',
           click:"showMonthResultTrades('be')" } : { dot:'be' }) +
+        // Averaged over the trades that HAVE an RR, not over the month — a
+        // trade with no TP/SL recorded has no ratio to average, and treating
+        // it as zero would drag the figure down for a data gap rather than a
+        // trading one. The coverage is on the tooltip, and the number greys
+        // out once fewer than half the month's trades are behind it, because
+        // at that point it is describing a handful of trades, not the month.
+        cell('Avg RR', avgRR === null ? '—' : fmtNum(avgRR, 2), {
+          color: avgRR === null || rrVals.length * 2 < monthTrades.length
+            ? 'var(--muted)' : undefined,
+          title: avgRR === null
+            ? 'No trade this month has an RR recorded'
+            : `Average planned RR across the ${rrVals.length} of ${monthTrades.length} `
+              + `trade${monthTrades.length === 1 ? '' : 's'} that have one recorded` }) +
         cell('Win rate', winPct + '%', { color:rateColor });
     }
   }
