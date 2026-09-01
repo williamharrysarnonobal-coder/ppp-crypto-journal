@@ -2534,12 +2534,22 @@ function renderYearOverview(){
           <span class="yo-c be" title="${mo.bes} breakeven">${mo.bes}BE</span>
           <span class="yo-c days" title="${mo.days} day${mo.days === 1 ? '' : 's'} with a closed trade — ${
             fmtNum(mo.n / mo.days, 1)} trades on an average day you traded">${mo.days}d</span>
-          <span class="yo-c rr" title="${mo.rrN
+        </div>
+        <!-- Sariling hilera ang RR at ang Win rate. Magkasama sila dahil
+             MAGKASAMA lang silang may kahulugan: ang isa ay hindi nagsasabi
+             kung kumikita ka nang wala ang isa. At ang dalawang bilang sa isang
+             hilerang laging pareho ang hugis ay nagpapapantay sa lahat ng
+             labindalawang card, na siyang hiniling niya. -->
+        <div class="yo-f-pair">
+          <span class="yo-p-k">RR</span>
+          <span class="yo-p-v" title="${mo.rrN
             ? `Average planned RR across the ${mo.rrN} of ${mo.n} trades that have one recorded`
             : 'No trade this month has an RR recorded'}"
-            >RR ${mo.rr === null ? '—' : fmtNum(mo.rr, 2)}</span>
-          <span class="yo-c rate" title="${mo.wins} won of ${mo.wins + mo.losses} decided${
-            mo.bes ? ` — the ${mo.bes} breakeven${mo.bes === 1 ? '' : 's'} are not counted, same as the Calendar` : ''}"
+            >${mo.rr === null ? '—' : fmtNum(mo.rr, 2)}</span>
+          <span class="yo-p-k">Win rate</span>
+          <span class="yo-p-v" style="color:${_winRateTintRR(mo.rate, mo.rr, mo.wins + mo.losses)}"
+            title="${escapeHtml(_winRateWhy(mo.rate, mo.rr, mo.wins + mo.losses))}${
+            mo.bes ? ` The ${mo.bes} breakeven${mo.bes === 1 ? '' : 's'} are not counted, same as the Calendar.` : ''}"
             >${mo.rate === null ? '—' : Math.round(mo.rate) + '%'}</span>
         </div>
         ${(() => {
@@ -2752,11 +2762,18 @@ function renderCalendar(){
       // the panel lying about a month that made money. Amber says look, not
       // wrong; only a genuinely thin rate goes red. Same bands the Confluence
       // Edge matrix uses, from the same function.
-      const rateColor = _winRateTint(winPct, winTrades + lossTrades);
       // Same filter as every other RR average in this file: a missing or
       // unparseable ratio is absent, never zero.
       const rrVals = monthTrades.map(t => t.rr).filter(v => v !== null && !isNaN(v));
       const avgRR = rrVals.length ? rrVals.reduce((s, v) => s + v, 0) / rrVals.length : null;
+      /* Ang RR ay dapat NAUUNA sa rateColor. Ang const ay hindi na-hoist para
+         magamit — inilagay ko muna ang kulay sa itaas at dumaan pa rin ito sa
+         node -c, dahil hindi ito syntax error kundi runtime na sasabog lang
+         kapag binuksan ang Calendar.
+
+         Kasama na ang RR sa kulay: ang 40% ay masama sa 1:1 at mahusay sa 1:2,
+         at ang parehong pula para sa dalawa ay nagsisinungaling sa pangalawa. */
+      const rateColor = _winRateTintRR(winPct, avgRR, winTrades + lossTrades);
       // Days you actually traded, not days in the month — the count of dates
       // that carry at least one closed trade.
       const tradedDays = new Set(monthTrades.map(t => t.close_date.getDate())).size;
@@ -2819,7 +2836,8 @@ function renderCalendar(){
               + `${broke.length} trade${broke.length === 1 ? '' : 's'} broke at least one. `
               + `${monthTrades.length - tagged.length} not tagged yet.` });
         })() +
-        cell('Win rate', winPct + '%', { color:rateColor });
+        cell('Win rate', winPct + '%', { color:rateColor,
+          title: _winRateWhy(winPct, avgRR, winTrades + lossTrades) });
     }
   }
 
@@ -5621,6 +5639,59 @@ function _winRateTint(rate, count){
   if(rate >= WIN_RATE_STRONG) return 'var(--win)';
   if(rate >= WIN_RATE_OK) return 'var(--accent)';
   return 'var(--loss)';
+}
+
+/* ---------------- Ang win rate, kasama ang RR ----------------
+
+   Ang win rate mag-isa ay hindi nagsasabi kung kumikita ka. Ang 40% ay
+   masama sa RR na 1:1 at mahusay sa 1:2 — at ang lumang banda ay pula ang
+   parehong 40%, na siyang mali sa pangalawa.
+
+   Ang hangganan ay hindi opinyon, kinakalkula ito: ang BREAKEVEN win rate ay
+   1 / (1 + RR). Sa itaas nito ay kumikita ka, sa ibaba ay lugi, gaano man
+   kaganda ang tunog ng porsyento.
+
+       RR 1:1    breakeven 50.0%
+       RR 1:1.5  breakeven 40.0%
+       RR 1:2    breakeven 33.3%
+       RR 1:3    breakeven 25.0%
+
+   Limang puntos sa itaas ng breakeven ang berde. Ang bilang na iyon ay may
+   dahilan: sa RR 1:2, ang 40% ay 6.7 puntos sa itaas ng 33.3% — at iyon nga
+   ang halimbawang binigay niya bilang dapat berde.
+
+   Kapag walang RR na naitala, walang breakeven na makukuwenta at bumabalik
+   ito sa lumang absolutong banda — hindi ito hula, sinasabi lang nito na
+   wala pang sapat na alam. */
+const WR_MARGIN_STRONG = 5;
+function _breakevenWinRate(rr){
+  const r = Number(rr);
+  return (Number.isFinite(r) && r > 0) ? 100 / (1 + r) : null;
+}
+function _winRateTintRR(rate, rr, count){
+  if(rate === null || rate === undefined) return 'var(--muted)';
+  if(count !== undefined && count < WIN_RATE_MIN_N) return 'var(--muted)';
+  const be = _breakevenWinRate(rr);
+  if(be === null) return _winRateTint(rate, count);
+  const margin = rate - be;
+  if(margin >= WR_MARGIN_STRONG) return 'var(--win)';
+  if(margin >= 0) return 'var(--accent)';
+  return 'var(--loss)';
+}
+// Ang paliwanag na nakakabit dito — ang numero mag-isa ay hindi sapat.
+function _winRateWhy(rate, rr, count){
+  if(rate === null) return 'No decided trades yet.';
+  if(count !== undefined && count < WIN_RATE_MIN_N)
+    return `Only ${count} decided trade${count === 1 ? '' : 's'} — not yet a reading.`;
+  const be = _breakevenWinRate(rr);
+  if(be === null)
+    return `${Math.round(rate)}% of decided trades were wins. No RR recorded, so this is `
+         + `judged on the percentage alone — log a TP and SL and it can be judged on profit instead.`;
+  const margin = rate - be;
+  return `${Math.round(rate)}% wins at ${fmtNum(rr, 2)} RR. You break even at `
+       + `${fmtNum(be, 1)}%, so you are ${margin >= 0 ? fmtNum(margin, 1) + ' points above' :
+          fmtNum(Math.abs(margin), 1) + ' points below'} it — `
+       + `${margin >= 0 ? 'this is profitable' : 'this loses money over time'}.`;
 }
 
 /* ---------------- Ang kulay ng Rules Kept ----------------

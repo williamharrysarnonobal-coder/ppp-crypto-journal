@@ -3925,3 +3925,30 @@ body.mobile-mode .yo-j-line{font-size:13px;}
    ang nakikitang hindi pantay-pantay. */
 .yo-f-rules b{min-width:44px;text-align:right;}
 .yo-f-rules i{min-width:34px;text-align:right;}
+
+/* ---- Ang RR at ang Win rate, sa sariling hilera ----
+
+   Magkasama sila dahil MAGKASAMA lang silang may kahulugan: ang win rate mag-
+   isa ay hindi nagsasabi kung kumikita ka. Ang 40% ay masama sa RR na 1:1 at
+   mahusay sa 1:2.
+
+   At ang praktikal na dahilan: ang isang hilerang laging pareho ang hugis —
+   dalawang label, dalawang bilang, nakapirming lapad — ay nagpapapantay sa
+   labindalawang card. Ang lumang hilera ay may anim na chip na iba-iba ang
+   haba kada buwan, kaya walang dalawang card na nakahanay. */
+.yo-f-pair{
+  display:flex;align-items:baseline;gap:6px;
+  font-family:'IBM Plex Mono',monospace;font-size:10px;
+  padding:4px 6px;border-radius:4px;
+  background:var(--surface);
+}
+.yo-p-k{color:var(--muted);letter-spacing:.02em;}
+.yo-p-v{
+  font-weight:700;color:var(--ink);
+  font-variant-numeric:tabular-nums;
+  min-width:34px;
+}
+/* Ang pangalawang pares ay itinutulak sa kanan, kaya ang RR ay laging nasa
+   kaliwa at ang win rate ay laging nasa kanan sa bawat card. */
+.yo-f-pair .yo-p-k:nth-of-type(2){margin-left:auto;}
+.yo-f-pair .yo-p-v:last-child{min-width:30px;text-align:right;}
