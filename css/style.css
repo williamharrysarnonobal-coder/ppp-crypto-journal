@@ -3867,3 +3867,39 @@ table.breakdown tbody tr{cursor:pointer;}
    simula. Ang knob na ang panimula ngayon. */
 .cal-goal-track i::before,
 .yo-bar i::before{display:none;}
+
+/* ---------- Ang paglalakbay ng taon ----------
+
+   Ginagamit nito ang parehong chip ng pagbati sa Dashboard nang sadya — isang
+   estilo lang ang dapat matutuhan, hindi dalawang magkamukha. Ang pangungusap
+   ay teksto, hindi mono: ito ang tanging bagay sa pahinang kumakausap sa iyo,
+   at ang lahat ng iba ay numero. */
+.yo-journey{
+  display:flex;flex-direction:column;gap:9px;
+  margin:14px 0 4px;padding:14px 16px;
+  background:var(--surface-2);
+  border:1px solid var(--rule);
+  border-left:3px solid var(--gt,var(--accent));
+  border-radius:0 9px 9px 0;
+}
+.yo-journey.good{--gt:var(--win);}
+.yo-journey.bad{--gt:var(--loss);}
+.yo-j-line{
+  font-size:14.5px;line-height:1.55;color:var(--ink);
+  max-width:76ch;text-wrap:pretty;
+}
+.yo-journey .greet-chips{margin-top:0;}
+body.mobile-mode .yo-journey{padding:12px 13px;}
+body.mobile-mode .yo-j-line{font-size:13px;}
+
+/* ---- Ang hilera ng stat sa month card ----
+
+   Anim na chip lang ang kasya rito; ang ikapito — ang bagong "kept" — ay
+   lumalabas ng 46px sa gilid ng card. Ang isang flex row na walang wrap ay
+   hindi lumiliit, itinutulak lang nito ang laman palabas at tahimik itong
+   napuputol.
+
+   Nagwa-wrap na ito ngayon, at ang chip ng disiplina ay nasa sariling linya
+   sa ilalim ng mga bilang — mas maganda pa nga: ang resulta ng buwan sa isang
+   hilera, kung paano mo ito nakuha sa ibaba nito. */
+.yo-f-row{flex-wrap:wrap;row-gap:4px;}

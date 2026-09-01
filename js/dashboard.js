@@ -2248,6 +2248,135 @@ function _yearOverviewPool(){
     (acc === 'all' || t.account === acc));
 }
 
+/* ---------------- Ang taon bilang isang paglalakbay ----------------
+
+   Ang stats row sa itaas ay nagsasabi kung ANO ang taon: kita, trade, win rate.
+   Hindi nito sinasabi kung PAANO ito nangyari — kung umahon ka mula sa isang
+   masamang simula, kung tuluy-tuloy ka, o kung ang lahat ay nakasalalay sa
+   isang buwan.
+
+   Iyon ang sinasagot dito, at iisa ang panuntunan gaya ng pagbati sa Dashboard:
+   bawat pangungusap ay masusuri. Ang "great year!" sa itaas ng isang taong lugi
+   ay hindi motivation — patunay iyon na hindi tumitingin ang app, at titigil
+   kang magbasa. Kaya sa masamang taon ay naghahanap ito ng TOTOONG maipagmamalaki
+   — isang pag-ahon, isang tuhog ng disiplina — sa halip na magsinungaling. */
+function _yearJourneyStreak(months){
+  // Pinakamahabang sunod-sunod na buwang berde. Ang buwang walang trade ay
+  // hindi pumuputol — hindi ka naman sumablay, hindi ka lang nag-trade.
+  let best = 0, run = 0;
+  months.forEach(mo => {
+    if(mo.n === 0) return;
+    if(mo.net > 0){ run++; if(run > best) best = run; }
+    else run = 0;
+  });
+  return best;
+}
+
+function _yearJourney(months, traded, y, net, goalUsd, today){
+  if(!traded.length) return null;
+
+  const MN = ['January','February','March','April','May','June',
+              'July','August','September','October','November','December'];
+  const isNow = y === today.getFullYear();
+  const green = traded.filter(mo => mo.net > 0).length;
+  const streak = _yearJourneyStreak(months);
+
+  // Unang kalahati laban sa huli — ang pinakamalinaw na hugis ng isang taon.
+  const half = Math.floor(traded.length / 2);
+  const early = traded.slice(0, half).reduce((s, mo) => s + mo.net, 0);
+  const late  = traded.slice(traded.length - half).reduce((s, mo) => s + mo.net, 0);
+
+  /* Ang pinakamasamang buwan, at kung ano ang nangyari pagkatapos nito.
+
+     Kailangang MABIGAT ang pagkalugi para maging kuwento ang pag-ahon. Nang
+     una ay sapat na ang kahit anong negatibo, kaya ang isang buwang -$50 sa
+     gitna ng mga buwang $1,000 ay naglalabas ng "Coming back is the part most
+     people never manage" — totoo ang bawat salita at katawa-tawa pa rin ito.
+     Ang pamantayan ay ang sarili mong buwan: dapat kasinlaki man lang ng
+     kalahati ng karaniwan mong berdeng buwan ang nawala. */
+  let worst = null;
+  traded.forEach(mo => { if(!worst || mo.net < worst.net) worst = mo; });
+  const greens = traded.filter(mo => mo.net > 0);
+  const avgGreen = greens.length
+    ? greens.reduce((s, mo) => s + mo.net, 0) / greens.length : 0;
+  const realSetback = worst && worst.net < 0 && Math.abs(worst.net) >= avgGreen * 0.5;
+  const after = worst ? traded.filter(mo => mo.m > worst.m) : [];
+  const afterAllGreen = after.length >= 2 && after.every(mo => mo.net > 0);
+
+  // Disiplina sa buong taon — ang tanging bilang dito na buo mong kontrolado.
+  const yrTrades = months.flatMap(mo => mo.trades || []);
+  const tagged = yrTrades.filter(t => String(t.unfollowed_rules || '').trim());
+  const clean = tagged.filter(t => !_brokenRuleTags(t.unfollowed_rules).length);
+  const cleanPct = tagged.length >= 8 ? clean.length / tagged.length * 100 : null;
+
+  const chips = [];
+  if(streak >= 2) chips.push({ k: 'best green run', v: streak + ' months', tone: 'good',
+    tip: `${streak} months in a row finished positive.` });
+  if(half >= 2) chips.push({
+    k: 'first half → last half',
+    v: fmtMoney(early) + ' → ' + fmtMoney(late),
+    tone: late > early ? 'good' : late < early ? 'bad' : '',
+    tip: `Your first ${half} traded months against your last ${half}.` });
+  if(cleanPct !== null) chips.push({
+    k: 'rules kept', v: Math.round(cleanPct) + '%',
+    tone: cleanPct >= 80 ? 'good' : cleanPct < 50 ? 'bad' : '',
+    tip: `${clean.length} of ${tagged.length} tagged trades this year broke none of your rules.` });
+  chips.push({ k: 'months traded', v: String(traded.length), tone: '',
+    tip: `You closed a trade in ${traded.length} of the 12 months.` });
+
+  /* Ang headline: ibinabalik ang unang TOTOO, kaya ang pagkakasunod ay ang
+     pagpapahalaga. */
+  let headline, tone = 'good';
+
+  // 1. Nasakop ang buong taon ng sahod. Walang mas malaki kaysa rito.
+  if(goalUsd !== null && net >= goalUsd * 12){
+    headline = `Twelve months of salary, covered. ${y} paid for itself.`;
+  }
+  // 2. Umahon mula sa pinakamasamang buwan — ito ang pinakamalakas na kuwento
+  //    sa pangangalakal, at bihira itong makita ng tao sa sarili niya.
+  else if(afterAllGreen && realSetback){
+    headline = `${MN[worst.m]} cost you ${_askAmt(worst.net)}, and every month since has been green. `
+             + `Coming back is the part most people never manage.`;
+  }
+  // 3. Ang huling kalahati ay malinaw na mas mahusay.
+  else if(half >= 2 && late > 0 && late > early * 1.5){
+    headline = early > 0
+      ? `Your last ${half} months earned ${_askAmt(late)} against ${_askAmt(early)} in your first ${half}. You are getting better at this.`
+      : `You started ${y} at ${fmtMoney(early)} and your last ${half} months made ${fmtMoney(late)}. That is a different trader.`;
+  }
+  // 4. Pare-pareho — ang pinakabihirang bagay dito.
+  else if(traded.length >= 4 && green * 4 >= traded.length * 3){
+    headline = `${green} of your ${traded.length} months finished green. Consistency is the rarest thing in this, and you have it.`;
+  }
+  // 5. Positibo ang taon.
+  else if(net > 0){
+    headline = `${y} is ${fmtMoney(net)} up across ${traded.length} month${traded.length === 1 ? '' : 's'}. `
+             + (isNow ? 'Still running — keep it boring.' : 'A year in the green.');
+  }
+  // 6. Bumababa — huwag magsinungaling, pero hanapin ang totoong maipagmamalaki.
+  else {
+    tone = 'bad';
+    const bestM = traded.reduce((a, mo) => (!a || mo.net > a.net) ? mo : a, null);
+    headline = green
+      ? `${y} is down, but ${green} of your ${traded.length} months still finished green — `
+        + `${MN[bestM.m]} made ${fmtMoney(bestM.net)}. The months that work are in here; the job is doing more of them.`
+      : `A hard ${y}. Every trade is still in the journal, and that is what makes the next one different.`;
+  }
+
+  return { headline, tone, chips };
+}
+
+function _yearJourneyHtml(months, traded, y, net, goalUsd, today){
+  const j = _yearJourney(months, traded, y, net, goalUsd, today);
+  if(!j) return '';
+  return `<div class="yo-journey ${j.tone}">
+    <span class="yo-j-line">${escapeHtml(j.headline)}</span>
+    <span class="greet-chips">${j.chips.map(c => `
+      <span class="greet-chip ${c.tone || ''}" title="${escapeHtml(c.tip || '')}">
+        <em>${escapeHtml(c.k)}</em><b>${escapeHtml(c.v)}</b></span>`).join('')}</span>
+  </div>`;
+}
+
 function renderYearOverview(){
   const body = document.getElementById('yearOverviewBody');
   const label = document.getElementById('yearOverviewLabel');
@@ -2369,7 +2498,8 @@ function renderYearOverview(){
   </div>
   ${best && worst && best !== worst ? `<div class="yo-line">
     Best month <b>${MN[best.m]}</b> at ${fmtMoney(best.net)} · worst
-    <b>${MN[worst.m]}</b> at ${fmtMoney(worst.net)}.</div>` : ''}`;
+    <b>${MN[worst.m]}</b> at ${fmtMoney(worst.net)}.</div>` : ''}
+  ${_yearJourneyHtml(months, traded, y, net, goalUsd, today)}`;
 
   const grid = months.map(mo => {
     const cls = mo.n === 0 ? 'quiet' : (mo.net > 0 ? 'up' : mo.net < 0 ? 'down' : '');
@@ -2393,6 +2523,22 @@ function renderYearOverview(){
           <span class="yo-c rate" title="${mo.wins} won of ${mo.wins + mo.losses} decided${
             mo.bes ? ` — the ${mo.bes} breakeven${mo.bes === 1 ? '' : 's'} are not counted, same as the Calendar` : ''}"
             >${mo.rate === null ? '—' : Math.round(mo.rate) + '%'}</span>
+          ${(() => {
+            /* Ang disiplina ng buwan, katabi ng resulta nito. Isang taon na
+               nakahanay ang dalawa ang nagsasabi kung ang magagandang buwan mo
+               ba ay ang mga buwang sinunod mo ang sarili mong panuntunan.
+
+               Tinatakan lang ang denominador, gaya ng Calendar — ang walang
+               tatak ay hindi naitala, hindi malinis. */
+            const tg = (mo.trades || []).filter(t => _ruleTags(t.unfollowed_rules).length);
+            if(!tg.length) return `<span class="yo-c" title="No trade this month has its Trade Tags ticked yet.">— kept</span>`;
+            const br = tg.filter(t => _brokenRuleTags(t.unfollowed_rules).length).length;
+            const kept = tg.length - br;
+            const pct = Math.round(kept / tg.length * 100);
+            return `<span class="yo-c ${pct >= 80 ? 'win' : pct < 50 ? 'loss' : ''}"
+              title="${kept} of ${tg.length} tagged trades kept every rule — ${pct}%. ${br} broke at least one."
+              >${kept}/${tg.length} kept</span>`;
+          })()}
         </div>
         ${_yearGoalBar(mo, goalUsd)}
       </div>` : `<div class="yo-m-foot empty">no trades</div>`}
@@ -2621,7 +2767,27 @@ function renderCalendar(){
           title: `${tradedDays} day${tradedDays === 1 ? '' : 's'} this month have at least one `
             + `closed trade — ${fmtNum(monthTrades.length / tradedDays, 1)} trades on an average `
             + `day you traded` }) +
-        cell('Win rate', winPct + '%', { color:rateColor });
+        cell('Win rate', winPct + '%', { color:rateColor }) +
+        /* Gaano ka ka-kulit ngayong buwan. Ang bilang na ito lang sa buong
+           hilera ang BUO mong kontrolado — hindi ito nakadepende sa market.
+
+           Ang denominador ay ang mga trade na TINATAKAN mo, hindi lahat: ang
+           walang tatak ay "hindi naitala", hindi "malinis", at ang pagbilang
+           sa kanila bilang malinis ay gagawing 100% ang isang buwang hindi mo
+           pa na-journal. */
+        (() => {
+          const tagged = monthTrades.filter(t => _ruleTags(t.unfollowed_rules).length);
+          const broke = tagged.filter(t => _brokenRuleTags(t.unfollowed_rules).length);
+          if(!tagged.length) return cell('Rules kept', '—', {
+            title: 'No trade this month has its Trade Tags ticked yet.' });
+          const kept = tagged.length - broke.length;
+          const pct = Math.round(kept / tagged.length * 100);
+          return cell('Rules kept', `${kept}/${tagged.length}`, {
+            color: pct >= 80 ? cssVar('--win') : pct < 50 ? cssVar('--loss') : undefined,
+            title: `${kept} of ${tagged.length} tagged trades broke none of your rules — ${pct}%. `
+              + `${broke.length} trade${broke.length === 1 ? '' : 's'} broke at least one. `
+              + `${monthTrades.length - tagged.length} not tagged yet.` });
+        })();
     }
   }
 
