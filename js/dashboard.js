@@ -2483,6 +2483,23 @@ function renderYearOverview(){
     ${stat('BE', yr.bes, 'be')}
     ${stat('Avg RR', yrRr === null ? '—' : fmtNum(yrRr, 2))}
     ${stat('Win rate', yrRate === null ? '—' : Math.round(yrRate) + '%')}
+    ${(() => {
+      /* Ang disiplina ng buong taon, katabi mismo ng win rate — ang dalawang
+         numerong ito nang magkatabi ang sumasagot sa tanong na "ang mga taon
+         bang sinunod ko ang sarili kong panuntunan ay ang mga taong kumita
+         ako". Tinatakan lang ang denominador, gaya ng Calendar. */
+      const yrAll = months.flatMap(mo => mo.trades || []);
+      const tg = yrAll.filter(t => _ruleTags(t.unfollowed_rules).length);
+      if(!tg.length) return stat('Rules kept', '—', '',
+        'No trade this year has its Trade Tags ticked yet.');
+      const br = tg.filter(t => _brokenRuleTags(t.unfollowed_rules).length).length;
+      const kept = tg.length - br;
+      const pct = Math.round(kept / tg.length * 100);
+      return stat('Rules kept', `${kept} of ${tg.length}`,
+        pct >= 80 ? 'win' : pct < 50 ? 'loss' : '',
+        `${kept} of ${tg.length} tagged trades broke none of your rules — ${pct}%. `
+        + `${br} broke at least one. ${yrAll.length - tg.length} not tagged yet.`);
+    })()}
     ${stat('Avg trading days', traded.length ? fmtNum(yrDays / traded.length, 1) : '—', '',
         traded.length ? `${fmtNum(yrDays / traded.length, 1)} trading days in an average month — `
           + `${yrDays} day${yrDays === 1 ? '' : 's'} across the ${traded.length} `
@@ -2523,23 +2540,30 @@ function renderYearOverview(){
           <span class="yo-c rate" title="${mo.wins} won of ${mo.wins + mo.losses} decided${
             mo.bes ? ` — the ${mo.bes} breakeven${mo.bes === 1 ? '' : 's'} are not counted, same as the Calendar` : ''}"
             >${mo.rate === null ? '—' : Math.round(mo.rate) + '%'}</span>
-          ${(() => {
-            /* Ang disiplina ng buwan, katabi ng resulta nito. Isang taon na
-               nakahanay ang dalawa ang nagsasabi kung ang magagandang buwan mo
-               ba ay ang mga buwang sinunod mo ang sarili mong panuntunan.
-
-               Tinatakan lang ang denominador, gaya ng Calendar — ang walang
-               tatak ay hindi naitala, hindi malinis. */
-            const tg = (mo.trades || []).filter(t => _ruleTags(t.unfollowed_rules).length);
-            if(!tg.length) return `<span class="yo-c" title="No trade this month has its Trade Tags ticked yet.">— kept</span>`;
-            const br = tg.filter(t => _brokenRuleTags(t.unfollowed_rules).length).length;
-            const kept = tg.length - br;
-            const pct = Math.round(kept / tg.length * 100);
-            return `<span class="yo-c ${pct >= 80 ? 'win' : pct < 50 ? 'loss' : ''}"
-              title="${kept} of ${tg.length} tagged trades kept every rule — ${pct}%. ${br} broke at least one."
-              >${kept}/${tg.length} kept</span>`;
-          })()}
         </div>
+        ${(() => {
+          /* Ang disiplina ng buwan, sa SARILING linya sa ilalim ng mga bilang.
+
+             Ikapitong chip ito noon sa parehong hilera at hindi ito kasya —
+             lumalabas ito ng 46px sa gilid ng card, at nang paganahin ko ang
+             wrap ay naging isang naulilang chip sa pangalawang linya, na
+             mukhang aksidente.
+
+             Isang linya ito ngayon nang sadya, at mas mabuti pa nga ang basa:
+             ang RESULTA ng buwan sa itaas, at kung PAANO mo ito nakuha sa
+             ibaba nito. Tinatakan lang ang denominador, gaya ng Calendar —
+             ang walang tatak ay hindi naitala, hindi malinis. */
+          const tg = (mo.trades || []).filter(t => _ruleTags(t.unfollowed_rules).length);
+          if(!tg.length) return `<div class="yo-f-rules none"
+            title="No trade this month has its Trade Tags ticked yet."
+            ><span>rules kept</span><b>—</b></div>`;
+          const br = tg.filter(t => _brokenRuleTags(t.unfollowed_rules).length).length;
+          const kept = tg.length - br;
+          const pct = Math.round(kept / tg.length * 100);
+          return `<div class="yo-f-rules ${pct >= 80 ? 'win' : pct < 50 ? 'loss' : ''}"
+            title="${kept} of ${tg.length} tagged trades kept every rule — ${pct}%. ${br} broke at least one."
+            ><span>rules kept</span><b>${kept}/${tg.length}</b><i>${pct}%</i></div>`;
+        })()}
         ${_yearGoalBar(mo, goalUsd)}
       </div>` : `<div class="yo-m-foot empty">no trades</div>`}
     </div>`;
@@ -2767,14 +2791,16 @@ function renderCalendar(){
           title: `${tradedDays} day${tradedDays === 1 ? '' : 's'} this month have at least one `
             + `closed trade — ${fmtNum(monthTrades.length / tradedDays, 1)} trades on an average `
             + `day you traded` }) +
-        cell('Win rate', winPct + '%', { color:rateColor }) +
         /* Gaano ka ka-kulit ngayong buwan. Ang bilang na ito lang sa buong
            hilera ang BUO mong kontrolado — hindi ito nakadepende sa market.
 
            Ang denominador ay ang mga trade na TINATAKAN mo, hindi lahat: ang
            walang tatak ay "hindi naitala", hindi "malinis", at ang pagbilang
            sa kanila bilang malinis ay gagawing 100% ang isang buwang hindi mo
-           pa na-journal. */
+           pa na-journal.
+
+           Nauuna ito sa Win rate: ang win rate ang konklusyon ng hilera at
+           doon dumadapo ang mata sa dulo. */
         (() => {
           const tagged = monthTrades.filter(t => _ruleTags(t.unfollowed_rules).length);
           const broke = tagged.filter(t => _brokenRuleTags(t.unfollowed_rules).length);
@@ -2787,7 +2813,8 @@ function renderCalendar(){
             title: `${kept} of ${tagged.length} tagged trades broke none of your rules — ${pct}%. `
               + `${broke.length} trade${broke.length === 1 ? '' : 's'} broke at least one. `
               + `${monthTrades.length - tagged.length} not tagged yet.` });
-        })();
+        })() +
+        cell('Win rate', winPct + '%', { color:rateColor });
     }
   }
 

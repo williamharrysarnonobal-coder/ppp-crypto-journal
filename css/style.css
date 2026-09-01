@@ -3892,14 +3892,25 @@ table.breakdown tbody tr{cursor:pointer;}
 body.mobile-mode .yo-journey{padding:12px 13px;}
 body.mobile-mode .yo-j-line{font-size:13px;}
 
-/* ---- Ang hilera ng stat sa month card ----
+/* ---- Ang disiplina ng buwan, sa sariling linya ----
 
-   Anim na chip lang ang kasya rito; ang ikapito — ang bagong "kept" — ay
-   lumalabas ng 46px sa gilid ng card. Ang isang flex row na walang wrap ay
-   hindi lumiliit, itinutulak lang nito ang laman palabas at tahimik itong
-   napuputol.
+   Ikapitong chip ito noon sa hilera ng stat at hindi kasya — lumalabas ito ng
+   46px sa gilid ng card. Ang pagpapa-wrap ay nag-ayos sa paglabas pero naging
+   naulilang chip ito sa pangalawang linya, na mukhang aksidente.
 
-   Nagwa-wrap na ito ngayon, at ang chip ng disiplina ay nasa sariling linya
-   sa ilalim ng mga bilang — mas maganda pa nga: ang resulta ng buwan sa isang
-   hilera, kung paano mo ito nakuha sa ibaba nito. */
+   Sariling linya na ito ngayon, at ganoon din ang basa: ang RESULTA ng buwan
+   sa itaas, kung PAANO mo ito nakuha sa ibaba. Ang label ay mahina at ang
+   bilang ang may kulay, kaya ang mata ay dumadapo sa bilang. */
 .yo-f-row{flex-wrap:wrap;row-gap:4px;}
+.yo-f-rules{
+  display:flex;align-items:baseline;gap:6px;
+  font-family:'IBM Plex Mono',monospace;font-size:10px;
+  padding:4px 6px;border-radius:4px;
+  background:var(--surface);
+}
+.yo-f-rules span{color:var(--muted);letter-spacing:.02em;}
+.yo-f-rules b{font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums;}
+.yo-f-rules i{margin-left:auto;font-style:normal;color:var(--muted);font-variant-numeric:tabular-nums;}
+.yo-f-rules.win b, .yo-f-rules.win i{color:var(--win);}
+.yo-f-rules.loss b, .yo-f-rules.loss i{color:var(--loss);}
+.yo-f-rules.none b{color:var(--muted);}
