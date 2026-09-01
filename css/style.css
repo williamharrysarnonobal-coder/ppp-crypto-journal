@@ -2390,34 +2390,49 @@
                0 0 8px color-mix(in srgb, var(--win) 60%, transparent);
   }
 
-  /* ---------- The two questions ----------
-     One block per decision: the sides you have evidence for, then the answer
-     in a sentence. A side you have never tagged says so plainly instead of
-     turning the whole block into "needs 5 on each side". */
-  .dx-q{border:1px solid var(--rule);border-radius:9px;background:var(--surface-2);
-    padding:14px 16px 15px;margin-bottom:11px;}
-  .dx-q h4{font-size:14.5px;font-weight:600;margin:0 0 11px;line-height:1.35;}
-  .dx-q-arms{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:10px;}
-  .dx-q-arm{background:var(--surface);border:1px solid var(--rule);border-radius:7px;
-    padding:9px 12px;display:flex;flex-direction:column;gap:3px;}
-  .dx-q-a-name{font-size:12px;color:var(--muted);}
-  .dx-q-a-val{font-family:'IBM Plex Mono',monospace;font-size:14px;font-weight:600;}
-  .dx-q-arm.none .dx-q-a-val{color:var(--muted);font-weight:500;font-size:12.5px;}
+  /* ---------- A report ----------
+     One decision, and the two ways it turned out. The bar is the share of the
+     time the decision was RIGHT — not a share of your trades — so a decision
+     you make rarely and a decision you make constantly are read the same way. */
+  .rp{border:1px solid var(--rule);border-radius:9px;background:var(--surface-2);
+    padding:15px 17px 16px;margin-bottom:11px;}
+  .rp-head{display:flex;align-items:baseline;gap:10px;margin-bottom:3px;}
+  .rp-head h4{font-size:14.5px;font-weight:650;margin:0;}
+  .rp-n{margin-left:auto;font-family:'IBM Plex Mono',monospace;font-size:10.5px;
+    color:var(--muted);white-space:nowrap;}
+  .rp-q{margin:0 0 9px;font-size:13.5px;line-height:1.45;color:var(--ink);}
+  .rp-lead{margin:0 0 13px;font-size:12.5px;line-height:1.5;color:var(--muted);max-width:66ch;}
+  .rp-lead b{color:var(--ink);font-weight:600;}
 
-  .dx-q-hint{font-size:12.5px;color:var(--muted);margin-bottom:9px;line-height:1.45;}
-  .dx-q-hint b{color:var(--warn);font-weight:600;}
+  .rp-arms{display:flex;flex-direction:column;gap:11px;margin-bottom:12px;}
+  .rp-arm{background:var(--surface);border:1px solid var(--rule);border-radius:7px;
+    padding:11px 13px 12px;}
+  .rp-arm.none{opacity:.55;}
+  .rp-a-head{display:flex;align-items:baseline;gap:10px;margin-bottom:8px;}
+  .rp-a-name{font-size:13px;font-weight:600;}
+  .rp-a-score{margin-left:auto;font-family:'IBM Plex Mono',monospace;font-size:11px;
+    color:var(--muted);white-space:nowrap;}
+  .rp-a-score b{font-size:13px;color:var(--ink);margin-left:5px;}
 
-  .dx-q-verdict{font-size:13.5px;line-height:1.5;padding:10px 13px;border-radius:7px;
-    background:var(--surface);border-left:3px solid var(--qt,var(--muted));}
-  .dx-q-verdict.good{--qt:var(--win);}
-  .dx-q-verdict.bad{--qt:var(--loss);}
-  .dx-q-verdict.wait{--qt:var(--muted);color:var(--muted);}
+  /* Green from the left is the share that went right; the rest stays red, so
+     the split is legible without reading either number. */
+  .rp-a-bar{height:6px;border-radius:999px;background:var(--loss);overflow:hidden;}
+  .rp-arm.none .rp-a-bar{background:var(--rule);}
+  .rp-a-bar i{display:block;height:100%;border-radius:999px;background:var(--win);
+    transition:width .5s cubic-bezier(.22,.8,.3,1);}
 
-  .dx-q-out{margin-top:9px;font-size:12.5px;line-height:1.5;padding:9px 13px;border-radius:7px;
-    background:var(--surface);border-left:3px solid var(--qt,var(--muted));}
-  .dx-q-out.good{--qt:var(--win);}
-  .dx-q-out.bad{--qt:var(--loss);}
-  .dx-q-out.wait{--qt:var(--muted);color:var(--muted);}
+  .rp-a-legs{display:flex;gap:16px;flex-wrap:wrap;margin-top:8px;}
+  .rp-leg{font-size:11.5px;color:var(--muted);line-height:1.4;}
+  .rp-leg b{font-family:'IBM Plex Mono',monospace;font-size:12.5px;font-weight:700;
+    margin-right:4px;}
+  .rp-leg.good b{color:var(--win);}
+  .rp-leg.bad b{color:var(--loss);}
+
+  .rp-verdict{font-size:13.5px;line-height:1.5;padding:10px 13px;border-radius:7px;
+    background:var(--surface);border-left:3px solid var(--rt,var(--muted));}
+  .rp-verdict.good{--rt:var(--win);}
+  .rp-verdict.bad{--rt:var(--loss);}
+  .rp-verdict.wait{--rt:var(--muted);color:var(--muted);}
 
   /* ---------- What loses you trades ----------
      A table, not a stack of paragraphs. Eight tags each explaining the same
@@ -2452,7 +2467,6 @@
     border:1px solid var(--loss);border-radius:3px;padding:1px 4px;
     vertical-align:middle;opacity:.75;}
 
-  @media(max-width:560px){ .dx-q-arms{grid-template-columns:1fr;} }
 
 
 /* ---------- Discipline: the one-glance strip ----------
@@ -2484,14 +2498,6 @@
 .dx-s-card.bad  .dx-s-v{color:var(--loss);}
 .dx-s-card.good .dx-s-v{color:var(--win);}
 
-.dx-detail{margin-top:16px;}
-.dx-detail > summary{list-style:none;cursor:pointer;display:inline-flex;align-items:center;gap:7px;
-    font-size:12px;color:var(--muted);padding:5px 0;user-select:none;}
-.dx-detail > summary::-webkit-details-marker{display:none;}
-.dx-detail > summary::before{content:'▸';font-size:10px;transition:transform .15s ease;}
-.dx-detail[open] > summary::before{transform:rotate(90deg);}
-.dx-detail > summary:hover{color:var(--ink);}
-.dx-halves{padding-top:10px;border-top:1px solid var(--rule);}
 
 /* ---------- Pattern · Session · Confluence ---------- */
   .sx-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(400px,1fr));gap:16px;}
@@ -2782,6 +2788,22 @@
     text-transform:none;letter-spacing:0;padding:4px 0;cursor:pointer;font-family:var(--font-ui);
   }
   .checklist-box input[type=checkbox]{width:auto;accent-color:var(--accent);}
+
+/* Trade Tags only: a rule you broke and a thing that happened are not the same
+   kind of tick, and the list gave no sign of which was which. The heading
+   sticks so you can still see which half you are in after scrolling. */
+.chk-group + .chk-group{margin-top:10px;padding-top:9px;border-top:1px solid var(--rule);}
+.chk-group-head{
+  position:sticky;top:-8px;z-index:1;
+  display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;
+  margin:0 -10px 5px;padding:3px 10px 5px;
+  background:var(--surface-2);
+  font-family:'IBM Plex Mono',monospace;font-size:9.5px;font-weight:600;
+  letter-spacing:.1em;text-transform:uppercase;color:var(--loss);
+}
+.chk-group + .chk-group .chk-group-head{color:var(--info);}
+.chk-group-head em{font-style:normal;letter-spacing:.02em;text-transform:none;
+  color:var(--muted);font-weight:400;font-size:10px;}
   .drawer-actions{flex-shrink:0;margin-top:auto;padding-top:18px;border-top:1px solid var(--rule);display:flex;gap:8px;flex-wrap:wrap;}
   .drawer-secondary-btn{
     background:none;border:1px solid var(--rule);color:var(--muted);padding:9px 14px;

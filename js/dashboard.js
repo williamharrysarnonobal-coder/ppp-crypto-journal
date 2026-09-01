@@ -3670,41 +3670,66 @@ const EM_MIN_GAP = 10;
    `outcome` is the exit column that settles the same question from the other
    direction — of the times the stop actually fired, was firing right? That is
    a straight count and never needed two arms. */
-const TAG_QUESTIONS = [
-  { id:'be',
-    q:'Should I move to breakeven when price hits the previous high/low?',
-    arms:[
-      { label:'Left it alone',      tags:['No BE at Prev High/Low'] },
-      { label:'Moved to breakeven', tags:["BE'd at Prev High/Low"] },
-    ],
-    /* Not an arm — a count of trades where price came back to your entry and
-       then recovered. A breakeven stop would have closed every one of them at
-       nothing, so this argues AGAINST moving the stop, whichever arm is ahead.
+/* ======================== The three reports ==========================
 
-       This was written the wrong way round ("trades a breakeven stop would
-       have saved") and so was pulling the reader toward the opposite
-       conclusion from the one the tag records. The tag means you were glad you
-       left the stop where it was. */
-    hint:{ tags:["Would Have BE'd Out"],
-           txt:'came back to your entry and then recovered — a breakeven stop '
-             + 'would have closed each one flat' },
-    outcome:{ field:'post_be_result',
-              right:{ value:'SL After BE',  label:'saved the loss' },
-              wrong:{ value:'TP After BE',  label:'cost you the trade' },
-              keep:'Moving the stop to breakeven is paying off',
-              drop:'You are moving the stop up too early' } },
+   Each one settles a single question you have not settled, and each is built
+   the same way: a DECISION, and the two ways it can turn out. No averages, no
+   A/B needing both sides tagged — just "when I did this, how often was it
+   right", which is a question your tags can actually answer.
 
-  { id:'inval',
-    q:'Should I cut when the setup invalidates?',
+   That shape came from how you use the tags: you tick the good one when the
+   trade ended well and the bad one when it did not, so every tag already
+   carries its own verdict. The reports only have to count them. */
+const TRADE_REPORTS = [
+  {
+    id:'be',
+    title:'Breakeven',
+    q:'When price reaches the previous high or low, should I move my stop to entry?',
+    lead:`Both tags below are trades where you <b>left the stop alone</b>. That is the
+          decision being judged, so the trades where you moved it are not in here —
+          they have nothing left to say about whether moving it was worth doing.`,
+    arms:[{
+      label:'Leaving the stop alone',
+      good:{ tag:"Would Have BE'd Out",    txt:'ran on and hit take profit' },
+      bad: { tag:'No BE at Prev High/Low', txt:'came back and stopped you out' },
+    }],
+    // keep = what to say when the decision is working, change = when it is not.
+    // These were `yes`/`no`, which read as answers to the question and so got
+    // written round the wrong way on the exit report — "yes" there meant keep
+    // doing it, while "yes" here meant change.
+    keep:'Keep leaving the stop where it is.',
+    change:'Start moving the stop to entry when price gets there.',
+  },
+  {
+    id:'inval',
+    title:'Invalidation',
+    q:'When the setup invalidates, should I cut?',
+    lead:`Two decisions, and each one recorded with how it ended. The winner is the
+          decision that was right more often — not the one you made more often.`,
     arms:[
-      { label:'Held through it',   tags:['Held Through Invalidation'] },
-      { label:'Cut when it broke', tags:['Cut on Invalidation'] },
+      { label:'Holding through it',
+        good:{ tag:'Held Through Invalidation',     txt:'recovered and hit take profit' },
+        bad: { tag:'Ego Hold Despite Invalidation', txt:'went on to your stop' } },
+      { label:'Cutting when it breaks',
+        good:{ tag:'Cut on Invalidation', txt:'would have hit the stop anyway' },
+        bad: { tag:'Cut Too Early',       txt:'would have reached take profit' } },
     ],
-    outcome:{ field:'post_cutloss_result',
-              right:{ value:'SL After Cutloss', label:'saved the rest of the loss' },
-              wrong:{ value:'TP After Cutloss', label:'cost you the trade' },
-              keep:'Cutting the loss is paying off',
-              drop:'You are cutting too early' } },
+  },
+  {
+    id:'exit',
+    title:'Manual early exit',
+    q:'Should I close a trade by hand instead of letting it run to TP or SL?',
+    lead:`Read from <b>Exit Type</b>, not from a tag — closing early is how the trade
+          ended, and that is what the column is for.`,
+    field:'exit_type',
+    arms:[{
+      label:'Closing early by hand',
+      good:{ value:'Manual Early TP - Valid',   txt:'would have hit your stop' },
+      bad: { value:'Manual Early TP - Invalid', txt:'would have hit take profit' },
+    }],
+    keep:'Keep taking the manual exit.',
+    change:'Stop closing early — let it run.',
+  },
 ];
 
 /* Outcomes only. Neither of these two panels touches money anywhere, because a
@@ -3765,58 +3790,102 @@ function _armFor(trades, tags){
   return _tagArmStats(trades.filter(t => _hasTag(t, tags)));
 }
 
+/* One report. Every arm is a decision with a good count and a bad count, read
+   either from tags or from a column, and the arm's score is simply how often
+   that decision was right. Nothing is averaged and nothing needs a second
+   arm — a decision with only one arm still has an answer. */
+function _runReport(rep, trades){
+  const count = side => rep.field
+    ? trades.filter(t => t[rep.field] === side.value).length
+    : trades.filter(t => _hasTag(t, [side.tag])).length;
+
+  const arms = rep.arms.map(a => {
+    const good = count(a.good), bad = count(a.bad);
+    const n = good + bad;
+    // The wording is lifted off before the counts land on the same names —
+    // spreading `...a` would put a number where a.good's `.txt` used to be and
+    // every leg would render blank.
+    return { label:a.label, goodTxt:a.good.txt, badTxt:a.bad.txt,
+             good, bad, n, rate: n ? good / n * 100 : null };
+  });
+
+  const live = arms.filter(a => a.n > 0);
+  const total = arms.reduce((s, a) => s + a.n, 0);
+  const enough = total >= EM_MIN_N;
+
+  let verdict;
+  if(!total){
+    verdict = { tone:'wait', txt:`Nothing tagged yet. Tick these as you journal and the
+      answer builds itself.` };
+  }else if(!enough){
+    verdict = { tone:'wait', txt:`Only ${total} trade${total === 1 ? '' : 's'} so far.
+      ${EM_MIN_N} is where this starts to mean something.` };
+  }else if(arms.length === 1){
+    // One decision, two outcomes: was it right more often than not?
+    const a = arms[0];
+    verdict = a.good > a.bad
+      ? { tone:'good', txt:`<b>${escapeHtml(rep.keep || 'Keep doing this.')}</b>
+          ${escapeHtml(a.label)} was right ${a.good} of ${a.n} times.` }
+      : a.bad > a.good
+      ? { tone:'bad', txt:`<b>${escapeHtml(rep.change || 'Change this.')}</b>
+          ${escapeHtml(a.label)} was wrong ${a.bad} of ${a.n} times.` }
+      : { tone:'wait', txt:`Dead even — ${a.good} right, ${a.bad} wrong.
+          Keep tagging and it will separate.` };
+  }else{
+    // Two decisions: the one that was RIGHT more often wins, not the one you
+    // reached for more often.
+    const ranked = live.filter(a => a.n >= 2).slice().sort((x, y) => y.rate - x.rate);
+    if(ranked.length < 2){
+      const a = ranked[0] || live[0];
+      verdict = { tone:'wait', txt:`Only “${escapeHtml(a.label)}” has enough behind it —
+        ${a.good} of ${a.n} right. Tag the other side a few times and this can compare them.` };
+    }else{
+      const hi = ranked[0], lo = ranked[ranked.length - 1];
+      verdict = Math.abs(hi.rate - lo.rate) > EM_MIN_GAP
+        ? { tone:'good', txt:`<b>${escapeHtml(hi.label)}.</b> Right ${hi.good} of ${hi.n}
+            times, against ${lo.good} of ${lo.n} the other way.` }
+        : { tone:'wait', txt:`Too close to call — ${hi.good} of ${hi.n} against
+            ${lo.good} of ${lo.n}. Keep tagging both.` };
+    }
+  }
+  return { rep, arms, total, verdict };
+}
+
+function _reportHtml(r){
+  const arms = r.arms.map(a => {
+    const pct = a.rate === null ? null : Math.round(a.rate);
+    const w = a.n ? (a.good / a.n * 100) : 0;
+    return `<div class="rp-arm${a.n ? '' : ' none'}">
+      <div class="rp-a-head">
+        <span class="rp-a-name">${escapeHtml(a.label)}</span>
+        <span class="rp-a-score">${a.n ? `${a.good} of ${a.n} right` : 'never tagged'}${
+          pct === null ? '' : ` <b>${pct}%</b>`}</span>
+      </div>
+      <div class="rp-a-bar"><i style="width:${w.toFixed(1)}%"></i></div>
+      <div class="rp-a-legs">
+        <span class="rp-leg good"><b>${a.good}</b> ${escapeHtml(a.goodTxt || '')}</span>
+        <span class="rp-leg bad"><b>${a.bad}</b> ${escapeHtml(a.badTxt || '')}</span>
+      </div>
+    </div>`;
+  }).join('');
+
+  return `<div class="rp">
+    <div class="rp-head">
+      <h4>${escapeHtml(r.rep.title)}</h4>
+      <span class="rp-n">${r.total} tagged</span>
+    </div>
+    <p class="rp-q">${escapeHtml(r.rep.q)}</p>
+    ${r.rep.lead ? `<p class="rp-lead">${r.rep.lead}</p>` : ''}
+    <div class="rp-arms">${arms}</div>
+    <div class="rp-verdict ${r.verdict.tone}">${r.verdict.txt}</div>
+  </div>`;
+}
+
 /* One question, answered from whatever evidence exists. The order matters:
    two arms beat one, one arm beats none, and the exit column is reported
    alongside rather than folded in, because it answers the same question from
    the other end and can disagree. */
-function _answerQuestion(q, trades){
-  const arms = q.arms.map(a => ({ ...a, ..._armFor(trades, a.tags) }));
-  const live = arms.filter(a => a.settled > 0);
-  const base = _tagArmStats(trades).rate;
 
-  let verdict = null;
-  if(live.length === 2 && live.every(a => a.settled >= EM_MIN_N)){
-    const [hi, lo] = [...live].sort((x, y) => y.rate - x.rate);
-    verdict = Math.abs(hi.rate - lo.rate) > EM_MIN_GAP
-      ? { tone:'good', txt:`<b>${escapeHtml(hi.label)}.</b> You won ${hi.wins} of ${hi.settled}
-          that way, against ${lo.wins} of ${lo.settled} the other way.` }
-      : { tone:'wait', txt:`Too close to call — ${hi.wins} of ${hi.settled} against
-          ${lo.wins} of ${lo.settled}. Keep tagging both.` };
-  }else if(live.length === 1 && live[0].settled >= EM_MIN_N && base !== null){
-    // One arm and your own average. Not as good as a head-to-head, but it is a
-    // real answer and it is the situation you are actually in.
-    const a = live[0], gap = a.rate - base;
-    const missing = arms.find(x => x !== a);
-    verdict = Math.abs(gap) <= EM_MIN_GAP
-      ? { tone:'wait', txt:`“${escapeHtml(a.label)}” wins ${Math.round(a.rate)}% — about your
-          ${Math.round(base)}% average, so it is neither helping nor hurting.
-          ${missing ? `Tag “${escapeHtml(missing.label)}” a few times to settle it.` : ''}` }
-      : gap < 0
-      ? { tone:'bad', txt:`<b>Stop doing this.</b> “${escapeHtml(a.label)}” wins only
-          ${Math.round(a.rate)}% — you lost ${a.losses} of ${a.settled} — against your
-          ${Math.round(base)}% average.
-          ${missing ? `Try “${escapeHtml(missing.label)}” instead and tag it.` : ''}` }
-      : { tone:'good', txt:`<b>Keep doing this.</b> “${escapeHtml(a.label)}” wins
-          ${Math.round(a.rate)}%, against your ${Math.round(base)}% average.` };
-  }else{
-    const n = arms.reduce((s, a) => s + a.settled, 0);
-    verdict = { tone:'wait', txt: n
-      ? `Only ${n} tagged trade${n === 1 ? '' : 's'} so far. Tag a few more and this answers itself.`
-      : `Nothing tagged yet. Tick these tags as you journal and this answers itself.` };
-  }
-
-  const hint = q.hint ? _armFor(trades, q.hint.tags) : null;
-  let outcome = null;
-  if(q.outcome){
-    const c = q.outcome;
-    const right = trades.filter(t => t[c.field] === c.right.value).length;
-    const wrong = trades.filter(t => t[c.field] === c.wrong.value).length;
-    const total = right + wrong;
-    if(total) outcome = { right, wrong, total, cfg:c, enough: total >= EM_MIN_N,
-                          good: wrong / total < 0.4 };
-  }
-  return { q, arms, verdict, hint, outcome };
-}
 
 const _hasTag = (t, names) => {
   const on = _canonicalTags(t.unfollowed_rules).map(s => s.toLowerCase());
@@ -3911,8 +3980,13 @@ function renderDisciplinePanel(){
   // ONE list: every tag you tick, worst first. This replaced a rule-group
   // roll-up that hid the individual tag and a set of A/B experiments that
   // needed a second tag you never tick.
-  const board = _tagLeaderboard(FILTERED);
-  const baseTxt = board.length && board[0].base !== null ? Math.round(board[0].base) : null;
+  /* Breach tags only. The observation tags all appear in the three reports
+     above now, each next to the decision it belongs to — listing them again
+     here would be the same evidence twice, and this list answers a different
+     question: which of your own rules do you break, and what does it cost. */
+  const all = _tagLeaderboard(FILTERED);
+  const board = all.filter(r => r.kind === 'breach');
+  const baseTxt = all.length && all[0].base !== null ? Math.round(all[0].base) : null;
 
   /* A table, not paragraphs. Each row was a sentence explaining the same three
      numbers every time, which made a list of eight tags a page of reading for
@@ -3945,7 +4019,7 @@ function renderDisciplinePanel(){
     }).join('')}</tbody>
   </table>`;
 
-  const questionsHtml = TAG_QUESTIONS.map(q => _questionHtml(_answerQuestion(q, FILTERED))).join('');
+  const reportsHtml = TRADE_REPORTS.map(r => _reportHtml(_runReport(r, FILTERED))).join('');
 
   const s = _disciplineSummary(FILTERED, rules);
   const card = (cls, k, v, m) => `<div class="dx-s-card ${cls}">
@@ -3972,62 +4046,34 @@ function renderDisciplinePanel(){
     </div>
   </div>`;
 
+  /* Four reports, in the order the decisions arrive in a trade: you are in it
+     and price reaches the previous high (1), the setup then breaks (2), you
+     consider closing by hand (3). The fourth is not a question — it is the
+     standing list of rules you break, which needs no verdict because the
+     answer is always "stop". */
   body.innerHTML = summaryHtml + `
   <div class="dx-half">
     <div class="dx-half-head"><span class="dx-dot note"></span>
-      <h3>Your two questions</h3></div>
-    ${questionsHtml}
+      <h3>Three questions worth settling</h3>
+      <span class="dx-half-sub">counted in trades, never in money</span></div>
+    ${reportsHtml}
   </div>
-  <details class="dx-detail">
-    <summary><span>Show every tag</span></summary>
-    <div class="dx-halves">
-    <div class="dx-half">
-      <div class="dx-half-head"><span class="dx-dot bad"></span>
-        <h3>What loses you trades</h3>
-        <span class="dx-half-sub">${clean} of ${tagged || FILTERED.length} tagged trades clean</span></div>
-      <p class="dx-lead">Every tag you tick, worst first. <b>Won</b> is compared against your own
-        ${baseTxt === null ? 'average' : `<b>${baseTxt}% average</b>`} — a tag is not bad for winning 45%,
-        it is bad for winning 45% when you normally win more. Hover any row for the full breakdown.</p>
-      ${boardHtml || `<div class="empty-state">Nothing tagged yet — tick the Trade Tags as you journal and this fills itself in.</div>`}
-    </div>
-    </div>
-  </details>`;
+  <div class="dx-half">
+    <div class="dx-half-head"><span class="dx-dot bad"></span>
+      <h3>Rules you break most</h3>
+      <span class="dx-half-sub">${clean} of ${tagged || FILTERED.length} tagged trades clean</span></div>
+    <p class="dx-lead">Ranked by how many trades you lost while breaking each one. <b>Won</b> is
+      measured against your own ${baseTxt === null ? 'average' : `<b>${baseTxt}% average</b>`} —
+      a tag is not bad for winning 45%, it is bad for winning 45% when you normally win more.
+      Hover any row for the breakdown.</p>
+    ${boardHtml || `<div class="empty-state">Nothing tagged yet — tick the Trade Tags as you journal and this fills itself in.</div>`}
+  </div>`;
 }
 
 /* One question, laid out as: the sides you have data for, then the answer.
    Deliberately never says "needs 5 on each side" as its whole output — that
    was the old behaviour and it was the same non-answer every time. */
-function _questionHtml(a){
-  const arms = a.arms.map(x => `<div class="dx-q-arm${x.settled ? '' : ' none'}">
-      <span class="dx-q-a-name">${escapeHtml(x.label)}</span>
-      <span class="dx-q-a-val">${x.settled
-        ? `${x.wins} of ${x.settled} won`
-        : 'never tagged'}</span>
-    </div>`).join('');
 
-  const hint = a.hint && a.hint.n
-    ? `<div class="dx-q-hint"><b>${a.hint.n} trade${a.hint.n === 1 ? '' : 's'}</b>
-       ${escapeHtml(a.q.hint.txt)}.</div>` : '';
-
-  let outcome = '';
-  if(a.outcome){
-    const o = a.outcome, c = o.cfg;
-    outcome = o.enough
-      ? `<div class="dx-q-out ${o.good ? 'good' : 'bad'}">
-          <b>${escapeHtml(o.good ? c.keep : c.drop)}.</b> Of the ${o.total} that closed this way,
-          ${o.right} ${escapeHtml(c.right.label)} and ${o.wrong} ${escapeHtml(c.wrong.label)}.</div>`
-      : `<div class="dx-q-out wait">Only ${o.total} closed this way so far —
-          ${EM_MIN_N} will start to tell you something.</div>`;
-  }
-
-  return `<div class="dx-q">
-    <h4>${escapeHtml(a.q.q)}</h4>
-    <div class="dx-q-arms">${arms}</div>
-    ${hint}
-    <div class="dx-q-verdict ${a.verdict.tone}">${a.verdict.txt}</div>
-    ${outcome}
-  </div>`;
-}
 
 /* ======================== Setup: Pattern · Session · Confluence ===========
 
@@ -4802,14 +4848,18 @@ const UNFOLLOWED_RULES_OPTIONS = [
   // 1 hour HL — and the only question is whether getting out then is worth it.
   // Neither is a fault: he does not know the answer yet, which is exactly why
   // both need recording. Same shape as the breakeven pair.
-  'Held Through Invalidation','Cut on Invalidation',
+  /* The invalidation FOUR, not two. The decision and the outcome are separate
+     facts, and one tag per decision could not tell them apart: "I held" says
+     nothing about whether holding worked. Each decision now has a tag for the
+     time it paid and a tag for the time it did not, which is what makes the
+     Invalidation Report answerable rather than merely descriptive. */
+  'Held Through Invalidation',      // held, and it recovered to TP
+  'Ego Hold Despite Invalidation',  // held, and it went to the stop
+  'Cut on Invalidation',            // cut, and it would have hit the stop anyway
+  'Cut Too Early',                  // cut, and it would have reached TP
   'FOMO Entry','No BE at Prev High/Low','Ignored No-Trade Decision',
   'Non-BnB Setup','Moved Take Profit','Lack of Confluence','BTC Only',
   'Changing Plan',
-  // The other arm of the breakeven experiment. Without it "did not move to BE"
-  // has nothing to be compared against, and the question it exists to answer —
-  // is moving the stop to breakeven worth it — has only one side.
-  "BE'd at Prev High/Low"
 ];
 
 /* This column holds two different kinds of thing, and treating them as one was
@@ -4833,9 +4883,15 @@ const UNFOLLOWED_RULES_OPTIONS = [
 const TAG_OBSERVATIONS = [
   "Would Have BE'd Out",
   'No BE at Prev High/Low',
-  "BE'd at Prev High/Low",
+  /* All four invalidation tags. None of them is a rule broken — they are the
+     two ways of answering one open question and the two ways each can turn
+     out. "Ego Hold" reads like a fault and is not filed as one: whether
+     holding was wrong is what the report is measuring, and a tag cannot both
+     ask the question and assert the answer. */
   'Held Through Invalidation',
+  'Ego Hold Despite Invalidation',
   'Cut on Invalidation',
+  'Cut Too Early',
   // Where the move already was when he entered. These read like faults, and
   // they were filed as faults, but he has not decided they are: whether the
   // 3rd HL/LH or an entry at a key level is actually worse is the thing he is
@@ -4888,17 +4944,12 @@ const TAG_SENTINELS = ['Rules Followed'];
 const TAG_ALIASES = {
   'entered early':   'Entered Without Confirmation',
   'no confirmation': 'Entered Without Confirmation',
-  // Added by hand in the Options editor, and it decided the answer in its own
-  // name: "ego" says holding was wrong. That is the question, not the finding.
-  // The neutral name records the same decision without pre-judging it, so the
-  // journal can be the one to say whether it pays. Harmless if never used.
-  'ego hold despite invalidation': 'Held Through Invalidation',
-  // The same event named by its trigger instead of its meaning. A 3-minute
-  // breakout against the position IS the setup invalidating; not cutting on it
-  // is not cutting on an invalidation. It sat on the breach side, which quietly
-  // decided the very question the invalidation pair exists to ask — and split
-  // the evidence for it across two bins, so neither half could answer.
-  'no cutloss 3mins breakout': 'Held Through Invalidation',
+  /* 'ego hold despite invalidation' used to be folded into 'Held Through
+     Invalidation'. That merge was right while the pair recorded only the
+     DECISION — the name pre-judged an answer the journal was supposed to
+     find. It is wrong now: the four tags each record a decision AND how it
+     ended, and "held and it went to the stop" is its own cell. The alias is
+     gone and the tag stands on its own again. */
 };
 
 /* Tags no longer offered in the checklist but still valid on a trade that
@@ -4916,6 +4967,18 @@ const TAG_RETIRED = {
   // closing early was the right call.
   'early tp':
     'belongs in Exit Type — set it to "Manual Early TP - Valid" if closing early was the right call, or "- Invalid" if it was not, then untick this',
+  /* The Breakeven Report only asks about trades where you did NOT move the
+     stop, because that is the decision you are trying to settle. A trade where
+     you already moved it has nothing left to tell you about whether moving it
+     was worth doing — Post-BE Result covers that one. */
+  "be'd at prev high/low":
+    'no longer needed — the Breakeven Report only weighs trades where you left the stop alone. Untick it; Post-BE Result already records the ones you moved',
+  /* Named by its trigger rather than its meaning, and it cannot be aliased any
+     more: the invalidation tags now carry the OUTCOME as well as the decision,
+     and "no cutloss on the 3min breakout" does not say how the trade ended.
+     Mapping it either way would be inventing that half. */
+  'no cutloss 3mins breakout':
+    'the 3min breakout against you IS the setup invalidating — open the trade and pick "Held Through Invalidation" if it recovered to TP, or "Ego Hold Despite Invalidation" if it went to your stop',
 };
 const _tagRetiredNote = t => TAG_RETIRED[String(t).trim().toLowerCase()] || null;
 
@@ -11052,9 +11115,20 @@ function _journalInvalidFields(r){
   // you moved the stop OR you left it. A trade carrying both is silently
   // dropped from that experiment — the dimension returns null rather than
   // guessing — so without this the evidence just goes quiet.
-  [[["be'd at prev high/low", 'no be at prev high/low'], 'the breakeven decision'],
-   [["be'd at prev high/low", "would have be'd out"],    'the breakeven decision'],
-   [['held through invalidation', 'cut on invalidation'], 'the invalidation decision']
+  /* The tags now carry the OUTCOME as well as the decision, so the exclusions
+     are between outcomes of the same decision — a trade that ran to TP did not
+     also stop you out — and between the two decisions themselves. Only one of
+     the four invalidation tags can be true of any trade, which is six pairs.
+
+     "BE'd at Prev High/Low" is gone from this list with the tag; the breakeven
+     pair is now the two ways leaving the stop alone can end. */
+  [[["would have be'd out", 'no be at prev high/low'],           'the breakeven decision'],
+   [['held through invalidation', 'ego hold despite invalidation'], 'the invalidation decision'],
+   [['held through invalidation', 'cut on invalidation'],           'the invalidation decision'],
+   [['held through invalidation', 'cut too early'],                 'the invalidation decision'],
+   [['ego hold despite invalidation', 'cut on invalidation'],       'the invalidation decision'],
+   [['ego hold despite invalidation', 'cut too early'],             'the invalidation decision'],
+   [['cut on invalidation', 'cut too early'],                       'the invalidation decision'],
   ].forEach(([pair, what]) => {
     const on = _canonicalTags(r.unfollowed_rules).map(s => s.toLowerCase());
     if(pair.every(t => on.includes(t))){
@@ -16470,11 +16544,33 @@ function _checklistBoxesHtml(key, options, selected){
   // Ticking a tag is what decides Rules Followed?, so the answer updates as
   // you tick rather than only appearing after a save.
   const onchange = key === 'unfollowed_rules' ? ' onchange="_refreshDerivedRulesFollowed()"' : '';
-  return options.map(o => `
+  const box = o => `
       <label><input type="checkbox" data-checklist="${escapeHtml(key)}" value="${escapeHtml(o)}" ${
         selected.some(s => norm(s) === norm(o)) ? 'checked' : ''
-      }${onchange}> ${escapeHtml(o)}</label>
-    `).join('');
+      }${onchange}> ${escapeHtml(o)}</label>`;
+
+  if(key !== 'unfollowed_rules') return options.map(box).join('');
+
+  /* Split into the two kinds the app has always distinguished internally but
+     never showed you: a RULE you broke, and something that merely happened.
+     They behave completely differently — a breach drags Rules Followed? to No
+     and lands in the rules list; an observation does neither, it just feeds the
+     report it belongs to. Ticking one when you meant the other quietly moves a
+     trade between those two worlds, and a flat alphabetical list gave no clue
+     which was which. */
+  const rules = options.filter(o => _tagKind(o) === 'breach');
+  const notes = options.filter(o => _tagKind(o) === 'observation');
+  const rest  = options.filter(o => !rules.includes(o) && !notes.includes(o));
+
+  const group = (title, sub, items) => items.length ? `
+    <div class="chk-group">
+      <div class="chk-group-head">${escapeHtml(title)}<em>${escapeHtml(sub)}</em></div>
+      ${items.map(box).join('')}
+    </div>` : '';
+
+  return group('Broke a rule', 'sets Rules Followed? to No', rules)
+       + group('What happened', 'no fault — feeds the reports', notes)
+       + rest.map(box).join('');
 }
 
 // Moves the Rules Followed? select to match the tags as they are ticked, so the
