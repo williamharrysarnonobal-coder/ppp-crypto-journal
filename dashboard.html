@@ -17,7 +17,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<link rel="stylesheet" href="css/style.css?v=278">
+<link rel="stylesheet" href="css/style.css?v=279">
 </head>
 <body>
 
@@ -96,10 +96,18 @@
         <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2Z"/></svg>
         What should I trade?
       </button>
+      <button class="rec-open-btn" onclick="openSetupCheck()" title="Check one setup's recent record before you take it">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+        Setup check
+      </button>
       <button class="rec-open-btn" onclick="openYearOverview()" title="Every month of a year on one screen">
         <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
         Year overview
       </button>
+      <label class="real-toggle" title="Count only Funded and Exchange accounts. Demo and Evaluation P&amp;L is a score in a test, not money you can spend.">
+        <input type="checkbox" id="realMoneyOnly" onchange="applyFilters()">
+        Real money only
+      </label>
       <select id="yearFilter" onchange="onDashYearChange()"></select>
       <select id="monthFilter" onchange="applyFilters()"></select>
       <select id="accountFilter" onchange="applyFilters()">
@@ -192,8 +200,8 @@
 <div class="panel" style="margin-bottom:20px;">
     <h2>Breakdown — where you're actually effective<button type="button" class="panel-info-btn" title="How this is worked out" onclick="event.stopPropagation(); openPanelInfo('breakdown')"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button></h2>
     <div class="tabs" id="breakdownTabs"></div>
-    <div class="row-2">
-      <div><canvas id="breakdownChart" height="260"></canvas></div>
+    <div class="row-2 breakdown-row">
+      <div><canvas id="breakdownChart" height="180"></canvas></div>
       <div id="breakdownBody"></div>
     </div>
   </div>
@@ -1255,6 +1263,24 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="setupCheckModal" onclick="if(event.target===this) closeSetupCheck()">
+  <div class="modal-box sc-box" style="position:relative;">
+    <button class="modal-close" onclick="closeSetupCheck()">✕</button>
+    <div class="sc-head">
+      <h3>Setup check</h3>
+      <div class="sc-picks">
+        <label>Setup
+          <select id="scSetup" onchange="renderSetupCheck()"></select>
+        </label>
+        <label>Symbol
+          <select id="scSymbol" onchange="renderSetupCheck()"></select>
+        </label>
+      </div>
+    </div>
+    <div id="setupCheckBody"></div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="yearOverviewModal" onclick="if(event.target===this) closeYearOverview()">
   <div class="modal-box yo-box" style="position:relative;">
     <button class="modal-close" onclick="closeYearOverview()">✕</button>
@@ -2130,6 +2156,6 @@
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=2"></script>
-<script src="js/dashboard.js?v=468"></script>
+<script src="js/dashboard.js?v=469"></script>
 </body>
 </html>

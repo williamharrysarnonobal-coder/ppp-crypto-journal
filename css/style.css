@@ -413,6 +413,18 @@
    h2; .cal-goal sits inside it, and flex:none there does nothing to stop the
    h2 from squeezing the wrapper — which collapsed the track to nothing and
    left only the medallion and the number showing. */
+/* Sits in the dashboard header beside the year/month/account selects, styled
+   to match them rather than looking like a stray form control. */
+.real-toggle{
+  display:inline-flex;align-items:center;gap:7px;white-space:nowrap;cursor:pointer;
+  font-size:12px;color:var(--muted);
+  padding:6px 11px;border-radius:6px;
+  background:var(--surface);border:1px solid var(--rule);
+}
+.real-toggle:hover{color:var(--ink);border-color:var(--muted);}
+.real-toggle input{width:auto;margin:0;accent-color:var(--win);cursor:pointer;}
+.real-toggle:has(input:checked){color:var(--win);border-color:var(--win);}
+
 .cal-h2{justify-content:flex-start;}
 .cal-h2 > .panel-info-btn{margin:0;}
 .cal-h2 > #calGoalBar{flex:none;margin-left:16px;}
@@ -1172,7 +1184,14 @@
     margin-top:12px;text-transform:uppercase;letter-spacing:.05em;
   }
 
-  table.breakdown tbody tr{cursor:pointer;}
+  /* The chart was 260px tall and the table beside it rarely filled that, so the
+   panel carried a band of empty space under the list. Capped and scrolled: the
+   long tabs (Symbol, Pattern) keep every row, they just do not stretch the
+   panel to fit the longest one. */
+.breakdown-row{align-items:start;}
+.breakdown-row > div:last-child{max-height:230px;overflow-y:auto;}
+
+table.breakdown tbody tr{cursor:pointer;}
   table.breakdown tbody tr:hover{background:var(--surface-2);}
 
   /* ---------- Modal ---------- */
@@ -2195,6 +2214,44 @@
      that matter are on the month's own header and footer. */
   /* Wider than it was: each card now carries a full six-row grid plus two rows
      of stats, and at the old width three of them fought for the same line. */
+  /* ---------- Setup check ---------- */
+  .sc-box{max-width:min(94vw,860px);max-height:88vh;overflow-y:auto;}
+  .sc-head{display:flex;align-items:center;gap:18px;flex-wrap:wrap;margin:0 46px 18px 0;}
+  .sc-head h3{margin:0;}
+  .sc-picks{display:flex;gap:14px;flex-wrap:wrap;margin-left:auto;}
+  .sc-picks label{display:flex;align-items:center;gap:8px;font-size:11px;
+    text-transform:uppercase;letter-spacing:.07em;color:var(--muted);}
+  .sc-picks select{font:inherit;font-size:12.5px;text-transform:none;letter-spacing:0;
+    padding:6px 10px;border-radius:6px;color:var(--ink);
+    background:var(--surface);border:1px solid var(--rule);}
+
+  .sc-verdict{font-size:14px;line-height:1.5;padding:12px 15px;border-radius:8px;
+    margin-bottom:16px;background:var(--surface-2);
+    border-left:3px solid var(--st,var(--muted));}
+  .sc-verdict.good{--st:var(--win);}
+  .sc-verdict.bad{--st:var(--loss);}
+  .sc-verdict.wait{--st:var(--muted);color:var(--muted);}
+
+  .sc-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px;}
+  .sc-win{background:var(--surface-2);border:1px solid var(--rule);
+    border-top:2px solid var(--st,var(--rule));border-radius:9px;padding:14px 16px 12px;}
+  .sc-win.good{--st:var(--win);} .sc-win.bad{--st:var(--loss);}
+  .sc-w-key{font-size:10.5px;font-weight:600;text-transform:uppercase;
+    letter-spacing:.08em;color:var(--muted);}
+  .sc-w-rate{font-family:'IBM Plex Mono',monospace;font-size:30px;font-weight:700;
+    line-height:1.1;letter-spacing:-.02em;margin:4px 0 2px;
+    font-variant-numeric:tabular-nums;color:var(--st,var(--ink));}
+  .sc-w-sub{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted);}
+  .sc-w-more{margin:12px 0 0;padding-top:10px;border-top:1px solid var(--rule);
+    display:grid;grid-template-columns:1fr 1fr;gap:6px 12px;}
+  .sc-w-more > div{display:flex;align-items:baseline;gap:6px;}
+  .sc-w-more dt{font-size:10.5px;color:var(--muted);}
+  .sc-w-more dd{margin:0 0 0 auto;font-family:'IBM Plex Mono',monospace;font-size:11.5px;
+    font-weight:600;font-variant-numeric:tabular-nums;}
+  .sc-w-more dd.up{color:var(--win);} .sc-w-more dd.down{color:var(--loss);}
+  .sc-foot{margin:16px 0 0;font-size:12px;line-height:1.55;color:var(--muted);max-width:70ch;}
+  .sc-foot b{color:var(--ink);font-weight:600;}
+
   .yo-box{max-width:min(97vw,1460px);max-height:90vh;overflow-y:auto;}
   /* The year picker rides in the title row, pushed right. .modal-close is
      absolutely positioned at right:20px, so the row reserves 46px on that side

@@ -1250,8 +1250,19 @@ function applyFilters(){
   const month = document.getElementById('monthFilter')?.value ?? 'all';
   const acct = document.getElementById('accountFilter').value;
 
+  /* Demo and Evaluation money is not money. The P&L on those accounts is a
+     score in a test, and mixing it with Funded profit makes the dashboard's
+     headline number describe something you cannot spend.
+
+     Kept OFF by default, because right now every account is an evaluation and
+     switching it on would empty the page. It earns its place the moment a
+     Funded or Exchange account appears. */
+  const realOnly = document.getElementById('realMoneyOnly')?.checked;
+  const REAL_TYPES = new Set(['funded', 'exchange']);
+
   FILTERED = ALL_TRADES.filter(t => {
     if(acct !== 'all' && t.account !== acct) return false;
+    if(realOnly && !REAL_TYPES.has(String(t.account_type || '').toLowerCase())) return false;
     if(year === 'all' && month === 'all') return true;
     // A trade with no close date has no month to belong to.
     if(!t.close_date) return false;
@@ -1615,6 +1626,126 @@ function _renderCalGoal(monthTrades, y, m){
    as a trophy. currentColor, so the disc around it decides the tint. */
 const _GOAL_TROPHY = `<svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor"
   aria-hidden="true"><path d="M17 3V2H7v1H3v3a4 4 0 0 0 4 4h.3A6 6 0 0 0 11 13.9V17H7v2h10v-2h-4v-3.1A6 6 0 0 0 16.7 10H17a4 4 0 0 0 4-4V3h-4Zm2 3a2 2 0 0 1-2 2V5h2v1ZM5 6V5h2v3a2 2 0 0 1-2-2Z"/></svg>`;
+
+/* ======================== Setup check ================================
+
+   One setup, three windows, before you take the trade. The dashboard answers
+   "how am I doing"; this answers "is THIS worth taking right now", which is a
+   different question and needs a different cut of the same data.
+
+   Three windows on purpose. One number can be a good month sitting on top of a
+   bad quarter, or the reverse — and which of those you are looking at changes
+   the decision. Putting this month, last month and 90 days side by side makes
+   the direction visible without a chart.
+
+   Deliberately reads ALL_TRADES, not FILTERED: the dashboard's year/month
+   selects are for reviewing, and a setup's record should not change because
+   you happened to be looking at August. The account filter is not applied
+   either — the same pattern behaves the same way on a 5K and a 50K. */
+function openSetupCheck(){
+  const setups = [...new Set(ALL_TRADES.map(t => t.pattern_type).filter(Boolean)
+    .filter(p => p !== 'Unspecified'))].sort();
+  const syms = [...new Set(ALL_TRADES.map(t => t.symbol).filter(s => s && s !== '—'))].sort();
+
+  const sel = document.getElementById('scSetup');
+  const sym = document.getElementById('scSymbol');
+  if(!sel || !sym) return;
+  sel.innerHTML = setups.length
+    ? setups.map(s => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join('')
+    : `<option value="">No setups recorded yet</option>`;
+  // One symbol is the situation today, so the picker says so rather than
+  // offering a choice of one and pretending it is a filter.
+  sym.innerHTML = `<option value="all">${syms.length === 1 ? escapeHtml(syms[0]) + ' (all you trade)' : 'All symbols'}</option>`
+    + syms.map(s => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join('');
+
+  renderSetupCheck();
+  document.getElementById('setupCheckModal').classList.add('open');
+}
+function closeSetupCheck(){
+  document.getElementById('setupCheckModal').classList.remove('open');
+}
+
+// The three windows, as [start, end) on close date.
+function _scWindows(now){
+  const y = now.getFullYear(), m = now.getMonth();
+  return [
+    { key:'This month',     from:new Date(y, m, 1),      to:new Date(y, m + 1, 1) },
+    { key:'Previous month', from:new Date(y, m - 1, 1),  to:new Date(y, m, 1) },
+    // Rolling, not calendar — it is the last 90 days from today, so it overlaps
+    // the two above rather than sitting after them. That is the point: it says
+    // whether the recent months are the exception or the pattern.
+    { key:'Last 90 days',   from:new Date(now.getTime() - 90 * 864e5), to:new Date(now.getTime() + 864e5) },
+  ];
+}
+
+function renderSetupCheck(){
+  const body = document.getElementById('setupCheckBody');
+  if(!body) return;
+  const setup = document.getElementById('scSetup')?.value || '';
+  const sym   = document.getElementById('scSymbol')?.value || 'all';
+  if(!setup){ body.innerHTML = `<div class="empty-state">No setups recorded yet.</div>`; return; }
+
+  const pool = ALL_TRADES.filter(t => t.close_date && t.pattern_type === setup
+    && (sym === 'all' || t.symbol === sym));
+
+  const rows = _scWindows(new Date()).map(w => {
+    const ts = pool.filter(t => t.close_date >= w.from && t.close_date < w.to);
+    const s = _tagArmStats(ts);
+    const rrs = ts.map(t => t.rr).filter(v => v !== null && !isNaN(v));
+    return { ...w, ...s, rate:_winRateOf(ts),
+      rr: rrs.length ? rrs.reduce((a, v) => a + v, 0) / rrs.length : null,
+      days: new Set(ts.map(t => t.close_date.getMonth() + '-' + t.close_date.getDate())).size,
+      net: ts.reduce((a, t) => a + netPnl(t), 0) };
+  });
+
+  /* The verdict reads the 90-day window, because that is the one with enough
+     behind it to be a record rather than a streak — but it says so, and the
+     month columns are right there to argue with it. */
+  const long = rows[2];
+  const base = _winRateOf(ALL_TRADES.filter(t => t.close_date));
+  let verdict;
+  if(!long.n){
+    verdict = { tone:'wait', txt:`No <b>${escapeHtml(setup)}</b> trades in the last 90 days.
+      Nothing here can tell you whether to take it.` };
+  }else if(long.settled < EM_MIN_N){
+    verdict = { tone:'wait', txt:`Only ${long.n} in 90 days. Too few to read —
+      ${EM_MIN_N} settled trades is where this starts to mean anything.` };
+  }else{
+    const d = base === null ? 0 : long.rate - base;
+    verdict = d > EM_MIN_GAP
+      ? { tone:'good', txt:`<b>Good setup for you.</b> ${Math.round(long.rate)}% over 90 days
+          against your ${Math.round(base)}% average, on ${long.n} trades.` }
+      : d < -EM_MIN_GAP
+      ? { tone:'bad', txt:`<b>This one is not working.</b> ${Math.round(long.rate)}% over 90 days
+          against your ${Math.round(base)}% average, on ${long.n} trades.` }
+      : { tone:'wait', txt:`About average — ${Math.round(long.rate)}% over 90 days against your
+          ${Math.round(base)}% overall. Nothing here to avoid, nothing to favour.` };
+  }
+
+  const cell = r => {
+    const tone = r.rate === null ? '' : base === null ? ''
+      : r.rate - base > EM_MIN_GAP ? 'good' : r.rate - base < -EM_MIN_GAP ? 'bad' : '';
+    return `<div class="sc-win ${tone}">
+      <div class="sc-w-key">${escapeHtml(r.key)}</div>
+      <div class="sc-w-rate">${r.rate === null ? '—' : Math.round(r.rate) + '%'}</div>
+      <div class="sc-w-sub">${r.n ? `${r.wins}W ${r.losses}L${r.bes ? ` ${r.bes}BE` : ''}` : 'no trades'}</div>
+      <dl class="sc-w-more">
+        <div><dt>Trades</dt><dd>${r.n}</dd></div>
+        <div><dt>Days</dt><dd>${r.days || '—'}</dd></div>
+        <div><dt>Avg RR</dt><dd>${r.rr === null ? '—' : fmtNum(r.rr, 2)}</dd></div>
+        <div><dt>P&amp;L</dt><dd class="${r.net >= 0 ? 'up' : 'down'}">${r.n ? fmtMoney(r.net) : '—'}</dd></div>
+      </dl>
+    </div>`;
+  };
+
+  body.innerHTML = `
+    <div class="sc-verdict ${verdict.tone}">${verdict.txt}</div>
+    <div class="sc-grid">${rows.map(cell).join('')}</div>
+    <p class="sc-foot">Win rate is measured against your <b>${base === null ? '—' : Math.round(base) + '%'}
+      overall</b>, on every account and every period — the dashboard's year and month filters are
+      ignored here, because a setup's record should not change with the page you were looking at.
+      <b>Last 90 days</b> is rolling from today, so it overlaps the two months beside it.</p>`;
+}
 
 /* ======================== Year overview ==============================
 
