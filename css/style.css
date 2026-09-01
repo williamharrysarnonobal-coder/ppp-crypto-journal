@@ -3732,17 +3732,26 @@ table.breakdown tbody tr{cursor:pointer;}
    ng sim-slider.js sa apat na bar nang sabay.
    ========================================================================= */
 
-/* ---- 1. Calendar salary goal ---- */
-.cal-goal-track{height:46px;}
-.cal-goal-track::before{top:34px;}
-.cal-goal-track i{top:34px;}
-.cal-goal-track i::before{top:34px;}
-.cal-goal-track .cal-goal-end{top:34px;}
+/* ---- 1. Calendar salary goal ----
+
+   Ang bar na ito ay KASAMA sa isang hilera ng teksto: "Calendar", ang ⓘ, ang
+   salitang GOAL. Kaya ang linya nito ay dapat nasa GITNA ng sariling kahon —
+   doon nakasentro ang lahat ng kasama nito.
+
+   Ibinaba ko ang linya noon para gumawa ng puwang para sa bula, at inilipat ang
+   GOAL pababa para sumunod. Naayos ang GOAL at naiwan ang "Calendar" — kaya
+   tatlong bagay sa isang hilera at walang dalawang magkapantay. Ang tamang
+   sagot ay hindi ang paggalaw ng label kundi ang paglutang ng BULA paitaas:
+   may 21px na padding ang panel sa ibabaw nito, at 19px lang ang kailangan. */
+.cal-goal-track{height:26px;}
+.cal-goal-track::before{top:50%;}
+.cal-goal-track i{top:50%;}
+.cal-goal-track .cal-goal-end{top:50%;}
 .cal-goal-track u{
-  position:absolute;top:34px;
-  /* Naka-clamp sa SARILING radius lang — sapat para hindi lumabas ang knob sa
-     track, at masyadong maliit para makasira sa pagtugma nito sa dulo ng fill.
-     Ang bula ay naka-clamp ng 20px+; magkaibang layunin, magkaibang sukat. */
+  position:absolute;top:50%;
+  /* Naka-clamp sa sariling radius lang — sapat para manatili ang knob sa loob
+     ng track (kalahati nito ang nakausli dati sa 0%), at masyadong maliit para
+     masira ang pagtugma nito sa dulo ng fill. */
   left:clamp(7.5px, var(--p,0%), calc(100% - 7.5px));
   width:15px;height:15px;border-radius:50%;
   transform:translate(-50%,-50%);z-index:4;
@@ -3751,12 +3760,12 @@ table.breakdown tbody tr{cursor:pointer;}
              0 2px 5px rgba(0,0,0,.45);
   transition:left .6s cubic-bezier(.22,.8,.3,1);
 }
-/* Solido ang bula, hindi balangkas. Sa reference ay madilim ang bula na may
-   puting teksto; madilim na ang tema natin, kaya ang katumbas ng kaibahang
-   iyon ay ang kabaligtaran — puno ng kulay ng tono, madilim ang teksto. */
+/* Lumulutang sa ITAAS ng track, sa padding ng panel. PAREHONG clamp ng knob,
+   kaya laging magkatapat sila — kung mas malaki ang clamp ng bula, sa mababang
+   porsyento ay tuturo ang tuka nito sa tabi ng knob at hindi sa knob. */
 .cal-goal-track b{
-  top:3px;
-  left:clamp(20px, var(--p,0%), calc(100% - 26px));
+  top:-19px;
+  left:clamp(7.5px, var(--p,0%), calc(100% - 7.5px));
   transform:translateX(-50%);
   background:var(--gt,var(--muted));
   color:var(--bg);
@@ -3771,11 +3780,13 @@ table.breakdown tbody tr{cursor:pointer;}
   border-top-color:var(--gt,var(--muted));
 }
 
-/* ---- 2. Year overview: bawat buwan (maliit) ---- */
+/* ---- 2. Year overview: bawat buwan (maliit) ----
+   Ang mga bar na ito ay NAG-IISA sa sariling hilera, walang tekstong katabi,
+   kaya kasya ang bula sa loob ng sariling kahon at hindi na kailangang
+   lumutang palabas. */
 .yo-bar{height:36px;}
 .yo-bar::before{top:27px;}
 .yo-bar i{top:27px;}
-.yo-bar i::before{top:27px;}
 .yo-bar .yo-bar-end{top:27px;}
 .yo-bar u{
   position:absolute;top:27px;
@@ -3788,7 +3799,7 @@ table.breakdown tbody tr{cursor:pointer;}
 }
 .yo-bar b{
   top:2px;
-  left:clamp(16px, var(--p,0%), calc(100% - 20px));
+  left:clamp(5.5px, var(--p,0%), calc(100% - 5.5px));
   transform:translateX(-50%);
   background:var(--gt,var(--muted));
   color:var(--bg);
@@ -3807,12 +3818,11 @@ table.breakdown tbody tr{cursor:pointer;}
 .yo-bar.year{height:46px;}
 .yo-bar.year::before{top:34px;}
 .yo-bar.year i{top:34px;}
-.yo-bar.year i::before{top:34px;}
 .yo-bar.year .yo-bar-end{top:34px;}
 .yo-bar.year u{top:34px;width:15px;height:15px;
   left:clamp(7.5px, var(--p,0%), calc(100% - 7.5px));}
 .yo-bar.year b{top:3px;padding:3px 8px;
-  left:clamp(20px, var(--p,0%), calc(100% - 26px));}
+  left:clamp(7.5px, var(--p,0%), calc(100% - 7.5px));}
 
 /* ---- 4. My Accounts prop firm target ---- */
 .account-progress-bar{height:42px;}
@@ -3831,7 +3841,7 @@ table.breakdown tbody tr{cursor:pointer;}
 }
 .account-progress-pct{
   top:3px;
-  left:clamp(20px, var(--p,0%), calc(100% - 26px));
+  left:clamp(7.5px, var(--p,0%), calc(100% - 7.5px));
   transform:translateX(-50%);
   background:var(--gt,var(--accent));
   color:var(--bg);
@@ -3846,17 +3856,14 @@ table.breakdown tbody tr{cursor:pointer;}
   border-top-color:var(--gt,var(--accent));
 }
 
-/* ---- Ang label sa tabi ng bar ----
+/* ---- 5. Wala nang start dot ----
 
-   Ang .cal-goal ay align-items:center, kaya ang salitang GOAL ay nakasentro sa
-   GITNA ng track (23px ng 46). Pero ang linya ng bar ay nasa 34px — inilipat ko
-   ito pababa para may puwang ang bula, at naiwan ang label. Labing-isang pixel
-   ang pagkakaiba, at iyon ang nakita niya: "hindi pantay ang progressbar at
-   Goal na word".
+   Ang bawat bar ay may bilog dati sa DULONG KALIWA — ang panimula ng linya.
+   May kahulugan iyon noong walang knob. Ngayon ay dalawang magkapatong na
+   bilog sila sa 0%: ang start dot at ang knob, magkasing-laki at magkadikit,
+   na walang linya sa pagitan dahil zero ang fill. Iyon ang "ligaw na tuldok".
 
-   Ang calc ay nagsasabi ng RELASYON, hindi ng isang numero: ang label ay nasa
-   linya, saanman ilagay ang linya. Kung babaguhin ang taas o ang posisyon,
-   susunod ito nang kusa sa halip na tahimik na maghiwalay ulit. */
-.cal-goal{--bar-h:46px; --bar-line:34px;}
-.cal-goal-label,
-.cal-goal-flag{ transform:translateY(calc(var(--bar-line) - var(--bar-h)/2)); }
+   Ang isang slider ay may track at may thumb — wala itong pangatlong marka sa
+   simula. Ang knob na ang panimula ngayon. */
+.cal-goal-track i::before,
+.yo-bar i::before{display:none;}

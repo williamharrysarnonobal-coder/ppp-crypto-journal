@@ -2055,26 +2055,24 @@ function _renderCalGoal(monthTrades, y, m){
      to mark, so it simply became the end cap. Either way it glints. */
   const done = made >= need;
 
-  /* DALAWANG numero, hindi isa — at ang paghalo sa kanila ang bug na nakita
-     niya sa isang buwang lugi.
+  /* Ang bula ay nagsasabi ng TOTOONG bilang, kasama ang negatibo.
 
-     Ang BULA ay nakadikit sa knob, at ang knob ay nasa dulo ng fill. Kaya ang
-     bula ay dapat maglarawan sa KINAROROONAN NG BAR. Sa isang buwang -16%,
-     ang bar ay nasa 0 (walang bar na negatibo) pero ang bula ay nagsasabing
-     "-16%" habang nakalutang sa itaas ng isang knob na nasa dulong kaliwa —
-     dalawang bagay na magkasalungat sa iisang tingin.
+     Sinubukan kong i-clamp ito sa 0% noong akala kong ang negatibo ang sanhi
+     ng gulo. Hindi pala — ang gulo ay ang HINDI PAGKAKATAPAT: ang knob ay nasa
+     dulong kaliwa habang ang bula ay 20px sa kanan nito, kaya tumuturo ang tuka
+     sa tabi ng knob at hindi sa knob. Iisa na ang clamp nila ngayon.
 
-     Ang END CAP ay ibang usapin: lumalabas lang ito kapag naabot na, at doon
-     ang totoong bilang ang mahalaga — ang "203% of your salary" ay dapat
-     mabasa nang buo. */
-  const shownBar  = Math.round(pct);                        // sumusunod sa knob
-  const shownTrue = Math.round(made / need * 100);          // ang totoong bilang
+     At tama siya sa pinagmumulan: ang "-16%" ay ang bagay na kailangan mong
+     malaman. Ang pagpapalit nito ng "0%" ay nagtatago na bumababa ka. Ang bar
+     ay nasa zero dahil walang bar na negatibo; ang BILANG ay nagsasabi ng
+     totoo, at ang pulang kulay ay sumasang-ayon. */
+  const shownTrue = Math.round(made / need * 100);
   holder.innerHTML = `<span class="cal-goal ${tone}" title="${escapeHtml(tip)}">
     <span class="cal-goal-label">Goal</span>
     <span class="cal-goal-track">
       <i style="width:${pct.toFixed(1)}%"></i>
       ${done ? '' : `<u style="--p:${pct.toFixed(1)}%"></u>`}
-      ${done ? '' : `<b style="--p:${pct.toFixed(1)}%">${shownBar}%</b>`}
+      ${done ? '' : `<b style="--p:${pct.toFixed(1)}%">${shownTrue}%</b>`}
       <span class="cal-goal-end">${done ? `${shownTrue}%` : _GOAL_TROPHY}</span>
     </span>
     ${filtered ? '<em class="cal-goal-flag" title="An account filter is on">•</em>' : ''}
@@ -2407,9 +2405,9 @@ function _yearGoalStrip(y, net, goalUsd, today){
   const pctTrue = net / yearGoal * 100;
   const pct = Math.max(0, Math.min(100, pctTrue));
   const hit = net >= yearGoal;
-  // Sumusunod sa knob, gaya ng dalawang ibang bar. Ang pctTrue ay para sa
-  // hover at para sa end cap, kung saan ang totoong bilang ang mahalaga.
-  const shownBar = Math.round(pct);
+  /* Ang pct ang naglalagay ng bar at ng knob (0..100, dahil walang bar na
+     negatibo o lampas sa puno). Ang pctTrue ang lumalabas sa bula at sa end
+     cap, kasama ang negatibo — iyon ang bilang na kailangan mong malaman. */
 
   const isNow  = y === today.getFullYear();
   const isPast = y < today.getFullYear();
@@ -2440,7 +2438,7 @@ function _yearGoalStrip(y, net, goalUsd, today){
     <div class="yo-bar year live ${tone}" title="${escapeHtml(tip)}">
       <i style="width:${pct.toFixed(1)}%"></i>
       ${hit ? '' : `<u style="--p:${pct.toFixed(1)}%"></u>`}
-      ${hit ? '' : `<b style="--p:${pct.toFixed(1)}%">${shownBar}%</b>`}
+      ${hit ? '' : `<b style="--p:${pct.toFixed(1)}%">${Math.round(pctTrue)}%</b>`}
       <span class="yo-bar-end">${hit ? `${Math.round(pctTrue)}%` : _GOAL_TROPHY}</span>
     </div>
     <span class="yo-yg-amt">${fmtMoney(net)} <em>of ${_salMoney(yearGoal, 'USD')}</em></span>
@@ -4623,6 +4621,48 @@ function renderDisciplinePanel(){
     }).join('')}</tbody>
   </table>`;
 
+  /* ANG MGA OBSERBASYON, na-rank din — at ito ang nawawala noon.
+
+     Kinukuwenta na sila ng _tagLeaderboard; sinasala lang sila palabas ng
+     isang linya sa itaas. Makatuwiran ang dahilan noon: lumalabas na sila sa
+     tatlong tanong, kaya doble raw. Pero PITO lang ang tag na nasasagot ng
+     tatlong tanong — ang breakeven pair, ang apat na invalidation, at ang
+     manual exit. Ang natitira — Chased Extended Move, Traded Into Key Level,
+     Entered Without Confirmation — ay walang kinalalagyan kahit saan, kaya
+     hindi mo makita kung alin sa kanila ang kasama sa mga talo mo.
+
+     Isang mahalagang pagkakaiba ang salita: ang obserbasyon ay HINDI mali. Ang
+     "cut this out" ay walang kahulugan para sa isang bagay na hindi mo ginawa
+     nang sadya. Ang tanong dito ay "ano ang nangyayari kapag totoo ito", kaya
+     ganoon din ang hatol. */
+  const notes = all.filter(r => r.kind === 'observation');
+  const noteRow = r => {
+    const d = r.delta;
+    const thin = r.settled < EM_MIN_N;
+    const tone = thin ? '' : (d !== null && d < -EM_MIN_GAP) ? 'bad'
+               : (d !== null && d > EM_MIN_GAP) ? 'good' : '';
+    const verdict = thin ? 'too few'
+                  : tone === 'bad'  ? 'costs you'
+                  : tone === 'good' ? 'works for you' : 'no effect';
+    const tip = `${r.tag} — ${r.wins} won, ${r.losses} lost${r.bes ? `, ${r.bes} breakeven` : ''}`
+      + ` of ${r.n}. ${r.rate === null ? '' : `Wins ${Math.round(r.rate)}% against your ${baseTxt}% average.`}`
+      + (thin ? ` Under ${EM_MIN_N} settled trades, so this is not yet a reading.` : '');
+    return `<tr class="${tone}" title="${escapeHtml(tip)}">
+      <td>${escapeHtml(r.tag)}</td>
+      <td class="n">${r.n}</td>
+      <td class="n lost">${r.losses || '—'}</td>
+      <td class="n rate">${r.rate === null ? '—' : Math.round(r.rate) + '%'}</td>
+      <td class="v">${verdict}</td>
+    </tr>`;
+  };
+  const notesHtml = !notes.length ? '' : `<table class="dx-tbl">
+    <thead><tr>
+      <th>What happened</th><th class="n">Trades</th><th class="n">Lost</th>
+      <th class="n">Won</th><th></th>
+    </tr></thead>
+    <tbody>${notes.map(noteRow).join('')}</tbody>
+  </table>`;
+
   const reportsHtml = TRADE_REPORTS.map(r => _reportHtml(_runReport(r, FILTERED))).join('');
 
   const s = _disciplineSummary(FILTERED, rules);
@@ -4676,6 +4716,17 @@ function renderDisciplinePanel(){
       a tag is not bad for winning 45%, it is bad for winning 45% when you normally win more.
       Hover any row for the breakdown.</p>
     ${boardHtml || `<div class="empty-state">Nothing tagged yet — tick the Trade Tags as you journal and this fills itself in.</div>`}
+  </div>
+  <div class="dx-half">
+    <div class="grp-head">
+      <span class="grp-n">3</span>
+      <h3 class="grp-t">What happened in the trade</h3>
+      <span class="grp-s">no fault — just what was true</span></div>
+    <p class="dx-lead">The tags that record what price did, not what you did wrong. Same
+      reading as above: <b>Won</b> against your own ${baseTxt === null ? 'average' : `<b>${baseTxt}% average</b>`},
+      so a tag that turns up on a lot of losses is telling you something even though
+      nothing about it broke a rule.</p>
+    ${notesHtml || `<div class="empty-state">No observation tags ticked yet.</div>`}
   </div>`;
 }
 
@@ -6558,23 +6609,49 @@ const SALARY_DEFAULTS = {
 let SALARY_SAVE_TIMER = null;
 // UTC month key, matching how _dayKeyUTC buckets days, so a trade never
 // lands in a different month here than it does in the day counts.
+/* LOKAL na oras, hindi UTC — at ito ang mali sa buwanang kuwenta dito.
+
+   Ang Payslip vs P&L lang ang naghahati ng buwan sa UTC. Ang Calendar, ang KPI
+   row, ang Year overview, ang goal bar at ang bawat ibang bumibilang ng pera ay
+   lokal — 111 lugar ang lokal, tatlo ang UTC, at ang tatlo ay narito.
+
+   Sa UAE (UTC+4), ang bawat trade na nagsara sa pagitan ng hatinggabi at
+   alas-kuwatro ng umaga ay nahuhulog sa NAUNANG araw sa UTC — at kung ika-1 ng
+   buwan iyon, sa naunang BUWAN. Iyon ang Asia session mo. Ang isang trade na
+   nagsara ng 2am ng Setyembre 1 ay Setyembre sa Calendar at Agosto rito, kaya
+   hindi magkatugma ang dalawang pahina tungkol sa parehong trade.
+
+   Ang araw na UTC ay tama pa rin sa My Accounts: doon ay panuntunan ng prop
+   firm ang sinusunod at hatinggabing UTC nga ang reset ng araw nila. Pero ang
+   pahinang ito ay tungkol sa buwan ng SAHOD mo, at ang buwan ng isang tao ay
+   lokal. */
+function _dayKeyLocal(d){
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
 function _salaryMonthKey(d){
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}`;
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
 }
 
 function _salaryMonthLabel(key){
   const [y, m] = key.split('-').map(Number);
-  return new Date(Date.UTC(y, m-1, 1)).toLocaleDateString(undefined, { month:'long', year:'numeric', timeZone:'UTC' });
+  return new Date(y, m-1, 1).toLocaleDateString(undefined, { month:'long', year:'numeric' });
 }
 
-// Net P&L per UTC day, and the same days grouped by month — every downstream
-// figure on this page is derived from these two, so they can't disagree.
+/* Net P&L kada LOKAL na araw, at ang parehong araw na nakagrupo ayon sa buwan —
+   lahat ng numero sa pahinang ito ay galing sa dalawang ito, kaya hindi sila
+   maaaring maghiwalay.
+
+   Lokal na araw, hindi UTC, sa parehong dahilan ng buwan sa itaas: ang bilang
+   ng "araw na may trade" dito ay dapat tumugma sa bilang na makikita mo sa
+   Calendar. Sa UTC, ang isang trade na nagsara ng 2am ay nasa araw bago pa ang
+   ipinapakita ng Calendar. */
 function _salaryDayAndMonthBuckets(){
   const dayKeys = {};
   const monthOfDay = {};
   _salaryTrades().forEach(t => {
     const d = new Date(t.close_date);
-    const k = _dayKeyUTC(d);
+    const k = _dayKeyLocal(d);
     dayKeys[k] = (dayKeys[k] || 0) + netPnl(t);
     monthOfDay[k] = _salaryMonthKey(d);
   });
@@ -17803,7 +17880,7 @@ function accountCardHTML(a){
         balanceHTML += `
           <div class="account-progress-bar ${tone}"><div class="account-progress-fill" style="width:${(progressFraction*100).toFixed(1)}%;"></div>
             ${reached ? '' : `<u class="account-progress-knob" style="--p:${(progressFraction*100).toFixed(1)}%"></u>`}
-            ${reached ? '' : `<b class="account-progress-pct" style="--p:${(progressFraction*100).toFixed(1)}%">${pctOfTarget}%</b>`}
+            ${reached ? '' : `<b class="account-progress-pct" style="--p:${(progressFraction*100).toFixed(1)}%">${pctTrue}%</b>`}
             <span class="account-progress-end">${reached ? `${pctTrue}%` : _GOAL_TROPHY}</span></div>
           <div class="account-progress-label">${plPct >= 0 ? '' : '-'}${Math.abs(plPct).toFixed(1)}% of ${a.profit_target_pct}% target</div>
         `;
