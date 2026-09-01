@@ -402,17 +402,25 @@ function renderSettingsPage(){
 
   const mobileGrid = document.getElementById('mobileModeOptionGrid');
   if(mobileGrid){
-    const mobileOn = document.body.classList.contains('mobile-mode');
-    mobileGrid.innerHTML = `
-      <div class="settings-option ${!mobileOn?'active':''}" onclick="setMobileModePreference(false)">
-        <div class="settings-option-name">Desktop</div>
-        <div class="settings-option-sub">Sidebar layout — best on laptops and wide screens.</div>
-      </div>
-      <div class="settings-option ${mobileOn?'active':''}" onclick="setMobileModePreference(true)">
-        <div class="settings-option-name">Mobile</div>
-        <div class="settings-option-sub">One centered column with a corner menu — made for phones.</div>
-      </div>
-    `;
+    /* Ang naka-highlight ay ang PINILI, hindi ang kasalukuyang hitsura.
+       Kung ipinakita natin ang hitsura, ang Automatic sa isang telepono ay
+       magmumukhang Mobile ang napili — at wala nang paraan para makita kung
+       nakasunod ba talaga ito sa screen o naka-pindot lang. */
+    const choice = _mobileModeChoice();
+    const now = document.body.classList.contains('mobile-mode') ? 'Mobile' : 'Desktop';
+    const opt = (val, name, sub) => `
+      <div class="settings-option ${choice === val ? 'active' : ''}"
+           onclick="setMobileModePreference(${val === 'auto' ? "'auto'" : (val === '1')})">
+        <div class="settings-option-name">${name}</div>
+        <div class="settings-option-sub">${sub}</div>
+      </div>`;
+    mobileGrid.innerHTML =
+      opt('auto', 'Automatic',
+          `Follows your screen — phone gets the mobile layout, laptop gets the sidebar. Right now: ${now}.`) +
+      opt('0', 'Desktop',
+          'Sidebar layout — best on laptops and wide screens.') +
+      opt('1', 'Mobile',
+          'One centered column with a corner menu — made for phones.');
   }
 }
 
@@ -438,17 +446,59 @@ function renderSettingsPage(){
   if(saved) applyAccent(saved);
 })();
 
-/* ---------------- Mobile Mode (Settings > Layout) ---------------- */
+/* ---------------- Mobile Mode (Settings > Layout) ----------------
+   Three states, not two:
+
+     '1'     — always Mobile, he picked it
+     '0'     — always Desktop, he picked it
+     'auto'  — follow the screen  (also what a browser with nothing saved gets)
+
+   'auto' is the default, and that matters: the phone layout is 111 CSS rules
+   deep — the whole sidebar-to-drawer switch lives behind body.mobile-mode —
+   and until now NOTHING turned it on except this settings toggle. Opening the
+   site on a phone gave you the full desktop shell: fixed sidebar, wide panels,
+   everything spilling off the side. That is the "sira sira" — not a broken
+   rule anywhere, but the good rules never being asked to apply. */
+const MOBILE_MAX = 820;   // above this the sidebar has room to stay a sidebar
+const MOBILE_MQ  = '(max-width:' + MOBILE_MAX + 'px)';
+
+function _mobileModeChoice(){
+  try{ return localStorage.getItem('ledger-mobile-mode') || 'auto'; }
+  catch(e){ return 'auto'; }
+}
+function _screenWantsMobile(){
+  try{ return window.matchMedia(MOBILE_MQ).matches; }
+  catch(e){ return false; }
+}
+/* Decides and applies, but deliberately WITHOUT saving. An automatic decision
+   is not a choice, and writing it down would freeze the layout at whatever the
+   first visit happened to be — the screen would stop mattering from then on.
+   Only setMobileModePreference() writes. */
+function _resolveMobileMode(){
+  const saved = _mobileModeChoice();
+  const on = saved === '1' ? true
+           : saved === '0' ? false
+           : _screenWantsMobile();
+  const was = document.body.classList.contains('mobile-mode');
+  document.body.classList.toggle('mobile-mode', on);
+  if(!on) closeMobileMenu();
+  return on !== was;   // nagbago ba? — para malaman kung kailangang muling iguhit
+}
+
 function applyMobileMode(on){
-  document.body.classList.toggle('mobile-mode', !!on);
-  if(on){
+  /* 'auto' ay hindi boolean — ang !!'auto' ay true, na siyang magiging
+     tahimik na bug: ang pagpili ng Automatic sa isang laptop ay magbubukas
+     ng phone layout. Ang screen ang sumasagot kapag auto. */
+  const want = on === 'auto' ? _screenWantsMobile() : !!on;
+  document.body.classList.toggle('mobile-mode', want);
+  if(want){
     // The drawer always shows full labels — a collapsed sidebar state
     // makes no sense inside a slide-in menu.
     document.getElementById('sidebar')?.classList.remove('collapsed');
   }else{
     closeMobileMenu();
   }
-  try{ localStorage.setItem('ledger-mobile-mode', on ? '1' : '0'); }catch(e){}
+  try{ localStorage.setItem('ledger-mobile-mode', on === 'auto' ? 'auto' : (on ? '1' : '0')); }catch(e){}
   // Charts keep the canvas size they were first drawn at — redraw them for
   // the new panel widths so they fill/center instead of hugging one side.
   if(FILTERED.length || ALL_TRADES.length){
@@ -481,9 +531,39 @@ function closeMobileMenu(){
 }
 
 (function initMobileMode(){
-  let saved = null;
-  try{ saved = localStorage.getItem('ledger-mobile-mode'); }catch(e){}
-  if(saved === '1') document.body.classList.add('mobile-mode');
+  _resolveMobileMode();
+
+  /* Rotating the phone, or dragging a laptop window narrow, changes the answer.
+     matchMedia fires only when the threshold is actually crossed — not on every
+     pixel of a resize — so this stays cheap.
+
+     Ang muling pagguhit ng chart ay ginagawa lang kapag TALAGANG nagbago ang
+     layout: ang canvas ay nananatili sa laking una itong iginuhit, kaya ang
+     hindi pag-guhit ay nag-iiwan ng chart na hindi kasya sa bagong lapad.
+     Nakatakip din ito sa unang laglag: kung ang auto ay bumukas ng mobile bago
+     pa dumating ang trades, wala pang maiguguhit noon. */
+  const redraw = () => {
+    if(!(FILTERED.length || ALL_TRADES.length)) return;
+    renderEquityCurve();
+    renderWinLossChart();
+    renderDisciplineRadar();
+    renderDayOfWeekChart();
+    renderSessionFrequencyChart();
+    renderBreakdown();
+  };
+  try{
+    const mq = window.matchMedia(MOBILE_MQ);
+    const onChange = () => {
+      if(_mobileModeChoice() !== 'auto') return;   // pinili niya — huwag pakialaman
+      if(_resolveMobileMode()){
+        redraw();
+        if(typeof currentView !== 'undefined' && currentView === 'settings') renderSettingsPage();
+      }
+    };
+    // Ang addListener ay luma pero ito lang ang meron sa lumang iOS Safari.
+    if(mq.addEventListener) mq.addEventListener('change', onChange);
+    else if(mq.addListener) mq.addListener(onChange);
+  }catch(e){}
 })();
 
 // Clears the "needs-input" red flag the moment a flagged field gets a value
@@ -1444,7 +1524,9 @@ function renderKPIs(){
       bar: `<div class="kpi-dual-bar"><div style="width:${rrDisplay}%;background:${cssVar('--win')};"></div><div style="width:${100-rrDisplay}%;background:${cssVar('--loss')};"></div></div>`},
     {label:"Avg win / loss", value: fmtMoney(avgWin).replace('+','')+" / "+fmtMoney(avgLoss), cls:'',
       bar: `<div class="kpi-dual-bar"><div style="width:${winBarPct}%;background:${cssVar('--win')};"></div><div style="width:${100-winBarPct}%;background:${cssVar('--loss')};"></div></div>`},
-    {label:"Current streak", value: streakType ? `${streak} ${streakType}${streak>1?'s':''}` : "—", cls: streakType==='win'?'pos':(streakType==='loss'?'neg':''),
+    // "loss" + "s" ay nagbibigay ng "3 losss". Ang "es" ang tama, gaya ng
+    // ginagawa na ng Total trades sa ibaba nito.
+    {label:"Current streak", value: streakType ? `${streak} ${streakType}${streak>1?(streakType==='loss'?'es':'s'):''}` : "—", cls: streakType==='win'?'pos':(streakType==='loss'?'neg':''),
       bar: streakIcons},
     {label:"Total trades", value: t.length, cls:'',
       bar: t.length ? `<div style="margin-top:8px;font-size:11px;color:var(--muted);">${wins.length} win${wins.length!==1?'s':''} · ${losses.length} loss${losses.length!==1?'es':''}</div>` : ''},
@@ -4185,18 +4267,20 @@ function renderDisciplinePanel(){
      answer is always "stop". */
   body.innerHTML = summaryHtml + `
   <div class="dx-half">
-    <div class="dx-half-head"><span class="dx-dot note"></span>
-      <h3>Three questions worth settling</h3>
-      <span class="dx-half-sub">counted in trades, never in money</span></div>
+    <div class="grp-head">
+      <span class="grp-n">1</span>
+      <h3 class="grp-t">Three questions worth settling</h3>
+      <span class="grp-s">counted in trades, never in money</span></div>
     <table class="rp-tbl">
       <thead><tr><th>Question</th><th>What your tags say</th><th>Suggestion</th></tr></thead>
       <tbody>${reportsHtml}</tbody>
     </table>
   </div>
   <div class="dx-half">
-    <div class="dx-half-head"><span class="dx-dot bad"></span>
-      <h3>Rules you break most</h3>
-      <span class="dx-half-sub">${clean} of ${tagged || FILTERED.length} tagged trades clean</span></div>
+    <div class="grp-head">
+      <span class="grp-n">2</span>
+      <h3 class="grp-t">Rules you break most</h3>
+      <span class="grp-s">${clean} of ${tagged || FILTERED.length} tagged trades clean</span></div>
     <p class="dx-lead">Ranked by how many trades you lost while breaking each one. <b>Won</b> is
       measured against your own ${baseTxt === null ? 'average' : `<b>${baseTxt}% average</b>`} —
       a tag is not bad for winning 45%, it is bad for winning 45% when you normally win more.
@@ -4497,8 +4581,17 @@ function renderSetupPanel(){
   const groups = table.map(g => {
     const cards = g.dims.map(cardHtml).join('');
     if(!cards) return '';
+    // "1 · Before you sit down" carries its step in the string. Split on the
+    // separator so the number can be a chip rather than two characters of the
+    // same faint line it was lost in.
+    const [step, title] = g.group.includes(' · ')
+      ? [g.group.slice(0, g.group.indexOf(' · ')), g.group.slice(g.group.indexOf(' · ') + 3)]
+      : ['', g.group];
     return `<div class="sx-group">
-      <div class="sx-group-name">${escapeHtml(g.group)}</div>
+      <div class="grp-head">
+        ${step ? `<span class="grp-n">${escapeHtml(step)}</span>` : ''}
+        <h4 class="grp-t">${escapeHtml(title)}</h4>
+      </div>
       <div class="sx-grid">${cards}</div></div>`;
   }).join('');
 
@@ -5015,6 +5108,66 @@ const UNFOLLOWED_RULES_OPTIONS = [
    moved with his luck rather than his behaviour — and the question "should I
    move to breakeven at all?" could never be answered, because the two halves of
    the evidence sat in bins with opposite meanings. */
+/* One line per tag, shown on hover in the drawer. Several of these names read
+   as near-synonyms of each other — Revenge Trade against FOMO Entry, Chased
+   Extended Move against Traded Into Key Level — and the four invalidation tags
+   differ only in how the trade ended. Ticking the wrong one is not a small
+   error: it moves a trade to the other side of the report it feeds. */
+const TAG_HELP = {
+  'Rules Followed':
+    'Nothing went wrong. Tick this on its own when the trade followed the plan.',
+
+  // The breakeven pair. Both are trades where the stop was NOT moved.
+  "Would Have BE'd Out":
+    'Price reached the previous high/low, came back to your entry, and then recovered. You did not move the stop and you were right — a breakeven stop would have closed you flat.',
+  'No BE at Prev High/Low':
+    'Price reached the previous high/low, you did not move the stop, and it came back through your entry to the stop. A breakeven stop would have saved the loss.',
+
+  // The invalidation four: two decisions, each with how it ended.
+  'Held Through Invalidation':
+    'The setup broke, you stayed in, and it recovered to take profit. Holding was right.',
+  'Ego Hold Despite Invalidation':
+    'The setup broke, you stayed in, and it went on to your stop. Holding was wrong.',
+  'Cut on Invalidation':
+    'The setup broke, you closed out, and price carried on to where your stop was. Cutting was right.',
+  'Cut Too Early':
+    'The setup broke, you closed out, and price turned and reached take profit without you. Cutting was wrong.',
+
+  // Where the move already was when you entered.
+  'Chased Extended Move':
+    'The move had already run several legs and you took the next one. Right direction, very little of it left.',
+  'Traded Into Key Level':
+    'You entered with a major support or resistance sitting just ahead. The reward was capped before the trade started.',
+  'Entered Without Confirmation':
+    'You were in before the trigger fired — no MACD zero-line cross on the execution timeframe.',
+
+  // Rules.
+  'Overleveraged':
+    'Position bigger than your risk per trade allows.',
+  'Moved Stop Loss':
+    'You moved the stop while the trade was open, other than to breakeven at the previous high/low.',
+  'Removed Stop Loss':
+    'You took the stop off entirely. Not the same as moving it — this is trading with no floor.',
+  'Moved Take Profit':
+    'You moved the target while the trade was open.',
+  'Changing Plan':
+    'You changed the plan mid-trade in some way the two above do not cover.',
+  'Revenge Trade':
+    'Taken to win back a loss you had just taken.',
+  'FOMO Entry':
+    'Taken because the move was leaving without you, not because the setup was there.',
+  'Ignored No-Trade Decision':
+    'You had already decided not to trade, and traded anyway.',
+  'Non-BnB Setup':
+    'Not one of your bread-and-butter setups.',
+  'Lack of Confluence':
+    'You took it knowing the checklist did not support it.',
+  'Against Daily Bias / HTF Bias':
+    'Taken against the higher timeframe direction.',
+  'BTC Only':
+    'You traded something other than BTC.',
+};
+
 const TAG_OBSERVATIONS = [
   "Would Have BE'd Out",
   'No BE at Prev High/Low',
@@ -11231,7 +11384,11 @@ function _journalInvalidFields(r){
   if(Array.isArray(TRADING_ACCOUNTS) && TRADING_ACCOUNTS.length &&
      !_isBlankish(r.account) &&
      !TRADING_ACCOUNTS.some(a => a.account_name === r.account) &&
-     !(FIELD_OPTIONS.account || []).some(o => o.toLowerCase() === String(r.account).toLowerCase())){
+     // String() sa magkabilang panig. Ang kanan ay nadepensahan na; ang kaliwa
+     // ay hindi, at ang isang blangkong pangalan ng account sa FIELD_OPTIONS ay
+     // sumasabog dito — hindi lang sa isang hilera kundi sa BUONG Trade Journal,
+     // na nagiging walang laman sa likod ng "Couldn't load your trades".
+     !(FIELD_OPTIONS.account || []).some(o => String(o).toLowerCase() === String(r.account).toLowerCase())){
     bad.push({ key:'account', label:'Account',
                value:`${r.account} — no account by that name` });
   }
@@ -16679,8 +16836,12 @@ function _checklistBoxesHtml(key, options, selected){
   // Ticking a tag is what decides Rules Followed?, so the answer updates as
   // you tick rather than only appearing after a save.
   const onchange = key === 'unfollowed_rules' ? ' onchange="_refreshDerivedRulesFollowed()"' : '';
+  // The help line rides on the label's title. Several of these names are near
+  // enough to each other to be picked wrongly, and a wrong tick sends the trade
+  // to the other side of the report it feeds.
+  const help = o => (key === 'unfollowed_rules' && TAG_HELP[o]) ? ` title="${escapeHtml(TAG_HELP[o])}"` : '';
   const box = o => `
-      <label><input type="checkbox" data-checklist="${escapeHtml(key)}" value="${escapeHtml(o)}" ${
+      <label${help(o)}><input type="checkbox" data-checklist="${escapeHtml(key)}" value="${escapeHtml(o)}" ${
         selected.some(s => norm(s) === norm(o)) ? 'checked' : ''
       }${onchange}> ${escapeHtml(o)}</label>`;
 
@@ -16700,7 +16861,7 @@ function _checklistBoxesHtml(key, options, selected){
   const group = (title, sub, items) => items.length ? `
     <div class="chk-group">
       <div class="chk-group-head">${escapeHtml(title)}<em>${escapeHtml(sub)}</em></div>
-      ${items.map(box).join('')}
+      <div class="chk-cols">${items.map(box).join('')}</div>
     </div>` : '';
 
   return group('Broke a rule', 'sets Rules Followed? to No', rules)

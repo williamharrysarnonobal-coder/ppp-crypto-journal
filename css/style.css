@@ -328,12 +328,33 @@
      Journal above — pushes the canvas to the edges so the Screener's 8
      columns get maximum real width instead of losing 22px to each side. */
   #view-alerts.active{margin-left:-22px;margin-right:-22px;padding-left:10px;padding-right:10px;}
+
+  /* Ang dalawang view sa itaas ay "binabawi" ang gilid na padding ng .content
+     sa pamamagitan ng katumbas na negatibong margin, para umabot sa gilid ng
+     screen ang kanilang canvas. Ang -22px na iyon ay nakakabit sa padding ng
+     DESKTOP — at bumababa sa 14px ang .content sa telepono, sa dalawang
+     magkaibang daan: sa body.mobile-mode at sa max-width:800px.
+
+     Nanatiling -22px ang margin sa magkabilang panig, kaya 8px ang lumalampas
+     sa bawat gilid. At hindi ito naglalabas ng scrollbar: sa telepono, ang
+     sagot ng Chrome sa lumalampas na nilalaman ay palakihin ang layout
+     viewport at i-zoom out ang BUONG pahina — 368px sa isang 360px na screen,
+     lahat lumiliit. Kaya kailangang tumugma ang binabawi sa padding na
+     talagang naroroon. */
+  @media(max-width:800px){
+    #view-journal.active{margin-left:-14px;margin-right:-14px;}
+    #view-alerts.active{margin-left:-14px;margin-right:-14px;}
+  }
+  body.mobile-mode #view-journal.active,
+  body.mobile-mode #view-alerts.active{margin-left:-14px;margin-right:-14px;}
   header.top{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:24px;border-bottom:1px solid var(--rule);padding-bottom:18px;}
   header.top > div:first-child{display:flex;flex-direction:column;gap:4px;}
   header.top .header-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
   header.top h1{font-family:var(--font-ui);font-weight:500;font-size:26px;margin:0;letter-spacing:.01em;}
   header.top .sub{color:var(--muted);font-size:13px;}
-  .filters{display:flex;gap:8px;align-items:center;}
+  /* Four buttons and three selects now. Without wrap they push the header wider
+   than the screen and take the whole page with them. */
+.filters{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
   select{
     background:var(--surface-2);border:1px solid var(--rule);color:var(--ink);
     padding:7px 10px;border-radius:6px;font-size:12px;font-family:var(--font-ui);
@@ -1775,7 +1796,7 @@ table.breakdown tbody tr{cursor:pointer;}
   .profile-rule-static:last-child{border-bottom:none;}
 
   /* ---------- My Accounts (prop firm accounts + their rules) ---------- */
-  .account-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(400px,1fr));gap:20px;}
+  .account-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(400px,100%),1fr));gap:20px;}
   .account-card{position:relative;background:var(--surface-2);border:1px solid var(--rule);border-radius:10px;padding:26px 28px;cursor:pointer;transition:border-color .15s ease;}
   .account-card:hover{border-color:var(--accent);}
   .account-card-status{position:absolute;top:16px;right:16px;}
@@ -2200,9 +2221,33 @@ table.breakdown tbody tr{cursor:pointer;}
      colour of the leading dot is the only cue needed once you know that. */
   .dx-half{padding:2px 0 4px;}
   .dx-half + .dx-half{margin-top:22px;padding-top:22px;border-top:1px solid var(--rule);}
-  .dx-half-head{display:flex;align-items:baseline;gap:10px;margin-bottom:5px;flex-wrap:wrap;}
-  .dx-half-head h3{font-size:16px;font-weight:600;margin:0;}
-  .dx-half-sub{margin-left:auto;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted);}
+  /* ---------- Group header ----------
+     Shared by Discipline & Experiments and by Pattern, Session & Confluence,
+     because they had the same fault: an 11px muted uppercase line sitting a
+     few pixels above the content it introduced, lighter and smaller than the
+     rows underneath it. It read as a caption on the block above rather than a
+     heading on the block below.
+
+     A header has to win against its own content. This one is a band: solid
+     ground, a gold rail, a numbered chip, and the title in full-strength ink
+     at a size no row in either panel uses. */
+  .grp-head{
+    display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+    margin:0 0 14px;padding:10px 14px;
+    background:var(--surface);
+    border:1px solid var(--rule);border-left:3px solid var(--accent);
+    border-radius:8px;
+  }
+  .grp-n{
+    flex:none;display:inline-flex;align-items:center;justify-content:center;
+    width:22px;height:22px;border-radius:50%;
+    background:var(--accent);color:var(--bg);
+    font-family:'IBM Plex Mono',monospace;font-size:11.5px;font-weight:700;
+  }
+  .grp-t{font-size:14.5px;font-weight:700;letter-spacing:.01em;color:var(--ink);margin:0;}
+  .grp-s{margin-left:auto;font-family:'IBM Plex Mono',monospace;font-size:11px;
+    color:var(--muted);white-space:nowrap;}
+  .grp-head .dx-dot{margin-right:-4px;}
   .dx-dot{width:8px;height:8px;border-radius:50%;flex:none;transform:translateY(-1px);}
   .dx-dot.bad{background:var(--loss);}
   .dx-dot.note{background:var(--info);}
@@ -2484,6 +2529,19 @@ table.breakdown tbody tr{cursor:pointer;}
     .rp-tbl td.rp-s{padding-left:12px;}
   }
 
+  /* ---------- Wide tables on a phone ----------
+     Mobile Mode is a manual switch that never turns itself on, so a phone gets
+     the desktop layout by default. These two tables have five and seven
+     columns of aligned figures; stacking them would destroy the alignment that
+     is the entire reason they are tables, so they scroll inside themselves
+     instead — and the PAGE stays put, which is the part that matters. */
+  @media(max-width:640px){
+    table.dx-tbl, table.breakdown{display:block;overflow-x:auto;
+      -webkit-overflow-scrolling:touch;}
+    table.dx-tbl thead, table.breakdown thead{white-space:nowrap;}
+    table.dx-tbl td:first-child{min-width:150px;}
+  }
+
   /* ---------- What loses you trades ----------
      A table, not a stack of paragraphs. Eight tags each explaining the same
      three numbers in prose was a page of reading for something meant to be
@@ -2550,11 +2608,13 @@ table.breakdown tbody tr{cursor:pointer;}
 
 
 /* ---------- Pattern · Session · Confluence ---------- */
-  .sx-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(400px,1fr));gap:16px;}
+  /* min() so the column can go BELOW 400px on a narrow screen. Plain
+   minmax(400px,1fr) does not collapse — auto-fit removes empty columns, it
+   never shrinks the minimum, so on a 360px phone the card stays 400px and
+   the page scrolls sideways. */
+.sx-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(400px,100%),1fr));gap:16px;}
 
 .sx-group + .sx-group{margin-top:24px;}
-.sx-group-name{font-size:11px;font-weight:650;text-transform:uppercase;letter-spacing:.09em;
-    color:var(--muted);margin-bottom:11px;padding-bottom:7px;border-bottom:1px solid var(--rule);}
   .sx-card{background:var(--surface-2);border:1px solid var(--rule);border-radius:9px;padding:15px 17px 13px;}
   .sx-card-head{display:flex;align-items:baseline;gap:9px;margin-bottom:10px;
     padding-bottom:8px;border-bottom:1px solid var(--rule);}
@@ -2839,9 +2899,19 @@ table.breakdown tbody tr{cursor:pointer;}
   }
   .checklist-box input[type=checkbox]{width:auto;accent-color:var(--accent);}
 
-/* Trade Tags only: a rule you broke and a thing that happened are not the same
-   kind of tick, and the list gave no sign of which was which. The heading
-   sticks so you can still see which half you are in after scrolling. */
+/* Trade Tags: 22 options in a 160px scroller meant hunting for the one you
+   wanted four at a time. Two columns fit the 460px drawer and put the whole
+   list on screen at once, so picking is reading rather than scrolling.
+
+   The cap is raised rather than removed — a user-added option could still make
+   the list long, and an unbounded box would push the Save button off the
+   bottom of the drawer. */
+.checklist-box[data-checklist-for="unfollowed_rules"]{max-height:none;}
+.chk-cols{display:grid;grid-template-columns:repeat(auto-fill,minmax(185px,1fr));gap:0 12px;}
+.chk-cols label{padding:3px 0;}
+
+/* A rule you broke and a thing that happened are not the same kind of tick,
+   and the list gave no sign of which was which. */
 .chk-group + .chk-group{margin-top:10px;padding-top:9px;border-top:1px solid var(--rule);}
 .chk-group-head{
   position:sticky;top:-8px;z-index:1;
