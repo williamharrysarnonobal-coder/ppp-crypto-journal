@@ -3911,6 +3911,17 @@ body.mobile-mode .yo-j-line{font-size:13px;}
 .yo-f-rules span{color:var(--muted);letter-spacing:.02em;}
 .yo-f-rules b{font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums;}
 .yo-f-rules i{margin-left:auto;font-style:normal;color:var(--muted);font-variant-numeric:tabular-nums;}
-.yo-f-rules.win b, .yo-f-rules.win i{color:var(--win);}
+/* Tatlong banda, gaya ng win rate sa buong app: berde kapag mahigpit ka,
+   kahel kapag katamtaman, pula kapag hindi. Ang abo ay para sa kulang na
+   datos — hindi ito hatol, wala pang masasabi. */
+.yo-f-rules.win  b, .yo-f-rules.win  i{color:var(--win);}
+.yo-f-rules.mid  b, .yo-f-rules.mid  i{color:var(--accent);}
 .yo-f-rules.loss b, .yo-f-rules.loss i{color:var(--loss);}
-.yo-f-rules.none b{color:var(--muted);}
+.yo-f-rules.none b, .yo-f-rules.none i{color:var(--muted);}
+
+/* Nakapirming lapad ang bilang at ang porsyento, at tabular ang numero, kaya
+   NAKAHANAY ang labindalawang linya sa buong grid. Kung mag-iiba ng lapad ang
+   "5/10" at ang "2/2", ang porsyento ay uurong-sulong sa bawat card at iyon
+   ang nakikitang hindi pantay-pantay. */
+.yo-f-rules b{min-width:44px;text-align:right;}
+.yo-f-rules i{min-width:34px;text-align:right;}

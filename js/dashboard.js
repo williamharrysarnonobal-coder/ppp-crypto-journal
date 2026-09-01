@@ -2495,8 +2495,9 @@ function renderYearOverview(){
       const br = tg.filter(t => _brokenRuleTags(t.unfollowed_rules).length).length;
       const kept = tg.length - br;
       const pct = Math.round(kept / tg.length * 100);
+      const k = _rulesKeptClass(pct, tg.length);
       return stat('Rules kept', `${kept} of ${tg.length}`,
-        pct >= 80 ? 'win' : pct < 50 ? 'loss' : '',
+        k === 'mid' ? 'warn' : k === 'none' ? '' : k,
         `${kept} of ${tg.length} tagged trades broke none of your rules — ${pct}%. `
         + `${br} broke at least one. ${yrAll.length - tg.length} not tagged yet.`);
     })()}
@@ -2554,15 +2555,19 @@ function renderYearOverview(){
              ibaba nito. Tinatakan lang ang denominador, gaya ng Calendar —
              ang walang tatak ay hindi naitala, hindi malinis. */
           const tg = (mo.trades || []).filter(t => _ruleTags(t.unfollowed_rules).length);
+          /* Laging tatlong bahagi ang linya — label, bilang, porsyento — kahit
+             walang tatak. Ang buwang nawawalan ng <i> ay nag-iiba ng haba, at
+             ang labindalawang card na magkakaiba ang haba ng huling linya ang
+             siyang "hindi pantay-pantay". Isang em dash sa bawat puwang. */
           if(!tg.length) return `<div class="yo-f-rules none"
             title="No trade this month has its Trade Tags ticked yet."
-            ><span>rules kept</span><b>—</b></div>`;
+            ><span>Rules Kept</span><b>—</b><i>—</i></div>`;
           const br = tg.filter(t => _brokenRuleTags(t.unfollowed_rules).length).length;
           const kept = tg.length - br;
           const pct = Math.round(kept / tg.length * 100);
-          return `<div class="yo-f-rules ${pct >= 80 ? 'win' : pct < 50 ? 'loss' : ''}"
+          return `<div class="yo-f-rules ${_rulesKeptClass(pct, tg.length)}"
             title="${kept} of ${tg.length} tagged trades kept every rule — ${pct}%. ${br} broke at least one."
-            ><span>rules kept</span><b>${kept}/${tg.length}</b><i>${pct}%</i></div>`;
+            ><span>Rules Kept</span><b>${kept}/${tg.length}</b><i>${pct}%</i></div>`;
         })()}
         ${_yearGoalBar(mo, goalUsd)}
       </div>` : `<div class="yo-m-foot empty">no trades</div>`}
@@ -2809,7 +2814,7 @@ function renderCalendar(){
           const kept = tagged.length - broke.length;
           const pct = Math.round(kept / tagged.length * 100);
           return cell('Rules kept', `${kept}/${tagged.length}`, {
-            color: pct >= 80 ? cssVar('--win') : pct < 50 ? cssVar('--loss') : undefined,
+            color: _rulesKeptTint(pct, tagged.length),
             title: `${kept} of ${tagged.length} tagged trades broke none of your rules — ${pct}%. `
               + `${broke.length} trade${broke.length === 1 ? '' : 's'} broke at least one. `
               + `${monthTrades.length - tagged.length} not tagged yet.` });
@@ -5616,6 +5621,34 @@ function _winRateTint(rate, count){
   if(rate >= WIN_RATE_STRONG) return 'var(--win)';
   if(rate >= WIN_RATE_OK) return 'var(--accent)';
   return 'var(--loss)';
+}
+
+/* ---------------- Ang kulay ng Rules Kept ----------------
+
+   Parehong hugis ng _winRateTint sa itaas — tatlong banda at isang abo para sa
+   kulang na datos — pero MAS MATAAS ang pamantayan, at may dahilan iyon.
+
+   Ang win rate ay hindi mo kontrolado: ang 45% ay maaaring mahusay na trading
+   sa isang mahirap na buwan. Ang disiplina ay BUO mong kontrolado. Ang
+   pagsira ng rule sa 3 trade sa bawat 10 ay hindi "ayos lang" — kaya ang
+   berde ay nagsisimula sa 85%, hindi sa 50%.
+
+   Isang function para sa tatlong lugar — ang Calendar, ang stats row ng taon,
+   at ang bawat month card. Kung magkakaiba sila ng hangganan, ang parehong
+   buwan ay magiging berde sa isa at kahel sa iba. */
+const RULES_KEPT_STRONG = 85, RULES_KEPT_OK = 65, RULES_KEPT_MIN_N = 3;
+function _rulesKeptTint(pct, tagged){
+  if(pct === null || pct === undefined) return 'var(--muted)';
+  if(tagged !== undefined && tagged < RULES_KEPT_MIN_N) return 'var(--muted)';
+  if(pct >= RULES_KEPT_STRONG) return 'var(--win)';
+  if(pct >= RULES_KEPT_OK) return 'var(--accent)';
+  return 'var(--loss)';
+}
+// Ang parehong banda bilang pangalan ng klase, para sa CSS.
+function _rulesKeptClass(pct, tagged){
+  if(pct === null || pct === undefined) return 'none';
+  if(tagged !== undefined && tagged < RULES_KEPT_MIN_N) return 'none';
+  return pct >= RULES_KEPT_STRONG ? 'win' : pct >= RULES_KEPT_OK ? 'mid' : 'loss';
 }
 
 
