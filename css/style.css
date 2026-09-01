@@ -2447,49 +2447,42 @@ table.breakdown tbody tr{cursor:pointer;}
                0 0 8px color-mix(in srgb, var(--win) 60%, transparent);
   }
 
-  /* ---------- A report ----------
-     One decision, and the two ways it turned out. The bar is the share of the
-     time the decision was RIGHT — not a share of your trades — so a decision
-     you make rarely and a decision you make constantly are read the same way. */
-  .rp{border:1px solid var(--rule);border-radius:9px;background:var(--surface-2);
-    padding:15px 17px 16px;margin-bottom:11px;}
-  .rp-head{display:flex;align-items:baseline;gap:10px;margin-bottom:3px;}
-  .rp-head h4{font-size:14.5px;font-weight:650;margin:0;}
-  .rp-n{margin-left:auto;font-family:'IBM Plex Mono',monospace;font-size:10.5px;
-    color:var(--muted);white-space:nowrap;}
-  .rp-q{margin:0 0 9px;font-size:13.5px;line-height:1.45;color:var(--ink);}
-  .rp-lead{margin:0 0 13px;font-size:12.5px;line-height:1.5;color:var(--muted);max-width:66ch;}
-  .rp-lead b{color:var(--ink);font-weight:600;}
+  /* ---------- The three questions, as a table ----------
+     Question, evidence, what to do. Three cards with bars and lead paragraphs
+     were a screen of reading for three answers; three rows put the same
+     answers where you can read straight down the Suggestion column. */
+  .rp-tbl{width:100%;border-collapse:collapse;font-size:13px;}
+  .rp-tbl th{font-size:9.5px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;
+    color:var(--muted);text-align:left;padding:0 14px 8px 0;border-bottom:1px solid var(--rule);}
+  .rp-tbl th:last-child{padding-right:0;}
+  .rp-tbl td{padding:13px 14px 13px 0;border-bottom:1px solid var(--rule);
+    vertical-align:top;line-height:1.5;}
+  .rp-tbl tr:last-child td{border-bottom:0;}
+  .rp-tbl td:last-child{padding-right:0;}
 
-  .rp-arms{display:flex;flex-direction:column;gap:11px;margin-bottom:12px;}
-  .rp-arm{background:var(--surface);border:1px solid var(--rule);border-radius:7px;
-    padding:11px 13px 12px;}
-  .rp-arm.none{opacity:.55;}
-  .rp-a-head{display:flex;align-items:baseline;gap:10px;margin-bottom:8px;}
-  .rp-a-name{font-size:13px;font-weight:600;}
-  .rp-a-score{margin-left:auto;font-family:'IBM Plex Mono',monospace;font-size:11px;
-    color:var(--muted);white-space:nowrap;}
-  .rp-a-score b{font-size:13px;color:var(--ink);margin-left:5px;}
+  .rp-tbl td.rp-q{width:30%;font-weight:600;color:var(--ink);}
+  .rp-n{display:block;margin-top:4px;font-family:'IBM Plex Mono',monospace;
+    font-size:10.5px;font-weight:400;color:var(--muted);}
 
-  /* Green from the left is the share that went right; the rest stays red, so
-     the split is legible without reading either number. */
-  .rp-a-bar{height:6px;border-radius:999px;background:var(--loss);overflow:hidden;}
-  .rp-arm.none .rp-a-bar{background:var(--rule);}
-  .rp-a-bar i{display:block;height:100%;border-radius:999px;background:var(--win);
-    transition:width .5s cubic-bezier(.22,.8,.3,1);}
+  .rp-tbl td.rp-e{width:36%;color:var(--muted);font-size:12.5px;}
+  .rp-e b{color:var(--ink);font-weight:600;}
+  .rp-e i{font-style:normal;font-family:'IBM Plex Mono',monospace;font-weight:700;}
+  .rp-g{color:var(--win);} .rp-b{color:var(--loss);}
 
-  .rp-a-legs{display:flex;gap:16px;flex-wrap:wrap;margin-top:8px;}
-  .rp-leg{font-size:11.5px;color:var(--muted);line-height:1.4;}
-  .rp-leg b{font-family:'IBM Plex Mono',monospace;font-size:12.5px;font-weight:700;
-    margin-right:4px;}
-  .rp-leg.good b{color:var(--win);}
-  .rp-leg.bad b{color:var(--loss);}
+  /* The suggestion column carries the state, because that is the column you
+     read when you only read one. */
+  .rp-tbl td.rp-s{padding-left:14px;border-left:3px solid var(--rt,var(--rule));}
+  .rp-tbl tr.good td.rp-s{--rt:var(--win);}
+  .rp-tbl tr.bad  td.rp-s{--rt:var(--loss);}
+  .rp-tbl tr.wait td.rp-s{--rt:var(--muted);color:var(--muted);}
 
-  .rp-verdict{font-size:13.5px;line-height:1.5;padding:10px 13px;border-radius:7px;
-    background:var(--surface);border-left:3px solid var(--rt,var(--muted));}
-  .rp-verdict.good{--rt:var(--win);}
-  .rp-verdict.bad{--rt:var(--loss);}
-  .rp-verdict.wait{--rt:var(--muted);color:var(--muted);}
+  @media(max-width:640px){
+    .rp-tbl, .rp-tbl tbody, .rp-tbl tr, .rp-tbl td{display:block;width:auto;}
+    .rp-tbl thead{display:none;}
+    .rp-tbl tr{border-bottom:1px solid var(--rule);padding:12px 0;}
+    .rp-tbl td{border-bottom:0;padding:0 0 8px;}
+    .rp-tbl td.rp-s{padding-left:12px;}
+  }
 
   /* ---------- What loses you trades ----------
      A table, not a stack of paragraphs. Eight tags each explaining the same

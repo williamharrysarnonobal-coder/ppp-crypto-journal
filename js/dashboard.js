@@ -3816,9 +3816,10 @@ const TRADE_REPORTS = [
     id:'be',
     title:'Breakeven',
     q:'When price reaches the previous high or low, should I move my stop to entry?',
-    lead:`Both tags below are trades where you <b>left the stop alone</b>. That is the
-          decision being judged, so the trades where you moved it are not in here —
-          they have nothing left to say about whether moving it was worth doing.`,
+    /* The `lead` paragraphs went with the card layout. In a table there is one
+       line per question and no room for a preamble — and the preamble was
+       explaining a design decision rather than telling you anything about your
+       trades. The reasoning lives in these comments now, where it belongs. */
     arms:[{
       label:'Leaving the stop alone',
       good:{ tag:"Would Have BE'd Out",    txt:'ran on and hit take profit' },
@@ -3835,8 +3836,8 @@ const TRADE_REPORTS = [
     id:'inval',
     title:'Invalidation',
     q:'When the setup invalidates, should I cut?',
-    lead:`Two decisions, and each one recorded with how it ended. The winner is the
-          decision that was right more often — not the one you made more often.`,
+    // Two decisions, each recorded with how it ended. The winner is the one
+    // that was right more OFTEN — not the one you reached for more often.
     arms:[
       { label:'Holding through it',
         good:{ tag:'Held Through Invalidation',     txt:'recovered and hit take profit' },
@@ -3850,8 +3851,8 @@ const TRADE_REPORTS = [
     id:'exit',
     title:'Manual early exit',
     q:'Should I close a trade by hand instead of letting it run to TP or SL?',
-    lead:`Read from <b>Exit Type</b>, not from a tag — closing early is how the trade
-          ended, and that is what the column is for.`,
+    // Read from Exit Type, not from a tag — closing early is how the trade
+    // ENDED, and that is what the column is for.
     field:'exit_type',
     arms:[{
       label:'Closing early by hand',
@@ -3982,34 +3983,26 @@ function _runReport(rep, trades){
   return { rep, arms, total, verdict };
 }
 
-function _reportHtml(r){
-  const arms = r.arms.map(a => {
-    const pct = a.rate === null ? null : Math.round(a.rate);
-    const w = a.n ? (a.good / a.n * 100) : 0;
-    return `<div class="rp-arm${a.n ? '' : ' none'}">
-      <div class="rp-a-head">
-        <span class="rp-a-name">${escapeHtml(a.label)}</span>
-        <span class="rp-a-score">${a.n ? `${a.good} of ${a.n} right` : 'never tagged'}${
-          pct === null ? '' : ` <b>${pct}%</b>`}</span>
-      </div>
-      <div class="rp-a-bar"><i style="width:${w.toFixed(1)}%"></i></div>
-      <div class="rp-a-legs">
-        <span class="rp-leg good"><b>${a.good}</b> ${escapeHtml(a.goodTxt || '')}</span>
-        <span class="rp-leg bad"><b>${a.bad}</b> ${escapeHtml(a.badTxt || '')}</span>
-      </div>
-    </div>`;
-  }).join('');
+/* One row: the question, what the tags say, and what to do about it.
 
-  return `<div class="rp">
-    <div class="rp-head">
-      <h4>${escapeHtml(r.rep.title)}</h4>
-      <span class="rp-n">${r.total} tagged</span>
-    </div>
-    <p class="rp-q">${escapeHtml(r.rep.q)}</p>
-    ${r.rep.lead ? `<p class="rp-lead">${r.rep.lead}</p>` : ''}
-    <div class="rp-arms">${arms}</div>
-    <div class="rp-verdict ${r.verdict.tone}">${r.verdict.txt}</div>
-  </div>`;
+   This was three stacked cards with bars, sub-labels and a lead paragraph
+   each — about a screen of reading for three answers. A table puts the same
+   three answers on three lines, and the columns mean you can read straight
+   down "what should I change" without passing through anything else. */
+function _reportHtml(r){
+  const explain = r.arms.map(a => a.n
+    ? `<b>${escapeHtml(a.label)}</b> ${a.n} time${a.n === 1 ? '' : 's'} —
+       <i class="rp-g">${a.good}</i> ${escapeHtml(a.goodTxt || 'worked')},
+       <i class="rp-b">${a.bad}</i> ${escapeHtml(a.badTxt || 'did not')}.`
+    : `<b>${escapeHtml(a.label)}</b> — never tagged.`
+  ).join('<br>');
+
+  return `<tr class="${r.verdict.tone}">
+    <td class="rp-q">${escapeHtml(r.rep.q)}
+      <span class="rp-n">${r.total} tagged</span></td>
+    <td class="rp-e">${explain}</td>
+    <td class="rp-s">${r.verdict.txt}</td>
+  </tr>`;
 }
 
 /* One question, answered from whatever evidence exists. The order matters:
@@ -4081,10 +4074,18 @@ function _disciplineSummary(trades, rules){
   // Scored against TAGGED trades only. An untagged trade is unjournalled, not
   // clean, and counting it as clean would flatter the number every time.
   const rate = tagged.length ? (tagged.length - breached.length) / tagged.length * 100 : null;
+  /* Says what the number IS, not which way it is moving.
+     "Slipping" and "holding" both claim a direction, and nothing here measures
+     one — 70% is 70%, whether it climbed there or fell. The reading was a
+     guess dressed as a finding, and it is not a small one: "slipping" tells
+     you to worry about a trend that was never calculated. */
+  const broke = rate === null ? null : Math.round((100 - rate) / 10);
   const state = rate === null ? { tone:'wait', txt:'Nothing tagged yet' }
-    : rate >= 90 ? { tone:'good', txt:'Your discipline is holding' }
-    : rate >= 70 ? { tone:'warn', txt:'Your discipline is slipping' }
-    :              { tone:'bad',  txt:'Discipline is your biggest problem' };
+    : rate >= 95 ? { tone:'good', txt:'You keep your rules on almost every trade' }
+    : rate >= 80 ? { tone:'good', txt:`You break a rule on about ${broke} trade${broke === 1 ? '' : 's'} in 10` }
+    : rate >= 60 ? { tone:'warn', txt:`You break a rule on about ${broke} trades in 10` }
+    : rate >= 50 ? { tone:'bad',  txt:'You break a rule on about half your trades' }
+    :              { tone:'bad',  txt:'You break a rule more often than you keep them' };
 
   const worst = rules.find(r => r.losses > 0) || null;
 
@@ -4187,7 +4188,10 @@ function renderDisciplinePanel(){
     <div class="dx-half-head"><span class="dx-dot note"></span>
       <h3>Three questions worth settling</h3>
       <span class="dx-half-sub">counted in trades, never in money</span></div>
-    ${reportsHtml}
+    <table class="rp-tbl">
+      <thead><tr><th>Question</th><th>What your tags say</th><th>Suggestion</th></tr></thead>
+      <tbody>${reportsHtml}</tbody>
+    </table>
   </div>
   <div class="dx-half">
     <div class="dx-half-head"><span class="dx-dot bad"></span>
