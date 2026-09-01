@@ -486,8 +486,17 @@
 
    Green when the goal is met, the theme's own gold while the month is still
    running and in profit, red the moment the month is negative. */
+/* Limang antas, hindi tatlo. Ang --gt ang tanging kulay na binabasa ng apat na
+   bar, kaya ang dalawang bagong pangalan dito ay tumatama sa lahat ng apat.
+
+   Ang `close` ay halong berde-ginto: nakikita mong papalapit ang berde bago mo
+   pa ito maabot, at iyon nga ang sinasabi ng 74%. Ang `low` ay pinahinang
+   ginto — pag-usad pa rin, mabagal lang. Hindi na lumalabas ang pula dahil sa
+   kabagalan; nakalaan na ito sa pagbaba at sa isang saradong buwang halos wala. */
 .cal-goal.hit{--gt:var(--win);}
+.cal-goal.close{--gt:color-mix(in srgb, var(--win) 58%, var(--accent));}
 .cal-goal.now{--gt:var(--accent);}
+.cal-goal.low{--gt:color-mix(in srgb, var(--accent) 62%, var(--muted));}
 .cal-goal.missed{--gt:var(--loss);}
 .cal-goal.ahead{--gt:var(--muted);}
 .cal-goal.empty{
@@ -638,7 +647,13 @@
    once and then stop seeing — at a couple of seconds a loop it read as a
    flicker rather than a shine. The gradient is narrow and the cycle long, so
    most of each loop is the bar simply sitting still. */
-.cal-goal.now .cal-goal-track i::after{
+/* Ang tatlong tono ng pag-usad, hindi ang `now` lang. Nang hatiin ko ang `now`
+   sa `close` at `low`, ang animasyon ay naiwan sa `now` — kaya ang isang buwan
+   sa 74% ay tahimik na nawawalan ng kislap habang ang isang buwan sa 50% ay
+   mayroon. Ang kabaligtaran ng dapat. */
+.cal-goal.now .cal-goal-track i::after,
+.cal-goal.close .cal-goal-track i::after,
+.cal-goal.low .cal-goal-track i::after{
   content:'';position:absolute;inset:0;border-radius:999px;
   background:linear-gradient(100deg,
     transparent 40%, rgba(255,255,255,.6) 50%, transparent 60%);
@@ -651,14 +666,20 @@
 }
 /* The pill breathes on the same slow cycle, so the eye is drawn to the number
    rather than to a stripe travelling along a thin line. */
-.cal-goal.now .cal-goal-track b{animation:calGoalPulse 6s ease-in-out infinite;}
+.cal-goal.now .cal-goal-track b,
+.cal-goal.close .cal-goal-track b,
+.cal-goal.low .cal-goal-track b{animation:calGoalPulse 6s ease-in-out infinite;}
 @keyframes calGoalPulse{
   0%,72%,100%{box-shadow:0 0 0 0 color-mix(in srgb, var(--gt) 50%, transparent);}
   86%        {box-shadow:0 0 0 4px color-mix(in srgb, var(--gt) 0%, transparent);}
 }
 @media (prefers-reduced-motion: reduce){
-  .cal-goal.now .cal-goal-track i::after{animation:none;background:none;}
-  .cal-goal.now .cal-goal-track b{animation:none;}
+  .cal-goal.now .cal-goal-track i::after,
+  .cal-goal.close .cal-goal-track i::after,
+  .cal-goal.low .cal-goal-track i::after{animation:none;background:none;}
+  .cal-goal.now .cal-goal-track b,
+  .cal-goal.close .cal-goal-track b,
+  .cal-goal.low .cal-goal-track b{animation:none;}
   /* The glint goes entirely — the sparkle is decoration and carries no
      information the steady state does not already show. */
   .cal-goal .cal-goal-end::before,
@@ -1840,7 +1861,10 @@ table.breakdown tbody tr{cursor:pointer;}
      rail, and clipping the bar would cut both off. */
   .account-progress-bar{position:relative;height:22px;margin-bottom:4px;}
   .account-progress-bar.hit{--gt:var(--win);}
+  .account-progress-bar.close{--gt:color-mix(in srgb, var(--win) 58%, var(--accent));}
   .account-progress-bar.now{--gt:var(--accent);}
+  .account-progress-bar.low{--gt:color-mix(in srgb, var(--accent) 62%, var(--muted));}
+  .account-progress-bar.ahead{--gt:var(--muted);}
   .account-progress-bar.missed{--gt:var(--loss);}
   .account-progress-bar::before{
     content:'';position:absolute;left:0;right:0;top:50%;height:8px;
@@ -2293,6 +2317,29 @@ table.breakdown tbody tr{cursor:pointer;}
      isang div na may onclick: ang keyboard at ang screen reader ay libre nang
      nakukuha, at ang buong hilera ang matatamaan ng daliri — na siyang dahilan
      kung bakit hindi kailangan ng anumang panlawak dito. */
+  /* ---------- Ang pagbati ----------
+     Nakaupo sa itaas ng "Dashboard" at mas malaki kaysa rito, dahil ito ang
+     unang bagay na binabasa mo at ang pamagat ay alam mo na. Walang kahon at
+     walang gilid: bahagi ito ng pahina, hindi isang paalala na naka-patong. */
+  .greet{
+    display:flex;flex-direction:column;gap:5px;
+    margin:0 0 22px;padding:0 0 18px;
+    border-bottom:1px solid var(--rule);
+  }
+  .greet-hi{
+    font-family:var(--font-ui);font-size:25px;font-weight:600;
+    letter-spacing:.005em;color:var(--ink);line-height:1.15;
+  }
+  /* Ang linyang ito ay ang tanging bagay sa pahina na nagsasalita sa iyo, kaya
+     ito ay teksto — hindi isang numero sa mono font tulad ng lahat ng iba. */
+  .greet-line{
+    font-size:13.5px;line-height:1.6;color:var(--muted);
+    max-width:68ch;text-wrap:pretty;
+  }
+  body.mobile-mode .greet{margin-bottom:18px;padding-bottom:14px;}
+  body.mobile-mode .greet-hi{font-size:21px;}
+  body.mobile-mode .greet-line{font-size:12.5px;}
+
   .ask-box{max-width:min(94vw,780px);max-height:88vh;overflow-y:auto;}
   .ask-head-bar{margin-bottom:6px;}
   .ask-sub{display:block;font-size:12px;color:var(--muted);margin-bottom:16px;}
@@ -2540,7 +2587,9 @@ table.breakdown tbody tr{cursor:pointer;}
      there is nothing to have missed. */
   .yo-bar{position:relative;height:22px;margin-top:2px;}
   .yo-bar.hit{--gt:var(--win);}
+  .yo-bar.close{--gt:color-mix(in srgb, var(--win) 58%, var(--accent));}
   .yo-bar.now{--gt:var(--accent);}
+  .yo-bar.low{--gt:color-mix(in srgb, var(--accent) 62%, var(--muted));}
   .yo-bar.missed{--gt:var(--loss);}
   .yo-bar.ahead{--gt:var(--muted);}
   .yo-bar.none{--gt:var(--rule);opacity:.55;}
@@ -2692,6 +2741,41 @@ table.breakdown tbody tr{cursor:pointer;}
 .dx-dot.wait{background:var(--muted);}
 
 .dx-s-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;margin-top:12px;}
+
+  /* ---------- Ang lapad ng Discipline & Experiments ----------
+
+     Ito ang tunay na sanhi ng pagkalito rito, at hindi ito kulay o espasyo.
+     Sa isang malapad na monitor ang panel ay umaabot sa 2500px, at ang dalawang
+     talahanayan ay width:100% — kaya ang "FOMO Entry" ay nasa kaliwang gilid at
+     ang bilang nito ay nasa kanang gilid, halos dalawang dangkal ang layo. Ang
+     mata ay hindi kayang maghatid ng isang hilera sa ganoong distansya, kaya
+     kailangang basahin nang dalawang beses ang bawat linya.
+
+     Dalawang panuntunan ang nag-aayos nito:
+
+       · isang hangganan sa pagbabasa para sa buong laman ng panel, para ang
+         tatlong haligi ng ulat ay may tamang sukat
+       · ang talahanayan ng rules ay hindi na umaabot sa buong lapad kundi sa
+         laki ng laman nito, kaya nakadikit ang bilang sa pangalan
+
+     Hindi nakikita ang alinman sa laptop; nakikita ang pareho sa monitor. */
+  #disciplineBody{max-width:1240px;}
+  /* Ang max-width ang gumagawa ng trabaho, hindi ang width:auto.
+
+     Ang isang block-level na table na width:auto ay HINDI lumiliit sa laman
+     nito — ang panuntunan ay max(min-content, min(max-content, available)), at
+     dahil mas malaki ang max-content ng unang haligi kaysa sa espasyo, kinukuha
+     nito ang buong espasyo. Sinukat ko: ang mga numero ay humigpit na sa 52,
+     37, 35 at 58px, pero ang unang haligi ay umabot sa 1057px at hinila ang
+     lahat pabalik sa dulo. Ang pagsasabi lang ng "auto" ay hindi sapat; ang
+     hangganan ang dapat sabihin. */
+  #disciplineBody .dx-tbl{
+    width:auto;min-width:min(100%,620px);max-width:min(100%,780px);
+  }
+  /* Ang unang haligi lang ang lumalaki. Ang mga numero ay may sukat ng numero
+     at nananatiling magkakadikit sa kanan ng pangalan, hindi nagkakalat. */
+  #disciplineBody .dx-tbl td:not(:first-child),
+  #disciplineBody .dx-tbl th:not(:first-child){width:1%;white-space:nowrap;}
 .dx-s-card{display:flex;flex-direction:column;gap:3px;padding:12px 14px;
     background:var(--surface-2);border:1px solid var(--rule);border-radius:9px;}
 .dx-s-k{font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);}
@@ -3018,6 +3102,24 @@ table.breakdown tbody tr{cursor:pointer;}
 .chk-group + .chk-group .chk-group-head{color:var(--info);}
 .chk-group-head em{font-style:normal;letter-spacing:.02em;text-transform:none;
   color:var(--muted);font-weight:400;font-size:10px;}
+
+  /* Ang pangalawang antas. Sadyang mas mahina kaysa sa pangkat sa itaas nito:
+     ang tanong na "paglabag ba o obserbasyon" ang mahalaga, at ang sub-group ay
+     tumutulong lang sa paghahanap SA LOOB ng sagot na iyon. Kung magkapareho
+     sila ng lakas, dalawang listahan ng header ang mabubuo at wala nang antas. */
+  .chk-sub{margin:0 0 4px;}
+  .chk-sub + .chk-sub{margin-top:10px;}
+  .chk-sub-head{
+    display:flex;align-items:baseline;gap:7px;flex-wrap:wrap;
+    margin:0 0 3px;padding:0 0 3px;
+    border-bottom:1px dashed color-mix(in srgb, var(--rule) 85%, transparent);
+    font-size:11px;font-weight:650;letter-spacing:.01em;color:var(--ink);
+  }
+  .chk-sub-head em{
+    font-style:normal;font-weight:400;font-size:10px;color:var(--muted);
+  }
+  .chk-sub .chk-cols{padding-left:2px;}
+  body.mobile-mode .chk-sub-head{font-size:11.5px;}
   .drawer-actions{flex-shrink:0;margin-top:auto;padding-top:18px;border-top:1px solid var(--rule);display:flex;gap:8px;flex-wrap:wrap;}
   .drawer-secondary-btn{
     background:none;border:1px solid var(--rule);color:var(--muted);padding:9px 14px;

@@ -260,7 +260,11 @@ const UI_PREF_LS_KEYS = {
   // pagkatapos i-journal ang isang setup, kaya karaniwang nasa daan lang ito.
   // Sinusundan nito ang account, hindi ang browser: kung itinago ito sa laptop,
   // dapat nakatago rin sa telepono.
-  journaled_setups_hidden: 'ledger-journaled-setups-hidden'
+  journaled_setups_hidden: 'ledger-journaled-setups-hidden',
+  // Isinasara ba ang Demo at Evaluation na P&L. Isang pagpili tungkol sa kung
+  // ANO ang binibilang mong pera, hindi tungkol sa aparatong ginagamit mo,
+  // kaya sumusunod ito sa account.
+  real_money_only: 'ledger-real-money-only'
 };
 
 let _uiPrefsSyncTimer = null;
@@ -338,6 +342,9 @@ function applyUIPrefsFromProfile(){
     // Walang muling pag-render na kailangan — isang lid lang ito, at ang laman
     // sa ilalim nito ay nakaguhit na. I-apply lang ang bagong dating na pili.
     if(changedKeys.includes('journaled_setups_hidden')) applyJournaledSetupsFold();
+    // Dumating mula sa ibang aparato: itakda ang mga kahon at muling salain,
+    // dahil ang bawat numero sa pahina ay nakadepende rito.
+    if(changedKeys.includes('real_money_only')){ _syncRealMoneyBoxes(); applyFilters(); }
     if(currentView === 'settings') renderSettingsPage();
     if(currentView === 'config'){ renderColumnConfigUI(); renderOptionsEditor(); renderFormFieldConfigUI(); }
   }finally{
@@ -862,6 +869,10 @@ async function initApp(){
 
     populateAccountFilter();
   populateDashPeriodFilters();
+    // Bago ang unang applyFilters: kung hindi, ang naka-save na pagpili ay
+    // nakikita lang ng filter pagkatapos na mismong hindi tumugma ang kahon
+    // sa numerong nasa ibaba nito.
+    _syncRealMoneyBoxes();
     applyFilters();
     populateJournalFilters();
     loadLinkedSetupScreenshots().then(renderJournalTable);
@@ -1349,19 +1360,11 @@ function applyFilters(){
   const month = document.getElementById('monthFilter')?.value ?? 'all';
   const acct = document.getElementById('accountFilter').value;
 
-  /* Demo and Evaluation money is not money. The P&L on those accounts is a
-     score in a test, and mixing it with Funded profit makes the dashboard's
-     headline number describe something you cannot spend.
-
-     Kept OFF by default, because right now every account is an evaluation and
-     switching it on would empty the page. It earns its place the moment a
-     Funded or Exchange account appears. */
-  const realOnly = document.getElementById('realMoneyOnly')?.checked;
-  const REAL_TYPES = new Set(['funded', 'exchange']);
+  const realOnly = _realMoneyOnly();
 
   FILTERED = ALL_TRADES.filter(t => {
     if(acct !== 'all' && t.account !== acct) return false;
-    if(realOnly && !REAL_TYPES.has(String(t.account_type || '').toLowerCase())) return false;
+    if(realOnly && !_isRealMoney(t)) return false;
     if(year === 'all' && month === 'all') return true;
     // A trade with no close date has no month to belong to.
     if(!t.close_date) return false;
@@ -1382,6 +1385,12 @@ function applyFilters(){
   }
 
   document.getElementById('tradeCountLabel').textContent = `${FILTERED.length} trade${FILTERED.length===1?'':'s'} in view`;
+
+  /* Sinasagot ng pagbati ang BUONG kasaysayan, hindi ang filter — "3 wins in a
+     row" ay tungkol sa iyo, hindi sa kung anong buwan ang tinitingnan mo. Pero
+     nandito ito dahil ito ang tumatakbo kapag dumating ang datos at kapag
+     nagbago ang Real money only, na nagbabago naman ng kasagutan. */
+  renderDashGreeting();
 
   renderKPIs();
   renderCalendar();
@@ -1411,6 +1420,53 @@ function applyFilters(){
 // with Fee as its own separate column) — this is only for aggregates.
 function netPnl(t){
   return (Number(t?.profit_loss) || 0) - (Number(t?.fee) || 0);
+}
+
+/* ---------------- Real money only ----------------
+   Ang Demo at Evaluation na pera ay hindi pera. Ang P&L sa mga account na iyon
+   ay puntos sa isang pagsusulit, at ang paghalo nito sa Funded na kita ay
+   ginagawang paglalarawan sa isang bagay na hindi mo magagastos ang bawat
+   pangunahing numero sa app.
+
+   Ito ay PAGPILI na naaalala, hindi isang panandaliang switch. Dati itong isang
+   hubad na checkbox na walang naaalala: bumabalik sa off sa bawat pag-reload,
+   at ang isang pagpiling kailangang ulitin araw-araw ay hindi pagpili.
+   Nakasunod ito sa account tulad ng theme at font — kung isinara mo ang demo
+   money sa laptop, sarado rin ito sa telepono.
+
+   Nananatiling OFF ang default: ngayon ay evaluation ang lahat ng account mo,
+   at ang pagbukas nito nang kusa ay magbabakante sa buong pahina. */
+const REAL_ACCOUNT_TYPES = new Set(['funded', 'exchange']);
+const _isRealMoney = t => REAL_ACCOUNT_TYPES.has(String(t?.account_type || '').toLowerCase());
+
+function _realMoneyOnly(){
+  try{ return localStorage.getItem('ledger-real-money-only') === '1'; }
+  catch(e){ return false; }
+}
+
+// Isang kahon lang ang pinipindot mo, pero dalawa ang meron — sa Dashboard at
+// sa Payslip vs P&L. Iisa ang pagpili, kaya pareho silang sinasagot dito;
+// kung hindi, ang isa ay magsasabing on habang ang isa ay off at pareho silang
+// nagsasabi ng totoo tungkol sa sarili nila lang.
+function _syncRealMoneyBoxes(){
+  const on = _realMoneyOnly();
+  document.querySelectorAll('.real-money-box').forEach(b => { b.checked = on; });
+}
+
+function setRealMoneyOnly(on){
+  try{ localStorage.setItem('ledger-real-money-only', on ? '1' : '0'); }catch(e){}
+  _syncRealMoneyBoxes();
+  syncUIPrefsToProfile();
+  applyFilters();
+  if(typeof currentView !== 'undefined' && currentView === 'salary') renderSalaryGoal();
+}
+
+/* Ang mga trade na binibilang ng Payslip vs P&L. Ang buong pahina ay dumadaan
+   dito, kaya iisa ang lugar na dapat sumunod sa checkbox — hindi dalawa na
+   maaaring maghiwalay. */
+function _salaryTrades(){
+  const realOnly = _realMoneyOnly();
+  return ALL_TRADES.filter(t => t.close_date && (!realOnly || _isRealMoney(t)));
 }
 
 // UTC day boundary, not the browser's local time — Upscale's trading day
@@ -1611,6 +1667,167 @@ function _tradingDaysLeft(y, m, from){
    bar always agrees with the total printed directly above it. Under a filter
    that is a slice of your income rather than all of it, and the note says so
    outright instead of letting the percentage quietly mislead. */
+/* ---------------- Ang pagbati sa Dashboard ----------------
+
+   Dalawang linya: kung sino ka at anong oras na, tapos isang bagay na TOTOO
+   tungkol sa kung paano ka naglalaro.
+
+   Ang pangalawang linya ay hindi dapat basta papuri. Ang "You're doing great!"
+   sa itaas ng isang buwang bumababa ng $2,000 ay hindi motivation — ito ay
+   patunay na hindi tumitingin ang app, at kapag nabasa mo iyon nang minsan ay
+   titigil ka nang magbasa magpakailanman. Kaya bawat linya rito ay isang
+   pahayag na masusuri, at ang pagkakasunod ay sinasagot ang pinakamahalaga
+   muna. Sa isang masamang buwan ay naghahanap ito ng totoong maipagmamalaki —
+   isang malinis na tuhog ng disiplina, isang panalong araw — sa halip na
+   magsinungaling o manahimik. */
+const _GREET_SLOTS = [
+  { to: 4,  hi: 'Still up' },
+  { to: 11, hi: 'Good morning' },
+  { to: 17, hi: 'Good afternoon' },
+  { to: 21, hi: 'Good evening' },
+  { to: 24, hi: 'Good evening' },
+];
+
+function _greetName(){
+  const p = PROFILE_DATA || {};
+  const raw = String(p.display_name || p.full_name || '').trim();
+  if(raw) return raw.split(/\s+/)[0];
+  // Ang email bago ang @ ay mas mabuti kaysa sa wala, pero ang "williamharry.s"
+  // ay hindi pangalan — ang unang bahagi lang, malaki ang unang titik.
+  const em = String(CURRENT_USER_EMAIL || '').split('@')[0].split(/[._-]/)[0];
+  return em ? em.charAt(0).toUpperCase() + em.slice(1) : '';
+}
+
+function _greetHour(){
+  // Oras ng UAE, hindi ng browser. Doon siya nakaupo, at ang isang laptop na
+  // nakatakda sa maling time zone ay hindi dapat magbati ng magandang umaga
+  // nang alas-onse ng gabi.
+  try{
+    return Number(new Intl.DateTimeFormat('en-GB',
+      { timeZone: 'Asia/Dubai', hour: 'numeric', hour12: false }).format(new Date()));
+  }catch(e){ return new Date().getHours(); }
+}
+
+/* Ang linya. Ibinabalik ang unang TOTOO, kaya ang pagkakasunod ay ang
+   pagpapahalaga. Bawat sanga ay nagsasabi kung bakit ito naroon. */
+function _greetLine(){
+  /* Sumusunod sa Real money only. Ang linyang ito ay tungkol sa pera at sa
+     kung paano ka naglalaro; kung isinara mo ang demo money, ang pagbati ay
+     hindi dapat magdiwang ng isang buwang binuo ng puntos sa pagsusulit. */
+  const all = _salaryTrades().filter(t => String(t.win_loss || '').trim());
+  if(all.length < 3) return null;
+
+  const byTime = [...all].sort((a, b) => a.close_date - b.close_date);
+  const now = new Date();
+  const month = all.filter(t =>
+    t.close_date.getFullYear() === now.getFullYear() &&
+    t.close_date.getMonth() === now.getMonth());
+  const monthNet = month.reduce((s, t) => s + netPnl(t), 0);
+
+  // 1. Naabot na ang buwan. Walang mas mahalaga kaysa rito.
+  const v = _salarySettings();
+  const aed = Number(v.aed_per_usd) > 0 ? Number(v.aed_per_usd) : SALARY_DEFAULTS.aed_per_usd;
+  const salary = Number(v.monthly_salary);
+  const need = (Number.isFinite(salary) && salary > 0) ? salary / aed : null;
+  if(need && monthNet >= need)
+    return `This month's salary is already covered — ${Math.round(monthNet / need * 100)}% of it. Everything from here is yours.`;
+
+  // 2. Isang tuhog ng panalo ngayon. Ang pinakabagong bagay na nararamdaman mo.
+  let streak = 0, kind = null;
+  for(let i = byTime.length - 1; i >= 0; i--){
+    const w = _isWin(byTime[i]), l = _isLoss(byTime[i]);
+    if(!w && !l) continue;                       // ang breakeven ay hindi pumuputol
+    if(kind === null){ kind = w ? 'win' : 'loss'; streak = 1; continue; }
+    if((kind === 'win') === w) streak++; else break;
+  }
+  if(kind === 'win' && streak >= 3)
+    return `${streak} wins in a row. Whatever you are doing right now, keep doing exactly that.`;
+
+  // 3. Malapit na sa goal. Ang 70%+ ay nararapat marinig.
+  if(need && monthNet > 0 && monthNet / need >= 0.7)
+    return `${Math.round(monthNet / need * 100)}% of the way to this month's salary. You are close — do not force it.`;
+
+  // 4. Malinis na disiplina kamakailan. Ito ang pinakamahirap na bahagi, at ito
+  //    ang isang bagay na SIYA lang ang may kontrol.
+  const last12 = byTime.slice(-12);
+  const tagged = last12.filter(t => String(t.unfollowed_rules || '').trim());
+  const broke = tagged.filter(t => _brokenRuleTags(t.unfollowed_rules).length);
+  if(tagged.length >= 6 && broke.length === 0)
+    return `${tagged.length} trades logged and not one rule broken. That is the part most people never get right.`;
+
+  // 5. Bumababa. Huwag magsinungaling, pero huwag ding manahimik — hanapin ang
+  //    tunay na maipagmamalaki sa loob ng isang masamang buwan.
+  if(monthNet < 0){
+    const good = month.filter(_isWin).length;
+    return good
+      ? `The month is down, but ${good} of these trades still worked. Protect the account first — the setups come back.`
+      : `A hard month so far. The journal is still filling up, and that is what makes the next one different.`;
+  }
+
+  // 6. Kabuuang win rate laban sa sarili niyang baseline — ang pinakamalawak
+  //    na tunay na pahayag na natitira.
+  const wr = _winRateOf(all);
+  // Isang decimal, tulad ng KPI na nasa ilalim mismo nito. Ang Math.round ay
+  // ginagawang "53%" ang 52.5%, at ang dalawang numerong magkaiba tungkol sa
+  // parehong bagay sa iisang screen ay nagpapaduda sa pareho.
+  if(wr !== null && wr >= 50)
+    return `${fmtNum(wr, 1)}% of your decided trades are wins across ${all.length} logged. That is an edge — keep grinding it.`;
+
+  return `${all.length} trades logged and every one of them counted. Keep going.`;
+}
+
+function renderDashGreeting(){
+  const box = document.getElementById('dashGreet');
+  const hiEl = document.getElementById('dashGreetHi');
+  const lineEl = document.getElementById('dashGreetLine');
+  if(!box || !hiEl || !lineEl) return;
+
+  const name = _greetName();
+  const h = _greetHour();
+  const slot = _GREET_SLOTS.find(s => h < s.to) || _GREET_SLOTS[_GREET_SLOTS.length - 1];
+  hiEl.textContent = name ? `${slot.hi}, ${name}` : slot.hi;
+
+  const line = _greetLine();
+  lineEl.textContent = line || '';
+  lineEl.style.display = line ? '' : 'none';
+  box.style.display = '';
+}
+
+/* ---------------- Ang kulay ng apat na progress bar ----------------
+
+   Dating tatlong estado: naabot, hindi naabot, at bumababa. Ibig sabihin ang
+   74% ay kasing-pula ng 4% — at ang 74% ay hindi masamang buwan. Isang kulay
+   ang sumasagot sa dalawang magkaibang tanong, at nasasagot nito ang mali.
+
+   Kaya may antas na ngayon. Ang PULA ay nakalaan sa dalawang bagay lang na
+   tunay na masama: ang pagbaba (negatibo ka) at ang pagtatapos ng isang buwan
+   na halos wala. Ang lahat ng nasa pagitan ay pag-usad, at ganoon ang hitsura:
+   habang lumalapit sa berde, lalong nagiging berde.
+
+     berde   naabot na
+     halo    70%+ — malapit na, at dapat ganoon ang pakiramdam
+     ginto   35–70% — patuloy
+     malabo  1–35% sa isang buwang kasalukuyan — maaga pa
+     pula    negatibo, o isang saradong buwan na wala pang 35%
+
+   Iisang function ang sumasagot para sa apat na bar, kung hindi ay maghihiwalay
+   sila — nangyari na iyon noon at ang Calendar ay nagsabi ng isang bagay
+   habang ang Year overview ay nagsabi ng iba tungkol sa parehong buwan. */
+function _goalTone(made, need, opts){
+  const isPast = !!(opts && opts.isPast);
+  const isFuture = !!(opts && opts.isFuture);
+  if(!(need > 0)) return 'ahead';
+  // Ang buwang hindi pa dumarating ay walang sinasabi tungkol sa iyo. Abo ito,
+  // hindi malabong ginto — ang 0% ng Disyembre ay hindi pagkukulang sa Setyembre.
+  if(isFuture && made === 0) return 'ahead';
+  if(made >= need) return 'hit';
+  if(made < 0) return 'missed';           // bumababa: pula agad, kahit kalagitnaan ng buwan
+  const pct = made / need * 100;
+  if(pct >= 70) return 'close';
+  if(pct >= 35) return 'now';
+  return isPast ? 'missed' : 'low';
+}
+
 function _renderCalGoal(monthTrades, y, m){
   const holder = document.getElementById('calGoalBar');
   if(!holder) return;
@@ -1657,9 +1874,13 @@ function _renderCalGoal(monthTrades, y, m){
 
   const left = isNow ? _tradingDaysLeft(y, m, today) : 0;
 
-  let tone, note;
+  // Isang panuntunan ang nagtatakda ng kulay; ang sanga sa ibaba ay nagsusulat
+  // lang ng salita. Dating magkasama sila, at ang salita ang nagtatakda ng
+  // kulay — kaya bawat bagong pangungusap ay maaaring tahimik na magpabago ng
+  // kulay ng bar.
+  const tone = _goalTone(made, need, { isPast, isFuture: !isNow && !isPast });
+  let note;
   if(made >= need){
-    tone = 'hit';
     // The percentage comes off the bar at 100%, so it has to land here or the
     // number is simply gone — and "203% of your salary" is worth knowing.
     note = `Goal reached — ${Math.round(made / need * 100)}% of it, `
@@ -1669,7 +1890,6 @@ function _renderCalGoal(monthTrades, y, m){
     // to stay amber until the month closed, so a month running badly looked
     // exactly like a month running behind — and the colour was reassuring you
     // while the account went backwards. Being down is not "behind schedule".
-    tone = 'missed';
     note = isNow && left > 0
       ? `You are ${_salMoney(Math.abs(made), 'USD')} down this month. ${left} trading
          day${left === 1 ? '' : 's'} left, and the goal is ${_salMoney(short, 'USD')} away.`
@@ -1677,16 +1897,13 @@ function _renderCalGoal(monthTrades, y, m){
       ? `You are ${_salMoney(Math.abs(made), 'USD')} down, with no trading days left this month.`
       : `The month closed ${_salMoney(Math.abs(made), 'USD')} down.`;
   }else if(isPast){
-    tone = 'missed';
-    note = `Missed by ${_salMoney(short, 'USD')}.`;
+    note = `Missed by ${_salMoney(short, 'USD')} — ${Math.round(made / need * 100)}% of the way there.`;
   }else if(isNow){
-    tone = 'now';
     note = left > 0
-      ? `Short by ${_salMoney(short, 'USD')}. ${left} trading day${left === 1 ? '' : 's'}
+      ? `${Math.round(made / need * 100)}% of the way there. Short by ${_salMoney(short, 'USD')} with ${left} trading day${left === 1 ? '' : 's'}
          left — ${_salMoney(short / left, 'USD')} a day.`
       : `Short by ${_salMoney(short, 'USD')}, and no trading days left this month.`;
   }else{
-    tone = 'ahead';
     note = `Not started. The bar for this month is ${_salMoney(need, 'USD')}.`;
   }
 
@@ -1920,15 +2137,17 @@ function renderYearOverview(){
     const net = ts.reduce((a, t) => a + netPnl(t), 0);
     const rrs = ts.map(t => t.rr).filter(v => v !== null && !isNaN(v));
     const hit = goalUsd ? net >= goalUsd : null;
-    // The same four states the Calendar's bar uses, read the same way — a
+    // The same states the Calendar's bar uses, read the same way — a
     // month is only "still running" if it is the one you are actually in.
     const isNow  = y === today.getFullYear() && m === today.getMonth();
     const isPast = y < today.getFullYear() || (y === today.getFullYear() && m < today.getMonth());
+    /* Ang MISMONG function ng Calendar bar, hindi isang kopya ng lohika nito.
+       Kopya ito dati, at ang kopya ay naghihiwalay: kailangang baguhin nang
+       dalawang beses ang bawat pagbabago, o magsasabi ang dalawang bar ng
+       magkaibang bagay tungkol sa iisang buwan. Nangyari na iyon dito noon sa
+       win rate. */
     const goalTone = goalUsd === null ? 'none'
-      : hit ? 'hit'
-      : net < 0 ? 'missed'
-      : isNow ? 'now'
-      : isPast ? 'missed' : 'ahead';
+      : _goalTone(net, goalUsd, { isPast, isFuture: !isNow && !isPast });
     return { m, trades: ts, ...s, rate: _winRateOf(ts), net,
              days: new Set(ts.map(t => t.close_date.getDate())).size,
              rr: rrs.length ? rrs.reduce((a, v) => a + v, 0) / rrs.length : null,
@@ -6199,7 +6418,7 @@ function _salaryMonthLabel(key){
 function _salaryDayAndMonthBuckets(){
   const dayKeys = {};
   const monthOfDay = {};
-  ALL_TRADES.filter(t => t.close_date).forEach(t => {
+  _salaryTrades().forEach(t => {
     const d = new Date(t.close_date);
     const k = _dayKeyUTC(d);
     dayKeys[k] = (dayKeys[k] || 0) + netPnl(t);
@@ -6394,7 +6613,7 @@ function renderSalaryGoal(){
   // Trade counts per month, alongside the day/net buckets — the amount says
   // what a month made, these say how it got there.
   const tradesByMonth = {};
-  ALL_TRADES.filter(t => t.close_date).forEach(t => {
+  _salaryTrades().forEach(t => {
     const k = _salaryMonthKey(new Date(t.close_date));
     if(!tradesByMonth[k]) tradesByMonth[k] = { trades: 0, wins: 0, losses: 0 };
     const b = tradesByMonth[k];
@@ -16116,6 +16335,10 @@ async function loadProfile(){
   // preferences — now that it's loaded, apply both so this device matches
   // what the account last saved anywhere else.
   applyUIPrefsFromProfile();
+  /* Ang pagbati ay tumatakbo na sa applyFilters, na nauuna sa pagdating ng
+     profile — kaya hanggang dito ay wala pang pangalan at walang salary na
+     ihahambing. Iginuguhit muli dito nang isang beses. */
+  renderDashGreeting();
   refreshAllNavBadges();
   // Re-send the leaderboard entry now that the real display name is known —
   // the first sync at login can beat this profile fetch and would otherwise
@@ -16877,14 +17100,69 @@ function _checklistBoxesHtml(key, options, selected){
   const notes = options.filter(o => _tagKind(o) === 'observation');
   const rest  = options.filter(o => !rules.includes(o) && !notes.includes(o));
 
-  const group = (title, sub, items) => items.length ? `
+  /* Ang dalawang pangkat ay tama, pero labing-apat na kahon sa ilalim ng isang
+     pamagat ay isang listahan pa rin na hahanapan mo. Kaya may antas na sa loob.
+
+     Ang mga PAGLABAG ay pinagsunod-sunod ayon sa KAILAN nangyayari sa trade:
+     bago mo pa ito kunin, habang pumapasok, tapos habang nasa loob ka na. Ito
+     ang pagkakasunod na dinaraanan mismo ng isang trade, kaya alam mo agad
+     kung saang bahagi titingin.
+
+     Ang mga OBSERBASYON ay pinagsunod-sunod ayon sa ULAT na kinakain nila.
+     Ang apat na invalidation ay isang buong 2×2 at magkakasama dapat sila —
+     magkasama nilang sinasagot ang isang tanong, at ang pagpili ng mali sa
+     apat ay nagpapabaligtad ng sagot na iyon. */
+  const SUB_BREACH = [
+    { t: 'Before you took it', s: 'the decision to trade at all',
+      tags: ['ignored no-trade decision','non-bnb setup','lack of confluence',
+             'against daily bias / htf bias','traded non-btc','btc only'] },
+    { t: 'Getting in', s: 'how the entry happened',
+      tags: ['fomo entry','revenge trade','overleveraged','entered without confirmation'] },
+    { t: 'Once you were in', s: 'what you changed mid-trade',
+      tags: ['no stop loss','removed stop loss','moved stop loss',
+             'moved take profit','changing plan'] },
+  ];
+  const SUB_NOTE = [
+    { t: 'The breakeven question', s: 'feeds the Breakeven report',
+      tags: ["would have be'd out",'no be at prev high/low'] },
+    { t: 'The invalidation question', s: 'feeds the Invalidation report',
+      tags: ['held through invalidation','ego hold despite invalidation',
+             'cut on invalidation','cut too early'] },
+    { t: 'How you got in', s: 'feeds the entry-quality read',
+      tags: ['entered without confirmation','chased extended move','traded into key level'] },
+  ];
+
+  /* Ang hindi kilalang tag ay hindi dapat mawala. Ang listahan ng option ay
+     naitatama mo mismo sa Config, kaya ang isang tag na hindi ko naisip ay
+     dapat pa ring lumabas — sa dulo ng sarili nitong uri, hindi sa kawalan.
+     Ito ang nangyayari sa "Traded Non-BTC" at "No Stop Loss", na nasa mga
+     option mo pero wala sa panloob na listahan. */
+  const bucket = (items, subs) => {
+    const used = new Set();
+    const out = subs.map(g => {
+      const picked = items.filter(o => g.tags.includes(norm(o)) && !used.has(o));
+      picked.forEach(o => used.add(o));
+      return { ...g, items: picked };
+    });
+    const left = items.filter(o => !used.has(o));
+    if(left.length) out.push({ t: 'Everything else', s: '', items: left });
+    return out.filter(g => g.items.length);
+  };
+
+  const sub = g => `
+      <div class="chk-sub">
+        <div class="chk-sub-head">${escapeHtml(g.t)}${g.s ? `<em>${escapeHtml(g.s)}</em>` : ''}</div>
+        <div class="chk-cols">${g.items.map(box).join('')}</div>
+      </div>`;
+
+  const group = (title, sub2, items, subs) => items.length ? `
     <div class="chk-group">
-      <div class="chk-group-head">${escapeHtml(title)}<em>${escapeHtml(sub)}</em></div>
-      <div class="chk-cols">${items.map(box).join('')}</div>
+      <div class="chk-group-head">${escapeHtml(title)}<em>${escapeHtml(sub2)}</em></div>
+      ${bucket(items, subs).map(sub).join('')}
     </div>` : '';
 
-  return group('Broke a rule', 'sets Rules Followed? to No', rules)
-       + group('What happened', 'no fault — feeds the reports', notes)
+  return group('Broke a rule', 'sets Rules Followed? to No', rules, SUB_BREACH)
+       + group('What happened', 'no fault — feeds the reports', notes, SUB_NOTE)
        + rest.map(box).join('');
 }
 
@@ -17357,7 +17635,11 @@ function accountCardHTML(a){
            gold on the way up — and the end cap holds a trophy while it is a
            target, the reached percentage once it is a result. */
         const reached = plPct >= a.profit_target_pct;
-        const tone = reached ? 'hit' : plPct < 0 ? 'missed' : 'now';
+        // Parehong antas ng kulay ng dalawang salary bar. Ang isang account na
+        // 74% na papalapit sa target nito ay hindi pula — malapit na iyon.
+        // Buhay ang account, kaya hindi ito kailanman "past" at hindi kailanman
+        // nagiging pula sa pagiging mabagal, pagbaba lang.
+        const tone = _goalTone(plPct, a.profit_target_pct, {});
         const pctOfTarget = Math.round(plPct / a.profit_target_pct * 100);
         balanceHTML += `
           <div class="account-progress-bar ${tone}"><div class="account-progress-fill" style="width:${(progressFraction*100).toFixed(1)}%;"></div>

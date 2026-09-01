@@ -17,7 +17,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<link rel="stylesheet" href="css/style.css?v=285">
+<link rel="stylesheet" href="css/style.css?v=286">
 </head>
 <body>
 
@@ -86,6 +86,10 @@
   <main class="content">
 
   <div class="view" id="view-dashboard">
+  <div class="greet" id="dashGreet" style="display:none;">
+    <span class="greet-hi" id="dashGreetHi"></span>
+    <span class="greet-line" id="dashGreetLine"></span>
+  </div>
   <header class="top">
     <div>
       <h1>Dashboard</h1>
@@ -108,8 +112,8 @@
         <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 4.6 4.6 1.9-4.6 1.9L12 16l-1.9-4.6L5.5 9.5l4.6-1.9z"/><path d="M18 15l.8 2.2 2.2.8-2.2.8L18 21l-.8-2.2-2.2-.8 2.2-.8z"/></svg>
         Ask my data
       </button>
-      <label class="real-toggle" title="Count only Funded and Exchange accounts. Demo and Evaluation P&amp;L is a score in a test, not money you can spend.">
-        <input type="checkbox" id="realMoneyOnly" onchange="applyFilters()">
+      <label class="real-toggle" title="Count only Funded and Exchange accounts. Demo and Evaluation P&amp;L is a score in a test, not money you can spend. Your choice is remembered and follows your account.">
+        <input type="checkbox" class="real-money-box" id="realMoneyOnly" onchange="setRealMoneyOnly(this.checked)">
         Real money only
       </label>
       <select id="yearFilter" onchange="onDashYearChange()"></select>
@@ -672,6 +676,10 @@
         <div class="sub">What the job pays you per day — and what trading has to do to match it.</div>
       </div>
       <div class="filters">
+        <label class="real-toggle" title="Count only Funded and Exchange accounts. Demo and Evaluation P&amp;L is a score in a test, not a payslip you can compare against. Your choice is remembered and follows your account.">
+          <input type="checkbox" class="real-money-box" id="salRealMoneyOnly" onchange="setRealMoneyOnly(this.checked)">
+          Real money only
+        </label>
         <button class="poscalc-accent-btn" onclick="downloadSalaryPDF()"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Download PDF</button>
       </div>
     </header>
@@ -2178,6 +2186,6 @@
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=2"></script>
-<script src="js/dashboard.js?v=475"></script>
+<script src="js/dashboard.js?v=476"></script>
 </body>
 </html>
