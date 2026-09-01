@@ -2054,14 +2054,28 @@ function _renderCalGoal(monthTrades, y, m){
      the pill marked the fill's leading edge, and at 100% there is no edge left
      to mark, so it simply became the end cap. Either way it glints. */
   const done = made >= need;
-  const shown = Math.round(made / need * 100);
+
+  /* DALAWANG numero, hindi isa — at ang paghalo sa kanila ang bug na nakita
+     niya sa isang buwang lugi.
+
+     Ang BULA ay nakadikit sa knob, at ang knob ay nasa dulo ng fill. Kaya ang
+     bula ay dapat maglarawan sa KINAROROONAN NG BAR. Sa isang buwang -16%,
+     ang bar ay nasa 0 (walang bar na negatibo) pero ang bula ay nagsasabing
+     "-16%" habang nakalutang sa itaas ng isang knob na nasa dulong kaliwa —
+     dalawang bagay na magkasalungat sa iisang tingin.
+
+     Ang END CAP ay ibang usapin: lumalabas lang ito kapag naabot na, at doon
+     ang totoong bilang ang mahalaga — ang "203% of your salary" ay dapat
+     mabasa nang buo. */
+  const shownBar  = Math.round(pct);                        // sumusunod sa knob
+  const shownTrue = Math.round(made / need * 100);          // ang totoong bilang
   holder.innerHTML = `<span class="cal-goal ${tone}" title="${escapeHtml(tip)}">
     <span class="cal-goal-label">Goal</span>
     <span class="cal-goal-track">
       <i style="width:${pct.toFixed(1)}%"></i>
       ${done ? '' : `<u style="--p:${pct.toFixed(1)}%"></u>`}
-      ${done ? '' : `<b style="--p:${pct.toFixed(1)}%">${shown}%</b>`}
-      <span class="cal-goal-end">${done ? `${shown}%` : _GOAL_TROPHY}</span>
+      ${done ? '' : `<b style="--p:${pct.toFixed(1)}%">${shownBar}%</b>`}
+      <span class="cal-goal-end">${done ? `${shownTrue}%` : _GOAL_TROPHY}</span>
     </span>
     ${filtered ? '<em class="cal-goal-flag" title="An account filter is on">•</em>' : ''}
   </span>`;
@@ -2393,13 +2407,17 @@ function _yearGoalStrip(y, net, goalUsd, today){
   const pctTrue = net / yearGoal * 100;
   const pct = Math.max(0, Math.min(100, pctTrue));
   const hit = net >= yearGoal;
+  // Sumusunod sa knob, gaya ng dalawang ibang bar. Ang pctTrue ay para sa
+  // hover at para sa end cap, kung saan ang totoong bilang ang mahalaga.
+  const shownBar = Math.round(pct);
 
   const isNow  = y === today.getFullYear();
   const isPast = y < today.getFullYear();
-  const tone = hit ? 'hit'
-    : net < 0 ? 'missed'
-    : isNow ? 'now'
-    : isPast ? 'missed' : 'ahead';
+  /* Ang MISMONG _goalTone, hindi isang kopya ng lohika nito. Naiwan ang bar na
+     ito noong dinagdag ko ang limang antas ng kulay — tatlo pa rin ang alam
+     nito, kaya ang taong nasa 74% ay pula rito habang berde-ginto sa lahat ng
+     iba pang bar. Ganito talaga naghihiwalay ang kopya. */
+  const tone = _goalTone(net, yearGoal, { isPast, isFuture: !isNow && !isPast });
 
   // Months elapsed, counting the one you are in — you are part-way through it
   // and its trades already count toward the total.
@@ -2422,7 +2440,7 @@ function _yearGoalStrip(y, net, goalUsd, today){
     <div class="yo-bar year live ${tone}" title="${escapeHtml(tip)}">
       <i style="width:${pct.toFixed(1)}%"></i>
       ${hit ? '' : `<u style="--p:${pct.toFixed(1)}%"></u>`}
-      ${hit ? '' : `<b style="--p:${pct.toFixed(1)}%">${Math.round(pctTrue)}%</b>`}
+      ${hit ? '' : `<b style="--p:${pct.toFixed(1)}%">${shownBar}%</b>`}
       <span class="yo-bar-end">${hit ? `${Math.round(pctTrue)}%` : _GOAL_TROPHY}</span>
     </div>
     <span class="yo-yg-amt">${fmtMoney(net)} <em>of ${_salMoney(yearGoal, 'USD')}</em></span>
@@ -17776,12 +17794,17 @@ function accountCardHTML(a){
         // Buhay ang account, kaya hindi ito kailanman "past" at hindi kailanman
         // nagiging pula sa pagiging mabagal, pagbaba lang.
         const tone = _goalTone(plPct, a.profit_target_pct, {});
-        const pctOfTarget = Math.round(plPct / a.profit_target_pct * 100);
+        /* Dalawang numero ulit: ang bula ay naglalarawan sa kinaroroonan ng
+           bar, ang end cap ay sa totoong resulta. Ang isang account na lugi ay
+           may 0% na bar at dating "-23%" na bula sa itaas ng isang knob na
+           nasa dulong kaliwa. */
+        const pctTrue = Math.round(plPct / a.profit_target_pct * 100);
+        const pctOfTarget = Math.round(progressFraction * 100);
         balanceHTML += `
           <div class="account-progress-bar ${tone}"><div class="account-progress-fill" style="width:${(progressFraction*100).toFixed(1)}%;"></div>
             ${reached ? '' : `<u class="account-progress-knob" style="--p:${(progressFraction*100).toFixed(1)}%"></u>`}
             ${reached ? '' : `<b class="account-progress-pct" style="--p:${(progressFraction*100).toFixed(1)}%">${pctOfTarget}%</b>`}
-            <span class="account-progress-end">${reached ? `${pctOfTarget}%` : _GOAL_TROPHY}</span></div>
+            <span class="account-progress-end">${reached ? `${pctTrue}%` : _GOAL_TROPHY}</span></div>
           <div class="account-progress-label">${plPct >= 0 ? '' : '-'}${Math.abs(plPct).toFixed(1)}% of ${a.profit_target_pct}% target</div>
         `;
       }

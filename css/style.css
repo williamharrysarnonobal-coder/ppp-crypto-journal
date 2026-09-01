@@ -3739,7 +3739,11 @@ table.breakdown tbody tr{cursor:pointer;}
 .cal-goal-track i::before{top:34px;}
 .cal-goal-track .cal-goal-end{top:34px;}
 .cal-goal-track u{
-  position:absolute;top:34px;left:var(--p,0%);
+  position:absolute;top:34px;
+  /* Naka-clamp sa SARILING radius lang — sapat para hindi lumabas ang knob sa
+     track, at masyadong maliit para makasira sa pagtugma nito sa dulo ng fill.
+     Ang bula ay naka-clamp ng 20px+; magkaibang layunin, magkaibang sukat. */
+  left:clamp(7.5px, var(--p,0%), calc(100% - 7.5px));
   width:15px;height:15px;border-radius:50%;
   transform:translate(-50%,-50%);z-index:4;
   background:var(--gt,var(--muted));
@@ -3774,7 +3778,8 @@ table.breakdown tbody tr{cursor:pointer;}
 .yo-bar i::before{top:27px;}
 .yo-bar .yo-bar-end{top:27px;}
 .yo-bar u{
-  position:absolute;top:27px;left:var(--p,0%);
+  position:absolute;top:27px;
+  left:clamp(5.5px, var(--p,0%), calc(100% - 5.5px));
   width:11px;height:11px;border-radius:50%;
   transform:translate(-50%,-50%);z-index:4;
   background:var(--gt,var(--muted));
@@ -3804,7 +3809,8 @@ table.breakdown tbody tr{cursor:pointer;}
 .yo-bar.year i{top:34px;}
 .yo-bar.year i::before{top:34px;}
 .yo-bar.year .yo-bar-end{top:34px;}
-.yo-bar.year u{top:34px;width:15px;height:15px;left:var(--p,0%);}
+.yo-bar.year u{top:34px;width:15px;height:15px;
+  left:clamp(7.5px, var(--p,0%), calc(100% - 7.5px));}
 .yo-bar.year b{top:3px;padding:3px 8px;
   left:clamp(20px, var(--p,0%), calc(100% - 26px));}
 
@@ -3814,7 +3820,8 @@ table.breakdown tbody tr{cursor:pointer;}
 .account-progress-fill{top:31px;}
 .account-progress-bar .account-progress-end{top:31px;}
 .account-progress-knob{
-  position:absolute;top:31px;left:var(--p,0%);
+  position:absolute;top:31px;
+  left:clamp(7.5px, var(--p,0%), calc(100% - 7.5px));
   width:15px;height:15px;border-radius:50%;
   transform:translate(-50%,-50%);z-index:4;
   background:var(--gt,var(--accent));
@@ -3838,3 +3845,18 @@ table.breakdown tbody tr{cursor:pointer;}
   border:5px solid transparent;
   border-top-color:var(--gt,var(--accent));
 }
+
+/* ---- Ang label sa tabi ng bar ----
+
+   Ang .cal-goal ay align-items:center, kaya ang salitang GOAL ay nakasentro sa
+   GITNA ng track (23px ng 46). Pero ang linya ng bar ay nasa 34px — inilipat ko
+   ito pababa para may puwang ang bula, at naiwan ang label. Labing-isang pixel
+   ang pagkakaiba, at iyon ang nakita niya: "hindi pantay ang progressbar at
+   Goal na word".
+
+   Ang calc ay nagsasabi ng RELASYON, hindi ng isang numero: ang label ay nasa
+   linya, saanman ilagay ang linya. Kung babaguhin ang taas o ang posisyon,
+   susunod ito nang kusa sa halip na tahimik na maghiwalay ulit. */
+.cal-goal{--bar-h:46px; --bar-line:34px;}
+.cal-goal-label,
+.cal-goal-flag{ transform:translateY(calc(var(--bar-line) - var(--bar-h)/2)); }
