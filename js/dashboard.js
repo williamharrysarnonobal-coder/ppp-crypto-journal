@@ -1459,14 +1459,45 @@ function setRealMoneyOnly(on){
   syncUIPrefsToProfile();
   applyFilters();
   if(typeof currentView !== 'undefined' && currentView === 'salary') renderSalaryGoal();
+  /* Ang bukas na modal ay hindi muling iginuguhit ng applyFilters, kaya kung
+     ito ang lugar kung saan mo pinindot ang kahon, ang kahon ay magbabago at
+     ang mga numero sa ilalim nito ay hindi — na siyang pinakamalinaw na paraan
+     para hindi ka na maniwala sa checkbox. */
+  const open = id => document.getElementById(id)?.classList.contains('open');
+  if(open('yearOverviewModal')) renderYearOverview();
+  if(open('setupCheckModal')) renderSetupCheck();
+  if(open('askDataModal')) renderAskList();
+  if(open('recModal')) renderRecommendations();
 }
+
+/* ISANG pintuan para sa bawat panel na humuhusga sa pera o sa edge.
+
+   Hindi lahat ng lugar na bumabasa ng ALL_TRADES ay dapat sumunod dito, at ang
+   pagkakaiba ay mahalaga:
+
+     SUMUSUNOD — ang nagsasabi kung magkano ang kinita mo o kung ano ang
+     gumagana: Year overview, Ask my data, Setup check, What should I trade,
+     Week review, Confluence, PDF report. Ang pagsasama ng demo P&L sa mga ito
+     ay ginagawang paglalarawan sa isang bagay na hindi mo magagastos ang bawat
+     numero.
+
+     HINDI SUMUSUNOD — at sinadya:
+       · ang laman ng dropdown (account, taon, buwan) — kung sasalain, mawawala
+         ang mga pagpipilian at hindi mo na sila maibabalik
+       · ang bilang ng trade sa journal — iyon ang ledger, dapat kumpleto
+       · ang Achievements at Challenges — ang nakamit ay hindi dapat mawala
+         dahil sa isang checkbox
+       · ang _tradingDaysLeft — natututo ito ng ARAW na tinatrade mo, ugali
+         iyon at hindi pera
+       · ang My Accounts — naka-hiwalay na ito kada account
+       · ang _rebuildTradeNumbers — dapat matatag ang numero ng trade */
+const _countsAsMoney = t => !_realMoneyOnly() || _isRealMoney(t);
 
 /* Ang mga trade na binibilang ng Payslip vs P&L. Ang buong pahina ay dumadaan
    dito, kaya iisa ang lugar na dapat sumunod sa checkbox — hindi dalawa na
    maaaring maghiwalay. */
 function _salaryTrades(){
-  const realOnly = _realMoneyOnly();
-  return ALL_TRADES.filter(t => t.close_date && (!realOnly || _isRealMoney(t)));
+  return ALL_TRADES.filter(t => t.close_date && _countsAsMoney(t));
 }
 
 // UTC day boundary, not the browser's local time — Upscale's trading day
@@ -1680,12 +1711,25 @@ function _tradingDaysLeft(y, m, from){
    muna. Sa isang masamang buwan ay naghahanap ito ng totoong maipagmamalaki —
    isang malinis na tuhog ng disiplina, isang panalong araw — sa halip na
    magsinungaling o manahimik. */
+/* Isang icon kada oras ng araw. Parehong estilo ng lahat ng iba sa app —
+   24×24, walang fill, stroke ang gumuguhit — kaya bahagi ito ng pahina at
+   hindi isang emoji na idinikit. */
+const _GREET_ICONS = {
+  // Buwan at bituin: ikaw ang gising, wala nang iba.
+  moon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/></svg>',
+  // Araw na sumisikat sa likod ng abot-tanaw.
+  sunrise: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v3M5.6 8.6 7 10M18.4 8.6 17 10M3 18h18M6 18a6 6 0 0 1 12 0"/></svg>',
+  // Buong araw, mataas.
+  sun: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2v2.4M12 19.6V22M4.2 4.2l1.7 1.7M18.1 18.1l1.7 1.7M2 12h2.4M19.6 12H22M4.2 19.8l1.7-1.7M18.1 5.9l1.7-1.7"/></svg>',
+  // Buwan at bituin para sa gabi.
+  night: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20.5 13.3A8.2 8.2 0 1 1 11 3.6a6.4 6.4 0 0 0 9.5 9.7Z"/><path d="M17.5 3.2l.5 1.4 1.4.5-1.4.5-.5 1.4-.5-1.4-1.4-.5 1.4-.5z"/></svg>',
+};
+
 const _GREET_SLOTS = [
-  { to: 4,  hi: 'Still up' },
-  { to: 11, hi: 'Good morning' },
-  { to: 17, hi: 'Good afternoon' },
-  { to: 21, hi: 'Good evening' },
-  { to: 24, hi: 'Good evening' },
+  { to: 4,  hi: 'Still up',       icon: 'moon' },
+  { to: 11, hi: 'Good morning',   icon: 'sunrise' },
+  { to: 17, hi: 'Good afternoon', icon: 'sun' },
+  { to: 24, hi: 'Good evening',   icon: 'night' },
 ];
 
 function _greetName(){
@@ -1776,20 +1820,103 @@ function _greetLine(){
   return `${all.length} trades logged and every one of them counted. Keep going.`;
 }
 
+/* Ang mga chip. Isang linya ay isang pangungusap; ang mga chip ang nagbibigay
+   ng mga numerong titingnan mo nang paulit-ulit sa maghapon.
+
+   Apat na bagay lang, at bawat isa ay may dahilan kung bakit ito naroon:
+
+     · malinis na tuhog — ang tanging bilang sa listahang ito na buo mong
+       kontrolado. Hindi ito nakadepende sa market.
+     · ang buwan — magkano at ilang bahagdan ng sahod
+     · natitirang araw — kung gaano pa katagal para ayusin ito
+     · pinakamahusay mong buwan — ang sarili mong rekord, hindi sa iba
+
+   Ang huli ang sadyang naroon: sa isang app ng pangangalakal, ang tanging
+   patas na paghahambing ay ang sarili mong pinakamahusay. */
+function _greetChips(){
+  const all = _salaryTrades().filter(t => String(t.win_loss || '').trim());
+  if(all.length < 3) return [];
+  const byTime = [...all].sort((a, b) => a.close_date - b.close_date);
+  const out = [];
+
+  // 1. Ilang trade na ang sunod-sunod na walang nasirang rule.
+  let clean = 0;
+  for(let i = byTime.length - 1; i >= 0; i--){
+    const raw = String(byTime[i].unfollowed_rules || '').trim();
+    if(!raw) break;                                   // hindi naitala: hindi masasabing malinis
+    if(_brokenRuleTags(raw).length) break;
+    clean++;
+  }
+  if(clean >= 2) out.push({ k: 'clean streak', v: clean + ' trades', tone: 'good',
+    tip: `Your last ${clean} logged trades broke none of your rules.` });
+
+  // 2. Ang buwan: pera, at kung ilang bahagdan ito ng sahod.
+  const now = new Date();
+  const month = all.filter(t => t.close_date.getFullYear() === now.getFullYear() &&
+                                t.close_date.getMonth() === now.getMonth());
+  const net = month.reduce((s, t) => s + netPnl(t), 0);
+  const v = _salarySettings();
+  const aed = Number(v.aed_per_usd) > 0 ? Number(v.aed_per_usd) : SALARY_DEFAULTS.aed_per_usd;
+  const salary = Number(v.monthly_salary);
+  const need = (Number.isFinite(salary) && salary > 0) ? salary / aed : null;
+  const monthName = now.toLocaleString('en-GB', { month: 'long' });
+  if(month.length) out.push({
+    k: monthName.toLowerCase(),
+    v: fmtMoney(net) + (need ? ` · ${Math.round(Math.max(0, net / need * 100))}% of salary` : ''),
+    tone: net > 0 ? 'good' : net < 0 ? 'bad' : '',
+    tip: `${month.length} trade${month.length === 1 ? '' : 's'} closed this month.` });
+
+  // 3. Ilang araw pa ang natitira — natututo ito ng araw na tinatrade mo.
+  const left = _tradingDaysLeft(now.getFullYear(), now.getMonth(), now);
+  if(left > 0) out.push({ k: 'days left', v: String(left), tone: '',
+    tip: 'Trading days left this month, counted on the weekdays you actually trade.' });
+
+  // 4. Ang sarili mong pinakamahusay na buwan.
+  const byMonth = new Map();
+  byTime.forEach(t => {
+    const k = t.close_date.getFullYear() + '-' + t.close_date.getMonth();
+    byMonth.set(k, (byMonth.get(k) || 0) + netPnl(t));
+  });
+  let bestK = null, bestV = -Infinity;
+  byMonth.forEach((amt, k) => { if(amt > bestV){ bestV = amt; bestK = k; } });
+  if(bestK && bestV > 0){
+    const [by, bm] = bestK.split('-').map(Number);
+    const thisK = now.getFullYear() + '-' + now.getMonth();
+    const label = new Date(by, bm, 1).toLocaleString('en-GB', { month: 'short', year: 'numeric' });
+    out.push(bestK === thisK
+      ? { k: 'best month ever', v: 'this one', tone: 'good',
+          tip: `${fmtMoney(bestV)} — the best month you have logged.` }
+      : { k: 'best month', v: fmtMoney(bestV) + ' · ' + label, tone: '',
+          tip: 'Your own record. That is the number worth beating.' });
+  }
+  return out;
+}
+
 function renderDashGreeting(){
   const box = document.getElementById('dashGreet');
   const hiEl = document.getElementById('dashGreetHi');
   const lineEl = document.getElementById('dashGreetLine');
+  const iconEl = document.getElementById('dashGreetIcon');
+  const chipEl = document.getElementById('dashGreetChips');
   if(!box || !hiEl || !lineEl) return;
 
   const name = _greetName();
   const h = _greetHour();
   const slot = _GREET_SLOTS.find(s => h < s.to) || _GREET_SLOTS[_GREET_SLOTS.length - 1];
   hiEl.textContent = name ? `${slot.hi}, ${name}` : slot.hi;
+  if(iconEl) iconEl.innerHTML = _GREET_ICONS[slot.icon] || '';
 
   const line = _greetLine();
   lineEl.textContent = line || '';
   lineEl.style.display = line ? '' : 'none';
+
+  if(chipEl){
+    const chips = _greetChips();
+    chipEl.innerHTML = chips.map(c => `
+      <span class="greet-chip ${c.tone || ''}" title="${escapeHtml(c.tip || '')}">
+        <em>${escapeHtml(c.k)}</em><b>${escapeHtml(c.v)}</b></span>`).join('');
+    chipEl.style.display = chips.length ? '' : 'none';
+  }
   box.style.display = '';
 }
 
@@ -2003,7 +2130,7 @@ function renderSetupCheck(){
   const sym   = document.getElementById('scSymbol')?.value || 'all';
   if(!setup){ body.innerHTML = `<div class="empty-state">No setups recorded yet.</div>`; return; }
 
-  const pool = ALL_TRADES.filter(t => t.close_date && t.pattern_type === setup
+  const pool = ALL_TRADES.filter(t => t.close_date && _countsAsMoney(t) && t.pattern_type === setup
     && (sym === 'all' || t.symbol === sym));
 
   const rows = _scWindows(new Date()).map(w => {
@@ -2020,7 +2147,7 @@ function renderSetupCheck(){
      behind it to be a record rather than a streak — but it says so, and the
      month columns are right there to argue with it. */
   const long = rows[2];
-  const base = _winRateOf(ALL_TRADES.filter(t => t.close_date));
+  const base = _winRateOf(ALL_TRADES.filter(t => t.close_date && _countsAsMoney(t)));
   let verdict;
   if(!long.n){
     verdict = { tone:'wait', txt:`No <b>${escapeHtml(setup)}</b> trades in the last 90 days.
@@ -2097,7 +2224,11 @@ function shiftOverviewYear(n){
 function _yearOverviewPool(){
   const sel = document.getElementById('accountFilter');
   const acc = sel ? sel.value : 'all';
-  return ALL_TRADES.filter(t => t.close_date && (acc === 'all' || t.account === acc));
+  // Ang bawat numero sa panel na ito ay pera o goal, kaya sumusunod ito sa
+  // Real money only tulad ng Calendar at ng Payslip vs P&L. Ang taong buo na
+  // nakabalot ng demo P&L ay nagsasabi ng salary na hindi mo naabot.
+  return ALL_TRADES.filter(t => t.close_date && _countsAsMoney(t) &&
+    (acc === 'all' || t.account === acc));
 }
 
 function renderYearOverview(){
@@ -3583,7 +3714,7 @@ function _weekReviewHtml(trades, label, periodName){
   }
 
   /* ---- This period against your own baseline ---- */
-  const baseline = ALL_TRADES.filter(t => t.close_date && !periodIds.has(t.id));
+  const baseline = ALL_TRADES.filter(t => t.close_date && _countsAsMoney(t) && !periodIds.has(t.id));
   let baseHtml = '';
   if(baseline.length >= 10){
     const b = _wrStats(baseline);
@@ -5018,7 +5149,9 @@ function _recPeriodOptions(){
 }
 
 function _recTrades(){
-  const rows = ALL_TRADES.filter(t => t.close_date);
+  // Ang rekomendasyon ay galing sa performance — hindi dapat itulak ng
+  // demo P&L ang isang setup pataas.
+  const rows = ALL_TRADES.filter(t => t.close_date && _countsAsMoney(t));
   if(REC_PERIOD === 'all') return rows;
   return rows.filter(t =>
     `${t.close_date.getFullYear()}-${String(t.close_date.getMonth()+1).padStart(2,'0')}` === REC_PERIOD);
@@ -21112,7 +21245,8 @@ const _askPct = n => n === null ? '—' : fmtNum(n, 0) + '%';
    basis na iba — ang mga filter ng dashboard ay para sa panonood, at ang isang
    tanong na nasasagot ng "ang Hulyo lang pala ang tinitingnan mo" ay mapanlinlang. */
 function _askUniverse(){
-  return ALL_TRADES.filter(t => t.close_date && String(t.win_loss || '').trim());
+  // Bawat sagot dito ay tungkol sa pera o sa edge, kaya sumusunod sa Real money.
+  return ALL_TRADES.filter(t => t.close_date && _countsAsMoney(t) && String(t.win_loss || '').trim());
 }
 
 // Pinagsasama-sama ayon sa isang susi, tinatanggal ang blangko at ang maliliit.

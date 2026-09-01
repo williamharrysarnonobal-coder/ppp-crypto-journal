@@ -2317,6 +2317,51 @@ table.breakdown tbody tr{cursor:pointer;}
      isang div na may onclick: ang keyboard at ang screen reader ay libre nang
      nakukuha, at ang buong hilera ang matatamaan ng daliri — na siyang dahilan
      kung bakit hindi kailangan ng anumang panlawak dito. */
+  /* ---------- Ang header ng Dashboard, hinati ----------
+
+     Walong kontrol sa isang hanay, at pare-pareho ang timbang: apat na solidong
+     berdeng buton, isang checkbox, tatlong dropdown. Walang sinasabi ang hanay
+     tungkol sa alin ang magkakasama, at ang apat na punong-punong buton ay
+     sabay na sumisigaw kaya wala sa kanila ang namumukod.
+
+     Dalawang pangkat ngayon, at magkaiba ang tanong nila:
+       tools  — MAGBUBUKAS ng isang bagay
+       scope  — NAGBABAGO ng nakikita mo
+
+     At isang buton lang ang solido. Ang "What should I trade?" ang tinatanong
+     mo bago pumasok sa merkado; ang tatlo ay pagsusuri. Ang pagbibigay ng
+     parehong timbang sa apat ay nagsasabing pare-pareho sila ng bigat. */
+  .fgroup{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+  .fgroup + .fgroup{
+    margin-left:6px;padding-left:14px;
+    border-left:1px solid var(--rule);
+  }
+
+  /* Ang tatlong pangalawang buton ay balangkas lang: nandiyan pa rin sila at
+     madaling makita, pero hindi na sila nakikipagsigawan sa pangunahin. */
+  .filters .rec-open-btn{
+    background:none;color:var(--accent);
+    border:1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  }
+  .filters .rec-open-btn:hover{
+    background:color-mix(in srgb, var(--accent) 12%, transparent);
+    border-color:var(--accent);filter:none;
+  }
+  .filters .rec-open-btn.primary{
+    background:var(--accent);color:#12141C;border-color:var(--accent);
+  }
+  .filters .rec-open-btn.primary:hover{filter:brightness(1.08);background:var(--accent);}
+
+  /* Kapag nag-wrap na ang mga pangkat sa telepono, ang patayong guhit ay
+     nagiging linya sa gitna ng kawalan — mas mabuting espasyo na lang. */
+  @media(max-width:900px){
+    .fgroup + .fgroup{margin-left:0;padding-left:0;border-left:none;}
+  }
+  body.mobile-mode .fgroup{width:100%;}
+  body.mobile-mode .fgroup + .fgroup{
+    margin-top:6px;padding-top:10px;border-top:1px solid var(--rule);
+  }
+
   /* ---------- Ang pagbati ----------
      Nakaupo sa itaas ng "Dashboard" at mas malaki kaysa rito, dahil ito ang
      unang bagay na binabasa mo at ang pamagat ay alam mo na. Walang kahon at
@@ -2336,9 +2381,42 @@ table.breakdown tbody tr{cursor:pointer;}
     font-size:13.5px;line-height:1.6;color:var(--muted);
     max-width:68ch;text-wrap:pretty;
   }
+  /* Ang icon ay kasinglaki ng titik at nakahanay sa baseline nito, kaya bahagi
+     ito ng linya at hindi isang bagay na nakapatong sa tabi. */
+  .greet-icon{
+    display:inline-flex;align-items:center;justify-content:center;
+    width:1.05em;height:1.05em;margin-right:.42em;vertical-align:-.1em;
+    color:var(--accent);
+  }
+  .greet-icon svg{width:100%;height:100%;display:block;}
+
+  /* Ang mga chip: ang mga numerong titingnan mo nang paulit-ulit. Maliit ang
+     label at malaki ang halaga, dahil ang halaga ang hinahanap ng mata at ang
+     label ang sumasagot lang kapag hindi malinaw. */
+  .greet-chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:4px;}
+  .greet-chip{
+    display:inline-flex;align-items:baseline;gap:7px;
+    padding:5px 11px;border-radius:999px;
+    background:var(--surface);border:1px solid var(--rule);
+  }
+  .greet-chip em{
+    font-style:normal;font-size:10px;text-transform:uppercase;
+    letter-spacing:.07em;color:var(--muted);
+  }
+  .greet-chip b{
+    font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:650;
+    color:var(--ink);font-variant-numeric:tabular-nums;
+  }
+  .greet-chip.good b{color:var(--win);}
+  .greet-chip.bad b{color:var(--loss);}
+  .greet-chip.good{border-color:color-mix(in srgb, var(--win) 35%, var(--rule));}
+  .greet-chip.bad{border-color:color-mix(in srgb, var(--loss) 35%, var(--rule));}
+
   body.mobile-mode .greet{margin-bottom:18px;padding-bottom:14px;}
   body.mobile-mode .greet-hi{font-size:21px;}
   body.mobile-mode .greet-line{font-size:12.5px;}
+  body.mobile-mode .greet-chip{padding:5px 10px;}
+  body.mobile-mode .greet-chip b{font-size:11.5px;}
 
   .ask-box{max-width:min(94vw,780px);max-height:88vh;overflow-y:auto;}
   .ask-head-bar{margin-bottom:6px;}
@@ -2742,40 +2820,36 @@ table.breakdown tbody tr{cursor:pointer;}
 
 .dx-s-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;margin-top:12px;}
 
-  /* ---------- Ang lapad ng Discipline & Experiments ----------
+  /* ---------- Discipline & Experiments: laki, hindi lapad ----------
 
-     Ito ang tunay na sanhi ng pagkalito rito, at hindi ito kulay o espasyo.
-     Sa isang malapad na monitor ang panel ay umaabot sa 2500px, at ang dalawang
-     talahanayan ay width:100% — kaya ang "FOMO Entry" ay nasa kaliwang gilid at
-     ang bilang nito ay nasa kanang gilid, halos dalawang dangkal ang layo. Ang
-     mata ay hindi kayang maghatid ng isang hilera sa ganoong distansya, kaya
-     kailangang basahin nang dalawang beses ang bawat linya.
+     Sinubukan kong takpan ito ng max-width para paikliin ang hilera mula 1240px
+     patungong 780px. Gumana ang sukat, pero mas masama ang resulta: 1020px lang
+     ang nagamit sa isang 2560px na screen at ang natira ay bakanteng kalahati.
+     Ang isang panel na kalahati lang ang laman ay mas nakakaabala kaysa sa
+     mahabang hilera, kaya buong lapad ulit ito.
 
-     Dalawang panuntunan ang nag-aayos nito:
+     Ang tunay na problema ay hindi naman talaga ang lapad — ang mahalagang
+     teksto ay kasing-liit ng lahat ng iba. Sa isang malapad na monitor, ang
+     10px na pangalan ng rule sa dulong kaliwa ay hindi nagagawang hilahin ang
+     mata mula sa isang metrong layo. Kaya ang sagot ay ANTAS: palakihin ang
+     bagay na dapat mong makita mula sa malayo, at hayaang manatiling maliit
+     ang paliwanag. */
 
-       · isang hangganan sa pagbabasa para sa buong laman ng panel, para ang
-         tatlong haligi ng ulat ay may tamang sukat
-       · ang talahanayan ng rules ay hindi na umaabot sa buong lapad kundi sa
-         laki ng laman nito, kaya nakadikit ang bilang sa pangalan
+  /* Ang tanong at ang mungkahi — ito ang dalawang dulo na binabasa mo, at ang
+     paliwanag sa gitna (.rp-e) ay sinasadyang naiwang maliit. Kung pare-pareho
+     silang laki, ang mata ay walang mahahawakan at kailangang basahin ang
+     lahat. */
+  .rp-tbl td.rp-q{font-size:14.5px;line-height:1.45;}
+  .rp-tbl td.rp-s{font-size:14.5px;line-height:1.5;}
 
-     Hindi nakikita ang alinman sa laptop; nakikita ang pareho sa monitor. */
-  #disciplineBody{max-width:1240px;}
-  /* Ang max-width ang gumagawa ng trabaho, hindi ang width:auto.
+  /* Ang dalawang dulo ng hilera ng rules: ang pangalan sa kaliwa at ang hatol
+     sa kanan. Ito ang dalawang dapat na mabasa nang sabay kahit magkalayo. */
+  .dx-tbl td:first-child{font-size:14.5px;font-weight:600;}
+  .dx-tbl td.v{font-size:13.5px;font-weight:650;}
+  .dx-tbl td.rate{font-size:14px;}
 
-     Ang isang block-level na table na width:auto ay HINDI lumiliit sa laman
-     nito — ang panuntunan ay max(min-content, min(max-content, available)), at
-     dahil mas malaki ang max-content ng unang haligi kaysa sa espasyo, kinukuha
-     nito ang buong espasyo. Sinukat ko: ang mga numero ay humigpit na sa 52,
-     37, 35 at 58px, pero ang unang haligi ay umabot sa 1057px at hinila ang
-     lahat pabalik sa dulo. Ang pagsasabi lang ng "auto" ay hindi sapat; ang
-     hangganan ang dapat sabihin. */
-  #disciplineBody .dx-tbl{
-    width:auto;min-width:min(100%,620px);max-width:min(100%,780px);
-  }
-  /* Ang unang haligi lang ang lumalaki. Ang mga numero ay may sukat ng numero
-     at nananatiling magkakadikit sa kanan ng pangalan, hindi nagkakalat. */
-  #disciplineBody .dx-tbl td:not(:first-child),
-  #disciplineBody .dx-tbl th:not(:first-child){width:1%;white-space:nowrap;}
+  /* Ang sagot sa bawat kahon ng buod — "Follow the confluence checklist". */
+  .dx-s-v{font-size:16.5px;}
 .dx-s-card{display:flex;flex-direction:column;gap:3px;padding:12px 14px;
     background:var(--surface-2);border:1px solid var(--rule);border-radius:9px;}
 .dx-s-k{font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);}

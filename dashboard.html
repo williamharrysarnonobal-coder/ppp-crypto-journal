@@ -17,7 +17,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<link rel="stylesheet" href="css/style.css?v=286">
+<link rel="stylesheet" href="css/style.css?v=287">
 </head>
 <body>
 
@@ -87,8 +87,9 @@
 
   <div class="view" id="view-dashboard">
   <div class="greet" id="dashGreet" style="display:none;">
-    <span class="greet-hi" id="dashGreetHi"></span>
+    <span class="greet-hi"><span class="greet-icon" id="dashGreetIcon"></span><span id="dashGreetHi"></span></span>
     <span class="greet-line" id="dashGreetLine"></span>
+    <span class="greet-chips" id="dashGreetChips"></span>
   </div>
   <header class="top">
     <div>
@@ -96,7 +97,12 @@
       <div class="sub" id="tradeCountLabel">—</div>
     </div>
     <div class="filters">
-      <button class="rec-open-btn" onclick="openRecommendations()" title="What the data says to look for, and what to skip">
+      <!-- Tatlong magkaibang trabaho ang walong kontrol na ito, at magkakasama
+           silang nakahanay dati na parang pare-pareho lang. Dalawang pangkat
+           ngayon: ang MAGBUBUKAS ng isang bagay, at ang NAGBABAGO ng nakikita
+           mo. Iba ang tanong na sinasagot ng bawat isa. -->
+      <span class="fgroup fgroup-tools">
+      <button class="rec-open-btn primary" onclick="openRecommendations()" title="What the data says to look for, and what to skip">
         <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2Z"/></svg>
         What should I trade?
       </button>
@@ -112,6 +118,8 @@
         <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 4.6 4.6 1.9-4.6 1.9L12 16l-1.9-4.6L5.5 9.5l4.6-1.9z"/><path d="M18 15l.8 2.2 2.2.8-2.2.8L18 21l-.8-2.2-2.2-.8 2.2-.8z"/></svg>
         Ask my data
       </button>
+      </span>
+      <span class="fgroup fgroup-scope">
       <label class="real-toggle" title="Count only Funded and Exchange accounts. Demo and Evaluation P&amp;L is a score in a test, not money you can spend. Your choice is remembered and follows your account.">
         <input type="checkbox" class="real-money-box" id="realMoneyOnly" onchange="setRealMoneyOnly(this.checked)">
         Real money only
@@ -121,6 +129,7 @@
       <select id="accountFilter" onchange="applyFilters()">
         <option value="all">All accounts</option>
       </select>
+      </span>
     </div>
   </header>
 
@@ -1316,6 +1325,13 @@
     <button class="modal-close" onclick="closeYearOverview()">✕</button>
     <div class="yo-head">
       <h3>Year overview</h3>
+      <!-- Sariling kahon dito dahil buong screen ang modal na ito: hindi mo
+           maaabot ang nasa dashboard nang hindi ito isinasara. Iisa pa rin ang
+           pagpili — sabay silang gumagalaw. -->
+      <label class="real-toggle" title="Count only Funded and Exchange accounts. Demo and Evaluation P&amp;L is a score in a test, not money you can spend. Your choice is remembered and follows your account.">
+        <input type="checkbox" class="real-money-box" id="yoRealMoneyOnly" onchange="setRealMoneyOnly(this.checked)">
+        Real money only
+      </label>
       <div class="yo-nav">
         <button type="button" onclick="shiftOverviewYear(-1)" title="Previous year">‹</button>
         <span id="yearOverviewLabel">—</span>
@@ -2186,6 +2202,6 @@
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=2"></script>
-<script src="js/dashboard.js?v=476"></script>
+<script src="js/dashboard.js?v=477"></script>
 </body>
 </html>
