@@ -3677,11 +3677,17 @@ const TAG_QUESTIONS = [
       { label:'Left it alone',      tags:['No BE at Prev High/Low'] },
       { label:'Moved to breakeven', tags:["BE'd at Prev High/Low"] },
     ],
-    // Not an arm — a count of trades you have already marked as ones a
-    // breakeven stop would have rescued. It argues for moving the stop
-    // regardless of which arm is ahead, so it is stated separately.
+    /* Not an arm — a count of trades where price came back to your entry and
+       then recovered. A breakeven stop would have closed every one of them at
+       nothing, so this argues AGAINST moving the stop, whichever arm is ahead.
+
+       This was written the wrong way round ("trades a breakeven stop would
+       have saved") and so was pulling the reader toward the opposite
+       conclusion from the one the tag records. The tag means you were glad you
+       left the stop where it was. */
     hint:{ tags:["Would Have BE'd Out"],
-           txt:'you marked as trades a breakeven stop would have saved' },
+           txt:'came back to your entry and then recovered — a breakeven stop '
+             + 'would have closed each one flat' },
     outcome:{ field:'post_be_result',
               right:{ value:'SL After BE',  label:'saved the loss' },
               wrong:{ value:'TP After BE',  label:'cost you the trade' },
@@ -16944,6 +16950,7 @@ function accountCardHTML(a){
         const pctOfTarget = Math.round(plPct / a.profit_target_pct * 100);
         balanceHTML += `
           <div class="account-progress-bar ${tone}"><div class="account-progress-fill" style="width:${(progressFraction*100).toFixed(1)}%;"></div>
+            ${reached ? '' : `<b class="account-progress-pct" style="--p:${(progressFraction*100).toFixed(1)}%">${pctOfTarget}%</b>`}
             <span class="account-progress-end">${reached ? `${pctOfTarget}%` : _GOAL_TROPHY}</span></div>
           <div class="account-progress-label">${plPct >= 0 ? '' : '-'}${Math.abs(plPct).toFixed(1)}% of ${a.profit_target_pct}% target</div>
         `;

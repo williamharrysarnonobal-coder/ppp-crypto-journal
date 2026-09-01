@@ -1798,6 +1798,22 @@
     animation:calGoalSheen 6s linear infinite;
   }
 
+  /* The percentage OF THE TARGET, riding the fill's leading edge — the same
+     pill the salary goal uses, and it was simply never added here. It is a
+     different number from the caption underneath: that one is "5.2% of 8%
+     target", this one is how far along the 8% you are. Gone once the target
+     is reached, where there is no leading edge left to mark. */
+  .account-progress-pct{
+    position:absolute;top:50%;left:clamp(28px, var(--p,0%), calc(100% - 34px));
+    transform:translate(-50%,-50%);z-index:3;
+    padding:2px 7px;border-radius:999px;
+    font-family:'IBM Plex Mono',monospace;font-size:10.5px;font-weight:700;
+    font-variant-numeric:tabular-nums;white-space:nowrap;
+    color:var(--gt,var(--accent));
+    background:var(--surface-2);border:1.5px solid var(--gt,var(--accent));
+    transition:left .6s cubic-bezier(.22,.8,.3,1);
+  }
+
   .account-progress-end{
     position:absolute;right:0;top:50%;transform:translateY(-50%);z-index:2;
     width:20px;height:20px;border-radius:50%;
