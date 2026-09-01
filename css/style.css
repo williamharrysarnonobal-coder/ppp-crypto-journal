@@ -55,11 +55,22 @@
   body.auth-page{
     min-height:100vh;display:flex;flex-direction:column;
   }
-  .auth-page-center{flex:1;display:flex;align-items:center;justify-content:center;}
+  /* Ang gilid na padding dito ang nagbibigay ng hangin sa card sa telepono.
+     Kung wala, ang max-width:400px na card ay nagiging width:100% sa 390px na
+     screen at dumidikit ang hangganan nito sa magkabilang gilid — walang
+     margin, mukhang naputol. Ang Login ay may hangin na dahil ang .login-form-
+     side nito ay may sariling padding; ang Signup, Forgot at Reset ay wala.
+     Sa malapad na screen ay walang epekto: naka-cap pa rin sa 400px ang card. */
+  .auth-page-center{flex:1;display:flex;align-items:center;justify-content:center;padding:0 16px;}
   .auth-card{
     max-width:400px;width:100%;margin:8vh auto;padding:36px;background:var(--surface);
     border:1px solid var(--rule);border-radius:12px;
     box-shadow:0 24px 60px -28px rgba(0,0,0,.5);
+  }
+  /* 36px sa magkabilang panig ay 72px ng 360px na screen — halos isang katlo
+     ng lapad ay hangin. Luwagan ang card, hindi ang laman. */
+  @media(max-width:480px){
+    .auth-card{padding:26px 20px;margin:5vh auto;}
   }
   .auth-card h1{font-family:var(--font-ui);font-size:22px;margin:0 0 6px;}
   .auth-card p{color:var(--muted);font-size:14px;line-height:1.6;margin:0;}
@@ -1262,6 +1273,21 @@ table.breakdown tbody tr{cursor:pointer;}
        and still leaves the nav controls where they were. */
     margin:0 auto 0 0;flex-shrink:0;
   }
+  /* Ang lid ng isang panel. Ang .panel h2 ay display:flex na space-between,
+     kaya ang pangalawang anak ay kusang napupunta sa kanang dulo — doon nga
+     dapat ang isang kontrol na hindi ang pamagat. Hindi ito nagsasalita nang
+     malakas: ang panel ang nilalaman, ito ay ang lid lang. */
+  .panel-fold-btn{
+    font:inherit;font-size:11.5px;font-weight:600;letter-spacing:.03em;
+    text-transform:uppercase;color:var(--muted);cursor:pointer;
+    background:none;border:1px solid var(--rule);border-radius:999px;
+    padding:4px 11px;flex:none;
+    transition:color .15s ease, border-color .15s ease;
+  }
+  .panel-fold-btn:hover{color:var(--ink);border-color:var(--muted);}
+  .panel-fold-btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+  body.mobile-mode .panel-fold-btn{min-height:34px;padding:4px 14px;}
+
   .panel-info-btn:hover{color:var(--accent);}
   .panel-info-btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:50%;}
 
@@ -2261,6 +2287,74 @@ table.breakdown tbody tr{cursor:pointer;}
      of stats, and at the old width three of them fought for the same line. */
   /* ---------- Setup check ---------- */
   .sc-box{max-width:min(94vw,860px);max-height:88vh;overflow-y:auto;}
+
+  /* ---------- Ask my data ----------
+     Ang bawat tanong ay isang buton na nagbubukas pababa. Isang buton, hindi
+     isang div na may onclick: ang keyboard at ang screen reader ay libre nang
+     nakukuha, at ang buong hilera ang matatamaan ng daliri — na siyang dahilan
+     kung bakit hindi kailangan ng anumang panlawak dito. */
+  .ask-box{max-width:min(94vw,780px);max-height:88vh;overflow-y:auto;}
+  .ask-head-bar{margin-bottom:6px;}
+  .ask-sub{display:block;font-size:12px;color:var(--muted);margin-bottom:16px;}
+  .ask-intro{
+    font-size:12.5px;line-height:1.6;color:var(--muted);
+    background:var(--surface-2);border:1px solid var(--rule);border-radius:8px;
+    padding:11px 13px;margin-bottom:18px;
+  }
+  .ask-group{margin-bottom:22px;}
+  .ask-group:last-child{margin-bottom:0;}
+
+  .ask-q{
+    display:block;width:100%;text-align:left;font:inherit;cursor:pointer;
+    background:var(--surface-2);border:1px solid var(--rule);border-radius:8px;
+    padding:12px 14px;margin-bottom:8px;
+    transition:border-color .15s ease, background .15s ease;
+  }
+  .ask-q:hover{border-color:var(--muted);}
+  .ask-q:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+  .ask-q.open{border-color:var(--accent);background:var(--surface);}
+  .ask-q-text{display:block;font-size:13.5px;font-weight:650;color:var(--ink);}
+  .ask-q-hint{display:block;font-size:11.5px;line-height:1.5;color:var(--muted);margin-top:3px;}
+  .ask-q.open .ask-q-hint{display:none;}
+
+  .ask-a{display:block;}
+  .ask-q.open .ask-a{margin-top:12px;padding-top:12px;border-top:1px solid var(--rule);}
+
+  /* Ang sagot ay isang pangungusap muna, tapos ang mga numero. Ang kabaligtaran
+     — numero muna — ay nag-iiwan sa iyo na ikaw pa ang bubuo ng konklusyon,
+     na siya namang trabahong ipinasa mo sa buton na ito. */
+  .ask-head{
+    display:block;font-size:14.5px;font-weight:700;line-height:1.45;
+    color:var(--ink);margin-bottom:10px;text-wrap:balance;
+  }
+  .ask-head.ask-good{color:var(--win);}
+  .ask-head.ask-bad{color:var(--loss);}
+  .ask-head.ask-warn{color:var(--warn);}
+  .ask-head.ask-flat{color:var(--ink);}
+
+  .ask-lines{display:flex;flex-direction:column;gap:5px;margin-bottom:11px;}
+  .ask-lines span{
+    font-family:'IBM Plex Mono',monospace;font-size:11.5px;line-height:1.6;
+    color:var(--muted);font-variant-numeric:tabular-nums;
+  }
+  .ask-action{
+    display:block;font-size:12.5px;line-height:1.6;color:var(--ink);
+    background:color-mix(in srgb, var(--accent) 9%, transparent);
+    border-left:3px solid var(--accent);border-radius:0 6px 6px 0;
+    padding:9px 12px;
+  }
+  /* Kung saan galing ang sagot. Ang isang numerong walang pinanggalingan ay
+     dapat pagdudahan, kasama na ang sarili kong numero. */
+  .ask-basis{
+    display:block;font-size:10.5px;line-height:1.55;color:var(--muted);
+    margin-top:9px;opacity:.8;
+  }
+  .ask-thin{display:block;font-size:12.5px;line-height:1.6;color:var(--muted);}
+
+  @media(max-width:640px){
+    .ask-q-text{font-size:13px;}
+    .ask-head{font-size:13.5px;}
+  }
   .sc-head{display:flex;align-items:center;gap:18px;flex-wrap:wrap;margin:0 46px 18px 0;}
   .sc-head h3{margin:0;}
   .sc-picks{display:flex;gap:14px;flex-wrap:wrap;margin-left:auto;}
@@ -3372,3 +3466,57 @@ table.breakdown tbody tr{cursor:pointer;}
   body.mobile-mode .sal-journey-note{text-align:left;}
   body.mobile-mode .config-add-row{flex-wrap:wrap;}
   body.mobile-mode .config-add-row input{min-width:0;}
+
+  /* ---------- Laki ng mapipindot sa telepono ----------
+
+     Ang mouse ay tumpak sa isang pixel; ang daliri ay humahawak ng mga 9mm.
+     Kaya ang mga kontrol na perpekto sa desktop ay hindi matamaan sa telepono:
+     ang ⓘ ng bawat panel ay 20×13, ang ‹ › ng kalendaryo ay 26×26, at ang
+     "120 incomplete" na pinipindot ay 15px lang ang taas. 44px ang pamantayan
+     ng Apple, 48px ang sa Google.
+
+     Dalawang paraan, at may dahilan ang bawat isa:
+
+       · Ang may sariling puwang ay binibigyan ng min-height. Lumalaki ang
+         kahon, at mas maganda pa nga ang hitsura.
+
+       · Ang naka-ipit sa tabi ng pamagat (ang ⓘ), ang naka-absolute sa sulok
+         (ang lapis), at ang tekstong nasa gitna ng pangungusap ay hindi
+         mapapalaki nang hindi gumagalaw ang paligid nila. Sa kanila ay isang
+         hindi nakikitang ::after ang nagpapalawak ng MATATAMAAN habang ang
+         layout ay hindi gumagalaw ni isang pixel.
+
+     Ang .real-toggle ay wala rito nang sadya: 13×13 ang checkbox nito, pero
+     ito ay nasa loob ng isang <label>, kaya ang buong pill ang tumatanggap ng
+     pindot. Malaki na ito. */
+  body.mobile-mode .panel-info-btn,
+  body.mobile-mode .journal-warn-count,
+  body.mobile-mode .journal-invalid-count{position:relative;}
+
+  body.mobile-mode .panel-info-btn::after,
+  body.mobile-mode .account-edit-btn-corner::after{
+    content:'';position:absolute;top:50%;left:50%;
+    width:40px;height:40px;transform:translate(-50%,-50%);
+  }
+  /* Ang dalawang ito ay teksto sa loob ng isang linya — ang taas lang ang
+     pinapalawak, sa buong lapad ng mismong teksto. */
+  body.mobile-mode .journal-warn-count::after,
+  body.mobile-mode .journal-invalid-count::after{
+    content:'';position:absolute;left:0;right:0;top:50%;
+    height:40px;transform:translateY(-50%);
+  }
+
+  /* Ang .grp-s ay may white-space:nowrap at margin-left:auto — sa desktop ay
+     isang maayos na linyang nakausli sa kanan ng pamagat. Sa telepono ay
+     lumalampas ito sa gilid at naputol nang tahimik: ang "Where the month
+     actually stands, and what to do about it" ay nagiging "...and what to do".
+     Walang scrollbar at walang senyales — nawawala lang ang dulo.
+     Sa makitid na screen ito ay sariling linya na nakakabalot. */
+  body.mobile-mode .grp-s{
+    white-space:normal;margin-left:0;flex-basis:100%;line-height:1.5;
+  }
+
+  body.mobile-mode .nav > button{min-width:40px;min-height:40px;}
+  body.mobile-mode .poscalc-accent-btn,
+  body.mobile-mode .rec-open-btn,
+  body.mobile-mode .tab{min-height:40px;}

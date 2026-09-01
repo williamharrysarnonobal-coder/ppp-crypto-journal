@@ -255,7 +255,12 @@ const UI_PREF_LS_KEYS = {
   poscalc_risk_amounts: 'possize-risk-amounts',
   // Which dashboard groups you keep open — a working preference, not a
   // per-device one.
-  dash_groups: 'dash-groups'
+  dash_groups: 'dash-groups',
+  // Nakatago ba ang Journaled Setups. Isang beses lang tinitingnan ang listahan
+  // pagkatapos i-journal ang isang setup, kaya karaniwang nasa daan lang ito.
+  // Sinusundan nito ang account, hindi ang browser: kung itinago ito sa laptop,
+  // dapat nakatago rin sa telepono.
+  journaled_setups_hidden: 'ledger-journaled-setups-hidden'
 };
 
 let _uiPrefsSyncTimer = null;
@@ -330,6 +335,9 @@ function applyUIPrefsFromProfile(){
       calcDraftLoaded = false;
       refreshPosSizeCalculator();
     }
+    // Walang muling pag-render na kailangan — isang lid lang ito, at ang laman
+    // sa ilalim nito ay nakaguhit na. I-apply lang ang bagong dating na pili.
+    if(changedKeys.includes('journaled_setups_hidden')) applyJournaledSetupsFold();
     if(currentView === 'settings') renderSettingsPage();
     if(currentView === 'config'){ renderColumnConfigUI(); renderOptionsEditor(); renderFormFieldConfigUI(); }
   }finally{
@@ -459,8 +467,19 @@ function renderSettingsPage(){
    site on a phone gave you the full desktop shell: fixed sidebar, wide panels,
    everything spilling off the side. That is the "sira sira" — not a broken
    rule anywhere, but the good rules never being asked to apply. */
-const MOBILE_MAX = 820;   // above this the sidebar has room to stay a sidebar
-const MOBILE_MQ  = '(max-width:' + MOBILE_MAX + 'px)';
+/* Dalawang sukat, hindi isa.
+
+   Ang lapad lang ay nakakaligtaan ang isang teleponong nakahiga: ang 844×390
+   ay mas malapad sa 820, kaya nakukuha nito ang buong desktop shell — sidebar
+   at lahat — sa isang screen na 390px lang ang taas. Ang sidebar ay tumatayo
+   nang patayo; sa 390px na taas ay wala itong pupuwestuhan.
+
+   Kaya ang taas ang pangalawang tanong. Walang laptop na 480px ang taas ng
+   viewport; ang bawat teleponong nakahiga ay ganoon. Ang isang tablet na
+   1180×820 ay dumadaan sa dalawa at nananatiling desktop, na tama naman. */
+const MOBILE_MAX = 820;    // above this the sidebar has room to stay a sidebar
+const MOBILE_MAX_H = 480;  // below this it has no room to stand up in
+const MOBILE_MQ  = '(max-width:' + MOBILE_MAX + 'px),(max-height:' + MOBILE_MAX_H + 'px)';
 
 function _mobileModeChoice(){
   try{ return localStorage.getItem('ledger-mobile-mode') || 'auto'; }
@@ -18809,6 +18828,42 @@ function setupRowHTML(s, selectable){
 `;
 }
 
+/* ---------------- Journaled Setups: itago / ipakita ----------------
+   Ang listahang ito ay tinitingnan minsan lang — pagkatapos i-journal ang isang
+   setup — pero nasa ilalim ito ng Calculator araw-araw. Kaya isang lid.
+
+   Nananatiling NAKIKITA ang default. Ang pagtatago nito nang kusa ay magmumukhang
+   nawala ang panel; ang pagpindot minsan ay isang desisyon na naaalala.
+   Ang bilang ay nananatili sa buton kahit nakatipi, kaya hindi nawawala ang
+   impormasyon — nawawala lang ang laki nito. */
+function _journaledSetupsHidden(){
+  try{ return localStorage.getItem('ledger-journaled-setups-hidden') === '1'; }
+  catch(e){ return false; }
+}
+
+function applyJournaledSetupsFold(count){
+  const wrap = document.getElementById('journaledSetupsWrap');
+  const btn  = document.getElementById('journaledSetupsFoldBtn');
+  if(!wrap || !btn) return;
+  const hidden = _journaledSetupsHidden();
+  wrap.style.display = hidden ? 'none' : '';
+  // Ang bilang ay opsyonal: kapag tinawag ito nang wala nito (halimbawa sa
+  // unang laglag bago dumating ang setups), ang nasa DOM na ang sinasagot.
+  const n = (count === undefined)
+    ? document.querySelectorAll('#journaledSetupsBody tr').length
+    : count;
+  btn.textContent = (hidden ? 'Show' : 'Hide') + (n ? ` (${n})` : '');
+  btn.setAttribute('aria-expanded', hidden ? 'false' : 'true');
+  btn.title = hidden ? 'Show the journaled setups' : 'Hide this list — the count stays here';
+}
+
+function toggleJournaledSetups(){
+  try{ localStorage.setItem('ledger-journaled-setups-hidden',
+       _journaledSetupsHidden() ? '0' : '1'); }catch(e){}
+  applyJournaledSetupsFold();
+  syncUIPrefsToProfile();
+}
+
 function renderSavedSetups(){
   const pendingTable = document.getElementById('pendingSetupsTable');
   const pendingBody = document.getElementById('pendingSetupsBody');
@@ -18847,6 +18902,9 @@ function renderSavedSetups(){
     journaledEmptyState.style.display = 'block';
     journaledTable.style.display = 'none';
   }
+  // Ang bilang ay nasa buton, kaya may masasabi pa rin ito kahit nakatago:
+  // "Show (7)" ay sapat na para malaman kung may dapat bang tingnan.
+  applyJournaledSetupsFold(journaled.length);
 }
 
 // Before/After are two fixed, independent slots (not a growing log) — each
@@ -20711,4 +20769,793 @@ function downloadReportPDF(){
   }
 
   doc.save(`Tanaydana-Report-${label.replace(/[^\w\d]+/g,'-')}.pdf`);
+}
+
+
+/* ============================================================================
+   ASK MY DATA — nakahandang tanong na sinasagot mula mismo sa journal.
+
+   Walang modelo ng wika dito, at sinadya iyon. Ang bawat sagot ay kinakalkula
+   mula sa mga trade mo, kaya ang bawat numerong lumalabas ay bilang ng isang
+   bagay na talagang nangyari. Ang isang LLM ay mas maganda magsalita pero
+   kayang gumawa ng numerong mukhang totoo — at sa isang trading journal, ang
+   maling numerong kapani-paniwala ay mas masahol pa sa walang sagot.
+
+   Ang bawat tanong ay may sariling run(), at ito ang kontrata:
+
+     { headline, tone, lines[], action, basis }   — may sagot
+     { notEnough: 'dahilan' }                     — kulang pa ang datos
+
+   Ang notEnough ay hindi pagkabigo. Ang pinakamadaling paraan para makagawa ng
+   nakakaligaw na payo ay ang sagutin ang tanong na walang sapat na trade, kaya
+   mas mabuti pang sabihin kung ilan pa ang kulang. */
+
+const ASK_MIN_N = 8;     // ang pinakamaliit na pangkat na pag-uusapan
+const ASK_MIN_CELL = 6;  // para sa pinagkrus na hiwa (pattern × session)
+
+/* Ang expectancy — ang inaasahang piso kada trade — ang siyang tunay na sukat,
+   hindi ang win rate. Ang 70% na win rate na may maliliit na panalo at malalaking
+   talo ay lugi; ang 35% na may 4R na panalo ay kumikita. Halos lahat ng tanong
+   dito ay nagtatapos sa numerong ito. */
+function _askStats(trades){
+  const wins = trades.filter(_isWin).length;
+  const losses = trades.filter(_isLoss).length;
+  const bes = trades.filter(_isBE).length;
+  const net = trades.reduce((s, t) => s + netPnl(t), 0);
+  const decided = wins + losses;
+  return {
+    n: trades.length, wins, losses, bes, net,
+    wr: decided ? wins / decided * 100 : null,
+    exp: trades.length ? net / trades.length : null,
+  };
+}
+
+/* Dalawang anyo ng pera, at may kahulugan ang pagkakaiba.
+
+   _askMoney ay laging may sign, dahil ito ay para sa P&L: mahalaga kung ang
+   $200 ay kita o lugi, at ang "+" ay nagsasabi niyon nang walang salita.
+
+   _askAmt ay walang sign, dahil ito ay para sa LAKI: isang target, isang agwat,
+   ang distansya sa drawdown floor. Ang paggamit ng _askMoney sa mga ito ay
+   nagbubunga ng "-$2,451 to go", na parang may utang ka pang $2,451 gayong
+   iyon lang naman ang natitira mong abutin. */
+const _askMoney = n => (n < 0 ? '-' : '+') + '$' + Math.abs(n)
+  .toLocaleString(undefined, { maximumFractionDigits: 0 });
+const _askAmt = n => '$' + Math.abs(n)
+  .toLocaleString(undefined, { maximumFractionDigits: 0 });
+const _askPct = n => n === null ? '—' : fmtNum(n, 0) + '%';
+
+/* Ang mga trade na may sapat na datos para pag-usapan: sarado, may petsa.
+   Sinasagot ng lahat ng tanong ang BUONG kasaysayan maliban kung sinasabi ng
+   basis na iba — ang mga filter ng dashboard ay para sa panonood, at ang isang
+   tanong na nasasagot ng "ang Hulyo lang pala ang tinitingnan mo" ay mapanlinlang. */
+function _askUniverse(){
+  return ALL_TRADES.filter(t => t.close_date && String(t.win_loss || '').trim());
+}
+
+// Pinagsasama-sama ayon sa isang susi, tinatanggal ang blangko at ang maliliit.
+function _askGroupBy(trades, keyFn, minN){
+  const by = new Map();
+  trades.forEach(t => {
+    const k = keyFn(t);
+    if(!k || k === 'Unspecified' || k === '—') return;
+    if(!by.has(k)) by.set(k, []);
+    by.get(k).push(t);
+  });
+  return [...by.entries()]
+    .filter(([, arr]) => arr.length >= (minN ?? ASK_MIN_N))
+    .map(([k, arr]) => ({ key: k, trades: arr, ...(_askStats(arr)) }));
+}
+
+// Ang ika-ilang trade sa loob ng araw, ayon sa oras ng pagbukas. Kailangan ito
+// ng dalawang tanong (revenge at kailan titigil), kaya isang beses lang ito.
+function _askDayIndex(trades){
+  const byDay = new Map();
+  trades.forEach(t => {
+    const d = t.open_date || t.close_date;
+    if(!d) return;
+    const k = _dayKeyUTC(new Date(d));
+    if(!byDay.has(k)) byDay.set(k, []);
+    byDay.get(k).push(t);
+  });
+  const out = [];
+  byDay.forEach(arr => {
+    arr.sort((a, b) => (a.open_date || a.close_date) - (b.open_date || b.close_date));
+    arr.forEach((t, i) => out.push({ t, idx: i + 1, prev: i ? arr[i - 1] : null }));
+  });
+  return out;
+}
+
+const ASK_GROUPS = [
+  { id: 'money',  n: '1', title: 'Money and the goal',
+    sub: 'Where the month actually stands, and what to do about it' },
+  { id: 'edge',   n: '2', title: 'Is my edge still working',
+    sub: 'What is earning, what has stopped, and what to drop' },
+  { id: 'habit',  n: '3', title: 'How I behave',
+    sub: 'The patterns in how you trade, not in what you trade' },
+];
+
+const ASK_QUESTIONS = [
+
+  /* -------------------------------------------------- 1. Money and the goal */
+  {
+    id: 'month-green', group: 'money',
+    q: 'What one change would have made this month green?',
+    hint: 'Replays the month with each cause removed and ranks them by what it would have been worth.',
+    run(){
+      const now = new Date();
+      const y = now.getFullYear(), m = now.getMonth();
+      const month = _askUniverse().filter(t => {
+        const d = t.close_date;
+        return d.getFullYear() === y && d.getMonth() === m;
+      });
+      if(month.length < 5) return { notEnough:
+        `Only ${month.length} closed trade${month.length === 1 ? '' : 's'} this month. Ask again once there are at least 5 — before that, one trade moves the whole answer.` };
+
+      const net = month.reduce((s, t) => s + netPnl(t), 0);
+
+      /* Bawat kandidato ay isang tanong na "paano kung wala ito": alisin ang
+         lahat ng trade na may katangiang ito at tingnan ang natitirang buwan.
+         Hindi ito hula — ang mga trade na iyon ay nangyari, at ito ang totoong
+         kabuuan kung wala sila. */
+      const cands = [];
+      const add = (label, kind, keep) => {
+        const without = month.filter(keep);
+        if(without.length === month.length) return;      // walang tinanggal
+        if(!without.length) return;                      // lahat tatanggalin
+        const gain = without.reduce((s, t) => s + netPnl(t), 0) - net;
+        if(gain <= 0) return;                            // wala itong naitutulong
+        cands.push({ label, kind, gain, removed: month.length - without.length });
+      };
+
+      /* Ang unfollowed_rules ay isang STRING na pinagdugtong ng comma, hindi
+         array — ang normalizeTrade ay nag-.join(', ') dito. Ang unang sulat ko
+         ay Array.isArray(), na laging false, kaya tahimik na WALANG rule ang
+         nakita. Ang _brokenRuleTags ang tamang pintuan: ito ang naghahati,
+         nagsasalin ng alias, at nagsasala para sa mga tunay na paglabag —
+         hindi ang mga obserbasyon, na hindi naman pagkakamali. */
+      const tagsOf = t => _brokenRuleTags(t.unfollowed_rules);
+      new Set(month.flatMap(tagsOf)).forEach(tag =>
+        add(`the trades where you ${tag.toLowerCase()}`, 'rule', t => !tagsOf(t).includes(tag)));
+      new Set(month.map(t => t.session).filter(s => s && s !== 'Unspecified')).forEach(s =>
+        add(`the ${s} session`, 'session', t => t.session !== s));
+      new Set(month.map(t => t.pattern_type).filter(p => p && p !== 'Unspecified')).forEach(p =>
+        add(`the ${p} setups`, 'pattern', t => t.pattern_type !== p));
+
+      cands.sort((a, b) => b.gain - a.gain);
+      if(!cands.length) return {
+        headline: net >= 0 ? 'Nothing was dragging this month down.' : 'No single cause explains this month.',
+        tone: net >= 0 ? 'good' : 'flat',
+        lines: [`The month is at ${_askMoney(net)} across ${month.length} trades.`,
+          net >= 0 ? 'Every group of trades is carrying its weight.'
+                   : 'The losses are spread evenly rather than sitting in one setup, session or rule. That usually means sizing or the market, not a leak you can name.'],
+        action: net >= 0 ? 'Keep going.' : 'Look at the Breakeven and Invalidation reports instead — the leak is in how you manage trades, not which ones you take.',
+        basis: `This month, ${month.length} closed trades.`,
+      };
+
+      const top = cands[0];
+      return {
+        headline: net >= 0
+          ? `The month is already green — but dropping ${top.label} would have added ${_askMoney(top.gain)}.`
+          : `Dropping ${top.label} alone would have made the month ${_askMoney(net + top.gain)}.`,
+        tone: net >= 0 ? 'good' : (net + top.gain >= 0 ? 'warn' : 'bad'),
+        lines: [
+          `The month stands at ${_askMoney(net)} across ${month.length} trades.`,
+          ...cands.slice(0, 3).map(c =>
+            `Without ${c.label} — ${c.removed} trade${c.removed === 1 ? '' : 's'} — the month is ${_askMoney(net + c.gain)}, ${_askMoney(c.gain)} better.`),
+        ],
+        action: top.kind === 'rule'
+          ? `The biggest single leak is a rule you are breaking, not a setup that stopped working. That is the cheapest thing on this list to fix.`
+          : `Try one month without ${top.label} and compare. If the gap holds, it is real.`,
+        basis: `This month, ${month.length} closed trades. Each line is the real total with those trades removed.`,
+      };
+    },
+  },
+
+  {
+    id: 'pace', group: 'money',
+    q: 'Am I on pace for my salary goal this month?',
+    hint: 'Not just the percentage — how many more trades it takes at the size you actually win.',
+    run(){
+      if(!PROFILE_DATA) return { notEnough: 'Your profile has not loaded yet. Try again in a moment.' };
+      const v = _salarySettings();
+      const aed = Number(v.aed_per_usd) > 0 ? Number(v.aed_per_usd) : SALARY_DEFAULTS.aed_per_usd;
+      const salary = Number(v.monthly_salary);
+      if(!Number.isFinite(salary) || salary <= 0)
+        return { notEnough: 'No monthly salary is saved. Set it on the Salary vs Trading page and this can answer.' };
+
+      const need = salary / aed;
+      const now = new Date();
+      const y = now.getFullYear(), m = now.getMonth();
+      const month = _askUniverse().filter(t =>
+        t.close_date.getFullYear() === y && t.close_date.getMonth() === m);
+      const made = month.reduce((s, t) => s + netPnl(t), 0);
+      const short = need - made;
+      const left = _tradingDaysLeft(y, m, now);
+
+      if(made >= need) return {
+        headline: `Goal reached — ${Math.round(made / need * 100)}% of it, with ${left} trading day${left === 1 ? '' : 's'} still to go.`,
+        tone: 'good',
+        lines: [`You needed ${_askAmt(need)} and you are at ${_askMoney(made)}.`,
+          'Everything from here is ahead of the salary, not chasing it.'],
+        action: 'The risk now is giving it back. This is the part of the month where size creeps up.',
+        basis: `${month.length} closed trades this month against a ${_askAmt(need)} target.`,
+      };
+
+      // Ang laki ng panalo ay galing sa BUONG kasaysayan, hindi sa buwang ito:
+      // ang isang masamang buwan ay magbibigay ng maliit na average at
+      // magmumungkahi ng mas maraming trade kaysa sa totoong kailangan.
+      const all = _askUniverse();
+      const wins = all.filter(_isWin);
+      const avgWin = wins.length ? wins.reduce((s, t) => s + netPnl(t), 0) / wins.length : null;
+      const st = _askStats(all);
+      const perTrade = st.exp;
+
+      const lines = [`You need ${_askAmt(need)} this month and you are at ${_askMoney(made)} — ${_askAmt(short)} to go.`];
+      if(left > 0) lines.push(`That is ${_askAmt(short / left)} a day across the ${left} trading day${left === 1 ? '' : 's'} you have left.`);
+      if(avgWin && avgWin > 0)
+        lines.push(`Your average win is ${_askMoney(avgWin)}, so that is about ${Math.ceil(short / avgWin)} more winning trades.`);
+      if(perTrade && perTrade > 0)
+        lines.push(`At your long-run average of ${_askMoney(perTrade)} per trade — wins and losses together — it takes about ${Math.ceil(short / perTrade)} more trades.`);
+
+      let tone = 'warn', action;
+      if(perTrade !== null && perTrade <= 0){
+        tone = 'bad';
+        action = 'Your long-run average per trade is not positive, so more trades will not close this gap. The gap is not a volume problem.';
+      }else if(left <= 0){
+        tone = 'bad';
+        action = 'The month is out of trading days. This one is set — carry the number into next month rather than forcing trades.';
+      }else if(perTrade && Math.ceil(short / perTrade) / left > 4){
+        tone = 'bad';
+        action = `That is more than 4 trades a day every remaining day. Reaching for it is how ${left} days becomes a drawdown — treat the goal as missed and protect the account instead.`;
+      }else{
+        action = 'The pace is reachable at your normal rate. Nothing here needs bigger size.';
+      }
+      return { headline: left > 0
+          ? `${_askAmt(short)} to go, ${left} trading day${left === 1 ? '' : 's'} left.`
+          : `${_askAmt(short)} short, and the month is out of trading days.`,
+        tone, lines, action,
+        basis: `This month against your saved salary (${fmtNum(salary, 0)} AED ÷ ${fmtNum(aed, 2)}). Trade sizes come from all ${all.length} trades.` };
+    },
+  },
+
+  {
+    id: 'prop-risk', group: 'money',
+    q: 'How close am I to breaking a prop firm rule?',
+    hint: 'Distance to the drawdown floor, measured in losing trades of the size you actually lose.',
+    run(){
+      const accs = (TRADING_ACCOUNTS || []).filter(a =>
+        a.account_type !== 'Exchange' && Number(a.account_size) > 0);
+      if(!accs.length) return { notEnough: 'No prop firm accounts are set up with an account size. Add them on My Accounts.' };
+
+      const all = _askUniverse();
+      const losses = all.filter(_isLoss);
+      const avgLoss = losses.length
+        ? Math.abs(losses.reduce((s, t) => s + netPnl(t), 0) / losses.length) : null;
+
+      const rows = [];
+      accs.forEach(a => {
+        const s = computeAccountStats(a);
+        const room = s.currentBalance - s.drawdownFloor;
+        const toGoal = s.profitGoal - s.currentBalance;
+        rows.push({ name: a.account_name, room, toGoal,
+          trades: (avgLoss && avgLoss > 0) ? Math.floor(room / avgLoss) : null,
+          daily: s.dailyLossLimit - s.dailyLossUsed });
+      });
+      rows.sort((a, b) => (a.trades ?? 1e9) - (b.trades ?? 1e9));
+      const worst = rows[0];
+
+      const lines = rows.map(r => {
+        const bits = [`${r.name}: ${_askAmt(r.room)} above the floor`];
+        if(r.trades !== null) bits.push(`about ${r.trades} more losing trade${r.trades === 1 ? '' : 's'} at your average`);
+        if(r.toGoal > 0) bits.push(`${_askAmt(r.toGoal)} from the profit target`);
+        return bits.join(' — ') + '.';
+      });
+      if(avgLoss) lines.push(`Your average loss is ${_askMoney(-avgLoss)} across ${losses.length} losing trades.`);
+
+      const tone = worst.trades === null ? 'flat'
+        : worst.trades <= 3 ? 'bad' : worst.trades <= 8 ? 'warn' : 'good';
+      return {
+        headline: worst.trades === null
+          ? 'No losing trades recorded yet, so there is nothing to measure the distance in.'
+          : worst.trades <= 3
+            ? `${worst.name} is about ${worst.trades} losing trade${worst.trades === 1 ? '' : 's'} from breaching.`
+            : `Your tightest account, ${worst.name}, has room for about ${worst.trades} more average losses.`,
+        tone, lines,
+        action: worst.trades !== null && worst.trades <= 3
+          ? 'This is the point where cutting size matters more than finding a setup. A normal losing streak ends this account.'
+          : 'Nothing urgent. Worth re-checking after any losing day.',
+        basis: `Live account balances against each account's own drawdown rule. Loss size comes from all ${losses.length} losing trades.`,
+      };
+    },
+  },
+
+  {
+    id: 'size', group: 'money',
+    q: 'Is my risk size consistent — and does size change my results?',
+    hint: 'If bigger positions win less often, confidence is pointing the wrong way.',
+    run(){
+      const all = _askUniverse().filter(t => Number(t.position_size) > 0);
+      if(all.length < 3 * ASK_MIN_N) return { notEnough:
+        `Only ${all.length} trades have a position size recorded. This needs about ${3 * ASK_MIN_N} to split into sizes worth comparing.` };
+
+      const sorted = [...all].sort((a, b) => Number(a.position_size) - Number(b.position_size));
+      const third = Math.floor(sorted.length / 3);
+      const small = _askStats(sorted.slice(0, third));
+      const big   = _askStats(sorted.slice(-third));
+      const sizes = sorted.map(t => Number(t.position_size));
+      const med = sizes[Math.floor(sizes.length / 2)];
+      const spread = med > 0 ? (sizes[sorted.length - 1 - third] / sizes[third]) : null;
+
+      const gap = (big.wr ?? 0) - (small.wr ?? 0);
+      const consistent = spread !== null && spread < 2;
+
+      const lines = [
+        `Your smallest third wins ${_askPct(small.wr)} of the time at ${_askMoney(small.exp)} per trade.`,
+        `Your largest third wins ${_askPct(big.wr)} at ${_askMoney(big.exp)} per trade.`,
+        spread !== null
+          ? `Typical size is ${fmtNum(med, 3)}, and your big trades are about ${fmtNum(spread, 1)}× your small ones.`
+          : '',
+      ].filter(Boolean);
+
+      let tone, headline, action;
+      if(gap < -8){
+        tone = 'bad';
+        headline = `You win ${_askPct(Math.abs(gap))} LESS often on your biggest trades.`;
+        action = 'Whatever makes you size up is not a real signal. Trading one flat size would have earned more than sizing on conviction.';
+      }else if(gap > 8){
+        tone = 'good';
+        headline = `Your biggest trades also win most often — ${_askPct(Math.abs(gap))} more than your smallest.`;
+        action = 'Your conviction is genuinely informative. The risk is the day it is wrong and the size is on.';
+      }else{
+        tone = consistent ? 'good' : 'warn';
+        headline = consistent
+          ? 'Your size is consistent, and size is not changing your results.'
+          : 'Your size varies a lot, but it is not changing your results.';
+        action = consistent
+          ? 'Nothing to fix here.'
+          : 'Since bigger size does not win more, the variation is adding swing without adding return. One flat size would be calmer for the same money.';
+      }
+      return { headline, tone, lines, action,
+        basis: `${all.length} trades with a position size, split into thirds by size.` };
+    },
+  },
+
+  /* --------------------------------------------------- 2. Is my edge working */
+  {
+    id: 'drift', group: 'edge',
+    q: 'Has my edge changed in the last 30 days?',
+    hint: 'The earliest warning that something broke — and whether the drop is real or ordinary variance.',
+    run(){
+      const all = _askUniverse();
+      const cut = new Date(Date.now() - 30 * 864e5);
+      const recent = all.filter(t => t.close_date >= cut);
+      const before = all.filter(t => t.close_date < cut);
+      if(recent.length < ASK_MIN_N) return { notEnough:
+        `Only ${recent.length} closed trades in the last 30 days. This needs ${ASK_MIN_N}.` };
+      if(before.length < ASK_MIN_N) return { notEnough:
+        `Only ${before.length} trades before the last 30 days, so there is no baseline to compare against yet.` };
+
+      const r = _askStats(recent), b = _askStats(before);
+      const wrGap = (r.wr ?? 0) - (b.wr ?? 0);
+      const expGap = (r.exp ?? 0) - (b.exp ?? 0);
+
+      /* Kailan tunay ang pagbagsak? Ang win rate sa maliit na bilang ay
+         natural na tumataas-bumaba. Ang magaspang pero tapat na panukat ay ang
+         standard error ng baseline: kung ang agwat ay wala pang dalawang beses
+         nito, hindi pa ito mapaghihiwalay sa malas. */
+      const p = (b.wr ?? 0) / 100;
+      const se = r.n > 0 ? Math.sqrt(Math.max(p * (1 - p), 0.01) / r.n) * 100 : 99;
+      const real = Math.abs(wrGap) > 2 * se;
+
+      const lines = [
+        `Last 30 days: ${r.n} trades, ${_askPct(r.wr)} win rate, ${_askMoney(r.exp)} per trade.`,
+        `Before that: ${b.n} trades, ${_askPct(b.wr)} win rate, ${_askMoney(b.exp)} per trade.`,
+        real
+          ? `A swing this size is bigger than ordinary variance at ${r.n} trades — it is unlikely to be luck.`
+          : `A swing this size is within ordinary variance at ${r.n} trades. It is too early to call it a change.`,
+      ];
+
+      let tone, headline, action;
+      if(!real){
+        tone = 'flat';
+        headline = 'Nothing has measurably changed.';
+        action = 'Keep trading the same way. Re-check after another 10–15 trades.';
+      }else if(wrGap < 0 || expGap < 0){
+        tone = 'bad';
+        headline = `Your edge has genuinely dropped — ${_askPct(Math.abs(wrGap))} lower win rate than your baseline.`;
+        action = 'Cut size first, then find out which setup changed — ask "which setup should I stop trading" next.';
+      }else{
+        tone = 'good';
+        headline = `You are trading measurably better than your baseline — ${_askPct(wrGap)} higher.`;
+        action = 'Worth finding out what changed so it is repeatable rather than a good run.';
+      }
+      return { headline, tone, lines, action,
+        basis: `Last 30 days (${r.n} trades) against everything before it (${b.n} trades).` };
+    },
+  },
+
+  {
+    id: 'combo', group: 'edge',
+    q: 'What is my most profitable combination?',
+    hint: 'Pattern crossed with session. Your panels look at one dimension at a time; the edge usually lives in the crossing.',
+    run(){
+      const all = _askUniverse();
+      const cells = _askGroupBy(all,
+        t => (t.pattern_type && t.pattern_type !== 'Unspecified' &&
+              t.session && t.session !== 'Unspecified')
+          ? `${t.pattern_type} · ${t.session}` : null,
+        ASK_MIN_CELL);
+      if(!cells.length) return { notEnough:
+        `No pattern-and-session combination has ${ASK_MIN_CELL} trades yet. Keep logging both fields and this fills in.` };
+
+      const base = _askStats(all);
+      cells.sort((a, b) => (b.exp ?? -1e9) - (a.exp ?? -1e9));
+      const best = cells[0], worst = cells[cells.length - 1];
+
+      const lines = cells.slice(0, 4).map(c =>
+        `${c.key} — ${c.n} trades, ${_askPct(c.wr)} win rate, ${_askMoney(c.exp)} per trade.`);
+      lines.push(`Your overall average is ${_askMoney(base.exp)} per trade across ${base.n} trades.`);
+      if(cells.length > 1 && worst.exp < 0)
+        lines.push(`The weakest combination is ${worst.key} at ${_askMoney(worst.exp)} per trade over ${worst.n} trades.`);
+
+      const edge = (best.exp ?? 0) - (base.exp ?? 0);
+      return {
+        headline: `${best.key} is your best combination — ${_askMoney(best.exp)} per trade against your ${_askMoney(base.exp)} average.`,
+        tone: best.exp > 0 ? 'good' : 'warn',
+        lines,
+        action: best.n < 15
+          ? `Only ${best.n} trades, so treat this as a lead rather than a conclusion. Keep taking it and re-check.`
+          : (edge > 0
+            ? `That is ${_askMoney(edge)} per trade better than your average. Taking more of these and fewer of everything else is the simplest change on this whole list.`
+            : 'Even your best combination is not beating your average, which means the edge is not in what you pick.'),
+        basis: `All ${all.length} closed trades, grouped by pattern × session, minimum ${ASK_MIN_CELL} trades per combination.`,
+      };
+    },
+  },
+
+  {
+    id: 'stop-setup', group: 'edge',
+    q: 'Which setup should I stop trading?',
+    hint: 'The worst performer that has enough trades behind it to not just be a bad run.',
+    run(){
+      const all = _askUniverse();
+      const pats = _askGroupBy(all, t => t.pattern_type);
+      if(!pats.length) return { notEnough:
+        `No setup has ${ASK_MIN_N} trades yet. This needs a bit more history before it can name one.` };
+
+      const base = _askStats(all);
+      pats.sort((a, b) => (a.exp ?? 1e9) - (b.exp ?? 1e9));
+      const worst = pats[0];
+
+      const lines = pats.map(p =>
+        `${p.key} — ${p.n} trades, ${_askPct(p.wr)} win rate, ${_askMoney(p.exp)} per trade, ${_askMoney(p.net)} total.`);
+
+      if(worst.exp >= 0) return {
+        headline: 'Nothing needs dropping — every setup with enough history is making money.',
+        tone: 'good', lines,
+        action: 'The weakest is ' + worst.key + ', but it is still positive. Leave it.',
+        basis: `All ${all.length} closed trades, minimum ${ASK_MIN_N} per setup.`,
+      };
+
+      // Ano ang halaga ng pagtigil? Ang kabuuan lang nito — hindi hula.
+      return {
+        headline: `${worst.key} — it has cost you ${_askMoney(worst.net)} across ${worst.n} trades.`,
+        tone: 'bad', lines,
+        action: `Not taking a single ${worst.key} trade would have left you ${_askMoney(-worst.net)} better off, with no other change. That is the cheapest improvement available to you.`,
+        basis: `All ${all.length} closed trades, minimum ${ASK_MIN_N} per setup. Your overall average is ${_askMoney(base.exp)} per trade.`,
+      };
+    },
+  },
+
+  {
+    id: 'best-setup', group: 'edge',
+    q: 'What is my best setup, and is it still working?',
+    hint: 'Names the setup, then checks the last 30 days against its own history.',
+    run(){
+      const all = _askUniverse();
+      const pats = _askGroupBy(all, t => t.pattern_type);
+      if(!pats.length) return { notEnough:
+        `No setup has ${ASK_MIN_N} trades yet.` };
+
+      pats.sort((a, b) => (b.exp ?? -1e9) - (a.exp ?? -1e9));
+      const best = pats[0];
+
+      const cut = new Date(Date.now() - 30 * 864e5);
+      const recent = _askStats(best.trades.filter(t => t.close_date >= cut));
+      const lines = [
+        `${best.key} — ${best.n} trades, ${_askPct(best.wr)} win rate, ${_askMoney(best.exp)} per trade, ${_askMoney(best.net)} total.`,
+      ];
+      if(pats[1]) lines.push(`Next best is ${pats[1].key} at ${_askMoney(pats[1].exp)} per trade.`);
+
+      let still = null;
+      if(recent.n >= 4){
+        lines.push(`In the last 30 days it has run ${recent.n} times at ${_askPct(recent.wr)} and ${_askMoney(recent.exp)} per trade.`);
+        still = recent.exp >= 0;
+      }else{
+        lines.push(`It has only run ${recent.n} time${recent.n === 1 ? '' : 's'} in the last 30 days — not enough to say whether it is still working.`);
+      }
+
+      return {
+        headline: `${best.key}, at ${_askMoney(best.exp)} per trade.`,
+        tone: still === false ? 'warn' : 'good', lines,
+        action: still === false
+          ? `It is your best setup overall but it is not earning right now. Keep taking it at reduced size and re-check in two weeks rather than dropping it on ${recent.n} trades.`
+          : (still === true
+            ? 'Still earning. This is the one to take more of when you are choosing between setups.'
+            : 'Take it when it appears — there is not enough recent history to say more than that.'),
+        basis: `All ${all.length} closed trades, minimum ${ASK_MIN_N} per setup.`,
+      };
+    },
+  },
+
+  /* ------------------------------------------------------ 3. How I behave */
+  {
+    id: 'after-loss', group: 'habit',
+    q: 'Do I trade worse after a loss?',
+    hint: 'The trade straight after a red one, on the same day. This is where revenge trading shows up.',
+    run(){
+      const idx = _askDayIndex(_askUniverse());
+      const afterLoss = idx.filter(x => x.prev && _isLoss(x.prev)).map(x => x.t);
+      const afterWin  = idx.filter(x => x.prev && _isWin(x.prev)).map(x => x.t);
+      if(afterLoss.length < ASK_MIN_N) return { notEnough:
+        `Only ${afterLoss.length} trades follow a loss on the same day. This needs ${ASK_MIN_N}.` };
+      if(afterWin.length < 4) return { notEnough:
+        `Only ${afterWin.length} trades follow a win on the same day, so there is nothing fair to compare against.` };
+
+      const L = _askStats(afterLoss), W = _askStats(afterWin);
+      const base = _askStats(_askUniverse());
+      const gap = (L.wr ?? 0) - (W.wr ?? 0);
+
+      const lines = [
+        `After a loss: ${L.n} trades, ${_askPct(L.wr)} win rate, ${_askMoney(L.exp)} per trade, ${_askMoney(L.net)} total.`,
+        `After a win: ${W.n} trades, ${_askPct(W.wr)} win rate, ${_askMoney(W.exp)} per trade.`,
+        `Your overall average is ${_askPct(base.wr)} and ${_askMoney(base.exp)} per trade.`,
+      ];
+
+      if(gap < -8 || (L.exp !== null && L.exp < 0 && base.exp > 0)){
+        return {
+          headline: `Yes — after a loss you win ${_askPct(Math.abs(gap))} less often, and those trades have cost you ${_askMoney(L.net)}.`,
+          tone: 'bad', lines,
+          action: 'The rule that follows from this is simple and testable: no trade for 30 minutes after a red one. Everything else on this page is about what to trade; this is about when to stop.',
+          basis: `${L.n + W.n} same-day follow-up trades out of ${base.n} closed trades.`,
+        };
+      }
+      if(gap > 8) return {
+        headline: `No — you actually trade BETTER after a loss, by ${_askPct(gap)}.`,
+        tone: 'good', lines,
+        action: 'Losses sharpen you rather than tilt you. Nothing to fix, and worth knowing about yourself.',
+        basis: `${L.n + W.n} same-day follow-up trades.`,
+      };
+      return {
+        headline: 'No — a loss does not change how you trade next.',
+        tone: 'good', lines,
+        action: 'This is the discipline problem you do not have. Spend the effort somewhere else on this list.',
+        basis: `${L.n + W.n} same-day follow-up trades.`,
+      };
+    },
+  },
+
+  {
+    id: 'stop-for-day', group: 'habit',
+    q: 'When should I stop trading for the day?',
+    hint: 'Win rate by how deep into the day you are. A clear cliff here is a rule you can actually follow.',
+    run(){
+      const idx = _askDayIndex(_askUniverse());
+      if(idx.length < 3 * ASK_MIN_N) return { notEnough:
+        `Only ${idx.length} trades have an open time to order the day by. This needs about ${3 * ASK_MIN_N}.` };
+
+      const bucket = n => n >= 4 ? '4th or later' : ['1st', '2nd', '3rd'][n - 1];
+      const groups = _askGroupBy(idx.map(x => ({ ...x.t, _b: bucket(x.idx) })), t => t._b, 4);
+      const order = ['1st', '2nd', '3rd', '4th or later'];
+      groups.sort((a, b) => order.indexOf(a.key) - order.indexOf(b.key));
+      if(groups.length < 2) return { notEnough: 'Almost every day is a single trade, so there is no "later in the day" to compare.' };
+
+      const lines = groups.map(g =>
+        `${g.key} trade of the day — ${g.n} trades, ${_askPct(g.wr)} win rate, ${_askMoney(g.exp)} per trade, ${_askMoney(g.net)} total.`);
+
+      // Ang unang pangkat na palugi, at lahat ng pagkatapos nito, ang hangganan.
+      const firstBad = groups.findIndex(g => (g.exp ?? 0) < 0);
+      if(firstBad <= 0){
+        const worst = [...groups].sort((a, b) => (a.exp ?? 0) - (b.exp ?? 0))[0];
+        return {
+          headline: 'No cut-off shows up — you do not get worse as the day goes on.',
+          tone: 'good', lines,
+          action: `Your weakest slot is the ${worst.key} trade at ${_askMoney(worst.exp)} per trade, but it is still not losing. Trade count is not your problem.`,
+          basis: `${idx.length} trades ordered by open time within each day.`,
+        };
+      }
+      const after = groups.slice(firstBad);
+      const cost = after.reduce((s, g) => s + g.net, 0);
+      const count = after.reduce((s, g) => s + g.n, 0);
+      return {
+        headline: `Stop after the ${groups[firstBad - 1].key} trade — everything past it has cost you ${_askMoney(cost)}.`,
+        tone: 'bad', lines,
+        action: `Those ${count} trades are ${_askMoney(cost)} of your total. A hard cap at ${firstBad} trade${firstBad === 1 ? '' : 's'} a day changes nothing else about how you trade and keeps that money.`,
+        basis: `${idx.length} trades ordered by open time within each day.`,
+      };
+    },
+  },
+
+  {
+    id: 'costly-rule', group: 'habit',
+    q: 'Which rule costs me the most money?',
+    hint: 'Not the one you break most often — the one that does the most damage when you do.',
+    run(){
+      const all = _askUniverse();
+      const tagsOf = t => _brokenRuleTags(t.unfollowed_rules);
+      const tagged = all.filter(t => tagsOf(t).length);
+      if(tagged.length < ASK_MIN_N) return { notEnough:
+        `Only ${tagged.length} trades have a broken-rule tag on them. Tag a few more in the drawer and this can answer.` };
+
+      /* Ang paghahambing ay laban sa mga trade na TINATAKAN mong malinis, hindi
+         sa lahat ng walang tatak. Ang walang tatak ay "hindi naitala", at
+         maaaring may paglabag na hindi lang naisulat — kung isasama iyon sa
+         baseline, ang mismong pinsalang sinusukat natin ay makakapasok dito at
+         magpapaliit ng bawat gastos. */
+      const clean = all.filter(t => _isCleanRules(t.unfollowed_rules));
+      const baseExp = clean.length >= 5 ? _askStats(clean).exp : _askStats(all).exp;
+
+      const rows = [];
+      new Set(all.flatMap(tagsOf)).forEach(tag => {
+        const arr = all.filter(t => tagsOf(t).includes(tag));
+        if(arr.length < 3) return;
+        const s = _askStats(arr);
+        // Ang gastos ay ang AGWAT sa iyong malinis na trade, hindi ang kabuuan.
+        // Ang isang tag na nasa mga panalo lang ay may positibong kabuuan pero
+        // maaari pa ring mas malala kaysa sa karaniwan mong trade.
+        rows.push({ tag, ...s, cost: ((baseExp ?? 0) - (s.exp ?? 0)) * s.n });
+      });
+      if(!rows.length) return { notEnough: 'No rule tag appears on 3 or more trades yet.' };
+
+      rows.sort((a, b) => b.cost - a.cost);
+      const top = rows[0];
+      const lines = rows.slice(0, 5).map(r =>
+        `${r.tag} — ${r.n} times, ${_askPct(r.wr)} win rate, ${_askMoney(r.exp)} per trade` +
+        (r.cost > 0 ? `, about ${_askMoney(-r.cost)} worse than your clean trades.` : `, no worse than your clean trades.`));
+      lines.push(clean.length >= 5
+        ? `Your trades tagged clean average ${_askMoney(baseExp)} each across ${clean.length} trades.`
+        : `Too few trades are tagged clean, so this compares against your overall average of ${_askMoney(baseExp)}.`);
+
+      if(top.cost <= 0) return {
+        headline: 'None of your tagged rules is measurably costing you money.',
+        tone: 'good', lines,
+        action: 'Either the tags are not where the damage is, or you are tagging the trades that happened to work out. The Discipline reports are the better place to look next.',
+        basis: `${tagged.length} trades with a broken rule out of ${all.length}.`,
+      };
+      return {
+        headline: `${top.tag} — about ${_askMoney(-top.cost)} worse than trading clean, across ${top.n} trades.`,
+        tone: 'bad', lines,
+        action: `Frequency is not the point: ${top.tag} is the one that does the damage when it happens. Fixing this one rule is worth more than fixing the other ${rows.length - 1} put together in most months.`,
+        basis: `${tagged.length} trades with a broken rule out of ${all.length}. Cost is the gap against your ${clean.length >= 5 ? 'clean-tagged' : 'overall'} average, times how often it happened.`,
+      };
+    },
+  },
+
+  {
+    id: 'best-time', group: 'habit',
+    q: 'What day and hour am I actually best at?',
+    hint: 'Session is eight hours wide — too coarse to act on. This is the hour you opened the trade.',
+    run(){
+      const all = _askUniverse().filter(t => t.open_date);
+      if(all.length < 3 * ASK_MIN_N) return { notEnough:
+        `Only ${all.length} trades have an open time. This needs about ${3 * ASK_MIN_N}.` };
+
+      const DAY = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+      const hourLabel = h => {
+        const ampm = h < 12 ? 'am' : 'pm';
+        const hh = h % 12 === 0 ? 12 : h % 12;
+        return `${hh}${ampm}`;
+      };
+      // Oras ng UAE — doon siya nakaupo, at ang UTC ay walang kahulugan
+      // sa isang bagay na dapat sundin sa totoong buhay.
+      const uaeParts = d => {
+        const p = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Dubai',
+          weekday: 'long', hour: 'numeric', hour12: false }).formatToParts(d);
+        return { day: p.find(x => x.type === 'weekday')?.value,
+                 hour: Number(p.find(x => x.type === 'hour')?.value) };
+      };
+
+      const days  = _askGroupBy(all, t => uaeParts(t.open_date).day);
+      const hours = _askGroupBy(all, t => {
+        const h = uaeParts(t.open_date).hour;
+        return Number.isFinite(h) ? String(h).padStart(2, '0') : null;
+      });
+      if(!days.length && !hours.length) return { notEnough:
+        `No day or hour has ${ASK_MIN_N} trades yet.` };
+
+      const base = _askStats(all);
+      const byExp = a => [...a].sort((x, y) => (y.exp ?? -1e9) - (x.exp ?? -1e9));
+      const bd = byExp(days), bh = byExp(hours);
+      const lines = [];
+      if(bd.length){
+        lines.push(`Best day: ${bd[0].key} — ${bd[0].n} trades, ${_askPct(bd[0].wr)}, ${_askMoney(bd[0].exp)} per trade.`);
+        if(bd.length > 1) lines.push(`Worst day: ${bd[bd.length-1].key} — ${bd[bd.length-1].n} trades, ${_askPct(bd[bd.length-1].wr)}, ${_askMoney(bd[bd.length-1].exp)} per trade.`);
+      }
+      if(bh.length){
+        lines.push(`Best hour: ${hourLabel(+bh[0].key)} UAE — ${bh[0].n} trades, ${_askPct(bh[0].wr)}, ${_askMoney(bh[0].exp)} per trade.`);
+        if(bh.length > 1) lines.push(`Worst hour: ${hourLabel(+bh[bh.length-1].key)} UAE — ${bh[bh.length-1].n} trades, ${_askPct(bh[bh.length-1].wr)}, ${_askMoney(bh[bh.length-1].exp)} per trade.`);
+      }
+      lines.push(`Your overall average is ${_askMoney(base.exp)} per trade.`);
+
+      const worstDay = bd.length > 1 ? bd[bd.length - 1] : null;
+      const headline = bd.length && bh.length
+        ? `${bd[0].key} around ${hourLabel(+bh[0].key)} UAE time.`
+        : (bd.length ? `${bd[0].key}.` : `${hourLabel(+bh[0].key)} UAE time.`);
+      return {
+        headline, tone: 'good', lines,
+        action: worstDay && worstDay.net < 0
+          ? `Not trading ${worstDay.key} at all would have saved you ${_askMoney(-worstDay.net)}, with nothing else changed.`
+          : 'No day is actually losing you money, so this is about where to lean rather than what to cut.',
+        basis: `${all.length} trades with an open time, in UAE time (Asia/Dubai), minimum ${ASK_MIN_N} per day or hour.`,
+      };
+    },
+  },
+];
+
+/* ---------------- Ask my data: ang bintana ---------------- */
+function openAskData(){
+  renderAskList();
+  document.getElementById('askDataModal')?.classList.add('open');
+}
+function closeAskData(){
+  document.getElementById('askDataModal')?.classList.remove('open');
+}
+
+function renderAskList(){
+  const body = document.getElementById('askDataBody');
+  if(!body) return;
+  const n = _askUniverse().length;
+  body.innerHTML = `
+    <div class="ask-intro">Every answer below is worked out from your ${n} closed trades. Nothing is guessed, so a number here is always a count of something that happened.</div>
+    ` + ASK_GROUPS.map(g => `
+      <div class="ask-group">
+        <div class="grp-head"><span class="grp-n">${g.n}</span>
+          <span class="grp-t">${escapeHtml(g.title)}</span>
+          <span class="grp-s">${escapeHtml(g.sub)}</span></div>
+        ${ASK_QUESTIONS.filter(q => q.group === g.id).map(q => `
+          <button type="button" class="ask-q" id="askq-${q.id}" onclick="runAskQuestion('${q.id}')">
+            <span class="ask-q-text">${escapeHtml(q.q)}</span>
+            <span class="ask-q-hint">${escapeHtml(q.hint)}</span>
+            <span class="ask-a" id="aska-${q.id}"></span>
+          </button>`).join('')}
+      </div>`).join('');
+}
+
+function runAskQuestion(id){
+  const q = ASK_QUESTIONS.find(x => x.id === id);
+  const slot = document.getElementById('aska-' + id);
+  const card = document.getElementById('askq-' + id);
+  if(!q || !slot) return;
+
+  // Pangalawang pindot = isara. Isang tanong lang ang bukas sa isang pagkakataon,
+  // dahil ang sagot ay mahaba at ang labindalawang bukas ay isang dingding.
+  if(card.classList.contains('open')){
+    card.classList.remove('open');
+    slot.innerHTML = '';
+    return;
+  }
+  document.querySelectorAll('.ask-q.open').forEach(el => {
+    el.classList.remove('open');
+    const s = el.querySelector('.ask-a');
+    if(s) s.innerHTML = '';
+  });
+
+  let r;
+  try{ r = q.run(); }
+  catch(e){
+    console.error('Ask my data — ' + id, e);
+    r = { notEnough: 'Something went wrong working this one out. The console has the detail.' };
+  }
+  card.classList.add('open');
+
+  if(r.notEnough){
+    slot.innerHTML = `<span class="ask-thin">${escapeHtml(r.notEnough)}</span>`;
+    return;
+  }
+  slot.innerHTML = `
+    <span class="ask-head ask-${r.tone || 'flat'}">${escapeHtml(r.headline)}</span>
+    <span class="ask-lines">${(r.lines || []).map(l => `<span>${escapeHtml(l)}</span>`).join('')}</span>
+    ${r.action ? `<span class="ask-action">${escapeHtml(r.action)}</span>` : ''}
+    ${r.basis ? `<span class="ask-basis">Worked out from: ${escapeHtml(r.basis)}</span>` : ''}`;
 }
