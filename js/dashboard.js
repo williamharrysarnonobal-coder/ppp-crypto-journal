@@ -1862,7 +1862,11 @@ function _greetChips(){
   const monthName = now.toLocaleString('en-GB', { month: 'long' });
   if(month.length) out.push({
     k: monthName.toLowerCase(),
-    v: fmtMoney(net) + (need ? ` · ${Math.round(Math.max(0, net / need * 100))}% of salary` : ''),
+    /* Walang floor. Ang chip ay nagsasabi na ng "-$312" sa tabi nito, kaya ang
+       "0% of salary" ay hindi lang nagtatago ng negatibo — sinasalungat pa nito
+       ang perang katabi nito mismo. Walang bar dito na pipigilan ng clamp; ito
+       ay teksto lang, at ang teksto ay walang dahilan para magsinungaling. */
+    v: fmtMoney(net) + (need ? ` · ${Math.round(net / need * 100)}% of salary` : ''),
     tone: net > 0 ? 'good' : net < 0 ? 'bad' : '',
     tip: `${month.length} trade${month.length === 1 ? '' : 's'} closed this month.` });
 
@@ -2296,7 +2300,17 @@ function renderYearOverview(){
              days: new Set(ts.map(t => t.close_date.getDate())).size,
              rr: rrs.length ? rrs.reduce((a, v) => a + v, 0) / rrs.length : null,
              rrN: rrs.length,
-             goalPct: goalUsd ? Math.max(0, net / goalUsd * 100) : null,
+             /* WALANG floor dito — ito ang huling lugar na nagtatago ng
+                negatibo, at ito ang "0% padin" na nakita niya sa Year overview.
+
+                Ang Math.max(0, ...) ay nasa MALING lugar: pinuputol nito ang
+                halaga sa PINAGMUMULAN, kaya ang bula, ang hover at ang end cap
+                ay pare-parehong nagsasabing 0% para sa isang buwang lugi ng
+                $312. Ang tanging bagay na dapat naka-clamp ay ang POSISYON ng
+                bar, at naka-clamp na iyon sa _yearGoalBar (Math.max(0,
+                Math.min(100, ...))). Isang clamp, sa dulo, kung saan ito
+                kailangan — hindi sa umpisa kung saan sinisira nito ang bilang. */
+             goalPct: goalUsd ? net / goalUsd * 100 : null,
              hitGoal: hit, goalTone };
   });
 
