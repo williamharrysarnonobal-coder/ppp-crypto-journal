@@ -4081,46 +4081,119 @@ function _confluenceItemAnswer(t, pick){
     : ((ans === 'yes' || ans === 'retest') ? 1 : ans === 'almost' ? 0.5 : 0);
   return credit === 1 ? 'Met' : credit === 0.5 ? 'Half met' : 'Missed';
 }
+/* ---------- Session hours, in your time ----------
+
+   The windows are defined in each market's OWN wall clock and converted to
+   Dubai on the fly, never typed in as UAE hours. London and New York observe
+   daylight saving and the UAE does not, so a hard-coded "London = 11am–8pm" is
+   simply wrong for about half the year — and wrong in a way nothing would ever
+   flag. Deriving it from the real zone offsets keeps it right in March and in
+   November without anyone remembering to change it. */
+const SESSION_WINDOWS = {
+  'Asia':     { tz:'Asia/Tokyo',       from:9, to:18 },
+  'London':   { tz:'Europe/London',    from:8, to:17 },
+  'New York': { tz:'America/New_York', from:8, to:17 },
+  'London + NY Overlap': { overlap:['London', 'New York'] },
+  // Low Liquidity is not a clock window — it is whatever is left over.
+};
+
+// Hours that `tz` is ahead of UTC at this instant, DST included.
+function _tzOffsetHours(tz, at){
+  const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', {
+    timeZone: tz, hour12: false, year:'numeric', month:'2-digit',
+    day:'2-digit', hour:'2-digit', minute:'2-digit',
+  }).formatToParts(at).map(x => [x.type, x.value]));
+  // Some engines render midnight as hour 24 under hour12:false.
+  const asUTC = Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour % 24, +p.minute);
+  return Math.round((asUTC - at.getTime()) / 60000) / 60;
+}
+
+// A session's window as [startUTC, endUTC) in decimal hours, wrapping allowed.
+function _sessionUtcWindow(name, at){
+  const cfg = SESSION_WINDOWS[name];
+  if(!cfg) return null;
+  if(cfg.overlap){
+    const a = _sessionUtcWindow(cfg.overlap[0], at);
+    const b = _sessionUtcWindow(cfg.overlap[1], at);
+    if(!a || !b) return null;
+    const from = Math.max(a[0], b[0]), to = Math.min(a[1], b[1]);
+    return to > from ? [from, to] : null;
+  }
+  const off = _tzOffsetHours(cfg.tz, at);
+  return [cfg.from - off, cfg.to - off];
+}
+
+const _hr = h => {
+  const x = ((h % 24) + 24) % 24;
+  const hh = Math.floor(x), mm = Math.round((x - hh) * 60);
+  const ampm = hh < 12 ? 'am' : 'pm';
+  const h12 = hh % 12 === 0 ? 12 : hh % 12;
+  return mm ? `${h12}:${String(mm).padStart(2, '0')}${ampm}` : `${h12}${ampm}`;
+};
+
+/* The window in Dubai time, as "4pm–8pm". Returns null for a session with no
+   fixed clock window, rather than inventing one. */
+function _sessionUaeWindow(name, at){
+  const w = _sessionUtcWindow(name, at || new Date());
+  if(!w) return null;
+  const dxb = _tzOffsetHours('Asia/Dubai', at || new Date());
+  return `${_hr(w[0] + dxb)}–${_hr(w[1] + dxb)}`;
+}
+
 const MET_ORDER = ['Met', 'Half met', 'Missed'];
 const SEQ_ORDER = ['1st', '2nd', '3rd', '4th', '5th'];
 
+/* Laid out in the order a trade actually happens, not by what kind of field
+   each one is. You sit down, you find something, you run the checklist, you
+   pull the trigger — so reading left to right and top to bottom walks the
+   same path you walked, and a card that looks bad points at the step it
+   belongs to.
+
+   Group 3 follows YOUR checklist's own order (CONFLUENCE_SETUPS): top
+   timeframe, then divergence, then sequence — with the band last, because the
+   band is the score those items add up to. */
 const SETUP_DIMENSIONS = [
-  { group:'The setup you chose', dims:[
+  { group:'1 · Before you sit down', dims:[
+    { label:'Session',  q:'when to be at the desk', of:t => t.session,
+      note: _sessionUaeWindow },
+    { label:'Day',      q:'which days are worth trading', of:t => t.day_of_week,
+      order:['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'] },
+  ]},
+  { group:'2 · What you found', dims:[
     { label:'Pattern',  q:'which setup pays',  of:t => t.pattern_type },
     { label:'Direction', q:'long or short',    of:t => t.trade_type },
     { label:'Play',     q:'bounce, rejection or invalidation', of:t => t.trade_setup },
     { label:'Chart pattern', q:'the shape you traded', of:t => t.chart_pattern },
-  ]},
-  { group:'When you took it', dims:[
-    { label:'Session',  q:'when to be at the desk', of:t => t.session },
-    { label:'Day',      q:'which days are worth trading', of:t => t.day_of_week,
-      order:['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'] },
-    { label:'AOF phase', q:'where in the move you entered', of:t => t.aof_phase },
-    { label:'Execution TF', q:'the timeframe you pulled the trigger on', of:t => t.execution_tf },
+    { label:'AOF phase', q:'where in the move you found it', of:t => t.aof_phase },
   ]},
   // The checklist opened up. The band alone says whether a high score pays; the
-  // items below say WHICH part of the score was carrying it, which is the only
+  // items say WHICH part of the score was carrying it, which is the only
   // version of this that can change how the next trade is taken.
-  { group:'What the checklist said', dims:[
-    // Bands, not raw scores: the checklists differ in length, so only the
-    // percentage is comparable — and the band each trade falls in is judged
-    // against that setup's OWN bar, the same way the journal colours it.
-    { label:'Confluence band', q:'does a high score actually pay',
-      order:['Passed the bar','Just under','Well under'],
-      of: t => { const d = _confluenceCellData(t);
-        return d ? ({ pass:'Passed the bar', near:'Just under', fail:'Well under' })[d.state] : null; } },
-    { label:'Sequence', q:'the 1st HL/LH or the 4th', order:SEQ_ORDER,
-      of: t => _confluenceAnswerAt(t, it => it.tag === 'Sequence', SEQ_ORDER) },
+  { group:'3 · Running the checklist', dims:[
     // The highest timeframe on each checklist — 1H on the shorter setups, 4H on
-    // the 1 hour ones. Matched by pattern so one card covers every setup.
+    // the 1 hour ones. Matched by pattern so one card covers every setup. It is
+    // first here because it is question 1 on every one of your checklists.
     { label:'HTF bias', q:'the top timeframe with you or against you', order:MET_ORDER,
       of: t => _confluenceItemAnswer(t, it => /^MACD · (1H|4H)$/.test(it.tag)) },
     { label:'Divergence', q:'the opposite hand showing before you entered', order:MET_ORDER,
       of: t => _confluenceItemAnswer(t, it => it.tag === 'Divergence') },
-    { label:'Entry trigger', q:'MACD crossing zero as your order filled', order:MET_ORDER,
-      of: t => _confluenceItemAnswer(t, it => it.tag === 'Execution') },
+    { label:'Sequence', q:'the 1st HL/LH or the 4th', order:SEQ_ORDER,
+      of: t => _confluenceAnswerAt(t, it => it.tag === 'Sequence', SEQ_ORDER) },
+    // Bands, not raw scores: the checklists differ in length, so only the
+    // percentage is comparable — and the band each trade falls in is judged
+    // against that setup's OWN bar, the same way the journal colours it. Last,
+    // because it is the total of everything above it.
+    { label:'Confluence band', q:'what the whole checklist added up to',
+      order:['Passed the bar','Just under','Well under'],
+      of: t => { const d = _confluenceCellData(t);
+        return d ? ({ pass:'Passed the bar', near:'Just under', fail:'Well under' })[d.state] : null; } },
+  ]},
+  { group:'4 · Pulling the trigger', dims:[
     { label:'Level alignment', q:'BB50 with the .382 Fib or MOBV at entry', order:MET_ORDER,
       of: t => _confluenceItemAnswer(t, it => /^Execution · /.test(it.tag)) },
+    { label:'Entry trigger', q:'MACD crossing zero as your order filled', order:MET_ORDER,
+      of: t => _confluenceItemAnswer(t, it => it.tag === 'Execution') },
+    { label:'Execution TF', q:'the timeframe you pulled the trigger on', of:t => t.execution_tf },
   ]},
 ];
 
@@ -4208,6 +4281,9 @@ function renderSetupPanel(){
       const thin = r.settled < EM_MIN_N;
       const col = !has ? 'var(--muted)' : (r.shown >= 0 ? 'var(--win)' : 'var(--loss)');
       const on = SX_FILTERS[d.label] === r.name;
+      // A dimension may annotate its rows — Session uses it to say when that
+      // window falls in your own day.
+      const note = d.note ? d.note(r.name) : null;
       return `<div class="sx-row${on ? ' on' : ''}" role="button" tabindex="0"
           onclick="toggleSetupFilter(${_attrJson(d.label)},${_attrJson(r.name)})"
           onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click();}"
@@ -4216,8 +4292,9 @@ function renderSetupPanel(){
           has ? ` · won ${r.wins} of ${r.settled} settled, ${_rateTxt(r.rate)} against your ${Math.round(r.base)}% average`
               : ' · nothing settled yet'}${
           thin && has ? ` · only ${r.settled} settled, held back toward your average` : ''
-          } — click to narrow the other cards to these trades">
-        <span class="sx-name">${escapeHtml(r.name)}</span>
+          }${note ? ` · ${note} your time` : ''} — click to narrow the other cards to these trades">
+        <span class="sx-name">${escapeHtml(r.name)}${
+          note ? `<em class="sx-when">${escapeHtml(note)}</em>` : ''}</span>
         <span class="sx-bar"><i class="zero"></i>${has ? `<i class="fill${thin?' thin':''}" style="${
           r.shown >= 0 ? `left:50%;width:${w}%` : `right:50%;width:${w}%`};background-color:${col}"></i>` : ''}</span>
         <span class="sx-rate">${r.rate === null ? '—' : Math.round(r.rate) + '%'}</span>
@@ -16857,8 +16934,17 @@ function accountCardHTML(a){
 
       if(a.profit_target_pct){
         const progressFraction = Math.max(0, Math.min(1, plPct / a.profit_target_pct));
+        /* Same bar as the salary goal, for the same reason: this is a target
+           you are chasing on a live account, and it either gets hit or it does
+           not. Green once the target is passed, red while the account is down,
+           gold on the way up — and the end cap holds a trophy while it is a
+           target, the reached percentage once it is a result. */
+        const reached = plPct >= a.profit_target_pct;
+        const tone = reached ? 'hit' : plPct < 0 ? 'missed' : 'now';
+        const pctOfTarget = Math.round(plPct / a.profit_target_pct * 100);
         balanceHTML += `
-          <div class="account-progress-bar"><div class="account-progress-fill" style="width:${(progressFraction*100).toFixed(1)}%;"></div></div>
+          <div class="account-progress-bar ${tone}"><div class="account-progress-fill" style="width:${(progressFraction*100).toFixed(1)}%;"></div>
+            <span class="account-progress-end">${reached ? `${pctOfTarget}%` : _GOAL_TROPHY}</span></div>
           <div class="account-progress-label">${plPct >= 0 ? '' : '-'}${Math.abs(plPct).toFixed(1)}% of ${a.profit_target_pct}% target</div>
         `;
       }

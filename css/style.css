@@ -1765,8 +1765,79 @@
   .account-card-balance{font-size:22px;font-weight:700;color:var(--ink);margin-bottom:8px;}
   .account-pl-pos{font-size:13.5px;font-weight:600;color:var(--win);}
   .account-pl-neg{font-size:13.5px;font-weight:600;color:var(--loss);}
-  .account-progress-bar{height:8px;border-radius:5px;background:var(--surface);overflow:hidden;margin-bottom:4px;}
-  .account-progress-fill{height:100%;background:var(--accent);transition:width .3s ease;}
+  /* ---------- Prop firm profit target ----------
+     The salary goal bar applied to the one other thing in this app that is a
+     target being chased: the firm's profit target on a live account. Same
+     three states, same end cap, same slow glint.
+
+     overflow:hidden is gone — the end cap and its sparkle sit outside the 8px
+     rail, and clipping the bar would cut both off. */
+  .account-progress-bar{position:relative;height:22px;margin-bottom:4px;}
+  .account-progress-bar.hit{--gt:var(--win);}
+  .account-progress-bar.now{--gt:var(--accent);}
+  .account-progress-bar.missed{--gt:var(--loss);}
+  .account-progress-bar::before{
+    content:'';position:absolute;left:0;right:0;top:50%;height:8px;
+    transform:translateY(-50%);border-radius:5px;
+    background:var(--surface);box-shadow:inset 0 1px 2px rgba(0,0,0,.45);
+  }
+  .account-progress-fill{
+    position:absolute;left:0;top:50%;height:8px;z-index:1;
+    transform:translateY(-50%);border-radius:5px;
+    background:var(--gt,var(--accent));
+    box-shadow:0 0 8px color-mix(in srgb, var(--gt,var(--accent)) 55%, transparent);
+    transition:width .6s cubic-bezier(.22,.8,.3,1);
+  }
+  /* The travelling shine, on its own layer so the fill keeps its colour and
+     its glow — animating the fill's own background would wipe both. */
+  .account-progress-fill::after{
+    content:'';position:absolute;inset:0;border-radius:5px;
+    background:linear-gradient(100deg,
+      transparent 40%, rgba(255,255,255,.55) 50%, transparent 60%);
+    background-size:420% 100%;
+    animation:calGoalSheen 6s linear infinite;
+  }
+
+  .account-progress-end{
+    position:absolute;right:0;top:50%;transform:translateY(-50%);z-index:2;
+    width:20px;height:20px;border-radius:50%;
+    display:inline-flex;align-items:center;justify-content:center;
+    background:var(--bg);color:var(--muted);
+    box-shadow:inset 0 0 0 1.5px var(--muted);
+  }
+  .account-progress-end svg{display:block;width:12px;height:12px;}
+  .account-progress-bar.hit .account-progress-end{
+    width:auto;min-width:20px;padding:0 9px;border-radius:999px;
+    background:var(--win);color:var(--bg);
+    font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:700;
+    font-variant-numeric:tabular-nums;white-space:nowrap;
+    box-shadow:inset 0 0 0 1.5px var(--win),
+               0 0 11px color-mix(in srgb, var(--win) 70%, transparent);
+  }
+  /* Light across the cap, then the star. Runs in every state: out of reach it
+     is the thing you are chasing, reached it is the thing announcing it. */
+  .account-progress-end::before{
+    content:'';position:absolute;inset:0;border-radius:999px;z-index:1;
+    pointer-events:none;
+    background:linear-gradient(115deg,
+      transparent 40%, rgba(255,255,255,.55) 50%, transparent 60%);
+    background-size:320% 100%;
+    animation:calGoalGlint 6s linear infinite;
+  }
+  .account-progress-end::after{
+    content:'';position:absolute;top:-3px;right:-2px;width:9px;height:9px;
+    z-index:2;pointer-events:none;background:#fff;
+    clip-path:polygon(50% 0%, 58% 42%, 100% 50%, 58% 58%,
+                      50% 100%, 42% 58%, 0% 50%, 42% 42%);
+    opacity:0;
+    animation:calGoalSparkle 6s ease-in-out infinite;
+  }
+  @media (prefers-reduced-motion: reduce){
+    .account-progress-fill::after,
+    .account-progress-end::before,
+    .account-progress-end::after{animation:none;background:none;opacity:0;}
+    .account-progress-fill{transition:none;}
+  }
   .account-progress-label{font-size:11.5px;color:var(--muted);margin-bottom:16px;}
   .account-card-rules{display:flex;flex-wrap:wrap;gap:7px;}
   .account-card-rules .pill{font-size:11.5px;padding:5px 10px;}
@@ -2443,6 +2514,10 @@
   .sx-chip.clear:hover{color:var(--ink);border-color:var(--muted);}
   .sx-chip-n{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted);margin-left:auto;}
   .sx-name{font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  /* The session's window in your own day, under its name — the row is only so
+     wide, and the hours are supporting detail, not the label. */
+  .sx-when{display:block;font-style:normal;font-weight:500;font-size:10px;
+    font-family:'IBM Plex Mono',monospace;color:var(--muted);margin-top:1px;}
   .sx-bar{position:relative;height:18px;}
   .sx-bar .zero{position:absolute;left:50%;top:-1px;bottom:-1px;width:1px;background:var(--rule);}
   .sx-bar .fill{position:absolute;top:4px;bottom:4px;border-radius:2px;}
