@@ -2059,6 +2059,7 @@ function _renderCalGoal(monthTrades, y, m){
     <span class="cal-goal-label">Goal</span>
     <span class="cal-goal-track">
       <i style="width:${pct.toFixed(1)}%"></i>
+      ${done ? '' : `<u style="--p:${pct.toFixed(1)}%"></u>`}
       ${done ? '' : `<b style="--p:${pct.toFixed(1)}%">${shown}%</b>`}
       <span class="cal-goal-end">${done ? `${shown}%` : _GOAL_TROPHY}</span>
     </span>
@@ -2420,6 +2421,7 @@ function _yearGoalStrip(y, net, goalUsd, today){
     <span class="yo-yg-label">Year goal</span>
     <div class="yo-bar year live ${tone}" title="${escapeHtml(tip)}">
       <i style="width:${pct.toFixed(1)}%"></i>
+      ${hit ? '' : `<u style="--p:${pct.toFixed(1)}%"></u>`}
       ${hit ? '' : `<b style="--p:${pct.toFixed(1)}%">${Math.round(pctTrue)}%</b>`}
       <span class="yo-bar-end">${hit ? `${Math.round(pctTrue)}%` : _GOAL_TROPHY}</span>
     </div>
@@ -2450,6 +2452,7 @@ function _yearGoalBar(mo, goalUsd){
     + `${Math.round(mo.goalPct)}% · ${fmtMoney(mo.net)} against ${_salMoney(goalUsd, 'USD')}`;
   return `<div class="yo-bar ${mo.goalTone}" title="${escapeHtml(tip)}">
     <i style="width:${pct.toFixed(1)}%"></i>
+    ${mo.hitGoal ? '' : `<u style="--p:${pct.toFixed(1)}%"></u>`}
     ${mo.hitGoal ? '' : `<b style="--p:${pct.toFixed(1)}%">${Math.round(mo.goalPct)}%</b>`}
     <span class="yo-bar-end">${mo.hitGoal ? `${Math.round(mo.goalPct)}%` : _GOAL_TROPHY}</span>
   </div>`;
@@ -17776,6 +17779,7 @@ function accountCardHTML(a){
         const pctOfTarget = Math.round(plPct / a.profit_target_pct * 100);
         balanceHTML += `
           <div class="account-progress-bar ${tone}"><div class="account-progress-fill" style="width:${(progressFraction*100).toFixed(1)}%;"></div>
+            ${reached ? '' : `<u class="account-progress-knob" style="--p:${(progressFraction*100).toFixed(1)}%"></u>`}
             ${reached ? '' : `<b class="account-progress-pct" style="--p:${(progressFraction*100).toFixed(1)}%">${pctOfTarget}%</b>`}
             <span class="account-progress-end">${reached ? `${pctOfTarget}%` : _GOAL_TROPHY}</span></div>
           <div class="account-progress-label">${plPct >= 0 ? '' : '-'}${Math.abs(plPct).toFixed(1)}% of ${a.profit_target_pct}% target</div>

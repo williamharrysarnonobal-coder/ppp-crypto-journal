@@ -493,6 +493,7 @@
    pa ito maabot, at iyon nga ang sinasabi ng 74%. Ang `low` ay pinahinang
    ginto — pag-usad pa rin, mabagal lang. Hindi na lumalabas ang pula dahil sa
    kabagalan; nakalaan na ito sa pagbaba at sa isang saradong buwang halos wala. */
+
 .cal-goal.hit{--gt:var(--win);}
 .cal-goal.close{--gt:color-mix(in srgb, var(--win) 58%, var(--accent));}
 .cal-goal.now{--gt:var(--accent);}
@@ -686,7 +687,9 @@
   .cal-goal .cal-goal-end::after{animation:none;background:none;opacity:0;}
   .cal-goal-track i,
   .cal-goal-track b{transition:none;}
+
 }
+
   .tc-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:2px;vertical-align:1px;}
   /* BE is blue, not grey. Grey read as "nothing here" when a breakeven is a
      real, deliberate outcome — and the cell is clickable, which a grey dot
@@ -1860,6 +1863,7 @@ table.breakdown tbody tr{cursor:pointer;}
      overflow:hidden is gone — the end cap and its sparkle sit outside the 8px
      rail, and clipping the bar would cut both off. */
   .account-progress-bar{position:relative;height:22px;margin-bottom:4px;}
+
   .account-progress-bar.hit{--gt:var(--win);}
   .account-progress-bar.close{--gt:color-mix(in srgb, var(--win) 58%, var(--accent));}
   .account-progress-bar.now{--gt:var(--accent);}
@@ -2664,6 +2668,7 @@ table.breakdown tbody tr{cursor:pointer;}
      negative, grey when no salary is set. That last one is not an accusation:
      there is nothing to have missed. */
   .yo-bar{position:relative;height:22px;margin-top:2px;}
+
   .yo-bar.hit{--gt:var(--win);}
   .yo-bar.close{--gt:color-mix(in srgb, var(--win) 58%, var(--accent));}
   .yo-bar.now{--gt:var(--accent);}
@@ -3696,3 +3701,140 @@ table.breakdown tbody tr{cursor:pointer;}
   body.mobile-mode .poscalc-accent-btn,
   body.mobile-mode .rec-open-btn,
   body.mobile-mode .tab{min-height:40px;}
+
+
+/* ============================================================================
+   ANG APAT NA PROGRESS BAR — ISANG HUGIS NG SLIDER
+
+   Batay sa reference: isang bilog na knob sa dulo ng fill, at ang porsyento ay
+   isang lumulutang na bula sa itaas nito na may tuka pababa. Ang trophy sa dulo
+   ay nananatili — iyon ang marka ng target, at pinapalitan ito ng porsyento
+   kapag naabot na.
+
+   NANDITO SILA SA DULO NG FILE NANG SADYA.
+
+   Tatlong beses kong isinulat ang bloke na ito na malapit sa orihinal na rule
+   ng bawat bar, at tatlong beses itong natalo — pareho ang specificity, kaya
+   ang HULI sa file ang nananaig at ang orihinal ang mas huli. Ang unang subok
+   ay mas malala pa: na-anchor ko ito sa isang linya na nasa loob pala ng
+   @media (prefers-reduced-motion: reduce), kaya patay ang buong bagay maliban
+   sa mga taong nagsasara ng animation. Walang nakakasunod sa dulo ng file.
+
+   Isang bagay ang mahalagang tama at madaling mali: ang KNOB ay sumusunod sa
+   tunay na dulo ng fill (left:var(--p) nang walang clamp) samantalang ang BULA
+   ay naka-clamp para hindi lumabas sa gilid. Kung naka-clamp din ang knob, sa
+   mababang porsyento ay lalayo ito sa dulo ng fill at ituturo ang maling lugar
+   — na siyang buong dahilan kung bakit may knob.
+
+   Ang bawat bar ay may APAT na bahaging dapat nasa IISANG linya: ang groove
+   (::before), ang fill, ang knob at ang end cap. Ang paglipat ng tatlo at
+   pagkalimot sa isa ang paulit-ulit kong pagkakamali dito, kaya sinusukat ito
+   ng sim-slider.js sa apat na bar nang sabay.
+   ========================================================================= */
+
+/* ---- 1. Calendar salary goal ---- */
+.cal-goal-track{height:46px;}
+.cal-goal-track::before{top:34px;}
+.cal-goal-track i{top:34px;}
+.cal-goal-track i::before{top:34px;}
+.cal-goal-track .cal-goal-end{top:34px;}
+.cal-goal-track u{
+  position:absolute;top:34px;left:var(--p,0%);
+  width:15px;height:15px;border-radius:50%;
+  transform:translate(-50%,-50%);z-index:4;
+  background:var(--gt,var(--muted));
+  box-shadow:0 0 0 3.5px color-mix(in srgb, var(--gt,var(--muted)) 20%, transparent),
+             0 2px 5px rgba(0,0,0,.45);
+  transition:left .6s cubic-bezier(.22,.8,.3,1);
+}
+/* Solido ang bula, hindi balangkas. Sa reference ay madilim ang bula na may
+   puting teksto; madilim na ang tema natin, kaya ang katumbas ng kaibahang
+   iyon ay ang kabaligtaran — puno ng kulay ng tono, madilim ang teksto. */
+.cal-goal-track b{
+  top:3px;
+  left:clamp(20px, var(--p,0%), calc(100% - 26px));
+  transform:translateX(-50%);
+  background:var(--gt,var(--muted));
+  color:var(--bg);
+  border:none;
+  padding:3px 8px;
+  box-shadow:0 3px 8px rgba(0,0,0,.4);
+}
+.cal-goal-track b::after{
+  content:'';position:absolute;top:100%;left:50%;
+  transform:translateX(-50%);
+  border:5px solid transparent;
+  border-top-color:var(--gt,var(--muted));
+}
+
+/* ---- 2. Year overview: bawat buwan (maliit) ---- */
+.yo-bar{height:36px;}
+.yo-bar::before{top:27px;}
+.yo-bar i{top:27px;}
+.yo-bar i::before{top:27px;}
+.yo-bar .yo-bar-end{top:27px;}
+.yo-bar u{
+  position:absolute;top:27px;left:var(--p,0%);
+  width:11px;height:11px;border-radius:50%;
+  transform:translate(-50%,-50%);z-index:4;
+  background:var(--gt,var(--muted));
+  box-shadow:0 0 0 2.5px color-mix(in srgb, var(--gt,var(--muted)) 20%, transparent),
+             0 1px 4px rgba(0,0,0,.45);
+}
+.yo-bar b{
+  top:2px;
+  left:clamp(16px, var(--p,0%), calc(100% - 20px));
+  transform:translateX(-50%);
+  background:var(--gt,var(--muted));
+  color:var(--bg);
+  border:none;
+  padding:2px 6px;
+  box-shadow:0 2px 6px rgba(0,0,0,.4);
+}
+.yo-bar b::after{
+  content:'';position:absolute;top:100%;left:50%;
+  transform:translateX(-50%);
+  border:4px solid transparent;
+  border-top-color:var(--gt,var(--muted));
+}
+
+/* ---- 3. Year overview: ang buong taon (malaki) ---- */
+.yo-bar.year{height:46px;}
+.yo-bar.year::before{top:34px;}
+.yo-bar.year i{top:34px;}
+.yo-bar.year i::before{top:34px;}
+.yo-bar.year .yo-bar-end{top:34px;}
+.yo-bar.year u{top:34px;width:15px;height:15px;left:var(--p,0%);}
+.yo-bar.year b{top:3px;padding:3px 8px;
+  left:clamp(20px, var(--p,0%), calc(100% - 26px));}
+
+/* ---- 4. My Accounts prop firm target ---- */
+.account-progress-bar{height:42px;}
+.account-progress-bar::before{top:31px;}
+.account-progress-fill{top:31px;}
+.account-progress-bar .account-progress-end{top:31px;}
+.account-progress-knob{
+  position:absolute;top:31px;left:var(--p,0%);
+  width:15px;height:15px;border-radius:50%;
+  transform:translate(-50%,-50%);z-index:4;
+  background:var(--gt,var(--accent));
+  box-shadow:0 0 0 3.5px color-mix(in srgb, var(--gt,var(--accent)) 20%, transparent),
+             0 2px 5px rgba(0,0,0,.45);
+  transition:left .6s cubic-bezier(.22,.8,.3,1);
+}
+.account-progress-pct{
+  top:3px;
+  left:clamp(20px, var(--p,0%), calc(100% - 26px));
+  transform:translateX(-50%);
+  background:var(--gt,var(--accent));
+  color:var(--bg);
+  border:none;
+  padding:3px 8px;
+  box-shadow:0 3px 8px rgba(0,0,0,.4);
+}
+.account-progress-pct::after{
+  content:'';position:absolute;top:100%;left:50%;
+  transform:translateX(-50%);
+  border:5px solid transparent;
+  border-top-color:var(--gt,var(--accent));
+}
