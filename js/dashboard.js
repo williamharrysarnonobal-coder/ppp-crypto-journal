@@ -22632,6 +22632,38 @@ async function _saveBulkJournal(shared){
   const { rows, confluenceDropped } = _bulkJournalRows(shared);
   const setupIds = drawerBulkTargets.map(t => t.setupId);
 
+  /* HUMIHINTO BAGO BURAHIN ANG CONFLUENCE.
+
+     Ang pagbabago ng Pattern Type sa bulk drawer ay nagtatapon ng mga sagot sa
+     confluence, at may dahilan iyon: naka-imbak sila ayon sa POSISYON sa
+     checklist ng pattern na iyon, kaya sa ibang pattern ay ituturo nila ang
+     ibang tanong. Ang pagdadala noon ay gagawa ng datos na mukhang tama at
+     mali pala.
+
+     Toast lang ang babala noon — lumilipas, madaling hindi mapansin, at
+     dumarating PAGKATAPOS nang mabura. Tatlong beses na niyang naitanong kung
+     bakit nawawala ang confluence sa bulk; hindi sapat ang isang toast.
+
+     Ito ang tanging bagay sa pagsulat na ito na hindi na maibabalik: ang
+     iskor ay muling makukuwenta at ang petsa ay maitatama, pero ang mga
+     sagot ay wala nang pagkukunan. Kaya dito humihinto. */
+  if(confluenceDropped){
+    const which = drawerBulkTargets
+      .map(t => SAVED_SETUPS.find(s => s.id === t.setupId))
+      .filter(s => s && s.pattern_type)
+      .map(s => s.pattern_type);
+    const from = [...new Set(which)].join(', ') || 'their own';
+    const to = shared.pattern_type || '(blank)';
+    if(!(await customConfirm(
+        `This will erase the confluence on ${confluenceDropped} `
+        + `${confluenceDropped === 1 ? 'trade' : 'trades'}.\n\n`
+        + `You set Pattern Type to "${to}", but the setups were filled in as `
+        + `"${from}". Confluence answers are stored per checklist, so they `
+        + `cannot move to a different pattern.\n\n`
+        + `Set Pattern Type back to "${from}" to keep them.`,
+        `Journal without confluence`))) return;
+  }
+
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${TABLE_NAME}`, {
     method: 'POST',
     headers: {
@@ -22668,9 +22700,19 @@ async function _saveBulkJournal(shared){
   clearSetupSelection();
   loadLinkedSetupScreenshots().then(renderJournalTable);
   closeDrawer();
-  showToast(confluenceDropped
-    ? `Journaled ${n} trade${n===1?'':'s'} — confluence cleared on ${confluenceDropped}, pattern type changed. Re-run it from the trade.`
-    : `Journaled ${n} trade${n===1?'':'s'}`);
+  /* Sinasabi kung ILAN ang naisulat na walang confluence, hindi lang kung
+     ilan ang IBINAGSAK. Dalawang magkaibang dahilan ang parehong nagbibigay ng
+     "—" sa column: itinapon dahil nagbago ang pattern, o wala talaga sa setup
+     mula pa noong simula. Ang toast noon ay tungkol sa una lamang, kaya ang
+     pangalawa ay tahimik — at hindi malalaman kung alin sa dalawa ang nangyari. */
+  const noConfluence = rows.filter(r => !r.confluence_answers
+    || !Object.keys(r.confluence_answers).length).length;
+  showToast(
+    confluenceDropped
+      ? `Journaled ${n} trade${n===1?'':'s'} — confluence cleared on ${confluenceDropped}, pattern type changed. Re-run it from the trade.`
+    : noConfluence
+      ? `Journaled ${n} trade${n===1?'':'s'} — ${noConfluence} without confluence: the setup${noConfluence===1?'':'s'} had none saved.`
+      : `Journaled ${n} trade${n===1?'':'s'}`);
 }
 
 function _cancelJournalQueue(){
