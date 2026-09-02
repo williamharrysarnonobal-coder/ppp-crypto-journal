@@ -19732,6 +19732,60 @@ function _flagAccountBreaches(){
   });
 }
 
+/* ANG DAAN PABALIK.
+
+   Walang paraan para bawiin ito noon maliban sa Edit account — at hindi iyon
+   halata kapag ang nakikita mo ay isang pulang FAILED na hindi mo naman
+   inilagay. Ang 5K niya ay minarkahan ng lumang auto-fail; ang pag-alis noon ay
+   pumipigil sa PAGBAGSAK ULIT, pero hindi nito binubura ang nakasulat na sa
+   database — at hindi rin ito dapat gawin nang kusa: baka totoong bumagsak nga
+   ang ibang account, at hindi ako ang dapat magpasya niyon.
+
+   Kaya nasa card mismo ang pindutan, katabi ng dahilan. */
+async function setAccountOngoing(id){
+  const acc = (TRADING_ACCOUNTS || []).find(a => a.id === id);
+  if(!acc) return;
+  if(!(await customConfirm(
+      `Set ${acc.account_name} back to Ongoing?\n\n`
+      + `Only do this if the prop firm has not actually failed it. `
+      + `The recorded reason is cleared too.`,
+      'Set to Ongoing'))) return;
+  try{
+    let res = await fetch(`${SUPABASE_URL}/rest/v1/trading_accounts?id=eq.${acc.id}`, {
+      method: 'PATCH',
+      headers: {
+        "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}`,
+        "Content-Type": "application/json", "Prefer": "return=representation"
+      },
+      body: JSON.stringify({ status: 'Ongoing', fail_reason: null })
+    });
+    // Gaya ng pagmamarka: bago pa ang column, kaya hindi dapat mabigo ang
+    // pagbabalik dahil lang doon.
+    if(!res.ok){
+      res = await fetch(`${SUPABASE_URL}/rest/v1/trading_accounts?id=eq.${acc.id}`, {
+        method: 'PATCH',
+        headers: {
+          "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}`,
+          "Content-Type": "application/json", "Prefer": "return=representation"
+        },
+        body: JSON.stringify({ status: 'Ongoing' })
+      });
+    }
+    if(!res.ok) throw new Error(await res.text());
+    const updated = await res.json();
+    Object.assign(acc, updated[0] || {}, { status: 'Ongoing', fail_reason: null });
+    /* Muling suriin agad: kung may tunay pang nalabag, babalik ang babala sa
+       card ngayon din — hindi bilang hatol, kundi para hindi ka mag-isip na
+       nawala na ito. */
+    _flagAccountBreaches();
+    renderAccountsList();
+    showToast(`${acc.account_name} is Ongoing again.`);
+  }catch(e){
+    console.error("Couldn't set the account back to Ongoing:", e);
+    showToast("Couldn't save that — please try again.");
+  }
+}
+
 /* Ang tanging daan patungong Failed ay dito, at may tao sa dulo nito.
 
    AT ITINATALA KUNG BAKIT. Ang isang account na "Failed" na walang dahilan ay
@@ -20708,9 +20762,13 @@ function accountCardHTML(a){
        walang naitalang dahilan, kaya sinasabi nito iyon nang tahasan sa halip
        na magmukhang blangko. */
     const failHTML = (!isExchange && status === 'Failed')
-      ? `<div class="acct-failed-why">${a.fail_reason
-            ? escapeHtml(a.fail_reason)
-            : 'No reason recorded — this was set before reasons were kept.'}</div>`
+      ? `<div class="acct-failed-why" onclick='event.stopPropagation();'>
+           <div>${a.fail_reason
+              ? escapeHtml(a.fail_reason)
+              : 'No reason recorded — this was set before reasons were kept.'}</div>
+           <button class="acct-unfail-btn" onclick='setAccountOngoing(${a.id})'
+             >Set back to Ongoing</button>
+         </div>`
       : '';
 
     return `
