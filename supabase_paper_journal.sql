@@ -25,6 +25,21 @@ create index if not exists trading_journal_is_paper_idx
   on trading_journal (user_id, is_paper)
   where is_paper = true;
 
+-- Ang mga SETUP din.
+--
+-- Ang Position Size Calculator ay iisang bagay na may dalawang tahanan, kaya
+-- ang Pending Setups sa loob nito ay iisang listahan — ang setup na ginawa mo
+-- sa Paper Trade Journal ay lumalabas din sa tunay na calculator. Kailangan
+-- din nito ng sariling watawat, dahil ang isang planong hindi mo kinuha ay
+-- hindi dapat nakaupo sa listahan ng mga plano mong susundan.
+alter table position_setups
+  add column if not exists is_paper boolean not null default false;
+
+create index if not exists position_setups_is_paper_idx
+  on position_setups (user_id, is_paper)
+  where is_paper = true;
+
 -- Suriin: dapat zero ang bilang bago ka magsimula, at dapat walang tunay na
 -- trade na naging paper.
 --   select is_paper, count(*) from trading_journal group by is_paper;
+--   select is_paper, count(*) from position_setups  group by is_paper;

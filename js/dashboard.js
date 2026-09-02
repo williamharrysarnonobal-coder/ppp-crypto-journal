@@ -19065,6 +19065,14 @@ async function tradeThisSetup(accountId){
     status: 'Pending'
   };
 
+  /* Ang setup na ginawa sa loob ng Paper Trade Journal ay isang PAPER na
+     setup. Kapareho ng trade: sa PAGGAWA lang ito isinusulat, dahil ang
+     kinaroroonan ng calculator ang sumasagot kung ano ang ginagawa mo ngayon.
+
+     Kung wala ito, iisang listahan ng Pending Setups ang dalawang pahina —
+     ang mismong "may connection" na napansin niya. */
+  if(_isPaperMode()) payload.is_paper = true;
+
   try{
     const res = await fetch(`${SUPABASE_URL}/rest/v1/position_setups`, {
       method: 'POST',
@@ -20254,8 +20262,18 @@ function renderSavedSetups(){
   const journaledEmptyState = document.getElementById('journaledSetupsEmptyState');
   if(!pendingTable || !pendingBody || !journaledTable || !journaledBody) return;
 
-  const pending = SAVED_SETUPS.filter(s => (s.status || 'Pending') !== 'Journaled');
-  const journaled = SAVED_SETUPS.filter(s => s.status === 'Journaled');
+  /* Isang listahan sa database, dalawang listahan sa screen — kapareho ng
+     ginawa sa trade. Ang paghahati ay dito, sa GUHIT, at hindi sa SAVED_SETUPS
+     mismo: ang paghahanap sa pamamagitan ng id ay ginagawa sa isang dosenang
+     lugar (journalFromSetup, confluence, notes, bulk save) at lahat sila ay
+     dapat makahanap ng setup kahit ano ang pahinang binubuksan mo.
+
+     Kaya nananatiling BUO ang SAVED_SETUPS at ang nakikita lang ang sinasala. */
+  const wantPaper = _isPaperMode();
+  const mine = SAVED_SETUPS.filter(s => !!s.is_paper === wantPaper);
+
+  const pending = mine.filter(s => (s.status || 'Pending') !== 'Journaled');
+  const journaled = mine.filter(s => s.status === 'Journaled');
 
   // Drop selections for setups that no longer exist (deleted or journaled)
   // so the bulk bar can never act on a stale id.

@@ -3751,14 +3751,53 @@ table.breakdown tbody tr{cursor:pointer;}
    Ibinaba ko ang linya noon para gumawa ng puwang para sa bula, at inilipat ang
    GOAL pababa para sumunod. Naayos ang GOAL at naiwan ang "Calendar" — kaya
    tatlong bagay sa isang hilera at walang dalawang magkapantay. Ang tamang
-   sagot ay hindi ang paggalaw ng label kundi ang paglutang ng BULA paitaas:
-   may 21px na padding ang panel sa ibabaw nito, at 19px lang ang kailangan. */
-.cal-goal-track{height:26px;}
-.cal-goal-track::before{top:50%;}
-.cal-goal-track i{top:50%;}
-.cal-goal-track .cal-goal-end{top:50%;}
+   sagot ay hindi ang paggalaw ng label kundi ang paglutang ng BULA paitaas.
+
+   AT DOON AKO NAGKAMALI. Pinalutang ko ito sa top:-19px — sa LABAS ng track,
+   sa padding ng panel. Kasya nga ito sa 21px na padding, pero ang .cal-goal ay
+   nakaupo sa loob ng isang <h2> na hilera, at ang layout ay hindi nakakakita
+   ng bagay na nasa labas ng kahon nito: 26px lang ang alam nitong taas
+   samantalang 45px ang tunay na kinukuha. Kaya bumabangga ang bula sa pamagat
+   sa itaas — ang "sumosobra na sa box" na napansin niya.
+
+   Ang tamang sagot ay ang parehong ginagawa na ng mga bar ng Year overview:
+   palakihin ang KAHON para magkasya ang bula sa loob, at ibaba ang linya sa
+   loob ng kahon na iyon. Walang lumalabas, at ang taas na iniuulat sa layout
+   ay ang tunay na taas.
+
+   Ang label ay nakahanay sa LINYA sa pamamagitan ng flex-end at ng sariling
+   line-height, kapareho ng .yo-m-goal sa ibaba.
+
+   Ang taas: 40px na kahon, ang linya ay nasa 30px. Ang 30 ay hindi arbitraryo
+   — ang bula ay mga 14px ang taas mula sa 3px, kaya nagtatapos ito sa 17px, at
+   ang tuka nito ay 5px. Ang tuktok ng knob (7.5px na radius) ay dapat nasa
+   22px pababa para may lugar ang tuka: 30 − 7.5 = 22.5. Eksakto.
+
+   MAS MALIIT ANG BULA kaysa noon. "Masyadong malaki" ang sabi niya, at tama
+   siya: isang dalawang-karakter na porsyento ang nakaupo doon, hindi isang
+   pamagat. Mula 10.5px patungong 9.5px, at mas manipis ang padding — kaya
+   lumiit din ang buong kahon mula 46px patungong 40px.
+
+   At ang PAMAGAT. Ang .cal-goal ay nakaupo sa loob ng <h2> na hilera kasama
+   ang salitang "Calendar", at ang hilerang iyon ay naka-align sa gitna. Ang
+   isang mataas na kahon ay naglalagay sa "Calendar" nang mas mataas kaysa sa
+   linya — ito mismo ang "hindi pantay ang word na Calendar" na napansin niya
+   noon. Kaya flex-end din ang hilera at binibigyan ang dalawang teksto ng
+   sariling line-height: 40 − 30 = 10, at 2 × 10 = 20px ang naglalagay sa
+   gitna nila nang eksakto sa linya. */
+/* .panel h2 (0,1,1) ang nagtatakda ng align-items:center at tinatalo nito ang
+   .cal-h2 (0,1,0). Ang .panel h2.cal-h2 ay 0,2,1 — sapat para manalo, at
+   nakatali pa rin sa iisang header na ito lang. Ang pamagat na "Calendar" ay
+   isang hubad na text node, kaya ang line-height ang humuhubog sa kahon nito. */
+.panel h2.cal-h2{align-items:flex-end;line-height:20px;}
+.cal-goal{align-items:flex-end;}
+.cal-goal-label{line-height:20px;}
+.cal-goal-track{height:40px;}
+.cal-goal-track::before{top:30px;}
+.cal-goal-track i{top:30px;}
+.cal-goal-track .cal-goal-end{top:30px;}
 .cal-goal-track u{
-  position:absolute;top:50%;
+  position:absolute;top:30px;
   /* Naka-clamp sa sariling radius lang — sapat para manatili ang knob sa loob
      ng track (kalahati nito ang nakausli dati sa 0%), at masyadong maliit para
      masira ang pagtugma nito sa dulo ng fill. */
@@ -3770,19 +3809,27 @@ table.breakdown tbody tr{cursor:pointer;}
              0 2px 5px rgba(0,0,0,.45);
   transition:left .6s cubic-bezier(.22,.8,.3,1);
 }
-/* Lumulutang sa ITAAS ng track, sa padding ng panel. PAREHONG clamp ng knob,
-   kaya laging magkatapat sila — kung mas malaki ang clamp ng bula, sa mababang
-   porsyento ay tuturo ang tuka nito sa tabi ng knob at hindi sa knob. */
+/* Sa LOOB na ng track, sa itaas ng linya. PAREHONG clamp ng knob, kaya laging
+   magkatapat sila — kung mas malaki ang clamp ng bula, sa mababang porsyento
+   ay tuturo ang tuka nito sa tabi ng knob at hindi sa knob mismo. */
 .cal-goal-track b{
-  top:-19px;
+  top:3px;
   left:clamp(7.5px, var(--p,0%), calc(100% - 7.5px));
   transform:translateX(-50%);
   background:var(--gt,var(--muted));
   color:var(--bg);
   border:none;
-  padding:3px 8px;
+  padding:1.5px 6px;
+  font-size:9.5px;
+  /* SARILING line-height. Ang h2 ay may sariling line-height ngayon para
+     pumantay ang "Calendar" sa linya, at minamana iyon ng bula — sampung pixel
+     na mas mataas ito, at ang puwang para sa tuka ay naging negatibo. Ang isang
+     sukat na itinakda para sa isang bagay ay hindi dapat dumaloy sa iba. */
+  line-height:1.25;
   box-shadow:0 3px 8px rgba(0,0,0,.4);
 }
+/* Kapareho ng dahilan: hindi dapat hubugin ng line-height ng pamagat ang disc. */
+.cal-goal-end{line-height:1;}
 .cal-goal-track b::after{
   content:'';position:absolute;top:100%;left:50%;
   transform:translateX(-50%);
