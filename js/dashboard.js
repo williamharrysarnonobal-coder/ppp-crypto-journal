@@ -6315,11 +6315,19 @@ function renderTriggerPanel(){
     return;
   }
 
-  // Ayon sa uri muna: ito ang sagot sa "kasalanan ko ba ito".
-  const KIND = { felt:  { t:'What you felt',       s:'the ones to train out',        cls:'bad'  },
-                 setup: { t:'What the setup did',  s:'sometimes a correct pass',     cls:'good' },
-                 life:  { t:'What life did',       s:'nothing to do with trading',   cls:'wait' } };
-  const byKind = { felt:0, setup:0, life:0, other:0 };
+  /* Ayon sa uri muna: ito ang sagot sa "kasalanan ko ba ito".
+
+     Galing sa NO_TRADE_REASON_GROUPS ang listahan at hindi nakasulat dito.
+     Ang lumang bersyon ay may sariling kopya ng tatlong pangalan, kaya ang
+     pagdagdag ng ikaapat na grupo ay nangangahulugang tatlong lugar ang
+     babaguhin — at ang isang makakalimutan ay isang grupong may datos pero
+     walang card na magpapakita nito. Isang pinagmumulan ngayon. */
+  const KIND = {};
+  NO_TRADE_REASON_GROUPS.forEach(g => {
+    KIND[g.kind] = { t: g.name, s: g.sub, cls: g.cls || 'wait' };
+  });
+  const byKind = { other: 0 };
+  NO_TRADE_REASON_GROUPS.forEach(g => { byKind[g.kind] = 0; });
   const byReason = new Map();
   answered.forEach(t => {
     const r = t.no_trade_reason.trim();
@@ -6346,7 +6354,12 @@ function renderTriggerPanel(){
      ay mabibilang sa dalawang panig at magdadagdag ng R sa magkabila. */
   const kindOf = t => _paperOutcomeKind(t.paper_outcome);
   const missed = rows.filter(t => kindOf(t) === 'missed');
-  const saved  = rows.filter(t => kindOf(t) === 'saved');
+  /* Ang whipsaw ay kasama sa "iniligtas ka" para sa R — nastop ka sana at 1R
+     ang naiwasan mo. Pero binibilang din ito nang hiwalay, dahil ang aral doon
+     ay tungkol sa STOP mo at hindi sa basa mo, at mawawala iyon kung
+     matutunaw ito sa loob ng karaniwang Hit SL. */
+  const whipsaw = rows.filter(t => kindOf(t) === 'whipsaw');
+  const saved  = rows.filter(t => kindOf(t) === 'saved').concat(whipsaw);
   const flat   = rows.filter(t => kindOf(t) === 'flat').length;
   const entryOff = rows.filter(t => kindOf(t) === 'entry').length;
   const neverFilled = rows.filter(t => kindOf(t) === 'moot').length;
@@ -6391,13 +6404,17 @@ function renderTriggerPanel(){
       ${entryOff ? `<div class="dx-s-note">
         ${entryOff} setup${entryOff === 1 ? '' : 's'} ran to target without ever reaching your
         entry. The read was right; the entry was too far away — that is a different
-        problem from hesitating, and it is not counted on either side above.</div>` : ''}`;
+        problem from hesitating, and it is not counted on either side above.</div>` : ''}
+      ${whipsaw.length ? `<div class="dx-s-note">
+        ${whipsaw.length} would have stopped you out and then gone on to your target.
+        Passing still saved you the loss — but the read was right and the stop was
+        not. That is a stop-placement problem, not a courage one.</div>` : ''}`;
   })() : `<div class="empty-state" style="margin-top:14px;">
       None of these have been checked against the chart yet. Open one and set
       <b>What would have happened</b> — that is what turns this from a list of
       hesitations into an answer about whether they cost you.</div>`;
 
-  const cards = ['felt','setup','life'].filter(k => byKind[k]).map(k => `
+  const cards = NO_TRADE_REASON_GROUPS.map(g => g.kind).filter(k => byKind[k]).map(k => `
     <div class="dx-s-card ${KIND[k].cls}">
       <span class="dx-s-k">${escapeHtml(KIND[k].t)}</span>
       <span class="dx-s-v">${byKind[k]} of ${answered.length}</span>
@@ -6405,20 +6422,28 @@ function renderTriggerPanel(){
     </div>`).join('');
 
   /* Ang headline ay hindi ang pinakamadalas na dahilan kundi ang pinakamadalas
-     na URI, dahil iyon ang nagsasabi kung ano ang dapat mong gawin. */
-  const lead = byKind.felt > byKind.setup && byKind.felt > byKind.life
-    ? `Most of the trades you let go, you let go because of how you felt — `
-      + `${byKind.felt} of ${answered.length}. That is the part you can train.`
-    : byKind.setup >= byKind.felt && byKind.setup >= byKind.life
-    ? `Most of your passes were about the setup, not about you — `
-      + `${byKind.setup} of ${answered.length}. A lot of those were probably correct.`
-    : `Most of what you missed was life, not trading — ${byKind.life} of ${answered.length}. `
-      + `That is a scheduling problem, not a discipline one.`;
+     na URI, dahil iyon ang nagsasabi kung ano ang dapat mong gawin.
+
+     Ang bawat grupo ang may hawak ng sariling pangungusap (lead), kaya ang
+     pagdagdag ng grupo ay hindi nangangailangan ng bagong sanga rito. Ang
+     lumang bersyon ay isang tatlong-palapag na ternary na may nakasulat na
+     pangalan sa loob — at ang ikaapat na grupo ay tahimik na babagsak sa
+     huling sanga at sasabihing "life" ito. */
+  const domKind = NO_TRADE_REASON_GROUPS
+    .map(g => g.kind)
+    .reduce((best, k) => byKind[k] > byKind[best] ? k : best,
+            NO_TRADE_REASON_GROUPS[0].kind);
+  const domGroup = NO_TRADE_REASON_GROUPS.find(g => g.kind === domKind);
+  const lead = (domGroup.lead
+      ? domGroup.lead(byKind[domKind], answered.length)
+      : `Most of your passes were "${domGroup.name}" — ${byKind[domKind]} of ${answered.length}.`);
+  // Ang tono ay sinusundan ang grupo mismo, hindi ang paghahambing ng dalawa.
+  const leadTone = domGroup.cls === 'bad' ? 'bad' : domGroup.cls === 'good' ? 'good' : 'wait';
 
   body.innerHTML = `
     <div class="dx-summary">
-      <div class="dx-s-verdict ${byKind.felt > byKind.setup ? 'bad' : 'good'}">
-        <span class="dx-dot ${byKind.felt > byKind.setup ? 'bad' : 'good'}"></span>
+      <div class="dx-s-verdict ${leadTone}">
+        <span class="dx-dot ${leadTone}"></span>
         <b>${escapeHtml(lead)}</b>
         <span>${answered.length} of ${rows.length} paper trades answered</span>
       </div>
@@ -6651,14 +6676,18 @@ function renderPaperTable(){
 const NO_TRADE_REASON_GROUPS = [
   // Ang kind ang nagbibigay ng kulay sa guhit sa kaliwa ng grupo, at ito rin
   // ang ginagamit ng dashboard panel — iisang bokabularyo sa dalawang lugar.
-  { name: 'What you felt', sub: 'the ones to train out', kind: 'felt',
+  { name: 'What you felt', sub: 'the ones to train out', kind: 'felt', cls: 'bad',
+    lead: (n, of) => `Most of the trades you let go, you let go because of how you felt — `
+      + `${n} of ${of}. That is the part you can train.`,
     items: [
       'Scared after a losing streak',
       'Hesitated — pulled back at the entry',
       'Feared missing a better setup',
       'Overthinking the size',
     ] },
-  { name: 'What the setup did', sub: 'sometimes a correct pass', kind: 'setup',
+  { name: 'What the setup did', sub: 'sometimes a correct pass', kind: 'setup', cls: 'good',
+    lead: (n, of) => `Most of your passes were about the setup, not about you — `
+      + `${n} of ${of}. A lot of those were probably correct.`,
     items: [
       'Structure was not clean enough',
       'Neckline did not line up',
@@ -6666,7 +6695,36 @@ const NO_TRADE_REASON_GROUPS = [
       'Against the higher timeframe bias',
       'Already extended — missed the entry',
     ] },
-  { name: 'What life did', sub: 'nothing to do with trading', kind: 'life',
+  /* IKAAPAT NA GRUPO: ang basa ay nasa maling timeframe.
+
+     Ito ang hiniling niya: "instead na 5 mins setup dapat 15 mins setup kasi
+     mahaba na yung binababa ng coin". Hindi ito takot at hindi ito tungkol sa
+     merkado — tama ang pagbabasa mo sa galaw, mali lang ang timeframe na
+     pinlano mo para dito.
+
+     Sariling grupo ito at hindi kasama sa "What the setup did" dahil ibang-iba
+     ang aral. Ang isang maruming structure ay walang masasabi sa iyo maliban
+     sa "huwag"; ang timeframe na hindi tugma sa laki ng galaw ay isang
+     PATTERN — kung paulit-ulit itong lumalabas sa report, ang problema ay
+     hindi ang lakas ng loob mo kundi ang pagpili mo ng timeframe, at iyon ay
+     natututuhan.
+
+     Kahel ang kulay nang sadya: hindi ito pagkakamali sa disiplina at hindi rin
+     ito tamang pagliban — isa itong bagay na aayusin. */
+  { name: 'What you read wrong', sub: 'no fault — feeds the reports',
+    kind: 'read', cls: 'wait',
+    lead: (n, of) => `Most of your passes were the timeframe, not the nerve — `
+      + `${n} of ${of}. The read was fine; the plan was built on the wrong chart.`,
+    items: [
+      'Needed a higher timeframe — the move was already long',
+      'Needed a lower timeframe — the move was too small',
+      'Entry was too far from price',
+      'Stop was too tight for how it was moving',
+      'Target was unrealistic for the session',
+    ] },
+  { name: 'What life did', sub: 'nothing to do with trading', kind: 'life', cls: 'wait',
+    lead: (n, of) => `Most of what you missed was life, not trading — ${n} of ${of}. `
+      + `That is a scheduling problem, not a discipline one.`,
     items: [
       'Away from home — could not place the order',
       'Taking a break by choice',
@@ -6675,10 +6733,17 @@ const NO_TRADE_REASON_GROUPS = [
     ] },
 ];
 const NO_TRADE_REASONS = NO_TRADE_REASON_GROUPS.flatMap(g => g.items);
-// Ang uri ng dahilan, para masagot ng dashboard ang "kasalanan ko ba ito".
+/* Ang uri ng dahilan, para masagot ng dashboard ang "kasalanan ko ba ito".
+
+   Sa PANGALAN ito nakabatay ngayon at hindi sa POSISYON. Ang lumang bersyon ay
+   ['felt','setup','life'][i] — dalawang bagay ang mali roon at pareho silang
+   tahimik: ang ikaapat na grupo ay makakakuha ng undefined, at ang pagpapalit
+   ng pagkakasunod ay magbabago sa kahulugan ng BAWAT naitalang trade nang
+   walang anumang senyales. Ang kind ay nasa grupo mismo, kung saan ito
+   nababasa katabi ng pangalan nito. */
 const NO_TRADE_KIND = {};
-NO_TRADE_REASON_GROUPS.forEach((g, i) =>
-  g.items.forEach(x => { NO_TRADE_KIND[x.toLowerCase()] = ['felt','setup','life'][i]; }));
+NO_TRADE_REASON_GROUPS.forEach(g =>
+  g.items.forEach(x => { NO_TRADE_KIND[x.toLowerCase()] = g.kind; }));
 
 /* ANG APAT NA MAAARING NANGYARI SA SETUP NA HINDI MO KINUHA.
 
@@ -6728,7 +6793,19 @@ function _paperList(v){
 function _paperOutcomeKind(v){
   const list = _paperList(v).map(s => s.toLowerCase());
   if(!list.length) return 'unknown';
-  if(list.includes('hit sl')) return 'saved';
+  /* NASTOP KA MUNA, TAPOS GUMANA — "SL pero nag punta padin sa TP ko".
+
+     Sariling hatol ito at hindi basta "saved", dahil ibang-iba ang aral. Ang
+     karaniwang Hit SL ay nagsasabing MALI ang basa mo. Ito ay nagsasabing TAMA
+     ang basa mo at ang STOP ang problema — masyadong malapit, o masyadong
+     maaga. Dalawang magkaibang bagay ang aayusin, at ang pagsasama sa kanila
+     ay nagtatago ng isa sa loob ng isa.
+
+     Sa R ay pareho pa rin sila: nastop ka sana at 1R ang naiwasan mo, dahil
+     hindi mo aabutin ang TP na iyon — matagal ka nang wala roon. */
+  if(list.includes('hit sl')){
+    return list.includes('hit tp') ? 'whipsaw' : 'saved';
+  }
   if(list.includes('hit tp')) return list.includes('never filled') ? 'entry' : 'missed';
   if(list.includes('would have cut loss')) return 'saved';
   if(list.includes("would have be'd out")) return 'flat';
@@ -6753,7 +6830,7 @@ function _paperOutcomeR(t){
     const r = _plannedRR(t);
     return r === null ? 0 : r;          // ang gantimpalang hindi mo nakuha
   }
-  if(kind === 'saved'){
+  if(kind === 'saved' || kind === 'whipsaw'){
     // Ang cutloss ay isang bahagi lamang ng 1R at hindi natin alam kung gaano
     // kalaki — kaya hindi ito nag-aambag, sa halip na magbigay ako ng numerong
     // hindi ko alam. Nabibilang pa rin ito sa tally.
@@ -23166,7 +23243,10 @@ function _reportPaperStats(start, end){
      tingnan doon kung bakit. Iisang aritmetika ito at ang sa Dashboard. */
   const kindOf = t => _paperOutcomeKind(t.paper_outcome);
   const missed = rows.filter(t => kindOf(t) === 'missed');
-  const saved  = rows.filter(t => kindOf(t) === 'saved');
+  // Kasama ang whipsaw sa saved para sa R, hiwalay para sa aral — kapareho ng
+  // renderTriggerPanel, dahil iisang aritmetika dapat ang dalawa.
+  const whipsaw = rows.filter(t => kindOf(t) === 'whipsaw').length;
+  const saved  = rows.filter(t => ['saved','whipsaw'].includes(kindOf(t)));
   const flat = rows.filter(t => kindOf(t) === 'flat').length;
   const entryOff = rows.filter(t => kindOf(t) === 'entry').length;
   const neverFilled = rows.filter(t => kindOf(t) === 'moot').length;
@@ -23177,7 +23257,7 @@ function _reportPaperStats(start, end){
 
   return { total: rows.length, answered: answered.length, byKind, topReason,
            missed: missed.length, saved: saved.length,
-           flat, entryOff, neverFilled, checked,
+           flat, entryOff, neverFilled, whipsaw, checked,
            missedRR, savedRR, netRR: missedRR - savedRR };
 }
 
@@ -23291,6 +23371,7 @@ function renderReportPreview(){
                 ? `Passing saved about <span class="pos" style="font-weight:600;">${fmtNum(Math.abs(paper.netRR), 1)}R</span> — the ones you let go would have lost.`
                 : `Roughly even — ${paper.missed} would have won, ${paper.saved} would have lost.`)
             : `None checked against the chart yet.`}
+          ${paper.whipsaw ? `&nbsp;·&nbsp; ${paper.whipsaw} stopped out then worked` : ''}
           ${paper.entryOff ? `&nbsp;·&nbsp; ${paper.entryOff} ran without you` : ''}
           ${paper.flat ? `&nbsp;·&nbsp; ${paper.flat} would have scratched` : ''}
           ${paper.neverFilled ? `&nbsp;·&nbsp; ${paper.neverFilled} never filled` : ''}
