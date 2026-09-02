@@ -88,6 +88,24 @@ function _plannedRR(t){
 
 function _drawerIsPaper(row){
   if(row && row.is_paper) return true;
+  /* ANG UMIIRAL NANG TRADE ANG NAGSASABI KUNG ANO ITO — HINDI ANG PAHINA.
+
+     Ito ang bug na naiulat niya: "saan mo ba nilagay, sa trade journal ko?"
+
+     Ang _isPaperMode() ay tumitingin sa kinaroroonan ng calculator, at tama
+     iyon para sa isang BAGONG entry — walang row pa, kaya ang pahinang
+     ginagamit mo ang tanging makakasagot. Pero para sa isang trade na naitala
+     na, ito ay maling tanong: ang pagbukas ng isang TUNAY na trade habang nasa
+     Paper tab ka ay nagpapakita ng "bakit hindi mo kinuha" sa isang trade na
+     kinuha mo, at itinatago ang account at quantity nito.
+
+     Mas malala: kung ise-save mo iyon, ang no_trade_reason at ang
+     paper_outcome ay maisusulat sa isang tunay na trade.
+
+     Ang position_id ang nagsasabi kung alin: kung mayroon nito, ito ay isang
+     naitalang trade at ang sariling is_paper nito ang katotohanan. Kung wala,
+     ito ay bago pa lang at ang pahina ang sasagot. */
+  if(row && row.position_id) return false;
   return _isPaperMode();
 }
 
