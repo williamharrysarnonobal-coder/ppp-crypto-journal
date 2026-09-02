@@ -6633,14 +6633,16 @@ function renderPaperTable(){
 
    Naitatama mo ito sa Configuration gaya ng ibang listahan ng option. */
 const NO_TRADE_REASON_GROUPS = [
-  { name: 'What you felt', sub: 'the ones to train out',
+  // Ang kind ang nagbibigay ng kulay sa guhit sa kaliwa ng grupo, at ito rin
+  // ang ginagamit ng dashboard panel — iisang bokabularyo sa dalawang lugar.
+  { name: 'What you felt', sub: 'the ones to train out', kind: 'felt',
     items: [
       'Scared after a losing streak',
       'Hesitated — pulled back at the entry',
       'Feared missing a better setup',
       'Overthinking the size',
     ] },
-  { name: 'What the setup did', sub: 'sometimes a correct pass',
+  { name: 'What the setup did', sub: 'sometimes a correct pass', kind: 'setup',
     items: [
       'Structure was not clean enough',
       'Neckline did not line up',
@@ -6648,7 +6650,7 @@ const NO_TRADE_REASON_GROUPS = [
       'Against the higher timeframe bias',
       'Already extended — missed the entry',
     ] },
-  { name: 'What life did', sub: 'nothing to do with trading',
+  { name: 'What life did', sub: 'nothing to do with trading', kind: 'life',
     items: [
       'Away from home — could not place the order',
       'Taking a break by choice',
@@ -6673,13 +6675,31 @@ NO_TRADE_REASON_GROUPS.forEach((g, i) =>
    nang hindi ito sinasagot: mas mainam ang tapat na "hindi ko pa alam" kaysa
    sa isang blangkong ituturing ng bilang bilang zero. */
 const PAPER_OUTCOMES = [
-  'Hit TP', 'Hit SL', 'Never filled', 'Not checked yet'
+  'Hit TP', 'Hit SL', 'Never filled'
+];
+/* Nakagrupo rin ito, sa parehong dahilan ng mga dahilan: ang HATOL ang
+   mahalaga, hindi ang pangalan. Sa isang patag na listahan ay tatlong
+   magkakatulad na pagpipilian ang "Hit TP", "Hit SL" at "Never filled";
+   nakagrupo ay malinaw agad kung alin ang gastos, alin ang naiwasan, at alin
+   ang hindi nangangahulugan ng kahit ano.
+
+   Ang "Not checked yet" ay wala rito — iyon ay ang WALANG sagot, at may
+   sariling paraan pabalik doon ang radiolist. Ang paglagay nito bilang isang
+   pagpipilian ay gagawin itong isang desisyon gayong ito ay isang pagliban. */
+const PAPER_OUTCOME_GROUPS = [
+  { name: 'It went your way', sub: 'passing on it cost you', kind: 'bad',
+    items: ['Hit TP'] },
+  { name: 'It went against you', sub: 'passing on it saved you', kind: 'good',
+    items: ['Hit SL'] },
+  { name: 'Nothing happened', sub: 'never reached your entry — proves nothing', kind: 'wait',
+    items: ['Never filled'] },
 ];
 // Alin sa kanila ang nagsasabing may nawala sa iyo, at alin ang nagligtas.
 const PAPER_OUTCOME_KIND = {
   'hit tp': 'missed',      // tama sana ang setup
   'hit sl': 'saved',       // iniligtas ka ng hindi pagpasok
   'never filled': 'moot',  // walang nangyari; walang patunay
+  // Nanatili ito para sa mga naunang naitala bago naging blangko ang default.
   'not checked yet': 'unknown'
 };
 
@@ -7144,7 +7164,10 @@ function removeOption(key, index){
 // editable: true = this field gets its widget in VIEW mode too (an "Easy Edit" field).
 //           In CREATE mode, every field renders its widget regardless of `editable`.
 const ALL_DRAWER_FIELDS = [
-  {key:'symbol', label:'Symbol', widget:'text', editable:false},
+  /* Nagmumungkahi habang nagta-type ka, mula sa mga symbol na natrade mo na.
+     Hindi ito naka-lock sa listahan — ang isang bagong pares ay isinusulat mo
+     lang, at hindi ito ang lugar para pigilan ka. */
+  {key:'symbol', label:'Symbol', widget:'text', editable:false, suggest:'symbol'},
   {key:'open_date', label:'Open Date', widget:'date', editable:false},
   {key:'close_date', label:'Close Date', widget:'date', editable:false, realOnly:true},
   {key:'duration', label:'Duration', widget:'text', editable:false, realOnly:true},
@@ -7199,7 +7222,7 @@ const ALL_DRAWER_FIELDS = [
      pagpipilian sa isang patag na listahan ay isang paghahanap; nakagrupo ay
      isang pagpili. Ang parehong grupo ay ginagamit ng dashboard para sagutin
      ang "kasalanan ko ba ito", kaya iisang pinagmumulan ang dalawa. */
-  {key:'no_trade_reason', label:'Why you did not take it', widget:'select',
+  {key:'no_trade_reason', label:'Why you did not take it', widget:'radiolist',
    editable:true, options:NO_TRADE_REASONS, optionGroups:NO_TRADE_REASON_GROUPS,
    paperOnly:true},
   /* ANG OUTCOME NG SETUP NA HINDI MO KINUHA.
@@ -7215,8 +7238,9 @@ const ALL_DRAWER_FIELDS = [
      detalye: ang setup na hindi umabot sa entry mo ay hindi patunay ng kahit
      ano, at ang pagbilang doon bilang iniwasang talo ay magbibigay sa iyo ng
      dahilan para ipagdiwang ang isang bagay na hindi nangyari. */
-  {key:'paper_outcome', label:'What would have happened', widget:'select',
-   editable:true, options:PAPER_OUTCOMES, paperOnly:true},
+  {key:'paper_outcome', label:'What would have happened', widget:'radiolist',
+   editable:true, options:PAPER_OUTCOMES, optionGroups:PAPER_OUTCOME_GROUPS,
+   paperOnly:true},
   // Kinukuwenta mula sa entry, TP at SL — ang plano ay may RR kahit walang trade.
   {key:'planned_rr', label:'Planned RR', widget:'text', editable:false, paperOnly:true},
   {key:'notes', label:'Notes', widget:'textarea', editable:true},
@@ -14818,6 +14842,57 @@ function _renderDrawerFieldRow(f, mode, row){
       : '';
     return `<div class="${rowCls}"><label>${f.label}</label><select data-field="${f.key}"${onchange}><option value="">—</option>${opts}</select></div>`;
   }
+  /* BUONG LISTAHAN, NAKALABAS — hindi isang dropdown.
+
+     Ang dalawang tanong ng paper trade ay ang buong dahilan kung bakit may
+     pahinang iyon, at nakatago sila sa likod ng isang pindot. Mas masahol pa:
+     ang dropdown ang tanging lugar kung saan makikita ang mga grupo, kaya ang
+     pinaka-mahalagang bagay na masasabi — na ang ilang pagliban ay TAMA — ay
+     nawawala sa sandaling magsara ito.
+
+     Nakalabas ang lahat: nakikita mo ang labing-apat na dahilan at ang tatlong
+     grupo nang sabay, at isang pindot lang ang pagpili sa halip na dalawa.
+
+     Ang radio ang tamang kontrol dito at hindi ang checkbox: isang dahilan
+     lang, at ang browser mismo ang nagpapatupad noon. */
+  if(f.widget === 'radiolist'){
+    const cur = raw === null || raw === undefined ? '' : String(raw);
+    const cell = (o, cls) => `
+      <label class="rl-opt${cur === String(o) ? ' on' : ''}${cls ? ' ' + cls : ''}">
+        <input type="radio" name="rl-${f.key}" data-field="${f.key}"
+               value="${escapeHtml(String(o))}"${cur === String(o) ? ' checked' : ''}>
+        <span>${escapeHtml(String(o))}</span>
+      </label>`;
+
+    let inner;
+    if(f.optionGroups && f.optionGroups.length){
+      const known = new Set(f.optionGroups.flatMap(g => g.items.map(String)));
+      // Ang halagang wala sa anumang grupo — isang lumang sagot na tinanggal na
+      // sa listahan. Nananatili itong nakikita para hindi ito tahimik na
+      // mabura sa susunod mong pag-save.
+      const stray = f.options.filter(o => !known.has(String(o)))
+        .concat(cur && !known.has(cur) && !f.options.some(o => String(o) === cur) ? [cur] : []);
+      inner = (stray.length
+          ? `<div class="rl-group"><div class="rl-opts">${stray.map(o => cell(o)).join('')}</div></div>`
+          : '')
+        + f.optionGroups.map(g => `
+            <div class="rl-group ${escapeHtml(g.kind || '')}">
+              <div class="rl-head"><b>${escapeHtml(g.name)}</b>${
+                g.sub ? `<em>${escapeHtml(g.sub)}</em>` : ''}</div>
+              <div class="rl-opts">${g.items.map(o => cell(o)).join('')}</div>
+            </div>`).join('');
+    }else{
+      inner = `<div class="rl-group"><div class="rl-opts">${
+        f.options.map(o => cell(o)).join('')}</div></div>`;
+    }
+    // Ang "wala pang sagot" ay isang tunay na estado at kailangan ng paraan
+    // pabalik dito — kung wala, ang isang maling pindot ay permanente.
+    const clear = `<label class="rl-opt rl-clear${cur ? '' : ' on'}">
+        <input type="radio" name="rl-${f.key}" data-field="${f.key}" value=""${cur ? '' : ' checked'}>
+        <span>Not answered</span></label>`;
+    return `<div class="${rowCls} rl-row"><label>${f.label}</label>
+      <div class="rl-box">${inner}<div class="rl-group">${clear}</div></div></div>`;
+  }
   if(f.widget === 'checklist'){
     const selected = (raw || '').split(/[,;]/).map(s=>s.trim()).filter(Boolean);
     // Rules Followed? decides which half of this list even applies.
@@ -14839,6 +14914,28 @@ function _renderDrawerFieldRow(f, mode, row){
   }
   if(f.widget === 'textarea'){
     return `<div class="${rowCls}"><label>${f.label}</label><textarea data-field="${f.key}">${raw||''}</textarea></div>`;
+  }
+  /* MUNGKAHI HABANG NAGTA-TYPE.
+
+     Ang <datalist> ang paraan ng browser para dito: nagfi-filter ito habang
+     nagta-type ka, gaya ng inaasahan mo — pero hindi ito naka-lock sa
+     listahan. Iyon ang tamang gawi para sa isang symbol: ang mga natrade mo na
+     ang nasa dulo ng daliri mo, at ang isang bagong pares ay isinusulat mo
+     lang. Ang isang dropdown dito ay hahadlang sa iyo sa unang araw na
+     susubukan mo ang isang bagay na bago.
+
+     Ang listahan ay galing sa sarili mong kasaysayan at hindi sa isang
+     nakasulat na talaan — kung ano ang tinetrade mo, iyon ang nasa listahan. */
+  if(f.suggest === 'symbol'){
+    const seen = [...new Set((RAW_TRADES || [])
+      .map(r => (r.symbol || '').trim()).filter(Boolean))].sort();
+    const listId = 'dl-' + f.key;
+    return `<div class="${rowCls}"><label>${f.label}</label>
+      <input type="text" data-field="${f.key}" list="${listId}" autocomplete="off"
+             placeholder="Start typing — BTC/USD, ETH/USD…"
+             value="${escapeHtml(raw !== undefined && raw !== null ? String(raw) : '')}">
+      <datalist id="${listId}">${
+        seen.map(s => `<option value="${escapeHtml(s)}"></option>`).join('')}</datalist></div>`;
   }
   return `<div class="${rowCls}"><label>${f.label}</label><input type="text" data-field="${f.key}" value="${raw!==undefined&&raw!==null?raw:''}"></div>`;
 }
@@ -14979,6 +15076,15 @@ function _collectDrawerPatch(){
 
   document.querySelectorAll('#drawerBody [data-field]').forEach(el => {
     const key = el.dataset.field;
+    /* Ang radiolist ay may MARAMING elemento na iisa ang data-field — isa kada
+       pagpipilian. Ang halaga ng napili ang sagot, hindi ang halaga ng huling
+       nadaanan. Kung wala nito, ang bawat radiolist ay nagse-save ng huling
+       pagpipilian sa listahan anuman ang pinindot mo. */
+    if(el.type === 'radio'){
+      if(!el.checked) return;
+      patch[key] = el.value === '' ? null : el.value;
+      return;
+    }
     let val = el.value;
     if(val === '') val = null;
     if(el.type === 'number' && val !== null) val = parseFloat(val);

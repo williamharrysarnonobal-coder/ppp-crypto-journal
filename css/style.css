@@ -4157,6 +4157,63 @@ body.mobile-mode .yo-j-line{font-size:13px;}
 }
 .ea-hint b{color:var(--ink);font-weight:600;display:block;margin-bottom:7px;}
 
+/* ---- Buong listahan, nakalabas, nakagrupo ----
+
+   Ang dalawang tanong ng paper trade ay ang buong dahilan kung bakit may
+   pahinang iyon, at nakatago sila sa likod ng isang dropdown. Nakalabas na
+   silang lahat.
+
+   Ang grupo ang may hawak ng kahulugan, kaya ang grupo ang may hawak ng
+   kulay: isang manipis na guhit sa kaliwa, at ang kulay noon ang nagsasabi
+   kung ito ay tungkol sa IYO, sa merkado, o sa wala. */
+.rl-row{align-items:flex-start;}
+.rl-box{
+  display:flex;flex-direction:column;gap:10px;
+  padding:11px 12px;border-radius:8px;
+  background:var(--surface-2);border:1px solid var(--rule);
+}
+.rl-group{
+  display:flex;flex-direction:column;gap:6px;
+  padding-left:11px;border-left:2px solid var(--rule);
+}
+/* Ang uri ng grupo. Ang pula ay ang sasanayin, ang berde ay maaaring tama, at
+   ang abo ay walang kinalaman sa trading. Parehong tatlong kulay ng dashboard
+   panel, kaya iisang bagay ang natututuhan mo at hindi dalawa. */
+.rl-group.felt, .rl-group.bad  {border-left-color:var(--loss);}
+.rl-group.setup,.rl-group.good {border-left-color:var(--win);}
+.rl-group.life, .rl-group.wait {border-left-color:var(--muted);}
+.rl-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px;line-height:1.3;}
+.rl-head b{
+  font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;
+  color:var(--ink);
+}
+.rl-head em{font-style:normal;font-size:11px;color:var(--muted);}
+.rl-opts{display:flex;flex-wrap:wrap;gap:6px;}
+/* Ang buong pill ang target, hindi ang maliit na bilog — mahalaga ito sa
+   telepono, kung saan ang isang 13px na radio ay hindi mapipindot nang tiyak. */
+.rl-opt{
+  display:inline-flex;align-items:center;gap:7px;cursor:pointer;
+  padding:6px 11px;border-radius:999px;
+  background:var(--surface);border:1px solid var(--rule);
+  font-size:12.5px;color:var(--ink);
+  transition:border-color .12s ease, background .12s ease;
+  margin-bottom:0;
+}
+.rl-opt:hover{border-color:var(--muted);}
+.rl-opt input{width:13px;height:13px;margin:0;accent-color:var(--accent);flex:none;cursor:pointer;}
+.rl-opt.on{
+  border-color:var(--accent);
+  background:color-mix(in srgb, var(--accent) 14%, var(--surface));
+}
+.rl-opt.on span{font-weight:600;}
+/* Ang paraan pabalik sa "wala pang sagot". Mahina nang sadya: ito ay isang
+   pagbawi at hindi isang sagot. */
+.rl-clear{border-style:dashed;color:var(--muted);}
+.rl-clear.on{border-style:solid;}
+@media (max-width: 640px){
+  .rl-opt{padding:8px 12px;font-size:13px;}
+}
+
 /* ---- Ano sana ang nangyari sa setup na hindi mo kinuha ----
    Ang kulay ay ang HATOL, hindi ang resulta: ang pula ay "may nawala sa iyo"
    at ang berde ay "iniligtas ka" — kabaligtaran ng karaniwan, dahil ang
