@@ -19710,7 +19710,15 @@ const TRADE_SETUP_PATTERN_MAP = {
 function syncPatternTypeFromSetup(setupValue){
   const sel = document.querySelector('#drawerBody [data-field="pattern_type"]');
   if(!sel) return;
-  const allowed = TRADE_SETUP_PATTERN_MAP[setupValue] || FIELD_OPTIONS.pattern_type;
+  let allowed = TRADE_SETUP_PATTERN_MAP[setupValue] || FIELD_OPTIONS.pattern_type;
+  /* Ang Bounce ay Long at ang Rejection ay Short, kaya ang direksyon ay nasa
+     Play na — pero ang Creation ay pareho. Kung alam na ang Trade Type,
+     inaalis ang tatlong imposible; kung hindi pa, nananatiling anim. */
+  if(setupValue === 'Creation Play'){
+    const tt = document.querySelector('#drawerBody [data-field="trade_type"]')?.value;
+    if(tt === 'Long')  allowed = allowed.filter(p => p.includes('HL'));
+    if(tt === 'Short') allowed = allowed.filter(p => p.includes('LH'));
+  }
   const current = sel.value;
   const opts = allowed.map(o => `<option value="${o}" ${current===o?'selected':''}>${o}</option>`).join('');
   sel.innerHTML = `<option value="">—</option>${opts}`;
@@ -19749,6 +19757,13 @@ const PATTERN_EXEC_TF = {
    puwesto sa loob ng isang galaw (IC / EM / LM); wala pang galaw. */
 const CREATION_PATTERNS = ['4H HL Creation','4H LH Creation','1H HL Creation',
                            '1H LH Creation','15M HL Creation','15M LH Creation'];
+
+/* Ang TRADE_SETUP_PATTERN_MAP ay nasa itaas at may nakasulat na listahan kada
+   Play. Walang Creation Play doon, kaya bumabagsak ito sa buong
+   FIELD_OPTIONS.pattern_type — labinlimang pagpipilian, kasama ang bawat
+   pattern na HINDI Creation. Dito idinudugtong, mula sa iisang listahan sa
+   itaas, para hindi maghiwalay ang dalawa kapag may naidagdag pa. */
+TRADE_SETUP_PATTERN_MAP['Creation Play'] = CREATION_PATTERNS.slice();
 
 const PATTERN_FIXED_AOF = { '5 mins HL':'5 mins Scalping', '5 mins LH':'5 mins Scalping' };
 CREATION_PATTERNS.forEach(p => { PATTERN_FIXED_AOF[p] = 'Creation'; });
