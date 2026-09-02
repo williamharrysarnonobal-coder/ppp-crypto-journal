@@ -21081,18 +21081,6 @@ function accountCardHTML(a){
        ang balanse sa bawat phase. Ang KASAYSAYAN ay hindi nagre-reset. */
     const tradeCount = ALL_TRADES.filter(t => t.account === a.account_name).length;
 
-    /* Kapag hindi tugma ang manwal na numero at ang journal, sinasabi ito ng
-       card sa halip na piliin ang isa nang tahimik. Karaniwang ibig sabihin
-       nito ay may trade na hindi pa naitatala. */
-    const gapHTML = (!isExchange && s.balanceGap != null)
-      ? `<div class="acct-gap" title="The balance you typed in Edit account against what your journalled trades add up to.">
-           Your saved balance says
-           $${s.manualBalance.toLocaleString(undefined,{maximumFractionDigits:2})}
-           — ${s.balanceGap > 0 ? '$' + Math.abs(s.balanceGap).toLocaleString(undefined,{maximumFractionDigits:2}) + ' more than'
-                                : '$' + Math.abs(s.balanceGap).toLocaleString(undefined,{maximumFractionDigits:2}) + ' less than'}
-           your journal. Probably a trade that never got logged.
-         </div>`
-      : '';
     // Per-account Risk % if set, otherwise fall back to the Profile-wide
     // default (My Trading Rules > Risk Per Trade) — was hardcoded to 0.3%
     // for every account regardless of what either of those actually said.
@@ -21156,6 +21144,25 @@ function accountCardHTML(a){
     /* Ang babala, hindi ang hatol. Nasa card ang mismong araw at halaga para
        may maihahambing ka sa website ng prop firm — at ang pindutan ay hindi
        kumikilos nang mag-isa. */
+    /* Kapag hindi tugma ang manwal na numero at ang journal, sinasabi ito ng
+       card sa halip na piliin ang isa nang tahimik. Karaniwang ibig sabihin
+       nito ay may trade na hindi pa naitatala.
+
+       Ginamit ko ang `s` rito na akala ko ay nasa antas ng card — nasa loob
+       pala iyon ng IIFE ng remainHTML, kaya bumagsak ang buong listahan ng
+       account sa isang ReferenceError. Nakita ito ng browser probe at hindi ng
+       mga sim: walang sim na nagpapatakbo ng renderAccountsList. */
+    const cardStats = isExchange ? null : computeAccountStats(a);
+    const gapHTML = (cardStats && cardStats.balanceGap != null)
+      ? `<div class="acct-gap" title="The balance you typed in Edit account against what your journalled trades add up to.">
+           Your saved balance says
+           $${cardStats.manualBalance.toLocaleString(undefined,{maximumFractionDigits:2})}
+           — $${Math.abs(cardStats.balanceGap).toLocaleString(undefined,{maximumFractionDigits:2})}
+           ${cardStats.balanceGap > 0 ? 'more than' : 'less than'}
+           your journal. Probably a trade that never got logged.
+         </div>`
+      : '';
+
     const breachHTML = (!isExchange && a._breach)
       ? `<div class="acct-breach" onclick='event.stopPropagation();'>
            <div class="acct-breach-txt">${escapeHtml(a._breach.text)}</div>
@@ -21780,94 +21787,136 @@ const CONFLUENCE_SETUPS = {
   /* ---------------- ANG CREATION SETUP ----------------
 
      Ibang tanong ito sa walo sa itaas. Ang mga iyon ay nagtatanong kung
-     TUMUTUGMA ang isang antas na naroon na; ito ay nagtatanong kung
-     NABUBUO pa lamang ang antas — kaya pababa ang basa: ang mataas na
-     timeframe ay humihina, ang nasa gitna ay nauuna nang bumitaw, at ang
-     mababa ang nagsasabi kung nagkaroon nga ng HL o LH.
+     TUMUTUGMA ang isang antas na naroon na; ito ay nagtatanong kung NABUBUO
+     pa lamang ang antas — kaya pababa ang basa: ang mataas na timeframe ay
+     humihina, ang nasa gitna ay nauuna nang bumitaw, at ang mababa ang
+     nagsasabi kung nagkaroon nga ng HL o LH.
 
-     Anim na tanong at isang Reaction Area kada isa — pito, gaya ng talahanayan
-     niya. Ang Reaction Area ay hindi isang item kundi ang listahan ng chart
-     pattern: iyon ang ikapitong puntos na binibilang ng _confluenceProgress,
-     at walang tanong na kasama ito sa talahanayan — mga pagpipilian lamang.
+     Pito ang hilera kada isa, gaya ng talahanayan niya: anim na tanong at ang
+     Chart Pattern, na siyang +1 na binibilang ng _confluenceProgress.
 
-     WALANG PATTERN_EXEC_TF ang anim na ito nang sadya. Ang bawat isa ay may
-     DALAWANG tamang execution timeframe ("Retest on 3M or 5M?"), at ang
-     pagpuno ng isa ay tama lang sa kalahati ng panahon — mas mabuting blangko
-     na pipiliin niya kaysa sagot na kailangan niyang mapansing mali. */
+     Dalawa sa anim ay SELECT at hindi oo-o-hindi, at pareho silang allGood:
+     ang "3M o 5M" at ang "saan ito tumalbog" ay nagtatanong ng ALIN, hindi ng
+     gaano kabuti. Kung wala ang allGood, ang ikalimang reaction area (FVG) ay
+     makakakuha ng zero — isang tamang sagot na binibilang na parang hindi mo
+     sinagot.
+
+     WALANG PATTERN_EXEC_TF ang anim na ito nang sadya. May dalawang tamang
+     execution timeframe ang bawat isa, at ang pagpuno ng isa ay tama lang sa
+     kalahati ng panahon.
+
+     Ang 1H ay hindi kasama sa ibinigay niya — hinuha ko ito mula sa 4H at 15M,
+     na parehong bumababa ng tatlong hakbang mula sa pangalan nito. */
 
   'Long|4H HL Creation': {
     minConfluencePct: 60,
     items: [
-      {tag:'MACD · 4H',         text:'4H MACD in Bear Territory (Green Weakening)?'},
-      {tag:'MACD · 1H',         text:'1H Pre-Breakdown?'},
-      {tag:'MACD · 30M',        text:'30M Breakdown / Invalidation?'},
-      {tag:'Structure · 15M',   text:'Did it create a 15M HL?'},
-      {tag:'Execution · 3M/5M', text:'Retest on 3M or 5M?', exec:true, retest:true},
-      {tag:'Reaction',          text:'Where did it bounce?'},
+      {tag:'MACD · 4H',        text:'4H MACD in Bear Territory (Green Weakening)?'},
+      {tag:'MACD · 1H',              text:'1H Bear Territory?'},
+      {tag:'MACD · 30M',             text:'30M Breakdown / Bearish Invalidation?'},
+      {tag:'15M Structure',   text:'Did it create a 15M HL?'},
+      /* Dalawang sagot at pareho silang tama — ang tanong ay SAAN nakumpirma,
+         hindi kung gaano kabuti. Tingnan ang allGood sa _selectCredit. */
+      {tag:'Execution · 3/5M', text:'Execution confirmed on 3M or 5M Retest?',
+        select:['3M', '5M'], allGood:true, exec:true},
+      {tag:'Reaction',          text:'Where did it bounce?',
+        select:['.382', '.5', '.618', 'Market OB', 'FVG'], allGood:true},
     ],
-    patterns: ['Fib .382', 'Fib .5', 'Fib .618', 'Market OB', 'FVG']
+    // Ang ikapitong hilera ng talahanayan niya: anong hugis ang nabuo.
+    patterns: ['Double Bottom', 'Triple Bottom', 'Inverse H&S',
+               'FVG', 'FVG + Fib', 'Fib .382', 'Fib .5', 'Fib .618', 'SnR Flip']
   },
   'Short|4H LH Creation': {
     minConfluencePct: 60,
     items: [
-      {tag:'MACD · 4H',         text:'4H MACD in Bull Territory (Red Weakening)?'},
-      {tag:'MACD · 1H',         text:'1H Pre-Breakout?'},
-      {tag:'MACD · 30M',        text:'30M Breakout / Invalidation?'},
-      {tag:'Structure · 15M',   text:'Did it create a 15M LH?'},
-      {tag:'Execution · 3M/5M', text:'Retest on 3M or 5M?', exec:true, retest:true},
-      {tag:'Reaction',          text:'Where did it reject?'},
+      {tag:'MACD · 4H',        text:'4H MACD in Bull Territory (Red Weakening)?'},
+      {tag:'MACD · 1H',              text:'1H Bull Territory?'},
+      {tag:'MACD · 30M',             text:'30M Breakout / Bullish Invalidation?'},
+      {tag:'15M Structure',   text:'Did it create a 15M LH?'},
+      /* Dalawang sagot at pareho silang tama — ang tanong ay SAAN nakumpirma,
+         hindi kung gaano kabuti. Tingnan ang allGood sa _selectCredit. */
+      {tag:'Execution · 3/5M', text:'Execution confirmed on 3M or 5M Retest?',
+        select:['3M', '5M'], allGood:true, exec:true},
+      {tag:'Reaction',          text:'Where did it reject?',
+        select:['.382', '.5', '.618', 'Market OB', 'FVG'], allGood:true},
     ],
-    patterns: ['Fib .382', 'Fib .5', 'Fib .618', 'Market OB', 'FVG']
+    // Ang ikapitong hilera ng talahanayan niya: anong hugis ang nabuo.
+    patterns: ['Double Top', 'Triple Top', 'H&S',
+               'FVG', 'FVG + Fib', 'Fib .382', 'Fib .5', 'Fib .618', 'SnR Flip']
   },
 
   'Long|1H HL Creation': {
     minConfluencePct: 60,
     items: [
-      {tag:'MACD · 1H',         text:'1H MACD in Bear Territory (Green Weakening)?'},
-      {tag:'MACD · 15M',        text:'15M Pre-Breakdown?'},
-      {tag:'MACD · 3M',         text:'3M Breakdown / Invalidation?'},
-      {tag:'Structure · 5M',    text:'Did it create a 5M HL?'},
-      {tag:'Execution · 1M/3M', text:'Retest on 1M or RT 3M?', exec:true, retest:true},
-      {tag:'Reaction',          text:'Where did it bounce?'},
+      {tag:'MACD · 1H',        text:'1H MACD in Bear Territory (Green Weakening)?'},
+      {tag:'MACD · 15M',             text:'15M Bear Territory?'},
+      {tag:'MACD · 3M',              text:'3M Breakdown / Bearish Invalidation?'},
+      {tag:'5M Structure',   text:'Did it create a 5M HL?'},
+      /* Dalawang sagot at pareho silang tama — ang tanong ay SAAN nakumpirma,
+         hindi kung gaano kabuti. Tingnan ang allGood sa _selectCredit. */
+      {tag:'Execution · 1/3M', text:'Execution confirmed on 1M or 3M Retest?',
+        select:['1M', '3M'], allGood:true, exec:true},
+      {tag:'Reaction',          text:'Where did it bounce?',
+        select:['.382', '.5', '.618', 'Market OB', 'FVG'], allGood:true},
     ],
-    patterns: ['Fib .382', 'Fib .5', 'Fib .618', 'Market OB', 'FVG']
+    // Ang ikapitong hilera ng talahanayan niya: anong hugis ang nabuo.
+    patterns: ['Double Bottom', 'Triple Bottom', 'Inverse H&S',
+               'FVG', 'FVG + Fib', 'Fib .382', 'Fib .5', 'Fib .618', 'SnR Flip']
   },
   'Short|1H LH Creation': {
     minConfluencePct: 60,
     items: [
-      {tag:'MACD · 1H',         text:'1H MACD in Bull Territory (Red Weakening)?'},
-      {tag:'MACD · 15M',        text:'15M Pre-Breakout?'},
-      {tag:'MACD · 3M',         text:'3M Breakout / Invalidation?'},
-      {tag:'Structure · 5M',    text:'Did it create a 5M LH?'},
-      {tag:'Execution · 1M/3M', text:'Retest on 1M or RT 3M?', exec:true, retest:true},
-      {tag:'Reaction',          text:'Where did it reject?'},
+      {tag:'MACD · 1H',        text:'1H MACD in Bull Territory (Red Weakening)?'},
+      {tag:'MACD · 15M',             text:'15M Bull Territory?'},
+      {tag:'MACD · 3M',              text:'3M Breakout / Bullish Invalidation?'},
+      {tag:'5M Structure',   text:'Did it create a 5M LH?'},
+      /* Dalawang sagot at pareho silang tama — ang tanong ay SAAN nakumpirma,
+         hindi kung gaano kabuti. Tingnan ang allGood sa _selectCredit. */
+      {tag:'Execution · 1/3M', text:'Execution confirmed on 1M or 3M Retest?',
+        select:['1M', '3M'], allGood:true, exec:true},
+      {tag:'Reaction',          text:'Where did it reject?',
+        select:['.382', '.5', '.618', 'Market OB', 'FVG'], allGood:true},
     ],
-    patterns: ['Fib .382', 'Fib .5', 'Fib .618', 'Market OB', 'FVG']
+    // Ang ikapitong hilera ng talahanayan niya: anong hugis ang nabuo.
+    patterns: ['Double Top', 'Triple Top', 'H&S',
+               'FVG', 'FVG + Fib', 'Fib .382', 'Fib .5', 'Fib .618', 'SnR Flip']
   },
 
   'Long|15M HL Creation': {
     minConfluencePct: 60,
     items: [
       {tag:'MACD · 15M',        text:'15M MACD in Bear Territory (Green Weakening)?'},
-      {tag:'MACD · 5M',         text:'5M Pre-Breakdown?'},
-      {tag:'MACD · 3M',         text:'3M Breakdown / Invalidation?'},
-      {tag:'Structure · 1M',    text:'Did it create a 1M HL?'},
-      {tag:'Execution · 1M/3M', text:'Retest on 1M or 3M?', exec:true, retest:true},
-      {tag:'Reaction',          text:'Where did it bounce?'},
+      {tag:'MACD · 5M',              text:'5M Bear Territory?'},
+      {tag:'MACD · 3M',              text:'3M Breakdown / Bearish Invalidation?'},
+      {tag:'1M Structure',   text:'Did it create a 1M HL?'},
+      /* Dalawang sagot at pareho silang tama — ang tanong ay SAAN nakumpirma,
+         hindi kung gaano kabuti. Tingnan ang allGood sa _selectCredit. */
+      {tag:'Execution · 1/3M', text:'Execution confirmed on 1M or 3M Retest?',
+        select:['1M', '3M'], allGood:true, exec:true},
+      {tag:'Reaction',          text:'Where did it bounce?',
+        select:['.382', '.5', '.618', 'Market OB', 'FVG'], allGood:true},
     ],
-    patterns: ['Fib .382', 'Fib .5', 'Fib .618', 'Market OB', 'FVG']
+    // Ang ikapitong hilera ng talahanayan niya: anong hugis ang nabuo.
+    patterns: ['Double Bottom', 'Triple Bottom', 'Inverse H&S',
+               'FVG', 'FVG + Fib', 'Fib .382', 'Fib .5', 'Fib .618', 'SnR Flip']
   },
   'Short|15M LH Creation': {
     minConfluencePct: 60,
     items: [
       {tag:'MACD · 15M',        text:'15M MACD in Bull Territory (Red Weakening)?'},
-      {tag:'MACD · 5M',         text:'5M Pre-Breakout?'},
-      {tag:'MACD · 3M',         text:'3M Breakout / Invalidation?'},
-      {tag:'Structure · 1M',    text:'Did it create a 1M LH?'},
-      {tag:'Execution · 1M/3M', text:'Retest on 1M or 3M?', exec:true, retest:true},
-      {tag:'Reaction',          text:'Where did it reject?'},
+      {tag:'MACD · 5M',              text:'5M Bull Territory?'},
+      {tag:'MACD · 3M',              text:'3M Breakout / Bullish Invalidation?'},
+      {tag:'1M Structure',   text:'Did it create a 1M LH?'},
+      /* Dalawang sagot at pareho silang tama — ang tanong ay SAAN nakumpirma,
+         hindi kung gaano kabuti. Tingnan ang allGood sa _selectCredit. */
+      {tag:'Execution · 1/3M', text:'Execution confirmed on 1M or 3M Retest?',
+        select:['1M', '3M'], allGood:true, exec:true},
+      {tag:'Reaction',          text:'Where did it reject?',
+        select:['.382', '.5', '.618', 'Market OB', 'FVG'], allGood:true},
     ],
-    patterns: ['Fib .382', 'Fib .5', 'Fib .618', 'Market OB', 'FVG']
+    // Ang ikapitong hilera ng talahanayan niya: anong hugis ang nabuo.
+    patterns: ['Double Top', 'Triple Top', 'H&S',
+               'FVG', 'FVG + Fib', 'Fib .382', 'Fib .5', 'Fib .618', 'SnR Flip']
   },
 };
 
@@ -21931,7 +21980,10 @@ function _renderConfluenceItemRow(it, i, ans, setAnswerFn){
     // into an already-extended move than a 1st/2nd) — same tint used for
     // both the chip's outline and its filled/active state.
     const chips = it.select.map((opt, idx) => {
-      const tint = _sequenceTint(idx);
+      // Pantay ang bawat sagot sa isang allGood na tanong, kaya pantay din ang
+      // kulay — ang pulang ikalimang chip ay magsasabing may mali sa isang
+      // sagot na tama naman.
+      const tint = it.allGood ? 'var(--win)' : _sequenceTint(idx);
       const isActive = ans === opt;
       const style = isActive ? `border-color:${tint};background:${tint};color:#fff;` : `border-color:${tint};color:${tint};`;
       return `<span class="cfl-pattern-chip ${isActive?'active':''}" style="${style}" onclick="${setAnswerFn}(${i},'${opt}')">${opt}</span>`;
@@ -21996,9 +22048,19 @@ function _applyConfluenceImplications(items, answers, changedIdx){
 // identical. The chip said red, the auto-flag said "Ignored Trend" and the
 // Trade Review said "missed", while the score said full marks; three of the
 // four agreed and the one that fed the Warning Signs and the Review did not.
+/* Ang pagkakasunod-sunod ang nagbibigay ng puntos — gawa ito para sa Sequence,
+   kung saan ang una at ikalawa ay mabuti, ang ikatlo ay kalahati, at ang
+   natitira ay wala.
+
+   `allGood` para sa tanong kung saan PANTAY ang bawat sagot. Ang "saan ito
+   tumalbog — .382, .5, .618, Market OB, FVG" ay hindi ranggo: alinman doon ay
+   isang tamang sagot, at ang tanong ay SAAN at hindi GAANO KABUTI. Kung wala
+   ito, ang FVG ay ikalimang pagpipilian at makakakuha ng zero — isang tamang
+   sagot na binibilang na parang hindi mo sinagot. */
 function _selectCredit(it, ans){
   const idx = it.select.indexOf(ans);
   if(idx < 0) return 0;
+  if(it.allGood) return 1;
   return idx <= 1 ? 1 : (idx === 2 ? 0.5 : 0);
 }
 
