@@ -5101,16 +5101,37 @@ const TRADE_REPORTS = [
     keep:'Keep leaving the stop where it is.',
     change:'Start moving the stop to entry when price gets there.',
   },
+  /* DALAWANG TANONG, HINDI ISA.
+
+     Isang eksperimento ito noon na may dalawang panig, at ang hatol ay
+     naghihintay ng dalawang panig na may laman bago magsalita. Ang totoo ay
+     iisa lang ang tina-tag niya: 13 beses na paghawak, zero na pagputol. Kaya
+     ang panel ay nagsasabi ng "tag the other side" habang may 3-of-13 na
+     nakaupo sa harap nito — malinaw na sagot na hindi nito nabibigkas.
+
+     Magkaibang tanong naman talaga sila. Ang "dapat ba akong humawak" ay
+     nasasagot ng sariling 13 nito; hindi nito kailangang hintayin ang isang
+     pagputol na maaaring hindi na mangyari. Hiwalay na sila, at ang bawat isa
+     ay sumasagot mula sa sariling ebidensya. */
   {
-    id:'inval',
-    title:'Invalidation',
-    q:'When the setup invalidates, should I cut?',
-    // Two decisions, each recorded with how it ended. The winner is the one
-    // that was right more OFTEN — not the one you reached for more often.
+    id:'inval-hold',
+    title:'Invalidation — holding',
+    q:'When the setup invalidates, should I hold through it?',
+    keep:'Keep holding through invalidation.',
+    change:'Stop holding through invalidation.',
     arms:[
       { label:'Holding through it',
         good:{ tag:'Held Through Invalidation',     txt:'recovered and hit take profit' },
         bad: { tag:'Ego Hold Despite Invalidation', txt:'went on to your stop' } },
+    ],
+  },
+  {
+    id:'inval-cut',
+    title:'Invalidation — cutting',
+    q:'When the setup invalidates, should I cut?',
+    keep:'Keep cutting when the setup breaks.',
+    change:'Stop cutting the moment it breaks.',
+    arms:[
       { label:'Cutting when it breaks',
         good:{ tag:'Cut on Invalidation', txt:'would have hit the stop anyway' },
         bad: { tag:'Cut Too Early',       txt:'would have reached take profit' } },
@@ -7320,6 +7341,35 @@ function _canonicalTags(v){
   });
   return out;
 }
+
+/* ANG OBSERBASYONG HINDI UMUBRA.
+
+   Ang lahat ng nasa TAG_OBSERVATIONS ay hindi paglabag — hindi sila nagpapababa
+   ng discipline score, at may dahilan iyon: ang bawat isa ay isang TANONG na
+   sinusukat pa lamang, hindi isang hatol.
+
+   Pero hindi sila pare-pareho. Ang bawat tanong ay may dalawang paraan ng
+   pagkakatapos, at ang kalahati sa kanila ay nagsasabing ang piniling daan ay
+   HINDI umubra sa pagkakataong iyon. Ang hilerang iyon ay hindi "malinis", at
+   hindi rin ito "sira" — kahel ito: may nangyaring dapat mong tingnan.
+
+   Pansinin ang pagkakapares — ito rin ang mabuti-at-masamang panig ng bawat
+   tanong sa TRADE_REPORTS, kaya iisang bokabularyo ang panel at ang talahanayan:
+
+     humawak sa invalidation   -> Held Through (asul)  /  Ego Hold (kahel)
+     pumutol sa invalidation   -> Cut on Inval (asul)  /  Cut Too Early (kahel)
+     stop sa prev high/low     -> No BE (kahel)
+     kung saan pumasok         -> Chased / Traded Into Key Level (kahel)
+     kumpirmasyon              -> Entered Without Confirmation (kahel) */
+const TAG_ADVERSE = [
+  'No BE at Prev High/Low',
+  'Ego Hold Despite Invalidation',
+  'Cut Too Early',
+  'Entered Without Confirmation',
+  'Chased Extended Move',
+  'Traded Into Key Level',
+];
+const _TAG_ADVERSE_SET = new Set(TAG_ADVERSE.map(s => s.toLowerCase()));
 
 const _TAG_OBSERVATION_SET = new Set(TAG_OBSERVATIONS.map(s => s.toLowerCase()));
 const _TAG_SENTINEL_SET = new Set(TAG_SENTINELS.map(s => s.toLowerCase()));
@@ -13228,8 +13278,22 @@ function _journalColoredCell(key, row, plainVal){
     if(!d) return null;
     // Deliberately not a .box-badge: this column reads better bare, with the
     // bar and the number carrying the tone instead of a filled pill.
+    /* TULOY-TULOY NA KULAY, HINDI TATLONG BALDE.
+
+       Tatlong klase ito noon — pass / near / fail — kaya ang 75 at ang 100 ay
+       pareho ang kulay: parehong berde, walang pagkakaiba. Ang buong punto ng
+       isang iskor ay may sukat ito, at ang tatlong balde ay itinatapon iyon.
+
+       Isang tuloy-tuloy na hanay ngayon, mula sa mismong kulay ng app: pula sa
+       ibaba, kahel sa gitna, at berde lamang sa itaas. Ang 100 ay ang tanging
+       ganap na berde. Sa oklab ang paghalo at hindi sa sRGB — mas pantay ang
+       pagbabago sa mata, at hindi lumulubog sa isang maputik na gitna. */
     const cls = d.state === 'pass' ? 'cfl-t-win'
               : d.state === 'near' ? 'cfl-t-orange' : 'cfl-t-loss';
+    const pct = Math.max(0, Math.min(100, d.pct));
+    const tone = pct >= 50
+      ? `color-mix(in oklab, var(--win) ${((pct - 50) * 2).toFixed(1)}%, var(--warn))`
+      : `color-mix(in oklab, var(--warn) ${(pct * 2).toFixed(1)}%, var(--loss))`;
     // The whole checklist rides on the element, so hovering shows which items
     // were met rather than only how many.
     const rows = _confluenceTooltipRows(row) || [];
@@ -13247,7 +13311,7 @@ function _journalColoredCell(key, row, plainVal){
        Ang butas ay gawa sa mask at hindi sa isang disc na kasing-kulay ng
        hilera — nagbabago ang likod kapag naka-hover, at ang disc ay mag-iiwan
        ng butas na maling kulay doon. */
-    return `<span class="cfl-score-box ${cls}" data-cfl-head="${escapeHtml(head)}" data-cfl="${escapeHtml(payload)}" onmouseenter="showConfluenceTooltip(event)" onmouseleave="hideConfluenceTooltip()"><span class="cfl-ring" style="--cfl-deg:${(d.pct * 3.6).toFixed(1)}deg;"></span><span class="cfl-score-num">${d.pct}%</span></span>`;
+    return `<span class="cfl-score-box ${cls}" style="--box-tone:${tone};" data-cfl-head="${escapeHtml(head)}" data-cfl="${escapeHtml(payload)}" onmouseenter="showConfluenceTooltip(event)" onmouseleave="hideConfluenceTooltip()"><span class="cfl-ring" style="--cfl-deg:${(d.pct * 3.6).toFixed(1)}deg;"></span><span class="cfl-score-num">${d.pct}%</span></span>`;
   }
 
   const raw = row[key];
@@ -13264,9 +13328,25 @@ function _journalColoredCell(key, row, plainVal){
      red     No
      blue    also anything that is neither Yes nor No */
   if(key === 'rules_followed'){
-    const declaredClean = _canonicalTags(row.unfollowed_rules)
-      .some(t => _tagKind(t) === 'sentinel');
-    if(lower === 'yes') return _box(declaredClean ? 'box-solid-win' : 'box-solid-info', v);
+    /* Tatlong hitsura ang "Yes", dahil tatlong magkaibang bagay ang sinasabi
+       nito. Isa lang ito noon — berde kung may sentinel, asul kung wala — kaya
+       ang isang trade na "Yes" na may Chased Extended Move ay kapareho ng
+       isang "Yes" na walang anuman.
+
+       Kahel ang nangunguna sa berde nang sadya: kung tinsek mo ang malinis AT
+       may naka-tag na hindi umubra, ang huli ang bagong balita. Ang naunang
+       panuntunan ay panalo ang berde "whatever else is noted alongside it" —
+       tama iyon noong isa lang ang ibig sabihin ng asul, pero ngayong may
+       sariling kulay na ang hindi-umubra, ang pagtatago noon sa likod ng
+       berde ang tanging bagay na masasabing mali. */
+    const tags = _canonicalTags(row.unfollowed_rules);
+    const adverse = tags.some(t => _TAG_ADVERSE_SET.has(String(t).toLowerCase()));
+    const declaredClean = tags.some(t => _tagKind(t) === 'sentinel');
+    if(lower === 'yes'){
+      return _box(adverse ? 'box-solid-warn'
+                : declaredClean ? 'box-solid-win'
+                : 'box-solid-info', v);
+    }
     if(lower === 'no') return _box('box-solid-loss', v);
     if(v && v !== '—') return _box('box-solid-info', v);
   }

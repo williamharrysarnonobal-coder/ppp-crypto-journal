@@ -1696,6 +1696,10 @@ table.breakdown tbody tr{cursor:pointer;}
   .box-solid-win{background:var(--win);color:#fff;}
   .box-solid-loss{background:var(--loss);color:#fff;}
   .box-solid-info{background:var(--info);color:#fff;}
+  /* Kahel: "Yes" pa rin, pero may naka-tag na bagay na hindi umubra. Ang
+     maitim na teksto rito at hindi puti — mababa ang contrast ng puti sa kahel,
+     at ito ang tanging kulay sa apat kung saan iyon nangyayari. */
+  .box-solid-warn{background:var(--warn);color:#1a1205;}
 
 
   /* ---------- Toast notification ---------- */
