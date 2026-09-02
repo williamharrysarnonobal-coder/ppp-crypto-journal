@@ -2443,6 +2443,14 @@ table.breakdown tbody tr{cursor:pointer;}
   }
   .acct-breach-btn:hover{background:color-mix(in srgb, var(--warn) 16%, transparent);}
 
+  /* Hindi tugma ang manwal na numero at ang journal. Sinasabi ito ng card sa
+     halip na piliin ang isa nang tahimik. */
+  .acct-gap{
+    margin-top:10px;padding:8px 11px;border-radius:8px;
+    background:var(--surface-2);border-left:2px solid var(--rule);
+    font-size:11px;line-height:1.5;color:var(--muted);cursor:help;
+  }
+
   /* Muling kuwentahin ang balanse mula sa journal. Tahimik nang sadya — ang
      broker pa rin ang awtoridad; ito ay para lang sa sandaling nawala ang
      manwal na numero at ang journal na lang ang natitirang tala. */

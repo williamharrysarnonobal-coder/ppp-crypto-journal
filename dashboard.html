@@ -17,7 +17,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<link rel="stylesheet" href="css/style.css?v=319">
+<link rel="stylesheet" href="css/style.css?v=320">
 </head>
 <body>
 
@@ -753,6 +753,24 @@
         </h2>
         <div class="sub" style="margin-bottom:12px;">Every setup you logged but did not take.
           The last column is the one that matters — it is the only field a real trade does not have.</div>
+
+        <!-- Parehong +Filter ng Trade Journals, sa parehong hugis at parehong
+             CSS — ang natatangi lang ay ang pinagmumulan ng hilera. Tingnan
+             ang PAPER_ACTIVE_FILTERS sa dashboard.js. -->
+        <div class="journal-toolbar">
+          <input id="paperSearch" placeholder="Search symbol, setup, position ID…"
+                 oninput="renderPaperTable()">
+          <div class="jf-add-wrap">
+            <button class="poscalc-accent-btn" id="paperAddFilterBtn" style="padding:8px 14px;"
+                    onclick="togglePaperColumnMenu(event)">+ Filter</button>
+            <div class="jf-menu" id="paperColumnMenu" style="display:none;"></div>
+          </div>
+          <button class="poscalc-accent-btn" id="paperClearBtn"
+                  style="padding:8px 14px;margin-left:auto;display:none;"
+                  onclick="clearPaperFilters()">Clear filters</button>
+        </div>
+        <div class="jf-chips" id="paperFilterChips"></div>
+
         <div class="empty-state" id="paperEmpty" style="display:none;"></div>
         <div style="overflow-x:auto;">
           <table class="journal" id="paperTable" style="display:none;">
@@ -2376,6 +2394,6 @@
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=2"></script>
-<script src="js/dashboard.js?v=529"></script>
+<script src="js/dashboard.js?v=530"></script>
 </body>
 </html>

@@ -6906,16 +6906,33 @@ function renderPaperTable(){
   const count = document.getElementById('paperCount');
   if(!head || !body) return;
 
-  const rows = [...PAPER_TRADES].sort((a, b) =>
+  renderPaperFilterChips();
+
+  /* Ang mga naka-filter na hilera, hindi lahat. Ang getFilteredPaperRows ay
+     nagbabalik ng HILAW na hilera (gaya ng RAW_TRADES), kaya kailangan pang
+     ihanay sa normalized na PAPER_TRADES na binabasa ng talahanayan. */
+  const keep = new Set(getFilteredPaperRows().map(r => r.position_id));
+  const all = [...PAPER_TRADES].sort((a, b) =>
     (b.close_date || b.open_date || 0) - (a.close_date || a.open_date || 0));
-  if(count) count.textContent = rows.length
-    ? `${rows.length} logged` : '';
+  const rows = all.filter(t => keep.has(t.position_id));
+
+  if(count) count.textContent = all.length
+    ? (rows.length === all.length
+        ? `${all.length} logged`
+        : `${rows.length} of ${all.length}`)
+    : '';
 
   if(!rows.length){
     tbl.style.display = 'none';
     empty.style.display = 'block';
-    empty.innerHTML = `Nothing here yet. Open the <b>Position Size Calculator</b> tab, plan the
-      setup exactly as you would a real one, then journal it — and say why you did not take it.`;
+    /* Dalawang magkaibang "walang laman" ang may dalawang magkaibang lunas:
+       ang wala pang naitala ay isang bagay na gagawin mo, at ang nasala nang
+       tuluyan ay isang bagay na aalisin mo. */
+    empty.innerHTML = all.length
+      ? `No paper trades match these filters.
+         <button class="link-btn" onclick="clearPaperFilters()">Clear filters</button>`
+      : `Nothing here yet. Open the <b>Position Size Calculator</b> tab, plan the
+         setup exactly as you would a real one, then journal it — and say why you did not take it.`;
     return;
   }
   tbl.style.display = '';
@@ -13042,12 +13059,20 @@ function toggleJournalColumnMenu(ev){
 }
 
 // One listener, bound once: clicking anywhere else closes whichever menu is up.
+// Kasama na ang Paper Journal — iisang listener para sa dalawa, kung hindi ay
+// mananatiling bukas ang isa habang isinasara ang isa.
 document.addEventListener('click', () => {
   const menu = document.getElementById('journalColumnMenu');
   if(menu) menu.style.display = 'none';
   if(_openChipMenu){
     _openChipMenu = null;
     renderJournalFilterChips();
+  }
+  const pMenu = document.getElementById('paperColumnMenu');
+  if(pMenu) pMenu.style.display = 'none';
+  if(typeof _openPaperChipMenu !== 'undefined' && _openPaperChipMenu){
+    _openPaperChipMenu = null;
+    renderPaperFilterChips();
   }
 });
 // Escape closes them too — a dropdown you can't dismiss with the keyboard is
@@ -13163,6 +13188,187 @@ function renderJournalFilterChips(){
                    !!_journalDateRange();
     const anything = JOURNAL_ACTIVE_FILTERS.length || JOURNAL_BLANK_FILTER || period ||
       JOURNAL_INCOMPLETE_ONLY || JOURNAL_INVALID_ONLY || (document.getElementById('journalSearch')?.value || '').trim();
+    clearBtn.style.display = anything ? '' : 'none';
+  }
+}
+
+/* ============================================================================
+   ANG +FILTER NG PAPER TRADE JOURNAL
+
+   Parehong hugis, parehong CSS, parehong pakiramdam ng Trade Journals — iisa
+   lang ang pinagkaiba, at iyon ang pinagmumulan ng hilera.
+
+   Sariling estado ito at hindi kabahagi ng JOURNAL_ACTIVE_FILTERS: ang dalawang
+   pahina ay may magkaibang column (walang Profit/Loss ang paper, walang "Why
+   you did not take it" ang tunay), at ang paghahati ng isang listahan ay
+   nangangahulugang ang pagpili sa isa ay tahimik na sumasala sa isa pa.
+
+   Ang mga tanong na paper lamang — ang dahilan at ang kahihinatnan — ay
+   naitatabi bilang comma-joined, kaya kailangan nilang tumugma ayon sa
+   KASAPIAN: ang pagpili ng "Hit TP" ay dapat makita ang setup na markado ng
+   "Stopped out then hit TP, Hit TP". Kung hindi, ang bawat kombinasyon ay
+   magiging sarili nitong pagpipilian at wala ni isa ang makakahanap ng tama. */
+const PAPER_MULTI_KEYS = new Set(['no_trade_reason', 'paper_outcome',
+                                  'unfollowed_rules', 'chart_pattern']);
+let PAPER_ACTIVE_FILTERS = [];
+let _openPaperChipMenu = null;
+
+function _paperRawTrades(){
+  return (RAW_TRADES || []).filter(r => r.is_paper === true || r.is_paper === 'true');
+}
+
+function _paperFilterValues(key){
+  const rows = _paperRawTrades();
+  if(PAPER_MULTI_KEYS.has(key)){
+    const set = new Set();
+    rows.forEach(r => String(r[key] || '').split(/[,;]/)
+      .map(s => s.trim())
+      .filter(s => s && s.toLowerCase() !== 'rules followed')
+      .forEach(s => set.add(s)));
+    return [...set].sort();
+  }
+  return [...new Set(rows.map(r => r[key])
+    .filter(v => v !== null && v !== undefined && String(v).trim() !== ''))]
+    .map(String).sort();
+}
+
+/* Ang mga column na inaalok — hinuhugot sa datos, gaya ng sa Trade Journals,
+   kaya ang field na hindi mo pa napupunan ay hindi lumalabas. Ang tunay-lamang
+   na field ay tinatanggal: ang paper trade ay walang Profit/Loss, at ang
+   pag-aalok noon ay isang menu na walang laman. */
+function _paperFilterableColumns(){
+  const cols = ALL_DRAWER_FIELDS
+    .filter(f => !f.realOnly && !JOURNAL_FILTER_EXCLUDE.has(f.key))
+    .map(f => ({ key:f.key, label:f.label || f.key }));
+  const seen = new Set(cols.map(c => c.key));
+  JOURNAL_FILTER_EXTRA.forEach(c => { if(!seen.has(c.key)) cols.push(c); });
+  return cols
+    .map(c => ({ ...c, values:_paperFilterValues(c.key) }))
+    .filter(c => c.values.length > 0);
+}
+
+// Ang mga hilera pagkatapos ng bawat filter. Ang `exceptKey` ay para sa bilang
+// katabi ng bawat halaga: ang bilang na iyon ay dapat kung ILAN ANG MAKUKUHA
+// kung pipiliin mo ito, kaya hindi kasama ang sariling chip nito.
+function getFilteredPaperRows(exceptKey){
+  const q = (document.getElementById('paperSearch')?.value || '').trim().toLowerCase();
+  let rows = _paperRawTrades();
+
+  if(q){
+    rows = rows.filter(r => ['symbol','position_id','trade_setup','pattern_type',
+      'session','no_trade_reason','paper_outcome']
+      .some(k => String(r[k] || '').toLowerCase().includes(q)));
+  }
+
+  PAPER_ACTIVE_FILTERS.forEach(f => {
+    if(!f.value || f.value === 'all' || f.key === exceptKey) return;
+    rows = PAPER_MULTI_KEYS.has(f.key)
+      ? rows.filter(r => String(r[f.key] || '').split(/[,;]/)
+          .map(s => s.trim()).includes(f.value))
+      : rows.filter(r => String(r[f.key] ?? '') === f.value);
+  });
+  return rows;
+}
+
+function _paperValueCounts(key){
+  const rows = getFilteredPaperRows(key);
+  const counts = {};
+  if(PAPER_MULTI_KEYS.has(key)){
+    rows.forEach(r => String(r[key] || '').split(/[,;]/).map(s => s.trim())
+      .filter(Boolean).forEach(v => { counts[v] = (counts[v] || 0) + 1; }));
+  }else{
+    rows.forEach(r => {
+      const v = String(r[key] ?? '');
+      if(v.trim()) counts[v] = (counts[v] || 0) + 1;
+    });
+  }
+  return { counts, total: rows.length };
+}
+
+function togglePaperColumnMenu(ev){
+  if(ev) ev.stopPropagation();
+  const menu = document.getElementById('paperColumnMenu');
+  if(!menu) return;
+  if(menu.style.display !== 'none'){ menu.style.display = 'none'; return; }
+  const used = new Set(PAPER_ACTIVE_FILTERS.map(f => f.key));
+  const cols = _paperFilterableColumns().filter(c => !used.has(c.key));
+  menu.innerHTML = cols.length
+    ? cols.map(c => `<button type="button" class="jf-menu-item" onclick="addPaperFilter('${c.key}')">${escapeHtml(c.label)}<span class="jf-menu-count">${c.values.length}</span></button>`).join('')
+    : `<div class="jf-menu-empty">Every column is already filtered.</div>`;
+  menu.style.display = 'block';
+}
+
+function addPaperFilter(key){
+  if(PAPER_ACTIVE_FILTERS.some(f => f.key === key)) return;
+  PAPER_ACTIVE_FILTERS.push({ key, value:'all' });
+  const menu = document.getElementById('paperColumnMenu');
+  if(menu) menu.style.display = 'none';
+  renderPaperTable();
+}
+
+function removePaperFilter(key){
+  PAPER_ACTIVE_FILTERS = PAPER_ACTIVE_FILTERS.filter(f => f.key !== key);
+  renderPaperTable();
+}
+
+function togglePaperChipMenu(key, ev){
+  if(ev) ev.stopPropagation();
+  _openPaperChipMenu = (_openPaperChipMenu === key) ? null : key;
+  renderPaperFilterChips();
+  if(_openPaperChipMenu){
+    const input = document.querySelector('#paperFilterChips .jf-chip-search');
+    if(input) input.focus();
+  }
+}
+
+function pickPaperChipValue(key, value){
+  _openPaperChipMenu = null;
+  const f = PAPER_ACTIVE_FILTERS.find(x => x.key === key);
+  if(f) f.value = value;
+  renderPaperTable();
+}
+
+function clearPaperFilters(){
+  const s = document.getElementById('paperSearch');
+  if(s) s.value = '';
+  PAPER_ACTIVE_FILTERS = [];
+  _openPaperChipMenu = null;
+  renderPaperTable();
+}
+
+function renderPaperFilterChips(){
+  const host = document.getElementById('paperFilterChips');
+  if(!host) return;
+  const labelOf = k => (ALL_DRAWER_FIELDS.find(f => f.key === k)
+    || JOURNAL_FILTER_EXTRA.find(c => c.key === k) || {}).label || k;
+
+  host.innerHTML = PAPER_ACTIVE_FILTERS.map(f => {
+    const values = _paperFilterValues(f.key);
+    const open = _openPaperChipMenu === f.key;
+    const { counts, total } = open ? _paperValueCounts(f.key) : { counts:{}, total:0 };
+    const opt = (v, label, n) => {
+      const dim = n === 0 ? ' none' : '';
+      return `<button type="button" class="jf-chip-opt${f.value===v?' sel':''}${dim}" data-v="${escapeHtml(label)}" onclick="pickPaperChipValue('${f.key}', ${escapeHtml(JSON.stringify(v))})"><span class="jf-opt-text">${escapeHtml(label)}</span><span class="jf-opt-n">${n}</span></button>`;
+    };
+    return `<span class="jf-chip${open?' open':''}">
+      <span class="jf-chip-label">${escapeHtml(labelOf(f.key))}</span>
+      <button type="button" class="jf-chip-value" onclick="togglePaperChipMenu('${f.key}', event)">
+        ${escapeHtml(f.value === 'all' ? 'Any' : f.value)}
+        <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+      <button type="button" class="jf-chip-x" title="Remove this filter" onclick="removePaperFilter('${f.key}')">✕</button>
+      ${open ? `<div class="jf-chip-menu" onclick="event.stopPropagation();">
+        ${values.length > 10 ? `<input class="jf-chip-search" placeholder="Search…" oninput="filterChipMenu(this)">` : ''}
+        <div class="jf-chip-opts">${opt('all','Any',total)}${values.map(v => opt(v, v, counts[v] || 0)).join('')}</div>
+      </div>` : ''}
+    </span>`;
+  }).join('');
+  host.style.display = PAPER_ACTIVE_FILTERS.length ? 'flex' : 'none';
+
+  const clearBtn = document.getElementById('paperClearBtn');
+  if(clearBtn){
+    const anything = PAPER_ACTIVE_FILTERS.length ||
+      (document.getElementById('paperSearch')?.value || '').trim();
     clearBtn.style.display = anything ? '' : 'none';
   }
 }
@@ -20405,7 +20611,36 @@ function syncPostCutlossFromExitType(exitTypeValue){
 function computeAccountStats(acc){
   const trades = ALL_TRADES.filter(t => t.account === acc.account_name && t.close_date);
   const accountSize = Number(acc.account_size) || 0;
-  const currentBalance = acc.current_balance != null ? Number(acc.current_balance) : accountSize;
+
+  /* ANG JOURNAL ANG PINAGMUMULAN NG BALANSE, HINDI ANG MANWAL NA KAHON.
+
+     Ang `current_balance` ang binabasa nito noon — isang numerong ikaw ang
+     naglalagay. May dahilan iyon noon: ang broker ang awtoridad, at hindi
+     lahat ng trade ay laging naitatala.
+
+     Pero dalawang beses nang sumira ang pagpiling iyon. Nireset ito ng lumang
+     auto-advance sa laki ng account at nabura ang tunay na numero — at
+     pagkatapos noon ay walang paraan para makuha iyon pabalik. Ang card ay
+     nagsasabing "$5,000 · +$0" katabi ng 33 trades na may tunay na kita,
+     at ang tanging sagot ko ay SQL na patatakbuhin niya.
+
+     Ang tala ang pinagkakatiwalaan ngayon. Kung may trade kang hindi
+     naitala, magkakaiba ang lalabas dito at ang nasa Upscale — at sinasabi
+     iyon ng card sa halip na piliin ang isa nang tahimik. */
+  const phaseStartRaw = acc.phase_start_date
+    ? new Date(acc.phase_start_date + 'T00:00:00') : null;
+  const phaseBaseline = acc.phase_start_balance != null
+    ? Number(acc.phase_start_balance) : accountSize;
+  const journalPL = trades
+    .filter(t => !phaseStartRaw || t.close_date >= phaseStartRaw)
+    .reduce((s, t) => s + netPnl(t), 0);
+
+  const currentBalance = phaseBaseline + journalPL;
+  // Ang manwal na numero, itinatabi para sa paghahambing — hindi na para sa
+  // pagkuwenta. Null kapag hindi pa naitatakda o kapag tugma naman.
+  const manualBalance = acc.current_balance != null ? Number(acc.current_balance) : null;
+  const balanceGap = (manualBalance != null && Math.abs(manualBalance - currentBalance) >= 0.01)
+    ? manualBalance - currentBalance : null;
 
   /* UTC nang sadya, hindi lokal — ito ang panuntunan ng prop firm at hindi
      ang kalendaryo mo. Ang natitira sa app ay lokal (Calendar, Day of Week,
@@ -20471,8 +20706,10 @@ function computeAccountStats(acc){
   // numbers on one card, sourced differently, quietly disagreeing by whatever
   // hadn't been journalled. A phase always begins at the account's own size,
   // so that is the baseline when nothing else is recorded.
-  const earnBaseline = acc.phase_start_balance != null ? Number(acc.phase_start_balance) : accountSize;
-  const totalEarn = currentBalance - earnBaseline;
+  // Parehong pinagmumulan ng balanse sa itaas — ang mga trade mo. Dating
+  // `currentBalance - earnBaseline`, na manwal laban sa manwal.
+  const earnBaseline = phaseBaseline;
+  const totalEarn = journalPL;
   const targetEarn = accountSize * (Number(acc.profit_target_pct) || 0) / 100;
 
   // Tumutugma sa hati ng araw sa itaas — UTC, gaya ng panuntunan.
@@ -20481,7 +20718,8 @@ function computeAccountStats(acc){
   const msUntilReset = nextResetUTC - nowUTC;
 
   return {
-    accountSize, currentBalance, todaysPL, dailyLossUsed, dailyLossLimit, dayStartBalance, dailyStopBalance,
+    accountSize, currentBalance, manualBalance, balanceGap,
+    todaysPL, dailyLossUsed, dailyLossLimit, dayStartBalance, dailyStopBalance,
     drawdownFloor, profitGoal, balanceRangeFraction, profitableDaysCount, profitableDaysTarget,
     dailyProfitUsed, dailyProfitTarget, msUntilReset, dayPL,
     series, totalEarn, targetEarn
@@ -20842,6 +21080,19 @@ function accountCardHTML(a){
        Ang PERA ang phase-scoped, at may dahilan iyon: nire-reset ng prop firm
        ang balanse sa bawat phase. Ang KASAYSAYAN ay hindi nagre-reset. */
     const tradeCount = ALL_TRADES.filter(t => t.account === a.account_name).length;
+
+    /* Kapag hindi tugma ang manwal na numero at ang journal, sinasabi ito ng
+       card sa halip na piliin ang isa nang tahimik. Karaniwang ibig sabihin
+       nito ay may trade na hindi pa naitatala. */
+    const gapHTML = (!isExchange && s.balanceGap != null)
+      ? `<div class="acct-gap" title="The balance you typed in Edit account against what your journalled trades add up to.">
+           Your saved balance says
+           $${s.manualBalance.toLocaleString(undefined,{maximumFractionDigits:2})}
+           — ${s.balanceGap > 0 ? '$' + Math.abs(s.balanceGap).toLocaleString(undefined,{maximumFractionDigits:2}) + ' more than'
+                                : '$' + Math.abs(s.balanceGap).toLocaleString(undefined,{maximumFractionDigits:2}) + ' less than'}
+           your journal. Probably a trade that never got logged.
+         </div>`
+      : '';
     // Per-account Risk % if set, otherwise fall back to the Profile-wide
     // default (My Trading Rules > Risk Per Trade) — was hardcoded to 0.3%
     // for every account regardless of what either of those actually said.
@@ -20944,6 +21195,7 @@ function accountCardHTML(a){
         <div class="account-card-meta">${metaLabel}</div>
         ${balanceHTML}
         <div class="account-card-rules">${rules.join('') || '<span class="pill pill-muted">No rules set</span>'}</div>
+        ${gapHTML}
         ${breachHTML}
         ${phaseHTML}
         ${failHTML}
