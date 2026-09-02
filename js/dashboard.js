@@ -1439,7 +1439,28 @@ function applyFilters(){
     calMonth = new Date(Number(year), calMonth.getMonth(), 1);
   }
 
-  document.getElementById('tradeCountLabel').textContent = `${FILTERED.length} trade${FILTERED.length===1?'':'s'} in view`;
+  /* ANG PANAHON, NAKASULAT.
+
+     "Yung sa Profit Factor talagang ganyan? 1.67 hindi ba mali yan?" Hindi ito
+     mali — ibang panahon lang ang sinasabi nito kaysa sa calendar sa ilalim.
+     Ang calendar ay may sariling buwan na inililipat ng ‹ › nito, at kapag
+     walang filter na buwan ay hindi sumusunod ang KPI: nakikita mo ang anim na
+     talo ng Setyembre sa ibaba at ang Profit Factor ng buong taon sa itaas.
+
+     Tama ang bawat isa; ang mali ay walang nagsasabi kung alin ang alin. Kaya
+     nakasulat na ngayon ang panahong sakop ng mga bilang — at kapag naiiba ang
+     calendar sa panahong iyon, sinasabi rin nito. Ang isang numerong may
+     pangalan ng panahon ay hindi na maaaring mapagkamalan sa iba. */
+  const _pLabel = (() => {
+    const y = document.getElementById('yearFilter')?.value;
+    const mo = document.getElementById('monthFilter')?.value;
+    if(!y || y === 'all') return 'all time';
+    if(!mo || mo === 'all') return String(y);
+    return new Date(Number(y), Number(mo), 1)
+      .toLocaleDateString('en-US', { month:'long', year:'numeric' });
+  })();
+  document.getElementById('tradeCountLabel').textContent =
+    `${FILTERED.length} trade${FILTERED.length===1?'':'s'} in view · ${_pLabel}`;
 
   /* Sinasagot ng pagbati ang BUONG kasaysayan, hindi ang filter — "3 wins in a
      row" ay tungkol sa iyo, hindi sa kung anong buwan ang tinitingnan mo. Pero
@@ -2775,6 +2796,27 @@ function _yearMiniGrid(y, m, trades){
 function renderCalendar(){
   const y = calMonth.getFullYear(), m = calMonth.getMonth();
   document.getElementById('calLabel').textContent = calMonth.toLocaleDateString('en-US',{month:'long', year:'numeric'});
+
+  /* Ang calendar ay may sariling buwan. Kapag walang filter na buwan, ang ‹ ›
+     ay naglilipat DITO lang — at ang Profit Factor, ang win rate at ang bawat
+     numero sa itaas ay nananatili sa buong panahon ng filter. Tama ang dalawa,
+     pero magkaiba, at walang nagsabi noon. Sinasabi na ngayon. */
+  (() => {
+    const note = document.getElementById('calScopeNote');
+    if(!note) return;
+    const fy = document.getElementById('yearFilter')?.value;
+    const fm = document.getElementById('monthFilter')?.value;
+    // Sumusunod ang KPI kapag may piniling buwan — walang dapat sabihin doon.
+    const sameScope = fm && fm !== 'all' && Number(fm) === m &&
+                      (!fy || fy === 'all' || Number(fy) === y);
+    if(sameScope){ note.style.display = 'none'; note.textContent = ''; return; }
+    const scope = (!fy || fy === 'all') ? 'all time' : String(fy);
+    note.style.display = '';
+    note.textContent = `stats above: ${scope}`;
+    note.title = `The numbers at the top of the page cover ${scope}. `
+      + `This calendar is showing ${calMonth.toLocaleDateString('en-US',{month:'long', year:'numeric'})} on its own — `
+      + `pick a month in the filter if you want both to match.`;
+  })();
 
   const byDay = {};
   const monthTrades = [];
@@ -6016,20 +6058,99 @@ function renderTriggerPanel(){
 
    Dalawang tab. Ang una ay ang MISMONG Position Size Calculator, inilipat dito
    bilang DOM node. Hindi ito kopya at hindi ito ikalawang calculator: ang
-   paglipat ng node ay nagdadala ng bawat listener, ng bawat halagang naka-type
-   na, at ng bawat naka-save na draft. Ang isang kopya ay maghihiwalay sa unang
-   pagbabago; ito ay hindi kailanman.
+   paglipat ng node ay nagdadala ng bawat listener at ng bawat naka-save na
+   draft. Ang isang kopya ay maghihiwalay sa unang pagbabago.
+
+   PERO ANG LAMAN AY HINDI DAPAT MAGKAPAREHO.
+
+   Iisang node ang ibig sabihin ay iisang laman, kaya ang inilagay mo sa Paper
+   ay lumalabas sa tunay na Calculator — "ginagaya kung ano meron sa Paper
+   Trade Journal, dapat magkaiba yun diba". Tama iyon: ang isa ay isang planong
+   iisagawa mo at ang isa ay isang planong hindi.
+
+   Ang sagot ay hindi dalawang node kundi dalawang ESTADO. Ang node ay iisa pa
+   rin — buo ang listener, buo ang gawi — pero ang bawat tahanan ay may sariling
+   halaga. Kinukuha ang laman bago umalis at ibinabalik pagdating, kaya ang
+   dalawang panig ay parang dalawang calculator na hindi naman kailangang
+   panatilihing magkatugma.
    ========================================================================= */
 let PAPER_TAB = 'calc';
+const CALC_STATE = { real: null, paper: null };
+
+/* Ang lahat ng masusulatan sa loob ng calculator. Ginagamit ang id kapag
+   mayroon at ang pusisyon kapag wala — ang huli ay sapat dahil ang node ay
+   hindi kailanman muling itinatayo sa pagitan ng pagkuha at pagbabalik. */
+function _calcSnapshot(){
+  const root = document.getElementById('calcRoot');
+  if(!root) return null;
+  const vals = {};
+  root.querySelectorAll('input, select, textarea').forEach((el, i) => {
+    const key = el.id || ('idx:' + i);
+    vals[key] = (el.type === 'checkbox' || el.type === 'radio') ? el.checked : el.value;
+  });
+  // Ang checklist ay nasa JavaScript at hindi sa DOM, kaya hiwalay itong kinukuha.
+  return { vals,
+           bbAnswers: { ...psBbAnswers },
+           bbPattern: psBbChartPattern };
+}
+
+function _calcRestore(s){
+  const root = document.getElementById('calcRoot');
+  if(!root) return;
+  if(!s){
+    /* Walang naka-imbak pa: nililinis ang mga sinusulatan para malinis ang
+       simula ng bagong panig. Ang select ay iniiwan — ang mga iyon ay
+       pagpipilian (account, direksyon) na may makatuwirang default na hindi
+       dapat bawiin. */
+    root.querySelectorAll('input[type="number"], input[type="text"], textarea')
+        .forEach(el => { el.value = ''; });
+    psBbAnswers = {};
+    psBbChartPattern = null;
+  }else{
+    root.querySelectorAll('input, select, textarea').forEach((el, i) => {
+      const key = el.id || ('idx:' + i);
+      if(!(key in s.vals)) return;
+      if(el.type === 'checkbox' || el.type === 'radio') el.checked = s.vals[key];
+      else el.value = s.vals[key];
+    });
+    psBbAnswers = { ...s.bbAnswers };
+    psBbChartPattern = s.bbPattern;
+  }
+  // Ang mga bilang ay iginuhit para sa lumang halaga; muling kuwentahin.
+  if(typeof refreshPosSizeCalculator === 'function') refreshPosSizeCalculator();
+  if(typeof renderPsBbChecklist === 'function') renderPsBbChecklist();
+}
+
+/* Ang paglipat, sa iisang lugar. Ang pagkuha ay ginagawa BAGO gumalaw ang node
+   at ang pagbabalik ay PAGKATAPOS — kung baligtad, ang kinukuha ay ang laman
+   ng pupuntahan at hindi ng pinanggalingan. */
+function _calcMoveTo(where){
+  const root = document.getElementById('calcRoot');
+  if(!root) return;
+  const from = _isPaperMode() ? 'paper' : 'real';
+  const to = where === 'paper' ? 'paper' : 'real';
+  if(from === to) return;
+  CALC_STATE[from] = _calcSnapshot();
+
+  if(to === 'paper'){
+    const host = document.getElementById('paperCalcHost');
+    if(host) host.appendChild(root);
+  }else{
+    const home = document.getElementById('view-calculator');
+    if(home){
+      const hdr = home.querySelector('header.top');
+      hdr ? hdr.after(root) : home.appendChild(root);
+    }
+  }
+  _calcRestore(CALC_STATE[to]);
+}
 
 function _restoreCalculatorHome(){
   const root = document.getElementById('calcRoot');
   const home = document.getElementById('view-calculator');
   if(!root || !home) return;
   if(root.parentElement === home) return;
-  // Pagkatapos ng <header class="top"> — doon ito nakatira.
-  const hdr = home.querySelector('header.top');
-  hdr ? hdr.after(root) : home.appendChild(root);
+  _calcMoveTo('real');
 }
 
 function switchPaperTab(tab){
@@ -6042,9 +6163,9 @@ function switchPaperTab(tab){
   document.getElementById('paperTabCalcBtn')?.classList.toggle('primary', tab === 'calc');
   document.getElementById('paperTabJournalBtn')?.classList.toggle('primary', tab === 'journal');
   if(tab === 'calc'){
-    const root = document.getElementById('calcRoot');
-    const host = document.getElementById('paperCalcHost');
-    if(root && host && root.parentElement !== host) host.appendChild(root);
+    // Ang paglipat AT ang pagpapalit ng laman, sa iisang tawag — tingnan ang
+    // _calcMoveTo. Ang node ay iisa; ang halaga sa loob nito ay hindi.
+    _calcMoveTo('paper');
     // Ang mga panel ay iginuhit para sa dating lapad; muling iguhit sa bago.
     if(typeof refreshPosSizeCalculator === 'function') refreshPosSizeCalculator();
     if(typeof renderSavedSetups === 'function') renderSavedSetups();
@@ -18986,7 +19107,14 @@ function saveCalculatorDraft(){
    Notebook's scratch copy, remembered. Device-local for the same reason the
    calculator draft is: it's working state for a setup you haven't taken yet,
    not a record of one you did. ---- */
-const PSBB_KEY = 'poscalc-bb-check';
+/* DALAWANG SUSI, ISA KADA PANIG.
+
+   Ang naka-save na draft ay device-local at nabubuhay sa pagitan ng mga
+   pagbisita. Sa iisang susi, ang huling panig na ginalaw ang nagsusulat — kaya
+   pagkatapos mag-reload ay makikita mo ang checklist ng Paper sa tunay na
+   Calculator. Ang live na pagkakapareho ay naayos na ng CALC_STATE; ito ang
+   parehong problema na dumadaan sa disk. */
+const _psBbKey = () => 'poscalc-bb-check' + (_isPaperMode() ? ':paper' : '');
 let psBbAnswers = {};
 let psBbChartPattern = null;
 let PSBB_SAVE_TIMER = null;
@@ -19006,7 +19134,7 @@ function savePsBbCheck(){
     chart_pattern: psBbChartPattern
   };
   try{
-    localStorage.setItem(PSBB_KEY, JSON.stringify(payload));
+    localStorage.setItem(_psBbKey(), JSON.stringify(payload));
     _psBbSetSaveState('Saved');
   }catch(e){
     console.error("Couldn't save BnB check:", e);
@@ -19022,7 +19150,7 @@ function _psBbQueueSave(){
 
 function _psBbLoadSaved(){
   try{
-    const raw = localStorage.getItem(PSBB_KEY);
+    const raw = localStorage.getItem(_psBbKey());
     return raw ? JSON.parse(raw) : null;
   }catch(e){
     console.error("Couldn't load BnB check:", e);
@@ -19111,7 +19239,7 @@ async function clearPsBbCheck(){
   clearTimeout(PSBB_SAVE_TIMER);
   psBbAnswers = {};
   psBbChartPattern = null;
-  try{ localStorage.removeItem(PSBB_KEY); }catch(e){}
+  try{ localStorage.removeItem(_psBbKey()); }catch(e){}
   document.getElementById('psBbTradeType').value = document.getElementById('psDirection')?.value || '';
   _renderPsBbPatternOptions();
   document.getElementById('psBbPatternType').value = '';

@@ -1055,13 +1055,33 @@
   .wr-col-net.wr-bad{color:var(--loss);}
 
   /* ---------- Panels ---------- */
-  .row{display:grid;grid-template-columns:1.1fr 1.1fr 0.9fr;gap:20px;margin-bottom:20px;align-items:start;}
-  @media(max-width:1100px){.row{grid-template-columns:1fr 1fr;}}
-  @media(max-width:700px){.row{grid-template-columns:1fr;}}
-  .row-2{display:grid;grid-template-columns:1.4fr 1fr;gap:20px;margin-bottom:20px;align-items:start;}
-  @media(max-width:900px){.row-2{grid-template-columns:1fr;}}
-  .row-4{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:20px;align-items:stretch;}
-  .row-3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:20px;align-items:stretch;}
+  /* ANG SAHIG NA PUMIPIGIL SA PAGLIIT.
+
+   Sinukat ko: sa ilalim ng 1580px ay lumalampas ang dashboard nang pahalang —
+   198px sa 1280px, na isang karaniwang laptop. Walang isang elementong
+   lumalabas sa magulang nito; ang buong grid ang may sahig.
+
+   Ang dahilan ay ang `min-width:auto` na default ng grid track: hindi lumiliit
+   ang isang 1fr na track kaysa sa min-content ng laman nito. Ang isang panel na
+   may malapad na header o talahanayan ay itinutulak ang buong hanay, at ang
+   labis ay napupunta sa scroll sa halip na sa muling pag-ayos. Ang mga
+   breakpoint sa 1100px at 700px ay hindi umaabot doon — nasa itaas sila ng
+   puwang na ito.
+
+   Ang minmax(0, …) ay nag-aalis ng sahig na iyon. Hindi nagbabago ang
+   proporsyon; ang track lang ay pinapayagan nang lumiit, at ang laman ang
+   sumusunod — na siyang dapat mangyari sa isang maliit na monitor. */
+.row{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1.1fr) minmax(0,0.9fr);gap:20px;margin-bottom:20px;align-items:start;}
+.row > *, .row-2 > *, .row-3 > *, .row-4 > *{min-width:0;}
+  /* Ang minmax(0, …) ay kailangan sa BAWAT deklarasyon ng track, hindi lang sa
+     una — ang media query ay pumapalit sa buong grid-template-columns, kaya
+     ibinabalik nito ang sahig kung hindi rin ito bibigyan. */
+  @media(max-width:1100px){.row{grid-template-columns:minmax(0,1fr) minmax(0,1fr);}}
+  @media(max-width:700px){.row{grid-template-columns:minmax(0,1fr);}}
+  .row-2{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:20px;margin-bottom:20px;align-items:start;}
+  @media(max-width:900px){.row-2{grid-template-columns:minmax(0,1fr);}}
+  .row-4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-bottom:20px;align-items:stretch;}
+  .row-3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-bottom:20px;align-items:stretch;}
   /* Container queries — react to the actual content-area width (accounts
      for the sidebar being expanded/collapsed), not just the browser window. */
   @container (max-width:900px){.row-4{grid-template-columns:repeat(2,1fr);} .row-3{grid-template-columns:repeat(2,1fr);}}
@@ -1077,7 +1097,24 @@
   /* The Review button sits OUTSIDE .nav on purpose — ".panel h2 .nav button"
      forces every button in there to a 26x26 square, which crushed a text
      label into two wrapped lines on top of the month arrows. */
-  .cal-head-actions{display:flex;align-items:center;gap:10px;font-family:var(--font-ui);}
+  /* Ngayong lumiliit na ang panel, ang "September 2026" ay nag-wrap sa dalawang
+   linya sa 1280px at itinutulak ang buong header. Ang pangalan ng buwan ay
+   hindi dapat mahati; ang bar sa kaliwa nito ang dapat magbigay ng espasyo. */
+.cal-head-actions{display:flex;align-items:center;gap:10px;font-family:var(--font-ui);flex:none;}
+.cal-head-actions .nav{white-space:nowrap;}
+#calLabel{white-space:nowrap;}
+/* Sinubukan kong payagang lumiit ang track (max-width:190px; width:100%) para
+   ito ang magbigay ng espasyo. Sinira nito ang bar: sa 4% ay 7.48px ang
+   posisyon ng knob sa isang bahagyang mas makitid na track, at ang clamp na
+   7.5px ay humila rito palayo sa dulo ng fill — limang pixel na hindi
+   nakahanay. Ang 190px ay nakapirmi nang may dahilan; ang teksto sa kanan ang
+   inaayos, at iyon ay nasa nowrap na sa itaas. */
+/* Mahina nang sadya: isang paalala ito, hindi isang babala. Walang mali —
+   dalawang panahon lang ang nasa isang screen, at ito ang nagsasabi kung alin. */
+.cal-scope{
+  font-size:10px;letter-spacing:.04em;color:var(--muted);opacity:.75;
+  white-space:nowrap;cursor:help;padding:0 2px;
+}
   .cal-head-actions > .poscalc-accent-btn{padding:5px 12px;font-size:11.5px;white-space:nowrap;}
 
   /* ---------- Settings page ---------- */
@@ -1137,10 +1174,25 @@
   .tag-poor{background:var(--loss);color:#fff;}
   .chart-fill canvas{max-height:100%;}
   .cal-dow{font-size:10px;color:var(--muted);text-align:center;padding-bottom:4px;text-transform:uppercase;letter-spacing:.05em;}
-  .cal-cell{border-radius:6px;padding:8px 7px;font-size:12px;position:relative;background:var(--surface-2);border:1px solid transparent;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;min-height:56px;}
+  /* SUMUSUNOD ANG TEKSTO SA LAKI NG CELL.
+     "kapag maliit yung monitor baka hindi mag kasya yung mga text?" — tama.
+     Ngayong pinapayagan nang lumiit ang grid, ang isang cell sa 1280px ay
+     halos 60px lang ang lapad at ang "-$1,234.56" sa 14px ay hindi kasya doon.
+
+     Ang cqw ay porsyento ng lapad ng CONTAINER, hindi ng screen — kaya ang
+     teksto ay sumusunod sa tunay na lapad ng panel, kasama na kung ang sidebar
+     ay bukas o sarado. Ang clamp ang naglalagay ng sahig (nababasa pa rin) at
+     ng kisame (hindi lumalaki nang walang saysay sa malaking monitor). */
+  .cal-grid{container-type:inline-size;}
+  .cal-cell{border-radius:6px;padding:8px 7px;font-size:12px;position:relative;background:var(--surface-2);border:1px solid transparent;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;min-height:56px;min-width:0;}
   .cal-cell.empty{background:transparent;}
-  .cal-cell .d{color:var(--muted);font-family:'IBM Plex Mono',monospace;font-size:12px;}
-  .cal-cell .p{font-family:'IBM Plex Mono',monospace;font-size:14px;font-weight:700;margin-top:4px;line-height:1.2;}
+  .cal-cell .d{color:var(--muted);font-family:'IBM Plex Mono',monospace;font-size:clamp(9.5px, 1.55cqw, 12px);}
+  .cal-cell .p{font-family:'IBM Plex Mono',monospace;font-size:clamp(9.5px, 1.8cqw, 14px);font-weight:700;margin-top:4px;line-height:1.2;
+    /* Ang halaga ay isang numerong hindi dapat naputol. Kapag masikip na ang
+       cell, ang huling hakbang ay hindi ang pagputol kundi ang pagpayag na
+       lumapad ito sa buong cell at magpaliit pa. */
+    max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .cal-cell .cal-count{font-size:clamp(8.5px, 1.35cqw, 10.5px) !important;}
   .cal-cell.win{background:rgba(46,204,113,0.15);border-color:rgba(46,204,113,0.45);}
   .cal-cell.win .p{color:var(--win);}
   .cal-cell.loss{background:rgba(255,92,92,0.14);border-color:rgba(255,92,92,0.4);}
@@ -3798,8 +3850,14 @@ table.breakdown tbody tr{cursor:pointer;}
    Ang negatibong margin ang nagsasauli ng daloy sa dating taas (40 − 14 = 26,
    ang taas noon) habang ang KAHON ay nananatiling 40px — kaya buo pa rin ang
    pagkakahanay sa loob at ang bula ay lumalapat sa padding ng panel, kung saan
-   may lugar naman. Isang numero, at ito ay 14. */
-.panel h2.cal-h2{align-items:flex-end;line-height:20px;margin-top:-14px;}
+   may lugar naman.
+
+   Ang numero ay 20, hindi 14. Sinukat ko: sa 14, ang salitang "Calendar" ay
+   27px mula sa itaas ng panel samantalang ang bawat ibang pamagat sa dashboard
+   ay nasa 21px — pitong pixel na mas mababa, at iyon ang nakikita ng mata kapag
+   inihahanay mo ang panel sa katabi nito. Sa 20 ay pumapantay ito sa lahat.
+   Ang bula ay nasa 4px pa rin mula sa itaas ng panel: masikip pero nasa loob. */
+.panel h2.cal-h2{align-items:flex-end;line-height:20px;margin-top:-20px;}
 .cal-goal{align-items:flex-end;}
 .cal-goal-label{line-height:20px;}
 .cal-goal-track{height:40px;}

@@ -17,7 +17,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<link rel="stylesheet" href="css/style.css?v=301">
+<link rel="stylesheet" href="css/style.css?v=302">
 </head>
 <body>
 
@@ -136,7 +136,7 @@
 
   <div class="kpi-grid" id="kpiGrid"></div>
 
-  <div class="row chart-row-eq" style="grid-template-columns:1.3fr 1fr;align-items:stretch;">
+  <div class="row chart-row-eq" style="grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);align-items:stretch;">
     <div class="panel panel-fixed-h">
       <h2 class="cal-h2">Calendar<button type="button" class="panel-info-btn" title="How this is worked out" onclick="event.stopPropagation(); openPanelInfo('calendar')"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button><span id="calGoalBar"></span>
         <span class="cal-head-actions">
@@ -144,6 +144,9 @@
           <span class="nav">
             <button onclick="shiftMonth(-1)">‹</button>
             <span id="calLabel">—</span>
+            <!-- Lumalabas lamang kapag ang buwang ito ay wala sa panahong sakop
+                 ng mga bilang sa itaas. Tingnan ang renderCalendar. -->
+            <span id="calScopeNote" class="cal-scope" style="display:none;"></span>
             <button onclick="shiftMonth(1)">›</button>
           </span>
         </span>
@@ -478,7 +481,7 @@
       </div>
     </div>
 
-    <div class="row profile-layout" style="grid-template-columns:1fr 1fr;align-items:start;">
+    <div class="row profile-layout" style="grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:start;">
       <div class="panel">
         <h2>My Trading Rules</h2>
         <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">Your personal checklist — a reminder every time you open your profile.</div>
@@ -1771,7 +1774,7 @@
     </div>
     <div class="field-row" style="flex-shrink:0;">
       <label>Screenshots</label>
-      <div class="setup-notes-shots" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+      <div class="setup-notes-shots" style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px;">
         <div>
           <div style="font-size:10px;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:.05em;">Before</div>
           <div id="setupNotesBeforeDropzone" class="poscalc-image-dropzone" tabindex="0" onclick="setActiveScreenshotSlot('before')">
@@ -2291,6 +2294,6 @@
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=2"></script>
-<script src="js/dashboard.js?v=492"></script>
+<script src="js/dashboard.js?v=493"></script>
 </body>
 </html>
