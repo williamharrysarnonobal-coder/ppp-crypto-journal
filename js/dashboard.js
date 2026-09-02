@@ -21226,12 +21226,22 @@ async function saveConfluenceModal(){
   // answered — only for an already-journaled trade (Pending Setups have no
   // rules_followed/unfollowed_rules columns), and only additive: a clean
   // checklist never resets an existing "No" back to blank.
-  if(confluenceTarget.type === 'trade' && tradeType && patternType){
+  /* ...at hindi sa isang PAPER trade. Ang "Rules Followed: No" at ang Trade Tag
+     ay hatol sa isang trade na PINASOK mo — ang isang setup na hindi mo kinuha
+     ay walang panuntunang sinuway, dahil walang ginawa. Ang pagsulat ng mga
+     iyon dito ay naglalagay ng paglabag sa isang bagay na hindi nangyari, at
+     ang mas masama: hindi lumalabas ang dalawang field na ito sa paper drawer,
+     kaya hindi niya makikita o mabubura ang naidagdag. */
+  const targetRow = confluenceTarget.type === 'trade'
+    ? RAW_TRADES.find(r => r.position_id === confluenceTarget.positionId) : null;
+  const targetIsPaper = !!(targetRow && (targetRow.is_paper === true || targetRow.is_paper === 'true'));
+
+  if(confluenceTarget.type === 'trade' && !targetIsPaper && tradeType && patternType){
     const cfg = CONFLUENCE_SETUPS[`${tradeType}|${patternType}`];
     if(cfg){
       const autoReasons = _autoUnfollowedRules(cfg, confluenceAnswers, !!confluenceChartPattern);
       if(autoReasons.size){
-        const existingRow = RAW_TRADES.find(r => r.position_id === confluenceTarget.positionId);
+        const existingRow = targetRow;
         const existing = (existingRow?.unfollowed_rules || '').split(/[,;]/).map(s => s.trim()).filter(Boolean);
         const merged = [...new Set([...existing, ...autoReasons])];
         payload.rules_followed = 'No';
@@ -21465,10 +21475,42 @@ function _cancelJournalQueue(){
 // Every ticket is in. One drawer now, seeded from the first one so the
 // auto-filled values are there to save, but rendering only the fields that
 // still need an answer — not repeating those is the whole point of the run.
+/* Ang prefill ay galing sa unang idinikit — at ang idinikit ay galing sa
+   exchange, na walang alam tungkol sa Pattern Type. Kaya blangko ang kahong
+   iyon sa bulk drawer kahit may pattern ang BAWAT setup na na-tik niya.
+
+   Dalawang bagay ang sinisira noon, at pareho silang tahimik:
+
+     1. Iniwang blangko, ang hilera ay binubuo bilang { ...parsed, ...answered },
+        kaya ang blangkong sagot ay pumapatong at naisusulat ang trade nang
+        WALANG pattern type — ang parehong hugis ng nawalang leverage.
+     2. Pumili siya ng halaga. Pero hindi niya nakita kung ano ang nasa setup,
+        kaya anumang pili na hindi eksaktong katumbas noon ay ibinabasura ang
+        confluence na katatapos lang niyang isagot — naka-imbak kasi ito ayon sa
+        POSISYON sa checklist ng pattern na iyon.
+
+   Ang lunas ay hindi ang pag-alis ng paglaglag: tama iyon kapag talagang
+   itinama niya ang pattern. Ang lunas ay ipakita ang TAMANG halaga bilang
+   simula, para ang paglaglag ay mangyari lamang kapag sinadya niya. */
 function _openBulkJournalDrawer(){
   if(!journalBulkPastes.length) return;
   drawerBulkTargets = journalBulkPastes.slice();
-  openDrawer('create', null, { ...drawerBulkTargets[0].parsed });
+
+  const prefill = { ...drawerBulkTargets[0].parsed };
+  const setups = drawerBulkTargets
+    .map(t => SAVED_SETUPS.find(s => s.id === t.setupId))
+    .filter(Boolean);
+  /* Kapag lang PAREHO ang lahat. Kung magkaiba ang pattern ng mga setup,
+     walang tamang sagot para sa iisang kahon — mas mabuting blangko iyon at
+     siya ang pumili, kaysa pumili ako para sa kanya at mali ang dalawa. */
+  if(setups.length === drawerBulkTargets.length){
+    ['pattern_type', 'trade_type'].forEach(k => {
+      if(prefill[k]) return;
+      const vals = [...new Set(setups.map(s => s[k]).filter(Boolean))];
+      if(vals.length === 1) prefill[k] = vals[0];
+    });
+  }
+  openDrawer('create', null, prefill);
 }
 
 function _bulkNoteTargets(){
