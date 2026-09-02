@@ -6634,25 +6634,54 @@ function renderPaperTable(){
   tbl.style.display = '';
   empty.style.display = 'none';
 
-  /* Ilang column lang, at sinadya iyon: ang buong journal ay may tatlumpu't
-     tatlong column at ang pahinang ito ay may isang tanong. Ang detalye ay
-     nasa drawer, isang pindot ang layo. */
-  /* Ang parehong maikling petsa na ginagamit ng buong app. Nag-imbento ako ng
-     fmtDate() rito noong una at wala pala iyon — dumaan sa node -c at sasabog
-     lang kapag binuksan ang pahina. */
+  /* PAREHONG COLUMN NG TRADE JOURNALS.
+
+     Anim na nakasulat na column ito noon, at mali iyon: ang sabi ko sa sarili
+     ko ay "isang tanong lang ang pahinang ito", pero ang paper trade ay may
+     entry, TP, SL, pattern, timeframe — lahat ng bagay na tinitingnan mo sa
+     isang tunay na trade. Ang pagbawas noon ay nagpapahirap sa paghahambing sa
+     mismong bagay na dapat mong ihambing.
+
+     Ang JOURNAL_COLUMNS ang pinagmumulan: kung ano ang pinili mong makita sa
+     Trade Journals, iyon din ang makikita mo rito. Isang lugar na inaayos, at
+     hindi na maiiwan ang isa sa dalawa.
+
+     Inaalis lang ang WALANG SAGOT sa isang setup na hindi nangyari — ang
+     realOnly na field, na iisang listahan din ang pinagmumulan (tingnan ang
+     ALL_DRAWER_FIELDS). At dinadagdag ang dalawang tanong na dito lang. */
   const dt = d => d
     ? d.toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' })
     : '—';
-  const cols = [
-    { k: 'Date',   get: t => dt(t.close_date || t.open_date) },
-    { k: 'Symbol', get: t => escapeHtml(t.symbol || '—') },
-    { k: 'Setup',  get: t => escapeHtml(t.trade_setup || '—') },
-    { k: 'Session',get: t => escapeHtml(t.session || '—') },
-    /* Ang RR ng PLANO, kinukuwenta mula sa entry, TP at SL — hindi ang rr
-       column, na para sa isang trade na nangyari. Ang paper trade ay walang
-       resulta pero may plano, at ang plano ay may RR. */
-    { k: 'RR',     get: t => { const r = _plannedRR(t);
-        return r === null ? '—' : fmtNum(r, 2); } },
+  const realOnlyKeys = new Set(
+    ALL_DRAWER_FIELDS.filter(f => f.realOnly).map(f => f.key));
+
+  /* Ang PETSA ay laging una at laging naroon.
+
+     Ang close_date ay realOnly — walang nagsara — kaya sinasala ito. Pero kung
+     iyon ang napili mong column sa Trade Journals, mawawala ang petsa nang
+     tuluyan sa pahinang ito, at ang isang talaan ng mga setup na walang petsa
+     ay hindi isang talaan. Kaya ito ay itinatayo nang hiwalay at hindi
+     kinukuha sa iyong config: isang column, may tamang pangalan, laging
+     naroon. */
+  const cols = [{ k: 'Date seen', get: t => dt(t.open_date || t.close_date) }]
+    .concat(JOURNAL_COLUMNS
+      .filter(c => c.key !== 'link' && c.key !== 'no'
+        && c.key !== 'open_date' && c.key !== 'close_date'
+        && !realOnlyKeys.has(c.key))
+      .map(c => ({
+        k: c.label,
+        get: t => {
+          /* Ang RR ng PLANO, kinukuwenta mula sa entry, TP at SL. Ang rr column
+             ay para sa trade na nangyari at laging blangko rito. */
+          if(c.key === 'rr'){ const r = _plannedRR(t);
+            return r === null ? '—' : fmtNum(r, 2); }
+          // Ang natitira ay dumadaan sa mismong formatter ng Trade Journals,
+          // kaya pareho ang hitsura ng bawat numero sa dalawang pahina.
+          const v = _journalCellValue(t, c.key);
+          return (v === null || v === undefined || v === '') ? '—' : v;
+        }
+      })))
+    .concat([
     { k: 'Why you did not take it', wide: true, get: t => t.no_trade_reason
         ? `<span class="paper-why ${NO_TRADE_KIND[t.no_trade_reason.toLowerCase()] || ''}"
              >${escapeHtml(t.no_trade_reason)}</span>`
@@ -6669,7 +6698,7 @@ function renderPaperTable(){
         const kind = _paperOutcomeKind(t.paper_outcome);
         return list.map(o =>
           `<span class="paper-out ${kind}">${escapeHtml(o)}</span>`).join(' '); } },
-  ];
+  ]);
   head.innerHTML = cols.map(c => `<th${c.wide ? ' class="paper-why-col"' : ''}>${escapeHtml(c.k)}</th>`).join('');
   // openDrawer('view', positionId) — ang parehong drawer ng tunay na journal,
   // kaya ang bawat field ay naitatama rito nang walang ikalawang form.
@@ -6903,6 +6932,17 @@ const PAPER_OUTCOME_KIND = {
 
 const UNFOLLOWED_RULES_OPTIONS = [
   'Rules Followed',"Would Have BE'd Out",
+  /* Nastop ka, tapos umabot pa rin sa TP mo — minsan makalipas ang mga araw.
+
+     Hindi ito nasirang rule at hindi rin ito tagumpay: sinunod mo ang plano at
+     tama ka sa direksyon, pero ang STOP ang masyadong malapit o masyadong
+     maaga. Ang mismong bagay na naitatala mo sa paper journal, dito naman sa
+     mga trade na tunay mong pinasok.
+
+     Isang observation ito at hindi breach — kung breach, ang bawat pagkakataong
+     tama ka sa basa ay babawas sa discipline score mo, at iyon ang tiyak na
+     paraan para ihinto ang pagtatala nito. */
+  'Stopped Out Then Hit TP',
   'Overleveraged','Entered Without Confirmation','Moved Stop Loss',
   // Taking the stop off entirely, which is not the same act as moving it —
   // moving it is a bad adjustment, removing it is trading with no floor.
@@ -7007,10 +7047,18 @@ const TAG_HELP = {
     'Taken against the higher timeframe direction.',
   'BTC Only':
     'You traded something other than BTC.',
+  'Stopped Out Then Hit TP':
+    'Your stop was hit and price went on to your target anyway — sometimes days later. '
+    + 'The direction was right; the stop was too tight or too early. Not a rule broken.',
 };
 
 const TAG_OBSERVATIONS = [
   "Would Have BE'd Out",
+  /* Nastop ka, tapos umabot pa rin sa TP. Ang tanong na sinasagot nito ay
+     "masyado bang malapit ang stop ko", at iyon ay isang bagay na sinusukat —
+     hindi isang bagay na pinaparusahan. Kung breach ito, ang bawat trade kung
+     saan TAMA ka sa direksyon ay babawas sa discipline score mo. */
+  'Stopped Out Then Hit TP',
   'No BE at Prev High/Low',
   /* All four invalidation tags. None of them is a rule broken — they are the
      two ways of answering one open question and the two ways each can turn
