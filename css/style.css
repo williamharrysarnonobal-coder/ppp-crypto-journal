@@ -4163,6 +4163,13 @@ body.mobile-mode .yo-j-line{font-size:13px;}
 .admin-perf-table td.n, .admin-perf-table th.n{
   text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;
 }
+/* Ang "Days traded" ay naka-kanan at ang "Last trade" ay naka-kaliwa, kaya
+   nagdidikit sila at nababasa bilang isang bagay: "11 Aug 30, 2026". Isang
+   puwang sa pagitan at hindi na sila naghahalo. */
+.admin-perf-table td:last-child, .admin-perf-table th:last-child{text-align:right;}
+.admin-perf-table td:nth-last-child(2), .admin-perf-table th:nth-last-child(2){
+  padding-left:22px;white-space:nowrap;
+}
 .adm-sub{font-size:11px;color:var(--muted);font-weight:400;}
 .adm-none{color:var(--muted);font-style:italic;font-size:12px;}
 .adm-quiet td{opacity:.72;}

@@ -17,7 +17,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<link rel="stylesheet" href="css/style.css?v=303">
+<link rel="stylesheet" href="css/style.css?v=304">
 </head>
 <body>
 
@@ -929,17 +929,27 @@
         <h1>Admin Console</h1>
         <div class="sub">Approve, reject, or manage everyone who has signed up.</div>
       </div>
-    </header>
+      <!-- Dalawang trabaho, dalawang tab: kung SINO ang nakakapasok, at KUMUSTA
+           sila kapag nakapasok na.
 
-    <!-- Dalawang trabaho, dalawang tab: kung SINO ang nakakapasok, at KUMUSTA
-         sila kapag nakapasok na. Magkaibang tanong ang mga ito at halos hindi
-         magkasabay ang pagtatanong. -->
-    <div class="paper-tabs" style="margin-bottom:18px;">
-      <button class="poscalc-accent-btn primary" id="adminTabUsersBtn"
-              onclick="switchAdminTab('users')">Users</button>
-      <button class="poscalc-accent-btn" id="adminTabPerfBtn"
-              onclick="switchAdminTab('performance')">Performance</button>
-    </div>
+           PAREHONG hugis ng tab ng Paper Trade Journal — hindi isang bagong
+           estilo. Ang unang bersyon nito ay dalawang pindutan sa ilalim ng
+           header, at hindi niya ito nakita: hindi sila mukhang tab, kaya
+           dumaan lang ang mata sa kanila. Isang tab na dapat matutuhan, hindi
+           dalawang magkamukha. -->
+      <div class="filters">
+        <span class="fgroup fgroup-tools">
+          <button class="rec-open-btn primary" onclick="switchAdminTab('users')" id="adminTabUsersBtn">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            Users
+          </button>
+          <button class="rec-open-btn" onclick="switchAdminTab('performance')" id="adminTabPerfBtn">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+            Performance
+          </button>
+        </span>
+      </div>
+    </header>
 
     <div id="adminTabUsers">
     <div class="panel" style="margin-bottom:20px;">
@@ -2327,6 +2337,6 @@
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=2"></script>
-<script src="js/dashboard.js?v=494"></script>
+<script src="js/dashboard.js?v=495"></script>
 </body>
 </html>
