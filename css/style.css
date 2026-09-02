@@ -743,11 +743,23 @@
   .cfl-t-win{--box-tone:var(--win);}
   .cfl-t-orange{--box-tone:var(--warn);}
   .cfl-t-loss{--box-tone:var(--loss);}
-  .cfl-score-bar{
-    display:block;width:40px;height:4px;border-radius:3px;flex-shrink:0;
-    background:color-mix(in srgb, var(--box-tone) 25%, transparent);overflow:hidden;
+  /* Ang gauge ng Confluence Score. Isang guhit ito noon, at sa dalawang iskor
+     na 88 at 89 ay halos magkapareho ang haba — kaya ang bahaging nagsasabi ng
+     pagkakaiba ay ang pinakamaliit sa cell.
+
+     Ang buong bilog ay nababasa sa gilid ng mata bilang "halos puno", at ang
+     bilang ang nagdadala ng eksaktong sagot. Ang anggulo ay nanggagaling sa
+     --cfl-deg na itinatakda ng hilera.
+
+     Ang butas ay mask at hindi isang disc na kasing-kulay ng likod: nagbabago
+     ang kulay ng hilera kapag naka-hover, at ang disc ay maiiwang mali doon. */
+  .cfl-ring{
+    display:block;width:17px;height:17px;border-radius:50%;flex-shrink:0;
+    background:conic-gradient(var(--box-tone) var(--cfl-deg, 0deg),
+                              color-mix(in srgb, var(--box-tone) 22%, transparent) 0);
+    -webkit-mask:radial-gradient(circle, transparent 4.8px, #000 5.3px);
+    mask:radial-gradient(circle, transparent 4.8px, #000 5.3px);
   }
-  .cfl-score-bar-fill{display:block;height:100%;border-radius:3px;background:var(--box-tone);}
   .cfl-score-num{font-weight:700;color:var(--box-tone);font-variant-numeric:tabular-nums;}
   /* Calculator > BnB Check. The checklist plus its warning signs runs long, so
      this modal gets more height than the default and keeps its footer reachable
@@ -1554,6 +1566,35 @@ table.breakdown tbody tr{cursor:pointer;}
     background:var(--surface-2);border:1px solid var(--rule);color:var(--ink);
     padding:8px 12px;border-radius:6px;font-size:12.5px;font-family:var(--font-ui);width:240px;
   }
+  /* Custom na saklaw ng petsa. Nakakahon ang dalawang kahon nang magkasama
+     dahil iisang filter sila — ang "From" na walang "To" ay kalahating tanong,
+     at ang paglalagay sa kanila nang magkahiwalay sa toolbar ay nagmumukhang
+     dalawang bagay na walang kinalaman sa isa't isa.
+
+     May sariling lapad ang mga input dito: 240px ang bawat input sa toolbar,
+     na tama para sa paghahanap at masyadong malaki para sa isang petsa. */
+  .jf-range{
+    display:flex;align-items:center;gap:6px;
+    padding:3px 4px 3px 10px;border:1px solid var(--rule);border-radius:6px;
+    background:var(--surface-2);
+  }
+  .jf-range-lbl{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;}
+  .journal-toolbar .jf-range input[type="date"]{
+    width:auto;padding:5px 7px;font-size:12px;border:1px solid transparent;
+    background:var(--surface);color:var(--ink);
+  }
+  .journal-toolbar .jf-range input[type="date"]:focus{border-color:var(--accent);outline:none;}
+  /* Ang date picker ng browser ay nagbibigay ng maitim na icon sa maitim na
+     ground — hindi ito makikita nang walang pagbaligtad. */
+  .jf-range input[type="date"]::-webkit-calendar-picker-indicator{
+    filter:invert(0.7);cursor:pointer;
+  }
+  .jf-range-x{
+    background:none;border:0;color:var(--muted);cursor:pointer;
+    font-size:16px;line-height:1;padding:2px 7px;border-radius:4px;
+  }
+  .jf-range-x:hover{color:var(--ink);background:var(--surface);}
+
   .journal-wrap{
     overflow:auto;border:1px solid var(--rule);border-radius:6px;background:var(--surface);
     flex:1;min-height:0;
@@ -2883,6 +2924,13 @@ table.breakdown tbody tr{cursor:pointer;}
 .dx-s-verdict b{font-size:16px;font-weight:650;letter-spacing:-.01em;}
 .dx-s-verdict > span:last-child{margin-left:auto;font-family:'IBM Plex Mono',monospace;
     font-size:11px;color:var(--muted);}
+/* Ang ikalawang linya ng hatol: kung ANO ang aayusin. `order:1` ang naglalagay
+   nito sa ilalim ng pamagat kahit nauuna ito sa bilang sa markup — nananatili
+   ang bilang sa kanang dulo ng unang linya, kung saan ito palaging naroon. */
+.dx-s-fix{
+  order:1;flex-basis:100%;
+  font-size:13px;line-height:1.5;color:var(--muted);
+}
 .dx-s-verdict.good{border-left-color:var(--win);}
 .dx-s-verdict.warn{border-left-color:var(--warn);}
 .dx-s-verdict.bad{border-left-color:var(--loss);}

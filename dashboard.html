@@ -17,7 +17,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<link rel="stylesheet" href="css/style.css?v=310">
+<link rel="stylesheet" href="css/style.css?v=313">
 </head>
 <body>
 
@@ -271,6 +271,21 @@
       <input id="journalSearch" placeholder="Search symbol, setup, position ID…" oninput="renderJournalTable()">
       <select id="journalYearFilter" onchange="onJournalYearChange()"></select>
       <select id="journalMonthFilter" onchange="renderJournalTable()"></select>
+      <!-- Ang custom na saklaw ng petsa. Iisang axis ito ng Year at Month — ang
+           panahon — kaya hindi sila magkasabay: ang paglagay ng saklaw ay
+           naglilinis ng Year at Month, at ang pagpili ng taon ay naglilinis ng
+           saklaw. Tingnan ang onJournalRangeChange sa dashboard.js. -->
+      <div class="jf-range" id="journalRangeWrap">
+        <span class="jf-range-lbl">From</span>
+        <input type="date" id="journalDateFrom" onchange="onJournalRangeChange()"
+               aria-label="From date">
+        <span class="jf-range-lbl">to</span>
+        <input type="date" id="journalDateTo" onchange="onJournalRangeChange()"
+               aria-label="To date">
+        <button type="button" class="jf-range-x" id="journalRangeClear"
+                onclick="clearJournalRange()" title="Clear the date range"
+                style="display:none;">&times;</button>
+      </div>
       <div class="jf-add-wrap">
         <button class="poscalc-accent-btn" id="journalAddFilterBtn" style="padding:8px 14px;" onclick="toggleJournalColumnMenu(event)">+ Filter</button>
         <div class="jf-menu" id="journalColumnMenu" style="display:none;"></div>
@@ -2348,6 +2363,6 @@
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=2"></script>
-<script src="js/dashboard.js?v=514"></script>
+<script src="js/dashboard.js?v=517"></script>
 </body>
 </html>

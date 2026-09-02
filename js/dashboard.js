@@ -78,6 +78,50 @@ let PAPER_TRADES = [];
 
    Ibinabalik ang null at hindi zero kapag kulang: ang zero ay isang sagot at
    ang wala ay hindi. */
+/* ANG HATOL SA PAGPALAMPAS — iisang pinagmumulan para sa tatlong lugar.
+
+   Tatlong kopya ito noon: ang panel sa Dashboard, ang Reports, at ang PDF.
+   Naghiwalay sila, at dalawa sa tatlo ang nagsasabi pa rin ng "Hesitating"
+   kahit ano pa ang dahilan mo — kaya ang taong nagsabing "extended na ang
+   galaw" ay sinasabihang duwag. Isang lugar na lang ang nagsasalita.
+
+   BILANG ang sukat, hindi R. Nasa R ito noon ("8.8R left on the table") pero
+   ang tanong ay hindi kung magkano kundi kung ILAN sa mga pinalampas mo ang
+   sana nanalo — at iyon ang nababasa sa isang tingin. */
+function _paperPassVerdict(won, lost, group){
+  const checked = won + lost;
+  if(!checked) return { line: '', fix: '', tone: 'wait' };
+
+  const all = (n, verb) => checked === 1
+    ? `The one setup you passed would have ${verb}.`
+    : n === checked
+      ? `All ${n} setups you passed would have ${verb}.`
+      : `${n} of the ${checked} setups you passed would have ${verb}.`;
+
+  if(won === lost) return {
+    line: `Even split — ${won} would have won, ${lost} would have lost.`,
+    fix: '', tone: 'wait' };
+
+  const wrong = won > lost;
+  return {
+    line: all(wrong ? won : lost, wrong ? 'won' : 'lost'),
+    // Ang grupo ng dahilan ang nagsasabi kung ANO ang aayusin, at magkaiba ang
+    // sasabihin nito kung nagkamali ka sa pagpalampas o tama ka.
+    fix: (group && (wrong ? group.whenWrong : group.whenRight)) || '',
+    tone: wrong ? 'bad' : 'good'
+  };
+}
+
+/* Ang pinakamadalas na uri ng dahilan sa isang bilang kada uri. Ginagamit ng
+   Dashboard at ng Reports para iisa ang hatol na lumalabas sa dalawa. */
+function _paperDomGroup(byKind){
+  const kind = NO_TRADE_REASON_GROUPS
+    .map(g => g.kind)
+    .reduce((best, k) => (byKind[k] || 0) > (byKind[best] || 0) ? k : best,
+            NO_TRADE_REASON_GROUPS[0].kind);
+  return NO_TRADE_REASON_GROUPS.find(g => g.kind === kind);
+}
+
 function _plannedRR(t){
   const e = Number(t.entry_price), tp = Number(t.tp_price), sl = Number(t.sl_price);
   if(![e, tp, sl].every(Number.isFinite)) return null;
@@ -6453,6 +6497,14 @@ function renderTriggerPanel(){
   /* Iisang hatol kada setup, kahit marami ang nakamarka — tingnan ang
      _paperOutcomeKind. Kung wala ito, ang setup na markado ng Hit TP AT Hit SL
      ay mabibilang sa dalawang panig at magdadagdag ng R sa magkabila. */
+  /* Ang pinakamadalas na URI ng dahilan — hindi ang pinakamadalas na dahilan,
+     dahil ang uri ang nagsasabi kung ano ang dapat gawin. Nasa ibaba ito noon;
+     nauuna na ngayon dahil kailangan ito ng hatol sa resulta para masabi kung
+     ANO ang aayusin. Ang bawat grupo ang may hawak ng sariling pangungusap,
+     kaya ang pagdagdag ng grupo ay hindi nangangailangan ng sanga rito. */
+  const domGroup = _paperDomGroup(byKind);
+  const domKind = domGroup.kind;
+
   const kindOf = t => _paperOutcomeKind(t.paper_outcome);
   const missed = rows.filter(t => kindOf(t) === 'missed');
   /* Ang whipsaw ay kasama sa "iniligtas ka" para sa R — nastop ka sana at 1R
@@ -6467,28 +6519,24 @@ function renderTriggerPanel(){
   const checked = missed.concat(saved);
   const unchecked = rows.filter(t => kindOf(t) === 'unknown').length;
 
-  // Ang halaga, sa R — hindi sa pera. Walang quantity ang paper trade, kaya
-  // walang halagang dolyar na hindi ko iimbentuhin. Tingnan ang
-  // _paperOutcomeR para sa dahilan kung bakit hindi RR ang naiwasang SL.
-  const missedRR = missed.reduce((a, t) => a + _paperOutcomeR(t), 0);
-  const savedRR  = saved.reduce((a, t) => a + _paperOutcomeR(t), 0);
+  /* BILANG, HINDI HALAGA.
+
+     Nasa R ang panel na ito noon — "8.8R left on the table". Tama ang bilang
+     (tatlong setup na tig-2.9R na plano) pero halaga pa rin iyon, at ang
+     tanong dito ay hindi kung magkano kundi kung ILAN: ilan sa mga pinalampas
+     mo ang sana nanalo. Iyon lang ang kailangan para malaman kung ang
+     pagpalampas ay tumutulong o sumisira, at nababasa ito sa isang tingin. */
+  const won  = missed.length;
+  const lost = saved.length;
 
   const outcomeHtml = checked.length ? (() => {
-    const net = missedRR - savedRR;
-    const tone = net > 0.5 ? 'bad' : net < -0.5 ? 'good' : 'wait';
-    const line = net > 0.5
-      ? `The setups you passed on were mostly right. Hesitating cost you about `
-        + `${fmtNum(net, 1)}R across ${checked.length} checked setup${checked.length === 1 ? '' : 's'}.`
-      : net < -0.5
-      ? `Passing saved you. The ones you let go would have lost about `
-        + `${fmtNum(Math.abs(net), 1)}R — your caution is earning its keep.`
-      : `It roughly evens out — ${missed.length} would have won, ${saved.length} would have lost. `
-        + `Passing is neither helping nor hurting you yet.`;
+    const { line, fix, tone } = _paperPassVerdict(won, lost, domGroup);
     return `
-      <div class="dx-s-verdict ${tone}" style="margin-top:14px;">
+      <div class="dx-s-verdict ${tone}">
         <span class="dx-dot ${tone}"></span>
         <b>${escapeHtml(line)}</b>
-        <span>${checked.length} of ${rows.length} decided${
+        ${fix ? `<span class="dx-s-fix">${escapeHtml(fix)}</span>` : ''}
+        <span>${checked.length} of ${rows.length} checked${
           entryOff ? ` · ${entryOff} ran without you` : ''}${
           flat ? ` · ${flat} would have scratched` : ''}${
           neverFilled ? ` · ${neverFilled} never filled` : ''}${
@@ -6496,11 +6544,11 @@ function renderTriggerPanel(){
       </div>
       <div class="dx-s-cards">
         <div class="dx-s-card bad"><span class="dx-s-k">Would have won</span>
-          <span class="dx-s-v">${missed.length}</span>
-          <span class="dx-s-m">${fmtNum(missedRR, 1)}R left on the table</span></div>
+          <span class="dx-s-v">${won}</span>
+          <span class="dx-s-m">${won === 1 ? 'setup you let go' : 'setups you let go'}</span></div>
         <div class="dx-s-card good"><span class="dx-s-k">Would have lost</span>
-          <span class="dx-s-v">${saved.length}</span>
-          <span class="dx-s-m">${fmtNum(savedRR, 1)}R you did not give away</span></div>
+          <span class="dx-s-v">${lost}</span>
+          <span class="dx-s-m">${lost === 1 ? 'loss you avoided' : 'losses you avoided'}</span></div>
       </div>
       ${entryOff ? `<div class="dx-s-note">
         ${entryOff} setup${entryOff === 1 ? '' : 's'} ran to target without ever reaching your
@@ -6522,34 +6570,33 @@ function renderTriggerPanel(){
       <span class="dx-s-m">${pct(byKind[k])}% · ${escapeHtml(KIND[k].s)}</span>
     </div>`).join('');
 
-  /* Ang headline ay hindi ang pinakamadalas na dahilan kundi ang pinakamadalas
-     na URI, dahil iyon ang nagsasabi kung ano ang dapat mong gawin.
+  /* ISANG HATOL, HINDI DALAWA.
 
-     Ang bawat grupo ang may hawak ng sariling pangungusap (lead), kaya ang
-     pagdagdag ng grupo ay hindi nangangailangan ng bagong sanga rito. Ang
-     lumang bersyon ay isang tatlong-palapag na ternary na may nakasulat na
-     pangalan sa loob — at ang ikaapat na grupo ay tahimik na babagsak sa
-     huling sanga at sasabihing "life" ito. */
-  const domKind = NO_TRADE_REASON_GROUPS
-    .map(g => g.kind)
-    .reduce((best, k) => byKind[k] > byKind[best] ? k : best,
-            NO_TRADE_REASON_GROUPS[0].kind);
-  const domGroup = NO_TRADE_REASON_GROUPS.find(g => g.kind === domKind);
+     Dalawang verdict ang panel na ito noon: isa mula sa uri ng dahilan at isa
+     mula sa resulta. Naglalaban sila. Sabi ng una "tungkol sa setup ang mga
+     pagpalampas mo, malamang tama ang marami sa kanila"; sabi ng ikalawa
+     "tama sana ang mga setup na iyon". Hindi pwedeng pareho silang totoo, at
+     kailangan pang basahin ang dalawa bago mo malaman kung alin.
+
+     Ang hatol sa RESULTA ang nangunguna ngayon, dahil iyon ang sagot sa
+     "tumutulong ba sa akin ang pagpalampas" — at nasa loob na nito ang uri ng
+     dahilan bilang ikalawang linya. Ang lead ng grupo ay lumalabas na lamang
+     kapag wala pang nachek na resulta, kung saan wala pang ibang masasabi. */
   const lead = (domGroup.lead
       ? domGroup.lead(byKind[domKind], answered.length)
       : `Most of your passes were "${domGroup.name}" — ${byKind[domKind]} of ${answered.length}.`);
-  // Ang tono ay sinusundan ang grupo mismo, hindi ang paghahambing ng dalawa.
   const leadTone = domGroup.cls === 'bad' ? 'bad' : domGroup.cls === 'good' ? 'good' : 'wait';
 
   body.innerHTML = `
     <div class="dx-summary">
-      <div class="dx-s-verdict ${leadTone}">
+      ${outcomeHtml}
+      ${checked.length ? '' : `
+      <div class="dx-s-verdict ${leadTone}" style="margin-top:14px;">
         <span class="dx-dot ${leadTone}"></span>
         <b>${escapeHtml(lead)}</b>
         <span>${answered.length} of ${rows.length} paper trades answered</span>
-      </div>
-      <div class="dx-s-cards">${cards}</div>
-      ${outcomeHtml}
+      </div>`}
+      <div class="dx-s-cards" style="margin-top:10px;">${cards}</div>
     </div>
     <table class="dx-tbl" style="margin-top:16px;">
       <thead><tr><th>Why you let it go</th><th class="n">Times</th><th class="n">Share</th></tr></thead>
@@ -6816,6 +6863,12 @@ const NO_TRADE_REASON_GROUPS = [
   { name: 'What you felt', sub: 'the ones to train out', kind: 'felt', cls: 'bad',
     lead: (n, of) => `Most of the trades you let go, you let go because of how you felt — `
       + `${n} of ${of}. That is the part you can train.`,
+    /* Ang isang linyang nagsasabi kung ANO ANG AAYUSIN, at nakadepende ito sa
+       kung nagkamali ka ba. Naka-hardcode noon ang salitang "Hesitating" sa
+       hatol, kaya ang isang taong nagsabing "extended na ang galaw" ay
+       sinasabihang duwag siya — mali iyon, at ibang lunas ang tinuturo nito. */
+    whenWrong: 'That was nerves, and nerves is the part you can train.',
+    whenRight: 'Your nerves were right this time — but a feeling is not a filter.',
     items: [
       'Scared after a losing streak',
       'Hesitated — pulled back at the entry',
@@ -6825,6 +6878,8 @@ const NO_TRADE_REASON_GROUPS = [
   { name: 'What the setup did', sub: 'sometimes a correct pass', kind: 'setup', cls: 'good',
     lead: (n, of) => `Most of your passes were about the setup, not about you — `
       + `${n} of ${of}. A lot of those were probably correct.`,
+    whenWrong: 'You were not scared — you called them unclean. Your filter is too strict.',
+    whenRight: 'You read the setups right and stayed out. The filter is working.',
     items: [
       'Structure was not clean enough',
       'Neckline did not line up',
@@ -6852,6 +6907,8 @@ const NO_TRADE_REASON_GROUPS = [
     kind: 'read', cls: 'wait',
     lead: (n, of) => `Most of your passes were the timeframe, not the nerve — `
       + `${n} of ${of}. The read was fine; the plan was built on the wrong chart.`,
+    whenWrong: 'The read was fine — the plan was on the wrong timeframe. Fix the chart, not the courage.',
+    whenRight: 'Wrong timeframe, right call to skip it.',
     items: [
       'Needed a higher timeframe — the move was already long',
       'Needed a lower timeframe — the move was too small',
@@ -6862,6 +6919,8 @@ const NO_TRADE_REASON_GROUPS = [
   { name: 'What life did', sub: 'nothing to do with trading', kind: 'life', cls: 'wait',
     lead: (n, of) => `Most of what you missed was life, not trading — ${n} of ${of}. `
       + `That is a scheduling problem, not a discipline one.`,
+    whenWrong: 'You were not there. That is a scheduling fix, not a discipline one.',
+    whenRight: 'You were away — nothing to fix in your trading.',
     items: [
       'Away from home — could not place the order',
       'Taking a break by choice',
@@ -12892,8 +12951,11 @@ function renderJournalFilterChips(){
 
   const clearBtn = document.getElementById('journalClearBtn');
   if(clearBtn){
+    // Ang saklaw ng petsa ay filter din — kung hindi ito bibilangin dito, ang
+    // "Clear filters" ay mananatiling nakatago habang may nakatagong saklaw.
     const period = (document.getElementById('journalYearFilter')?.value ?? 'all') !== 'all' ||
-                   (document.getElementById('journalMonthFilter')?.value ?? 'all') !== 'all';
+                   (document.getElementById('journalMonthFilter')?.value ?? 'all') !== 'all' ||
+                   !!_journalDateRange();
     const anything = JOURNAL_ACTIVE_FILTERS.length || JOURNAL_BLANK_FILTER || period ||
       JOURNAL_INCOMPLETE_ONLY || JOURNAL_INVALID_ONLY || (document.getElementById('journalSearch')?.value || '').trim();
     clearBtn.style.display = anything ? '' : 'none';
@@ -12943,6 +13005,14 @@ function _renderJournalMonthOptions(){
 }
 
 function onJournalYearChange(){
+  /* Ang kabilang panig ng parehong panuntunan: ang pagpili ng taon ay
+     naglilinis ng custom na saklaw. Kung hindi, ang saklaw ay mananaig nang
+     tahimik at magmumukhang sira ang bagong napiling taon. */
+  const f = document.getElementById('journalDateFrom');
+  const t = document.getElementById('journalDateTo');
+  if(f) f.value = '';
+  if(t) t.value = '';
+  _syncJournalRangeUI();
   _renderJournalMonthOptions();
   renderJournalTable();
 }
@@ -12984,6 +13054,13 @@ function clearJournalFilters(){
   const mo = document.getElementById('journalMonthFilter');
   if(y) y.value = 'all';
   if(mo){ _renderJournalMonthOptions(); mo.value = 'all'; }
+  // "Clear filters" ay dapat maglinis ng lahat, kasama ang saklaw ng petsa —
+  // ang naiiwang isa ay lalabas na sirang talahanayan pagkatapos maglinis.
+  const df = document.getElementById('journalDateFrom');
+  const dt = document.getElementById('journalDateTo');
+  if(df) df.value = '';
+  if(dt) dt.value = '';
+  _syncJournalRangeUI();
   setJournalBlankFilter(null);
   JOURNAL_INCOMPLETE_ONLY = false;
   JOURNAL_INVALID_ONLY = false;
@@ -13158,7 +13235,19 @@ function _journalColoredCell(key, row, plainVal){
     const rows = _confluenceTooltipRows(row) || [];
     const payload = rows.map(r => `${r.state}|${r.label}|${r.answer}`).join('\n');
     const head = `${Number(d.done.toFixed(1))} of ${d.total} · bar ${d.bar}%`;
-    return `<span class="cfl-score-box ${cls}" data-cfl-head="${escapeHtml(head)}" data-cfl="${escapeHtml(payload)}" onmouseenter="showConfluenceTooltip(event)" onmouseleave="hideConfluenceTooltip()"><span class="cfl-score-bar"><span class="cfl-score-bar-fill" style="width:${d.pct}%;"></span></span><span class="cfl-score-num">${d.pct}%</span></span>`;
+    /* Isang maliit na gauge, hindi isang guhit. Ang progress bar ay
+       nangunguna sa cell at ang bilang ang sumusunod — at sa dalawang iskor na
+       88 at 89, halos magkapareho ang haba ng guhit, kaya ang pinakamaliit na
+       bahagi ng cell ang tanging nagsasabi ng pagkakaiba.
+
+       Ang singsing ay may buong hugis na nakikita sa gilid ng mata ("halos
+       puno") habang ang bilang ang nagdadala ng eksaktong sagot. Mas makitid
+       din ito, kaya may nababawi sa lapad ng talahanayan.
+
+       Ang butas ay gawa sa mask at hindi sa isang disc na kasing-kulay ng
+       hilera — nagbabago ang likod kapag naka-hover, at ang disc ay mag-iiwan
+       ng butas na maling kulay doon. */
+    return `<span class="cfl-score-box ${cls}" data-cfl-head="${escapeHtml(head)}" data-cfl="${escapeHtml(payload)}" onmouseenter="showConfluenceTooltip(event)" onmouseleave="hideConfluenceTooltip()"><span class="cfl-ring" style="--cfl-deg:${(d.pct * 3.6).toFixed(1)}deg;"></span><span class="cfl-score-num">${d.pct}%</span></span>`;
   }
 
   const raw = row[key];
@@ -13205,6 +13294,81 @@ function _journalColoredCell(key, row, plainVal){
 // counts in a chip's dropdown mean "how many you'd get if you picked this" —
 // counting with the chip still applied would show the value you already have
 // and zero for everything else.
+/* ---------------- Custom na saklaw ng petsa ----------------
+
+   Ang Year at Month ay mabuti para sa "ipakita mo ang Agosto". Hindi sila
+   sumasagot sa "mula noong sumali ako sa 10K account hanggang ngayon", na ang
+   totoong hugis ng karamihan sa mga tanong tungkol sa panahon. */
+
+/* Ang petsa ng isang hilera para sa saklaw. Ang isang trade na BUKAS PA ay
+   walang close date — ang tanging petsa nito ay kung kailan ka pumasok, at
+   iyon ang petsang hinahanap mo kapag sinabi mong "Setyembre".
+
+   Naiiba ito sa Year/Month, na ang hilerang walang close date ay tuluyang
+   itinatapon. Sinasadya: hindi ko binabago ang gawi ng lumang filter, pero
+   hindi rin ako gagawa ng bago na may parehong butas. */
+function _journalRowDate(r){
+  const raw = r.close_date || r.open_date;
+  if(!raw) return null;
+  const d = new Date(raw);
+  return isNaN(d) ? null : d;
+}
+
+/* null kapag walang laman ang dalawang kahon — doon bumabalik ang Year/Month.
+   Ang isang panig lamang ay isang tunay na saklaw: ang "from" na walang "to"
+   ay "mula noon hanggang ngayon". */
+function _journalDateRange(){
+  const f = document.getElementById('journalDateFrom')?.value || '';
+  const t = document.getElementById('journalDateTo')?.value || '';
+  if(!f && !t) return null;
+
+  // Lokal na hatinggabi, hindi UTC: ang `new Date('2026-09-02')` ay UTC, na
+  // isang araw na mali para sa isang taong nasa UTC+4.
+  const at = (s, endOfDay) => {
+    const [y, m, d] = String(s).split('-').map(Number);
+    if(![y, m, d].every(Number.isFinite)) return null;   // hindi mabasa: walang hangganan
+    const out = endOfDay ? new Date(y, m - 1, d, 23, 59, 59, 999) : new Date(y, m - 1, d);
+    return isNaN(out) ? null : out;
+  };
+  let from = f ? at(f, false) : null;
+  let to   = t ? at(t, true)  : null;
+  // Dalawang hindi mabasa ay parang walang saklaw — hindi isang filter na
+  // tahimik na nagpapakita ng lahat habang mukhang may nakatakda.
+  if(!from && !to) return null;
+  // Baligtad ang pagkakalagay — mas mabuting ayusin kaysa magpakita ng wala.
+  if(from && to && from > to){ const x = from; from = new Date(to); from.setHours(0,0,0,0);
+    to = new Date(x); to.setHours(23,59,59,999); }
+  return { from, to };
+}
+
+function _syncJournalRangeUI(){
+  const btn = document.getElementById('journalRangeClear');
+  if(btn) btn.style.display = _journalDateRange() ? '' : 'none';
+}
+
+/* Ang saklaw at ang Year/Month ay iisang axis, kaya hindi sila magkasabay.
+   Ang paghawak sa isa ay naglilinis ng isa — mas malinaw kaysa sa dalawang
+   filter na tahimik na nagbabawas sa isa't isa. */
+function onJournalRangeChange(){
+  if(_journalDateRange()){
+    const y = document.getElementById('journalYearFilter');
+    const m = document.getElementById('journalMonthFilter');
+    if(y) y.value = 'all';
+    if(m){ if(typeof _renderJournalMonthOptions === 'function') _renderJournalMonthOptions(); m.value = 'all'; }
+  }
+  _syncJournalRangeUI();
+  renderJournalTable();
+}
+
+function clearJournalRange(){
+  const f = document.getElementById('journalDateFrom');
+  const t = document.getElementById('journalDateTo');
+  if(f) f.value = '';
+  if(t) t.value = '';
+  _syncJournalRangeUI();
+  renderJournalTable();
+}
+
 function getFilteredJournalRows(exceptKey){
   const query = (document.getElementById('journalSearch')?.value || '').trim().toLowerCase();
 
@@ -13217,16 +13381,34 @@ function getFilteredJournalRows(exceptKey){
     });
   }
 
-  const jYear = document.getElementById('journalYearFilter')?.value ?? 'all';
-  const jMonth = document.getElementById('journalMonthFilter')?.value ?? 'all';
-  if(jYear !== 'all' || jMonth !== 'all'){
+  /* ANG PANAHON — isa lamang sa dalawang paraan, hindi pareho.
+
+     Ang Year/Month at ang custom na saklaw ay iisang axis. Kung pareho silang
+     gagana, ang "2026 · August" na may saklaw na Marso ay magbibigay ng
+     walang laman na listahan nang walang paliwanag. Ang saklaw ang nananaig
+     kapag may laman ito, at nililinis ng UI ang isa kapag hinawakan ang isa —
+     tingnan ang onJournalRangeChange. */
+  const range = _journalDateRange();
+  if(range){
     rows = rows.filter(r => {
-      if(!r.close_date) return false;   // no close date means no month to be in
-      const d = new Date(r.close_date);
-      if(jYear !== 'all' && d.getFullYear() !== Number(jYear)) return false;
-      if(jMonth !== 'all' && d.getMonth() !== Number(jMonth)) return false;
+      const d = _journalRowDate(r);
+      if(!d) return false;              // walang petsa, walang saklaw na kinabibilangan
+      if(range.from && d < range.from) return false;
+      if(range.to   && d > range.to)   return false;
       return true;
     });
+  }else{
+    const jYear = document.getElementById('journalYearFilter')?.value ?? 'all';
+    const jMonth = document.getElementById('journalMonthFilter')?.value ?? 'all';
+    if(jYear !== 'all' || jMonth !== 'all'){
+      rows = rows.filter(r => {
+        if(!r.close_date) return false;   // no close date means no month to be in
+        const d = new Date(r.close_date);
+        if(jYear !== 'all' && d.getFullYear() !== Number(jYear)) return false;
+        if(jMonth !== 'all' && d.getMonth() !== Number(jMonth)) return false;
+        return true;
+      });
+    }
   }
 
   JOURNAL_ACTIVE_FILTERS.forEach(f => {
@@ -23493,13 +23675,18 @@ function _reportPaperStats(start, end){
   });
   const answered = rows.filter(t => String(t.no_trade_reason || '').trim());
 
-  const byKind = { felt: 0, setup: 0, life: 0 };
+  /* Galing sa NO_TRADE_REASON_GROUPS, hindi nakasulat dito. Tatlong pangalan
+     ang nakasulat noon — felt, setup, life — kaya ang ikaapat na grupo ("what
+     you read wrong") ay tahimik na hindi nabibilang sa Reports gayong nabibilang
+     naman sa Dashboard. Dalawang panel, dalawang sagot, iisang datos. */
+  const byKind = {};
+  NO_TRADE_REASON_GROUPS.forEach(g => { byKind[g.kind] = 0; });
   const byReason = new Map();
   answered.forEach(t => {
     const r = t.no_trade_reason.trim();
     byReason.set(r, (byReason.get(r) || 0) + 1);
     const k = NO_TRADE_KIND[r.toLowerCase()];
-    if(k) byKind[k]++;
+    if(k && k in byKind) byKind[k]++;
   });
   const topReason = [...byReason.entries()].sort((a, b) => b[1] - a[1])[0] || null;
 
@@ -23520,10 +23707,15 @@ function _reportPaperStats(start, end){
   const missedRR = missed.reduce((a, t) => a + _paperOutcomeR(t), 0);
   const savedRR  = saved.reduce((a, t) => a + _paperOutcomeR(t), 0);
 
+  /* Ang hatol ay kinukuwenta rito at hindi sa dalawang lugar na gumagamit
+     nito, para iisa ang sinasabi ng Reports, ng PDF at ng Dashboard. */
+  const verdict = _paperPassVerdict(missed.length, saved.length, _paperDomGroup(byKind));
+
   return { total: rows.length, answered: answered.length, byKind, topReason,
            missed: missed.length, saved: saved.length,
            flat, entryOff, neverFilled, whipsaw, checked,
-           missedRR, savedRR, netRR: missedRR - savedRR };
+           missedRR, savedRR, netRR: missedRR - savedRR,
+           verdict };
 }
 
 function _reportFinanceStats(start, end){
@@ -23625,16 +23817,17 @@ function renderReportPreview(){
           <div class="kpi"><div class="label">Passed</div><div class="value">${paper.total}</div></div>
           <div class="kpi"><div class="label">Would have won</div><div class="value neg">${paper.missed}</div></div>
           <div class="kpi"><div class="label">Would have lost</div><div class="value pos">${paper.saved}</div></div>
-          <div class="kpi"><div class="label">Net</div><div class="value ${paper.netRR > 0 ? 'neg' : 'pos'}">${
-            paper.checked ? (paper.netRR > 0 ? '−' : '+') + fmtNum(Math.abs(paper.netRR), 1) + 'R' : '—'}</div></div>
+          <!-- Ang "Net" ay isang R na pagbawas noon, na isang halaga. Ang
+               nasuri ang tinatanong ngayon: ilan sa mga pinalampas mo ang may
+               sagot na, dahil ang tatlong bilang sa itaas ay tungkol lamang
+               sa mga iyon. -->
+          <div class="kpi"><div class="label">Checked</div><div class="value">${
+            paper.checked}<span style="font-size:.62em;color:var(--muted);"> / ${paper.total}</span></div></div>
         </div>
         <div style="margin-top:14px;font-size:12.5px;color:var(--muted);">
           ${paper.checked
-            ? (paper.netRR > 0.5
-                ? `Hesitating cost about <span class="neg" style="font-weight:600;">${fmtNum(paper.netRR, 1)}R</span> across ${paper.checked} checked setup${paper.checked === 1 ? '' : 's'}.`
-                : paper.netRR < -0.5
-                ? `Passing saved about <span class="pos" style="font-weight:600;">${fmtNum(Math.abs(paper.netRR), 1)}R</span> — the ones you let go would have lost.`
-                : `Roughly even — ${paper.missed} would have won, ${paper.saved} would have lost.`)
+            ? `<span style="color:var(--ink);font-weight:600;">${escapeHtml(paper.verdict.line)}</span>`
+              + (paper.verdict.fix ? ` ${escapeHtml(paper.verdict.fix)}` : '')
             : `None checked against the chart yet.`}
           ${paper.whipsaw ? `&nbsp;·&nbsp; ${paper.whipsaw} stopped out then worked` : ''}
           ${paper.entryOff ? `&nbsp;·&nbsp; ${paper.entryOff} ran without you` : ''}
@@ -23790,17 +23983,12 @@ function downloadReportPDF(){
       { label: 'Passed', value: String(paper.total) },
       { label: 'Would have won', value: String(paper.missed), color: paper.missed ? LOSS : INK },
       { label: 'Would have lost', value: String(paper.saved), color: paper.saved ? WIN : INK },
-      { label: 'Net', value: paper.checked
-          ? (paper.netRR > 0 ? '-' : '+') + fmtNum(Math.abs(paper.netRR), 1) + 'R' : '—',
-        color: paper.checked ? (paper.netRR > 0 ? LOSS : WIN) : INK }
+      // Ang bilang ng nasuri, hindi ang R na pagbawas — parehong-pareho ng
+      // Reports at ng Dashboard, mula sa iisang _paperPassVerdict.
+      { label: 'Checked', value: paper.checked + ' / ' + paper.total }
     ]);
-    noteLine(paper.checked
-      ? (paper.netRR > 0.5
-          ? `Hesitating cost about ${fmtNum(paper.netRR, 1)}R across ${paper.checked} checked setup${paper.checked === 1 ? '' : 's'}.`
-          : paper.netRR < -0.5
-          ? `Passing saved about ${fmtNum(Math.abs(paper.netRR), 1)}R — the ones you let go would have lost.`
-          : `Roughly even — ${paper.missed} would have won, ${paper.saved} would have lost.`)
-      : 'None checked against the chart yet.');
+    noteLine(paper.checked ? paper.verdict.line : 'None checked against the chart yet.');
+    if(paper.checked && paper.verdict.fix) noteLine(paper.verdict.fix);
     if(paper.topReason) noteLine(`Most common reason: ${paper.topReason[0]} (${paper.topReason[1]}x)`);
   }else{
     emptyLine('No setups logged as passed on in this period.');
