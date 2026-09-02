@@ -6341,18 +6341,23 @@ function renderTriggerPanel(){
      setup na hindi umabot sa entry mo ay hindi patunay na tama ka o mali ka.
      Ang pagbilang doon bilang iniwasang talo ay magbibigay sa iyo ng dahilan
      para ipagdiwang ang isang bagay na hindi nangyari. */
-  const checked = rows.filter(t =>
-    ['missed','saved'].includes(PAPER_OUTCOME_KIND[String(t.paper_outcome||'').toLowerCase()]));
-  const missed = checked.filter(t => String(t.paper_outcome).toLowerCase() === 'hit tp');
-  const saved  = checked.filter(t => String(t.paper_outcome).toLowerCase() === 'hit sl');
-  const neverFilled = rows.filter(t => String(t.paper_outcome||'').toLowerCase() === 'never filled').length;
-  const unchecked = rows.length - checked.length - neverFilled;
+  /* Iisang hatol kada setup, kahit marami ang nakamarka — tingnan ang
+     _paperOutcomeKind. Kung wala ito, ang setup na markado ng Hit TP AT Hit SL
+     ay mabibilang sa dalawang panig at magdadagdag ng R sa magkabila. */
+  const kindOf = t => _paperOutcomeKind(t.paper_outcome);
+  const missed = rows.filter(t => kindOf(t) === 'missed');
+  const saved  = rows.filter(t => kindOf(t) === 'saved');
+  const flat   = rows.filter(t => kindOf(t) === 'flat').length;
+  const entryOff = rows.filter(t => kindOf(t) === 'entry').length;
+  const neverFilled = rows.filter(t => kindOf(t) === 'moot').length;
+  const checked = missed.concat(saved);
+  const unchecked = rows.filter(t => kindOf(t) === 'unknown').length;
 
-  // Ang halaga, sa RR — hindi sa pera. Walang quantity ang paper trade, kaya
-  // walang halagang dolyar na hindi ko iimbentuhin.
-  const rrOf = t => _plannedRR(t);
-  const missedRR = missed.map(rrOf).filter(x => x !== null).reduce((a, b) => a + b, 0);
-  const savedRR  = saved.map(rrOf).filter(x => x !== null).reduce((a, b) => a + b, 0);
+  // Ang halaga, sa R — hindi sa pera. Walang quantity ang paper trade, kaya
+  // walang halagang dolyar na hindi ko iimbentuhin. Tingnan ang
+  // _paperOutcomeR para sa dahilan kung bakit hindi RR ang naiwasang SL.
+  const missedRR = missed.reduce((a, t) => a + _paperOutcomeR(t), 0);
+  const savedRR  = saved.reduce((a, t) => a + _paperOutcomeR(t), 0);
 
   const outcomeHtml = checked.length ? (() => {
     const net = missedRR - savedRR;
@@ -6369,7 +6374,9 @@ function renderTriggerPanel(){
       <div class="dx-s-verdict ${tone}" style="margin-top:14px;">
         <span class="dx-dot ${tone}"></span>
         <b>${escapeHtml(line)}</b>
-        <span>${checked.length} of ${rows.length} checked${
+        <span>${checked.length} of ${rows.length} decided${
+          entryOff ? ` · ${entryOff} ran without you` : ''}${
+          flat ? ` · ${flat} would have scratched` : ''}${
           neverFilled ? ` · ${neverFilled} never filled` : ''}${
           unchecked ? ` · ${unchecked} still unchecked` : ''}</span>
       </div>
@@ -6380,7 +6387,11 @@ function renderTriggerPanel(){
         <div class="dx-s-card good"><span class="dx-s-k">Would have lost</span>
           <span class="dx-s-v">${saved.length}</span>
           <span class="dx-s-m">${fmtNum(savedRR, 1)}R you did not give away</span></div>
-      </div>`;
+      </div>
+      ${entryOff ? `<div class="dx-s-note">
+        ${entryOff} setup${entryOff === 1 ? '' : 's'} ran to target without ever reaching your
+        entry. The read was right; the entry was too far away — that is a different
+        problem from hesitating, and it is not counted on either side above.</div>` : ''}`;
   })() : `<div class="empty-state" style="margin-top:14px;">
       None of these have been checked against the chart yet. Open one and set
       <b>What would have happened</b> — that is what turns this from a list of
@@ -6605,11 +6616,16 @@ function renderPaperTable(){
         : `<span class="paper-why none">not answered yet</span>` },
     /* Ang kalahating hindi pa nasasagot noon. Ang dahilan ay nagsasabi kung
        bakit ka hindi pumasok; ito ang nagsasabi kung tama ka ba. */
+    /* Maramihan na ito, kaya isang pill kada sagot — pero IISANG kulay, ang
+       sa nangingibabaw na hatol. Ang pagkulay sa bawat isa nang hiwalay ay
+       magpapakita ng berde at pula sa iisang hilera para sa isang setup na may
+       isang kahihinatnan lang. */
     { k: 'What happened', get: t => {
-        const kind = PAPER_OUTCOME_KIND[String(t.paper_outcome || '').toLowerCase()] || 'unknown';
-        return t.paper_outcome
-          ? `<span class="paper-out ${kind}">${escapeHtml(t.paper_outcome)}</span>`
-          : `<span class="paper-out unknown">not checked</span>`; } },
+        const list = _paperList(t.paper_outcome);
+        if(!list.length) return `<span class="paper-out unknown">not checked</span>`;
+        const kind = _paperOutcomeKind(t.paper_outcome);
+        return list.map(o =>
+          `<span class="paper-out ${kind}">${escapeHtml(o)}</span>`).join(' '); } },
   ];
   head.innerHTML = cols.map(c => `<th${c.wide ? ' class="paper-why-col"' : ''}>${escapeHtml(c.k)}</th>`).join('');
   // openDrawer('view', positionId) — ang parehong drawer ng tunay na journal,
@@ -6675,8 +6691,76 @@ NO_TRADE_REASON_GROUPS.forEach((g, i) =>
    nang hindi ito sinasagot: mas mainam ang tapat na "hindi ko pa alam" kaysa
    sa isang blangkong ituturing ng bilang bilang zero. */
 const PAPER_OUTCOMES = [
-  'Hit TP', 'Hit SL', 'Never filled'
+  'Hit TP', 'Hit SL', "Would have BE'd out", 'Would have cut loss', 'Never filled'
 ];
+
+/* Comma-joined, gaya ng unfollowed_rules at ng chart_pattern. Ang lumang
+   isahang sagot ay isang listahan ng isa, kaya walang nasisira. */
+/* Binubura ang lahat ng nakatsek sa isang optionlist. Ang pill ay sinusundan
+   ng klase, kaya kailangang alisin din ito — kung hindi, mananatiling
+   naka-highlight ang isang bagay na hindi na napili. */
+function _clearOptionList(key){
+  document.querySelectorAll(`#drawerBody [data-optionlist="${key}"]`).forEach(el => {
+    el.checked = false;
+    el.closest('.rl-opt')?.classList.remove('on');
+  });
+}
+
+function _paperList(v){
+  if(Array.isArray(v)) return v.map(s => String(s).trim()).filter(Boolean);
+  return String(v || '').split(',').map(s => s.trim()).filter(Boolean);
+}
+
+/* ANG NANGINGIBABAW NA HATOL KAPAG MARAMI ANG NAKAMARKA.
+
+   Maramihan na ang outcome, at ang ilang kombinasyon ay may kahulugang hindi
+   kayang sabihin ng alinman sa kanila nang mag-isa:
+
+     Hit SL + Hit TP  — nastop ka muna bago ito gumana. Hindi mo nakuha ang TP;
+                        ang SL ang nangyari sa iyo, kaya iyon ang hatol.
+     Never filled + Hit TP — tumakbo ito sa target nang hindi umaabot sa entry
+                        mo. Tama ang basa, masyadong malayo ang entry — at
+                        HINDI mo ito sana nakuha, kaya hindi ito nawalang R.
+
+   Ang pagkakasunod ay mahalaga: kung wala ito, ang isang setup na markado ng
+   Hit TP at Hit SL ay mabibilang sa DALAWANG panig at magdadagdag ng R sa
+   magkabila — mali ang net, at hindi mo malalaman kung bakit. */
+function _paperOutcomeKind(v){
+  const list = _paperList(v).map(s => s.toLowerCase());
+  if(!list.length) return 'unknown';
+  if(list.includes('hit sl')) return 'saved';
+  if(list.includes('hit tp')) return list.includes('never filled') ? 'entry' : 'missed';
+  if(list.includes('would have cut loss')) return 'saved';
+  if(list.includes("would have be'd out")) return 'flat';
+  if(list.includes('never filled')) return 'moot';
+  return 'unknown';
+}
+
+/* ILANG R ANG NAWALA O NAIWASAN.
+
+   NAHANAP KONG MALI ANG UNANG BERSYON NITO at ito ay hindi maliit: ginamit ko
+   ang _plannedRR sa MAGKABILANG panig. Ang planned RR ay ang GANTIMPALA
+   (reward ÷ risk), at tama iyon para sa napalampas na TP — iyon nga ang hindi
+   mo nakuha. Pero ang SL na naiwasan mo ay HINDI RR; ito ay IISANG R, dahil
+   iyon ang kahulugan ng risk. Ang isang 3R na setup na tumama sa SL ay
+   nagligtas sa iyo ng 1R at hindi ng 3R.
+
+   Ang naunang bersyon ay nagpalaki sa panig ng "iniligtas ka" nang eksaktong
+   RR na beses — at ang mas malaki ang RR mo, mas malaki ang kasinungalingan. */
+function _paperOutcomeR(t){
+  const kind = _paperOutcomeKind(t.paper_outcome);
+  if(kind === 'missed'){
+    const r = _plannedRR(t);
+    return r === null ? 0 : r;          // ang gantimpalang hindi mo nakuha
+  }
+  if(kind === 'saved'){
+    // Ang cutloss ay isang bahagi lamang ng 1R at hindi natin alam kung gaano
+    // kalaki — kaya hindi ito nag-aambag, sa halip na magbigay ako ng numerong
+    // hindi ko alam. Nabibilang pa rin ito sa tally.
+    return _paperList(t.paper_outcome).some(x => x.toLowerCase() === 'hit sl') ? 1 : 0;
+  }
+  return 0;                              // flat, moot, entry, unknown
+}
 /* Nakagrupo rin ito, sa parehong dahilan ng mga dahilan: ang HATOL ang
    mahalaga, hindi ang pangalan. Sa isang patag na listahan ay tatlong
    magkakatulad na pagpipilian ang "Hit TP", "Hit SL" at "Never filled";
@@ -6690,9 +6774,13 @@ const PAPER_OUTCOME_GROUPS = [
   { name: 'It went your way', sub: 'passing on it cost you', kind: 'bad',
     items: ['Hit TP'] },
   { name: 'It went against you', sub: 'passing on it saved you', kind: 'good',
-    items: ['Hit SL'] },
-  { name: 'Nothing happened', sub: 'never reached your entry — proves nothing', kind: 'wait',
-    items: ['Never filled'] },
+    items: ['Hit SL', 'Would have cut loss'] },
+  /* Ang scratch at ang hindi na-fill ay magkasama dito dahil pareho silang
+     walang natutunan tungkol sa pagpapasya mo — pero magkaiba sila at
+     sinasabi iyon ng bawat pangalan: ang isa ay pumasok at walang nakuha, ang
+     isa ay hindi man lang nakapasok. */
+  { name: 'It went nowhere', sub: 'no gain, no loss either way', kind: 'wait',
+    items: ["Would have BE'd out", 'Never filled'] },
 ];
 // Alin sa kanila ang nagsasabing may nawala sa iyo, at alin ang nagligtas.
 const PAPER_OUTCOME_KIND = {
@@ -14856,11 +14944,25 @@ function _renderDrawerFieldRow(f, mode, row){
      Ang radio ang tamang kontrol dito at hindi ang checkbox: isang dahilan
      lang, at ang browser mismo ang nagpapatupad noon. */
   if(f.widget === 'radiolist'){
-    const cur = raw === null || raw === undefined ? '' : String(raw);
+    /* MARAMIHAN, dahil ganoon talaga ang totoo.
+
+       Ang isang setup na hindi mo kinuha ay bihirang may iisang dahilan:
+       galing ka sa talo AT hindi malinis ang structure, at pareho silang
+       totoo. Ang pagpili ng isa ay nagtatapon ng kalahati ng sagot.
+
+       Ganoon din ang outcome, at may isang pares doon na siyang pinaka-
+       kapaki-pakinabang: "Never filled" kasama ang "Hit TP" — hindi umabot sa
+       entry mo pero tumakbo pa rin sa target. Tama ang basa, masyadong malayo
+       ang entry. Isang bagay iyon na hindi masasabi ng isahang sagot.
+
+       Comma-joined ang imbakan, gaya ng unfollowed_rules at ng chart_pattern —
+       walang bagong column at nababasa pa rin ang bawat lumang isahang sagot. */
+    const cur = _paperList(raw);
     const cell = (o, cls) => `
-      <label class="rl-opt${cur === String(o) ? ' on' : ''}${cls ? ' ' + cls : ''}">
-        <input type="radio" name="rl-${f.key}" data-field="${f.key}"
-               value="${escapeHtml(String(o))}"${cur === String(o) ? ' checked' : ''}>
+      <label class="rl-opt${cur.includes(String(o)) ? ' on' : ''}${cls ? ' ' + cls : ''}">
+        <input type="checkbox" data-optionlist="${f.key}"
+               onchange="this.closest('.rl-opt').classList.toggle('on', this.checked)"
+               value="${escapeHtml(String(o))}"${cur.includes(String(o)) ? ' checked' : ''}>
         <span>${escapeHtml(String(o))}</span>
       </label>`;
 
@@ -14870,8 +14972,19 @@ function _renderDrawerFieldRow(f, mode, row){
       // Ang halagang wala sa anumang grupo — isang lumang sagot na tinanggal na
       // sa listahan. Nananatili itong nakikita para hindi ito tahimik na
       // mabura sa susunod mong pag-save.
+      /* ANG NAKA-SAVE NA HALAGANG WALA NA SA LISTAHAN.
+
+         Isang array na ang cur, hindi isang string — at ang walang lamang
+         array ay TRUTHY. Ang unang bersyon nito ay nagsulat ng `cur &&` at
+         nakalusot ang isang blangkong pill sa bawat listahan: anim na
+         pagpipilian gayong lima lang ang outcome. Nahuli ito ng bilang.
+
+         Ang tamang tanong ay bawat naka-save na halaga nang isa-isa: nasa
+         alinmang grupo ba ito, o nasa listahan ba ng option? Kung hindi, ito
+         ay isang lumang sagot na tinanggal na — nananatili itong nakikita para
+         hindi ito tahimik na mabura sa susunod mong pag-save. */
       const stray = f.options.filter(o => !known.has(String(o)))
-        .concat(cur && !known.has(cur) && !f.options.some(o => String(o) === cur) ? [cur] : []);
+        .concat(cur.filter(v => !known.has(v) && !f.options.some(o => String(o) === v)));
       inner = (stray.length
           ? `<div class="rl-group"><div class="rl-opts">${stray.map(o => cell(o)).join('')}</div></div>`
           : '')
@@ -14885,13 +14998,16 @@ function _renderDrawerFieldRow(f, mode, row){
       inner = `<div class="rl-group"><div class="rl-opts">${
         f.options.map(o => cell(o)).join('')}</div></div>`;
     }
-    // Ang "wala pang sagot" ay isang tunay na estado at kailangan ng paraan
-    // pabalik dito — kung wala, ang isang maling pindot ay permanente.
-    const clear = `<label class="rl-opt rl-clear${cur ? '' : ' on'}">
-        <input type="radio" name="rl-${f.key}" data-field="${f.key}" value=""${cur ? '' : ' checked'}>
-        <span>Not answered</span></label>`;
+    /* Sa maramihan, ang "wala pang sagot" ay hindi isang pagpipilian kundi ang
+       PAGBURA ng lahat — kaya isa itong pindutan at hindi isang kahon. Ang
+       paggawa nitong pagpipilian ay magpapahintulot ng "Not answered" na
+       kasama ng isang tunay na sagot, at wala iyong kahulugan. */
+    const clear = `<button type="button" class="rl-clear-btn"
+        onclick="_clearOptionList('${f.key}')">Clear</button>`;
     return `<div class="${rowCls} rl-row"><label>${f.label}</label>
-      <div class="rl-box">${inner}<div class="rl-group">${clear}</div></div></div>`;
+      <div class="rl-box">${inner}
+        <div class="rl-foot"><span class="rl-hint">Pick as many as are true</span>${clear}</div>
+      </div></div>`;
   }
   if(f.widget === 'checklist'){
     const selected = (raw || '').split(/[,;]/).map(s=>s.trim()).filter(Boolean);
@@ -15076,19 +15192,23 @@ function _collectDrawerPatch(){
 
   document.querySelectorAll('#drawerBody [data-field]').forEach(el => {
     const key = el.dataset.field;
-    /* Ang radiolist ay may MARAMING elemento na iisa ang data-field — isa kada
-       pagpipilian. Ang halaga ng napili ang sagot, hindi ang halaga ng huling
-       nadaanan. Kung wala nito, ang bawat radiolist ay nagse-save ng huling
-       pagpipilian sa listahan anuman ang pinindot mo. */
-    if(el.type === 'radio'){
-      if(!el.checked) return;
-      patch[key] = el.value === '' ? null : el.value;
-      return;
-    }
     let val = el.value;
     if(val === '') val = null;
     if(el.type === 'number' && val !== null) val = parseFloat(val);
     patch[key] = val;
+  });
+
+  /* Ang optionlist — ang buong listahang nakalabas at nakagrupo. Maramihan
+     ito, kaya ang lahat ng nakatsek ang sagot at hindi ang isa. Comma-joined,
+     gaya ng bawat ibang maramihang field sa app; ang walang nakatsek ay null
+     at hindi isang walang lamang string, dahil ang huli ay isang sagot. */
+  const optionListKeys = new Set();
+  document.querySelectorAll('#drawerBody [data-optionlist]')
+    .forEach(el => optionListKeys.add(el.dataset.optionlist));
+  optionListKeys.forEach(key => {
+    const on = [...document.querySelectorAll(`#drawerBody [data-optionlist="${key}"]:checked`)]
+      .map(el => el.value);
+    patch[key] = on.length ? on.join(', ') : null;
   });
 
   // checklist fields (currently just unfollowed_rules) — join checked values
@@ -23041,19 +23161,23 @@ function _reportPaperStats(start, end){
   });
   const topReason = [...byReason.entries()].sort((a, b) => b[1] - a[1])[0] || null;
 
-  // Ang "Never filled" ay wala sa alinmang panig — tingnan ang renderTriggerPanel.
-  const kindOf = t => PAPER_OUTCOME_KIND[String(t.paper_outcome || '').toLowerCase()];
+  /* Iisang hatol kada setup, at ang R ay galing sa _paperOutcomeR — hindi sa
+     _plannedRR sa magkabilang panig. Ang naiwasang SL ay 1R at hindi RR;
+     tingnan doon kung bakit. Iisang aritmetika ito at ang sa Dashboard. */
+  const kindOf = t => _paperOutcomeKind(t.paper_outcome);
   const missed = rows.filter(t => kindOf(t) === 'missed');
   const saved  = rows.filter(t => kindOf(t) === 'saved');
+  const flat = rows.filter(t => kindOf(t) === 'flat').length;
+  const entryOff = rows.filter(t => kindOf(t) === 'entry').length;
   const neverFilled = rows.filter(t => kindOf(t) === 'moot').length;
   const checked = missed.length + saved.length;
 
-  const rrSum = list => list.map(_plannedRR).filter(x => x !== null)
-    .reduce((a, b) => a + b, 0);
-  const missedRR = rrSum(missed), savedRR = rrSum(saved);
+  const missedRR = missed.reduce((a, t) => a + _paperOutcomeR(t), 0);
+  const savedRR  = saved.reduce((a, t) => a + _paperOutcomeR(t), 0);
 
   return { total: rows.length, answered: answered.length, byKind, topReason,
-           missed: missed.length, saved: saved.length, neverFilled, checked,
+           missed: missed.length, saved: saved.length,
+           flat, entryOff, neverFilled, checked,
            missedRR, savedRR, netRR: missedRR - savedRR };
 }
 
@@ -23167,6 +23291,8 @@ function renderReportPreview(){
                 ? `Passing saved about <span class="pos" style="font-weight:600;">${fmtNum(Math.abs(paper.netRR), 1)}R</span> — the ones you let go would have lost.`
                 : `Roughly even — ${paper.missed} would have won, ${paper.saved} would have lost.`)
             : `None checked against the chart yet.`}
+          ${paper.entryOff ? `&nbsp;·&nbsp; ${paper.entryOff} ran without you` : ''}
+          ${paper.flat ? `&nbsp;·&nbsp; ${paper.flat} would have scratched` : ''}
           ${paper.neverFilled ? `&nbsp;·&nbsp; ${paper.neverFilled} never filled` : ''}
           ${paper.topReason ? `<br>Most common reason: <span style="color:var(--ink);font-weight:600;">${escapeHtml(paper.topReason[0])}</span> (${paper.topReason[1]}×)` : ''}
         </div>

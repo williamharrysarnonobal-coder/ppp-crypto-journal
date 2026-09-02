@@ -4206,10 +4206,19 @@ body.mobile-mode .yo-j-line{font-size:13px;}
   background:color-mix(in srgb, var(--accent) 14%, var(--surface));
 }
 .rl-opt.on span{font-weight:600;}
-/* Ang paraan pabalik sa "wala pang sagot". Mahina nang sadya: ito ay isang
-   pagbawi at hindi isang sagot. */
-.rl-clear{border-style:dashed;color:var(--muted);}
-.rl-clear.on{border-style:solid;}
+/* Ang paalala at ang pagbura. Mahina nang sadya: ang una ay isang paalala at
+   ang pangalawa ay isang pagbawi — hindi sila mga sagot. */
+.rl-foot{
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  padding-top:2px;
+}
+.rl-hint{font-size:11px;color:var(--muted);}
+.rl-clear-btn{
+  background:none;border:1px solid var(--rule);border-radius:999px;
+  padding:4px 12px;font-size:11px;color:var(--muted);cursor:pointer;
+  font-family:inherit;
+}
+.rl-clear-btn:hover{color:var(--ink);border-color:var(--muted);}
 @media (max-width: 640px){
   .rl-opt{padding:8px 12px;font-size:13px;}
 }
@@ -4226,7 +4235,24 @@ body.mobile-mode .yo-j-line{font-size:13px;}
 .paper-out.saved {background:color-mix(in srgb, var(--win) 18%, transparent);color:var(--win);}
 /* Ang hindi na-fill ay walang hatol — walang nangyari, kaya walang matutunan. */
 .paper-out.moot   {background:var(--surface-2);color:var(--muted);}
+/* Ang scratch: pumasok sana at walang nakuha. Walang aral tungkol sa
+   pagpapasya mo, kaya walang kulay ng hatol. */
+.paper-out.flat   {background:var(--surface-2);color:var(--muted);}
+/* Tumakbo ito nang wala ka — tama ang basa, mali ang entry. Kahel dahil ito ay
+   isang bagay na aayusin, hindi isang tagumpay at hindi rin isang pagkakamali
+   sa pagpapasya. */
+.paper-out.entry  {background:color-mix(in srgb, var(--accent) 18%, transparent);color:var(--accent);}
 .paper-out.unknown{background:transparent;color:var(--muted);font-style:italic;font-weight:500;}
+/* Maramihan na ang outcome, kaya maaaring dalawa o tatlong pill sa isang cell. */
+.paper-out + .paper-out{margin-left:4px;}
+
+/* Ang paliwanag sa ilalim ng dalawang card — para sa bagay na wala sa
+   alinmang panig at kailangan pa ring sabihin. */
+.dx-s-note{
+  margin-top:12px;padding:9px 12px;border-radius:6px;
+  background:var(--surface-2);border-left:2px solid var(--accent);
+  font-size:12px;line-height:1.55;color:var(--muted);
+}
 
 /* ---- Admin: ang performance ng ibang user ----
    Ang hanay ng bilang ay tabular at nakahanay sa kanan, kaya nababasa mo ang
