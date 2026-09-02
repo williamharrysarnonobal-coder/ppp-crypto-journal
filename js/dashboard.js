@@ -15414,8 +15414,35 @@ function parseEasyAddText(){
   }
 
   drawerJournalSetupId = pendingJournalSetupId;
+  /* ANG PATTERN TYPE AY NASA SETUP NA — SUNDAN ITO.
+
+     Itinatakda niya ang Trade Type at Pattern Type nang ISANG BESES, sa
+     Confluence modal, at doon din nakakabit ang mga sagot. Pagkatapos noon ay
+     hinihingi ulit ng drawer ang parehong dalawa, dahil ang idinidikit mula sa
+     exchange ay presyo lamang.
+
+     Hindi lang iyon dagdag na trabaho. Ang mga sagot sa confluence ay naka-
+     imbak ayon sa POSISYON sa checklist ng pattern na iyon, kaya ang ibang
+     pagpili rito ay tahimik na nagtatapon sa kanila. Ang pinakamadaling
+     pagkakamali sa buong daan ay ang pagpindot ng maling pattern sa isang
+     kahon na hindi naman dapat blangko. */
+  _mergeSetupFieldsIntoPrefill(parsed, pendingJournalSetupId);
   closeEasyAddModal(true);
   openDrawer('create', null, parsed);
+}
+
+/* Ang dalawang field na itinakda na niya sa Confluence at hindi na dapat
+   itanong ulit. Pinupunan lamang ang BLANGKO: kung may nakuha ang parser sa
+   idinikit, iyon ang nananaig — ang broker ang nagsasabi kung ano ang tunay na
+   pumasok. */
+function _mergeSetupFieldsIntoPrefill(prefill, setupId){
+  if(!prefill || !setupId) return prefill;
+  const s = (SAVED_SETUPS || []).find(x => x.id === setupId);
+  if(!s) return prefill;
+  ['trade_type', 'pattern_type'].forEach(k => {
+    if(!prefill[k] && s[k]) prefill[k] = s[k];
+  });
+  return prefill;
 }
 
 /* ---------------- Trade View popup (read-only, with Previous/Next) ---------------- */
@@ -16252,6 +16279,14 @@ async function saveDrawer(){
         if(linkedSetup){
           if(linkedSetup.confluence_answers) patch.confluence_answers = linkedSetup.confluence_answers;
           if(linkedSetup.chart_pattern) patch.chart_pattern = linkedSetup.chart_pattern;
+          /* Ang huling harang. Ang prefill ay pinupunan na ang dalawang ito,
+             pero maaaring linisin ng cascade ng Trade Setup ang kahon ng
+             Pattern Type sa pagitan noon at ng pag-save — at ang blangkong
+             pattern ay isang trade na may sagot sa confluence na walang
+             checklist na kinabibilangan. */
+          ['trade_type', 'pattern_type'].forEach(k => {
+            if(!patch[k] && linkedSetup[k]) patch[k] = linkedSetup[k];
+          });
         }
       }
 
@@ -22911,6 +22946,17 @@ function _bulkJournalRows(shared){
 
     // Trade Type is a BULK_HIDDEN_KEY, so its change event never fires here and
     // the Trade Setup cascade the drawer relies on never runs. Repeat it.
+    /* Gaya ng isahang daan: ang Trade Type at Pattern Type ay itinakda na niya
+       sa Confluence, kaya hindi na dapat itanong ulit.
+
+       Ang TRADE TYPE lang ang dito. Ang pattern ay nasa dulo ng lahat ng
+       cascade sa ibaba — kung dito ito ilalagay, ang setup na may lumang
+       pattern ay tatalo sa "Invalidation Play" na katatapos lang niyang piliin,
+       at ang Invalidation Play ay may iisang tamang pattern. */
+    if(setup && !patch.trade_type && setup.trade_type){
+      patch.trade_type = setup.trade_type;
+    }
+
     /* Ang pattern muna, saka ang direksyon: ang Creation ay hindi Bounce at
        hindi Rejection kahit long o short ito, at ang cascade ng drawer ay hindi
        tumatakbo sa isang bulk run. */
@@ -22926,6 +22972,18 @@ function _bulkJournalRows(shared){
       if(!patch.pattern_type) patch.pattern_type = '30 mins Invalidation Play';
       if(!patch.aof_phase) patch.aof_phase = 'Invalidation';
     }
+    /* ANG PATTERN MULA SA SETUP — huli sa lahat ng cascade.
+
+       Itinakda niya ito nang isang beses sa Confluence, at doon din nakakabit
+       ang mga sagot; ang blangkong pattern ay isang trade na may sagot na
+       walang checklist na kinabibilangan. Pero huli ito nang sadya: ang
+       "Invalidation Play" sa itaas ay may iisang tamang pattern at dapat
+       manalo sa lumang pattern ng setup. Ang lahat ng nasa itaas ay
+       hinihingi ng kanyang PILI ngayon; ito ang huling pagkukunan. */
+    if(setup && !patch.pattern_type && setup.pattern_type){
+      patch.pattern_type = setup.pattern_type;
+    }
+
     if(!patch.execution_tf){
       const mappedTf = _execTfFor(patch.pattern_type);
       if(mappedTf) patch.execution_tf = mappedTf;
