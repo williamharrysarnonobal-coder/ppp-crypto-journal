@@ -6774,7 +6774,8 @@ NO_TRADE_REASON_GROUPS.forEach(g =>
    nang hindi ito sinasagot: mas mainam ang tapat na "hindi ko pa alam" kaysa
    sa isang blangkong ituturing ng bilang bilang zero. */
 const PAPER_OUTCOMES = [
-  'Hit TP', 'Hit SL', "Would have BE'd out", 'Would have cut loss', 'Never filled'
+  'Hit TP', 'Hit SL', 'Stopped out then hit TP',
+  "Would have BE'd out", 'Would have cut loss', 'Never filled'
 ];
 
 /* Comma-joined, gaya ng unfollowed_rules at ng chart_pattern. Ang lumang
@@ -6813,14 +6814,20 @@ function _paperOutcomeKind(v){
   if(!list.length) return 'unknown';
   /* NASTOP KA MUNA, TAPOS GUMANA — "SL pero nag punta padin sa TP ko".
 
+     Sariling pagpipilian ito ngayon at hindi na isang kombinasyon: isang
+     pindot, at walang kombensyon na kailangang tandaan makalipas ang tatlong
+     buwan. Ang pagtsek pa rin ng Hit SL at Hit TP nang sabay ay ibinibigay ang
+     parehong sagot — isang bantay iyon para sa lumang naitala at para sa
+     sinumang mag-isip na ganoon ang paraan.
+
      Sariling hatol ito at hindi basta "saved", dahil ibang-iba ang aral. Ang
      karaniwang Hit SL ay nagsasabing MALI ang basa mo. Ito ay nagsasabing TAMA
      ang basa mo at ang STOP ang problema — masyadong malapit, o masyadong
-     maaga. Dalawang magkaibang bagay ang aayusin, at ang pagsasama sa kanila
-     ay nagtatago ng isa sa loob ng isa.
+     maaga. Dalawang magkaibang bagay ang aayusin.
 
      Sa R ay pareho pa rin sila: nastop ka sana at 1R ang naiwasan mo, dahil
      hindi mo aabutin ang TP na iyon — matagal ka nang wala roon. */
+  if(list.includes('stopped out then hit tp')) return 'whipsaw';
   if(list.includes('hit sl')){
     return list.includes('hit tp') ? 'whipsaw' : 'saved';
   }
@@ -6849,10 +6856,18 @@ function _paperOutcomeR(t){
     return r === null ? 0 : r;          // ang gantimpalang hindi mo nakuha
   }
   if(kind === 'saved' || kind === 'whipsaw'){
-    // Ang cutloss ay isang bahagi lamang ng 1R at hindi natin alam kung gaano
-    // kalaki — kaya hindi ito nag-aambag, sa halip na magbigay ako ng numerong
-    // hindi ko alam. Nabibilang pa rin ito sa tally.
-    return _paperList(t.paper_outcome).some(x => x.toLowerCase() === 'hit sl') ? 1 : 0;
+    /* Isang buong 1R ang naiwasan kapag natamaan sana ang stop — maging ito ay
+       "Hit SL" o "Stopped out then hit TP", dahil pareho silang nagsasabing
+       nastop ka sana.
+
+       Ang cutloss ay isang bahagi lamang ng 1R at hindi natin alam kung gaano
+       kalaki — kaya hindi ito nag-aambag, sa halip na magbigay ako ng numerong
+       hindi ko alam. Nabibilang pa rin ito sa tally. */
+    const hitStop = _paperList(t.paper_outcome).some(x => {
+      const s = x.toLowerCase();
+      return s === 'hit sl' || s === 'stopped out then hit tp';
+    });
+    return hitStop ? 1 : 0;
   }
   return 0;                              // flat, moot, entry, unknown
 }
@@ -6869,7 +6884,7 @@ const PAPER_OUTCOME_GROUPS = [
   { name: 'It went your way', sub: 'passing on it cost you', kind: 'bad',
     items: ['Hit TP'] },
   { name: 'It went against you', sub: 'passing on it saved you', kind: 'good',
-    items: ['Hit SL', 'Would have cut loss'] },
+    items: ['Hit SL', 'Stopped out then hit TP', 'Would have cut loss'] },
   /* Ang scratch at ang hindi na-fill ay magkasama dito dahil pareho silang
      walang natutunan tungkol sa pagpapasya mo — pero magkaiba sila at
      sinasabi iyon ng bawat pangalan: ang isa ay pumasok at walang nakuha, ang
@@ -14488,8 +14503,24 @@ function parseUpscaleEasyAddText(raw){
   const symLine = lines.find(l => /^[A-Z0-9]{2,10}\/[A-Z0-9]{2,10}$/.test(l));
   if(symLine) parsed.symbol = symLine;
 
+  /* ANG "LONG x1" AY DALAWANG BAGAY, HINDI ISA.
+
+     Ang linyang ito ay may direksyon AT leverage — at ang direksyon lang ang
+     binabasa nito noon, dahil walang leverage na column ang journal. Nang
+     idagdag ko ang column, hindi ko kinabit ang parser dito: kaya kailangan
+     mo pang isulat nang kamay ang isang bagay na nasa mismong idinikit mo.
+
+     Nasa card ito mula pa noon. Ang app lang ang nagtatapon nito. */
   const dirLine = lines.find(l => /^(LONG|SHORT)\b/i.test(l));
-  if(dirLine) parsed.trade_type = /^LONG/i.test(dirLine) ? 'Long' : 'Short';
+  if(dirLine){
+    parsed.trade_type = /^LONG/i.test(dirLine) ? 'Long' : 'Short';
+    // "LONG x1" · "SHORT x12.5" · "LONG X3" — ang bilang pagkatapos ng x.
+    const lev = dirLine.match(/\bx\s*([\d.]+)/i);
+    if(lev){
+      const n = parseFloat(lev[1]);
+      if(Number.isFinite(n) && n > 0) parsed.leverage = n;
+    }
+  }
 
   const pnlLine = lines.find(l => /^Pnl:/i.test(l));
   if(pnlLine){
