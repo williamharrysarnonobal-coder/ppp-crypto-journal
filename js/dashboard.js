@@ -2065,6 +2065,27 @@ function _dayKeyUTC(d){
   return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
 }
 
+/* ANG ARAW, SA ORAS MO — hindi sa UTC.
+
+   Ang buong journal ay nag-iisip sa lokal na oras: ang Session ay galing sa
+   getHours(), ang Day of Week sa toLocaleDateString, at ang Calendar sa
+   getMonth()/getDate(). Naayos na ito dati para sa taunang kabuuan, at
+   nakasulat pa nga ang dahilan doon — "a different day for any trade closed
+   late in the evening".
+
+   Hindi lang naabot ng pagkakaayos na iyon ang panuntunan ng account, at doon
+   ito pinakamasakit. Sa UTC+4, ang trade mong sarado ng ala-1 ng umaga ay
+   NAKARAANG ARAW sa UTC — kaya ang gabi ng Sabado at ang gabi ng Linggo ay
+   nagsasanib sa iisang araw ng panuntunan. Dalawang gabing tig-$140 ang talo,
+   at wala ni isa sa kanila ang lumalagpas sa $250 na hangganan, ay nagiging
+   isang araw na -$280 na lumalagpas — at ang account ay minamarkahang bagsak
+   para sa isang araw na hindi nangyari.
+
+   Iisang kahulugan ng "araw" sa buong app ngayon, at ito iyon. */
+function _dayKeyLocal(d){
+  return d.getFullYear() * 10000 + d.getMonth() * 100 + d.getDate();
+}
+
 function fmtMoney(n){
   const sign = n < 0 ? "-" : "+";
   return sign + "$" + Math.abs(n).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -5113,6 +5134,50 @@ const TRADE_REPORTS = [
      nasasagot ng sariling 13 nito; hindi nito kailangang hintayin ang isang
      pagputol na maaaring hindi na mangyari. Hiwalay na sila, at ang bawat isa
      ay sumasagot mula sa sariling ebidensya. */
+  /* MASYADO BANG MASIKIP ANG STOP KO?
+
+     Ang "Stopped Out Then Hit TP" ay hindi isang panuntunang sinuway — tama ang
+     basa mo, umabot naman sa target, natanggal ka lang bago iyon. Kaya nakalista
+     ito bilang observation at hindi breach: walang binabawas sa discipline
+     score mo. Pero sinasagot nito ang isang tanong na walang ibang makakasagot,
+     at iyon ay tungkol sa STOP at hindi sa iyo.
+
+     Iisang panig lang ito nang sadya. Walang tag para sa "sakto ang stop ko" —
+     ang isang trade na hindi ka natanggal ay walang sinasabi tungkol sa lapad
+     nito. Kaya ang binibilang ay simple: sa mga beses na natanggal ka, ilan ang
+     umabot pa rin sa target pagkatapos.
+
+     Baligtad ang mabuti at masama rito kumpara sa ibang tanong. Ang "wala" ang
+     mabuti: ibig sabihin kapag natanggal ka, tapos na talaga. */
+  {
+    id:'stop-width',
+    title:'Stop width',
+    q:'Is my stop too tight?',
+    keep:'Your stop has room. Leave it.',
+    change:'Give the stop more room.',
+    arms:[
+      { label:'Stops that got hit',
+        /* WALANG BAGONG TAG NA TITIKAN.
+
+           Ang unang bersyon ko rito ay humihingi ng "Stop Held" na tag para sa
+           mabuting panig. Walang ganoong tag, kaya ZERO ang mabuti sa bawat
+           pagkakataon at sasabihin ng report na 100% masyadong masikip ang stop
+           mo — isang sagot na mukhang tiyak at palaging mali.
+
+           At kahit umiral ito, mali pa rin ang hingin: ang bawat natanggal na
+           trade ay kailangang titikan mo ng "hindi naman ito bumalik", na
+           isang trabahong para lang sa ulat na ito.
+
+           Ang sagot ay nasa naitala mo na. Ang natanggal ay `exit_type` na
+           SL Hit; ang bumalik ay may tag na. Ang natanggal na WALANG tag na
+           iyon ay ang stop na tumagal. */
+        good:{ sel: t => String(t.exit_type || '') === 'SL Hit'
+                      && !_hasTag(t, ['Stopped Out Then Hit TP']),
+               txt:'stopped out and stayed down' },
+        bad: { sel: t => _hasTag(t, ['Stopped Out Then Hit TP']),
+               txt:'would have reached take profit' } },
+    ],
+  },
   {
     id:'inval-hold',
     title:'Invalidation — holding',
@@ -5217,7 +5282,14 @@ function _armFor(trades, tags){
    that decision was right. Nothing is averaged and nothing needs a second
    arm — a decision with only one arm still has an answer. */
 function _runReport(rep, trades){
-  const count = side => rep.field
+  /* Tatlong paraan ng pagbilang ng isang panig, at ang `sel` ang pinakabago:
+     may tanong na hindi masasagot ng iisang tag o iisang column. Ang "masikip
+     ba ang stop ko" ay isa: ang masamang panig ay isang tag, ang mabuti ay
+     isang exit_type na WALANG tag na iyon. Ang paghingi ng bagong tag para
+     doon ay trabahong para lang sa isang ulat. */
+  const count = side => side.sel
+    ? trades.filter(side.sel).length
+    : rep.field
     ? trades.filter(t => t[rep.field] === side.value).length
     : trades.filter(t => _hasTag(t, [side.tag])).length;
 
@@ -19660,7 +19732,14 @@ function _flagAccountBreaches(){
   });
 }
 
-/* Ang tanging daan patungong Failed ay dito, at may tao sa dulo nito. */
+/* Ang tanging daan patungong Failed ay dito, at may tao sa dulo nito.
+
+   AT ITINATALA KUNG BAKIT. Ang isang account na "Failed" na walang dahilan ay
+   isang bagay na hindi mo na maaalala sa susunod na buwan — hindi mo malalaman
+   kung daily loss ba iyon o drawdown, aling araw, at kung ang sumira ay isang
+   tunay na trade o isang maling naitalang petsa. Ang mismong pangungusap na
+   nasa babala ang naitatabi, kaya ang nakikita mo bago pumindot at ang
+   nababasa mo pagkalipas ng anim na buwan ay iisa. */
 async function markAccountFailed(id){
   const acc = (TRADING_ACCOUNTS || []).find(a => a.id === id);
   if(!acc) return;
@@ -19670,18 +19749,36 @@ async function markAccountFailed(id){
       + `Only do this if the prop firm has actually failed the account. `
       + `You can set it back to Ongoing from Edit account.`,
       'Mark Failed'))) return;
-  try{
+
+  const reason = w
+    ? `${new Date().toISOString().slice(0, 10)} — ${w.text}`
+    : `${new Date().toISOString().slice(0, 10)} — Marked failed by hand.`;
+
+  const patch = async body => {
     const res = await fetch(`${SUPABASE_URL}/rest/v1/trading_accounts?id=eq.${acc.id}`, {
       method: 'PATCH',
       headers: {
         "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}`,
         "Content-Type": "application/json", "Prefer": "return=representation"
       },
-      body: JSON.stringify({ status: 'Failed' })
+      body: JSON.stringify(body)
     });
     if(!res.ok) throw new Error(await res.text());
-    const updated = await res.json();
-    Object.assign(acc, updated[0] || { status: 'Failed' });
+    return res.json();
+  };
+
+  try{
+    let updated;
+    try{
+      updated = await patch({ status: 'Failed', fail_reason: reason });
+    }catch(e){
+      /* Ang column ay bago — kung hindi pa napapatakbo ang SQL, tinatanggihan
+         ito ng PostgREST. Ang pagmamarka ng Failed ay hindi dapat mabigo dahil
+         doon: ang status ang mahalaga, ang dahilan ay dagdag. */
+      console.warn('fail_reason not saved (run supabase_account_fail_reason.sql):', e.message);
+      updated = await patch({ status: 'Failed' });
+    }
+    Object.assign(acc, updated[0] || { status: 'Failed', fail_reason: reason });
     acc._breach = null;
     renderAccountsList();
     showToast(`${acc.account_name} marked Failed.`);
@@ -20113,6 +20210,16 @@ function computeAccountStats(acc){
   const accountSize = Number(acc.account_size) || 0;
   const currentBalance = acc.current_balance != null ? Number(acc.current_balance) : accountSize;
 
+  /* UTC nang sadya, hindi lokal — ito ang panuntunan ng prop firm at hindi
+     ang kalendaryo mo. Ang natitira sa app ay lokal (Calendar, Day of Week,
+     Payslip), at may sim na nagbabantay ng hangganang iyon.
+
+     ALAM: sa UTC+4, ang dalawang gabi mo ay pwedeng magsanib sa isang araw ng
+     UTC — dalawang talong tig-$140 ay nagiging isang araw na -$280 at
+     lumalagpas sa $250 na hangganan. Kung ang reset ng Upscale ay HINDI UTC
+     midnight, mali ang pagbilang na ito. Hindi ko alam kung anong oras sila
+     nagre-reset, at hindi ko babaguhin ang isang naunang desisyon batay sa
+     hula — nakatanong na sa kanya. */
   const todayUTCKey = _dayKeyUTC(new Date());
   const todaysPL = trades
     .filter(t => _dayKeyUTC(new Date(t.close_date)) === todayUTCKey)
@@ -20143,6 +20250,7 @@ function computeAccountStats(acc){
   const dailyProfitTarget = accountSize * minDailyProfitPct / 100;
   const dailyProfitUsed = Math.max(0, todaysPL);
 
+  // UTC, sa parehong dahilan ng todaysPL sa itaas.
   const dayPL = {};
   phaseTrades.forEach(t => {
     const key = _dayKeyUTC(new Date(t.close_date));
@@ -20170,8 +20278,7 @@ function computeAccountStats(acc){
   const totalEarn = currentBalance - earnBaseline;
   const targetEarn = accountSize * (Number(acc.profit_target_pct) || 0) / 100;
 
-  // Trading day resets at midnight UTC (crypto market, 24/7) — ms left
-  // until then, for the Daily Profit countdown.
+  // Tumutugma sa hati ng araw sa itaas — UTC, gaya ng panuntunan.
   const nowUTC = new Date();
   const nextResetUTC = new Date(Date.UTC(nowUTC.getUTCFullYear(), nowUTC.getUTCMonth(), nowUTC.getUTCDate() + 1));
   const msUntilReset = nextResetUTC - nowUTC;
@@ -20596,6 +20703,16 @@ function accountCardHTML(a){
          </div>`
       : '';
 
+    /* Bakit ito bumagsak. Ang isang account na "Failed" na walang dahilan ay
+       isang bagay na hindi mo na maaalala — at ang mga naunang bumagsak ay
+       walang naitalang dahilan, kaya sinasabi nito iyon nang tahasan sa halip
+       na magmukhang blangko. */
+    const failHTML = (!isExchange && status === 'Failed')
+      ? `<div class="acct-failed-why">${a.fail_reason
+            ? escapeHtml(a.fail_reason)
+            : 'No reason recorded — this was set before reasons were kept.'}</div>`
+      : '';
+
     return `
       <div class="account-card" onclick='${cardClick}'>
         ${statusBadge}
@@ -20604,6 +20721,7 @@ function accountCardHTML(a){
         ${balanceHTML}
         <div class="account-card-rules">${rules.join('') || '<span class="pill pill-muted">No rules set</span>'}</div>
         ${breachHTML}
+        ${failHTML}
         ${riskHTML}
         <button class="account-edit-btn-corner" onclick='event.stopPropagation(); openAccountModal(${a.id})' title="Edit account">${accountEditIconSVG()}</button>
       </div>

@@ -6,13 +6,26 @@ Netlify, connected to a GitHub repo.
 
 ## Critical rules — always follow these
 
-- **Never push to GitHub `main` / deploy to Netlify without asking the user
-  first**, even if a push was approved earlier in the session. Netlify billing
-  is metered (300 free credits/month, 15 credits per production deploy, 0 for
-  branch/PR deploy previews) — the user got burned by auto-pushing before. Work
-  locally, test via `file://`, only push when explicitly told to deploy. If
-  the user wants to back up work without deploying, push to a non-`main`
-  branch instead (Netlify only auto-deploys `main` by default).
+- **Commit and push to `main` yourself, once a piece of work is verified.**
+  Changed 2026-09-03: the old rule was to never push without asking. The user
+  lifted it after a session where six new Pattern Types, a Trade Setup and an
+  AOF Phase were all "missing" from his screen — the work was finished and even
+  committed, but nothing reached the live site, and three rounds of "wala pa
+  ring nagbago" went by before that was the thing found. He wants to refresh
+  the page and see it. He was shown the cost below and chose this anyway.
+
+  Billing is still metered, so the judgement that remains is *when*, not
+  *whether*: **300 free credits/month, 15 credits per production deploy** — 20
+  production deploys a month, and nothing warns you at 19. So batch. One push
+  per finished, verified piece of work; never one per file edit. If a session
+  is going to be a long back-and-forth of small tweaks, say so and hold them
+  together. Branch/PR deploy previews are 0 credits and are still the right
+  home for anything experimental (Netlify only auto-deploys `main`).
+
+  Two things that make a push worth its credits, both learned the hard way:
+  bump the `?v=` on every asset touched (the whole app is cached), and run the
+  sims + browser probes in the scratchpad first — a wasted deploy costs the
+  same as a good one.
 - **Never put the Supabase secret/service_role key in client-side (browser)
   code** — only the anon/publishable key belongs in `js/supabase.js`. The
   secret key only appears in the Python bot scripts.
