@@ -21020,6 +21020,11 @@ function renderAccountsList(){
 
 function accountCardHTML(a){
     const isExchange = a.account_type === 'Exchange';
+    /* Isang pagkuwenta para sa buong card. Ang malaking balanse, ang bar at
+       ang note ay tatlong lugar noon na nagbibilang nang magkahiwalay — dalawa
+       sa manwal na kahon at isa sa journal — kaya ang card ay nagpapakita ng
+       isang numero habang sinasabi ng note na iba pala iyon. */
+    const cardStats = isExchange ? null : computeAccountStats(a);
 
     const rules = [];
     if(isExchange){
@@ -21034,19 +21039,23 @@ function accountCardHTML(a){
     }
 
     let balanceHTML = '';
-    if(a.current_balance != null && a.account_size){
-      // Measured from the balance the CURRENT phase began at, matching the
-      // Account Detail view. Using account_size here meant that the moment an
-      // account advanced to Phase 2, the profit it made in Phase 1 was counted
-      // again toward the new target — a freshly started phase could show as
-      // already passed.
-      const baseline = a.phase_start_balance != null ? Number(a.phase_start_balance) : Number(a.account_size);
-      const pl = a.current_balance - baseline;
+    if(cardStats && a.account_size){
+      /* Mula sa JOURNAL, hindi sa manwal na kahon — tingnan ang
+         computeAccountStats. Binabasa nito ang `a.current_balance` noon
+         habang ang note sa ibaba ay naghahambing sa journal, kaya nagsasabi
+         ang card ng isang balanse at sinasabi ng note na $498 pala ang layo
+         niyon sa totoo. Dalawang numero sa iisang card na hindi nagkakasundo.
+
+         Ang panimula ay ang balanse noong nagsimula ang PHASE na ito, hindi
+         ang laki ng account: kung hindi, ang kinita sa Phase 1 ay mabibilang
+         ulit sa target ng Phase 2 at ang katatapos lang na phase ay
+         magmumukhang pasado na. */
+      const pl = cardStats.totalEarn;
       const plPct = (pl / a.account_size) * 100;
       const plClass = pl >= 0 ? 'account-pl-pos' : 'account-pl-neg';
       const sign = pl >= 0 ? '+' : '';
       const fromPhase = a.phase_start_balance != null && Number(a.phase_start_balance) !== Number(a.account_size);
-      balanceHTML += `<div class="account-card-balance">$${Number(a.current_balance).toLocaleString()} <span class="${plClass}">(${sign}$${Math.abs(pl).toLocaleString()} · ${sign}${plPct.toFixed(1)}%)</span>${fromPhase ? `<span class="account-card-since">this phase</span>` : ''}</div>`;
+      balanceHTML += `<div class="account-card-balance">$${cardStats.currentBalance.toLocaleString(undefined,{maximumFractionDigits:2})} <span class="${plClass}">(${sign}$${Math.abs(pl).toLocaleString(undefined,{maximumFractionDigits:2})} · ${sign}${plPct.toFixed(1)}%)</span>${fromPhase ? `<span class="account-card-since">this phase</span>` : ''}</div>`;
 
       if(a.profit_target_pct){
         const progressFraction = Math.max(0, Math.min(1, plPct / a.profit_target_pct));
@@ -21076,7 +21085,9 @@ function accountCardHTML(a){
         `;
       }
     } else if(a.current_balance != null){
-      balanceHTML += `<div class="account-card-balance">$${Number(a.current_balance).toLocaleString()}</div>`;
+      // Exchange account: walang panuntunan at walang phase, kaya ang manwal
+      // na balanse lang ang mayroon.
+      balanceHTML += `<div class="account-card-balance">$${Number(a.current_balance).toLocaleString(undefined,{maximumFractionDigits:2})}</div>`;
     }
 
     // Same reasoning as the Account Detail header — show when the CURRENT
@@ -21126,8 +21137,10 @@ function accountCardHTML(a){
     const remainHTML = (() => {
       if(isExchange || a.max_total_drawdown_pct == null) return '';
       if(!(Number(a.account_size) > 0)) return '';
-      const s = computeAccountStats(a);
-      if(!(s.drawdownFloor > 0) || s.currentBalance == null) return '';
+      // Ang parehong pagkuwenta ng buong card — hindi na sariling tawag, kung
+      // hindi ay dalawang bilang na maaaring maghiwalay.
+      const s = cardStats;
+      if(!s || !(s.drawdownFloor > 0) || s.currentBalance == null) return '';
 
       const mine = ALL_TRADES.filter(t => t.account === a.account_name && _isLoss(t));
       const pool = mine.length >= 3 ? mine : ALL_TRADES.filter(_isLoss);
@@ -21177,7 +21190,6 @@ function accountCardHTML(a){
        pala iyon ng IIFE ng remainHTML, kaya bumagsak ang buong listahan ng
        account sa isang ReferenceError. Nakita ito ng browser probe at hindi ng
        mga sim: walang sim na nagpapatakbo ng renderAccountsList. */
-    const cardStats = isExchange ? null : computeAccountStats(a);
     const gapHTML = (cardStats && cardStats.balanceGap != null)
       ? `<div class="acct-gap" title="The balance you typed in Edit account against what your journalled trades add up to.">
            Your saved balance says
