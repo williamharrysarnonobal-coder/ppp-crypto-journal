@@ -19610,7 +19610,7 @@ async function loadAccounts(){
     TRADING_ACCOUNTS = [];
   }
   _flagAccountBreaches();
-  await _autoAdvanceAccountPhases();
+  _flagAccountPhases();
   syncAccountFieldOptions();
   renderAccountsList();
 }
@@ -19662,22 +19662,62 @@ function _accountPhaseStages(acc){
   return _accountPreset(acc)?.stages || ACCOUNT_PHASE_STAGES;
 }
 
-// Once an account's Total Earn meets its Profit Target, move it to the next
-// phase automatically (matches how the real prop firm confirms passing) —
-// resets Phase Start Date/Balance so the new phase's tracking starts clean.
-// Safe to re-run on every load: right after advancing, totalEarn resets to
-// ~0 against the new phase, so the condition stops being true on its own.
-async function _autoAdvanceAccountPhases(){
-  for(const acc of TRADING_ACCOUNTS){
-    if(acc.account_type === 'Exchange') continue;
+/* ANG PROP FIRM ANG NAGPAPASA SA IYO, HINDI ANG JOURNAL NA ITO.
+
+   Kusang inaakyat nito ang account sa susunod na phase noon at agad ding
+   isinusulat sa database. Iisang sakit ito ng auto-fail sa ibaba, at mas
+   masakit ang naging bunga.
+
+   Ito ang nangyari sa 5K: naabot ng natitipon ang target, kaya kusa itong
+   umakyat sa Evaluation Phase 2, nag-reset ng balanse sa $5,000, at
+   nagtakda ng bagong phase_start_date. Bumagsak sa zero ang bawat numero sa
+   card — 33 trades katabi ng +$0 — at hindi pa naman siya nasa Phase 2. Wala
+   ring paraan para bawiin: "Phase / Phase Start Date / Phase Start Balance
+   have no visible control anymore".
+
+   Kaya nagbababala na lang ito ngayon. Ang pag-akyat ay bagay na sinasabi ng
+   prop firm, hindi hinuhulaan ng journal — at ang pagkakamali rito ay
+   nagbubura ng buong talaan ng phase. */
+function _accountPhaseReady(acc){
+  if(!acc || acc.account_type === 'Exchange') return null;
+  const stages = _accountPhaseStages(acc);
+  const stageIdx = stages.indexOf(acc.phase);
+  if(stageIdx < 0 || stageIdx >= stages.length - 1) return null;
+
+  const s = computeAccountStats(acc);
+  if(!(s.targetEarn > 0 && s.totalEarn >= s.targetEarn)) return null;
+
+  const next = stages[stageIdx + 1];
+  return { next,
+    text: `Target reached — $${s.totalEarn.toLocaleString(undefined,{maximumFractionDigits:2})} `
+        + `of $${s.targetEarn.toLocaleString(undefined,{maximumFractionDigits:2})}. `
+        + `Move to ${next} once the prop firm confirms it; this resets the `
+        + `balance and starts the phase tracking over.` };
+}
+
+function _flagAccountPhases(){
+  (TRADING_ACCOUNTS || []).forEach(acc => {
+    try { acc._phaseReady = _accountPhaseReady(acc); }
+    catch(e){ acc._phaseReady = null; }
+  });
+}
+
+/* Ang tanging daan pataas, at may tao sa dulo nito. */
+async function advanceAccountPhase(id){
+  const acc = (TRADING_ACCOUNTS || []).find(a => a.id === id);
+  if(!acc) return;
+  const ready = acc._phaseReady;
+  if(!ready) return;
+  {
     const stages = _accountPhaseStages(acc);
     const stageIdx = stages.indexOf(acc.phase);
-    if(stageIdx < 0 || stageIdx >= stages.length - 1) continue;
-
     const s = computeAccountStats(acc);
-    if(!(s.targetEarn > 0 && s.totalEarn >= s.targetEarn)) continue;
-
-    const nextPhase = stages[stageIdx + 1];
+    const nextPhase = ready.next;
+    if(!(await customConfirm(
+        `Move ${acc.account_name} to ${nextPhase}?\n\n${ready.text}\n\n`
+        + `Only do this once the prop firm has actually passed you. `
+        + `Everything on the card starts counting from zero again.`,
+        `Move to ${nextPhase}`))) return;
     // Each phase can have its own Profit Target (Basic: 5% then 8%) — pull
     // the new phase's number from the matched preset, if there is one, so
     // this doesn't silently keep the OLD phase's target after advancing.
@@ -19716,9 +19756,13 @@ async function _autoAdvanceAccountPhases(){
       if(!res.ok) throw new Error(await res.text());
       const updated = await res.json();
       Object.assign(acc, updated[0] || patch);
+      acc._phaseReady = null;
+      _flagAccountBreaches();
+      renderAccountsList();
       showToast(`🎉 ${acc.account_name} advanced to ${nextPhase}!`);
     }catch(e){
-      console.error("Couldn't auto-advance account phase:", e);
+      console.error("Couldn't advance the account phase:", e);
+      showToast("Couldn't save that — please try again.");
     }
   }
 }
@@ -20826,6 +20870,17 @@ function accountCardHTML(a){
          </div>`
       : '';
 
+    /* Ang kabilang direksyon, at parehong panuntunan: ang prop firm ang
+       nagpapasa sa iyo. Kusa itong umaakyat noon at nagre-reset ng buong card
+       sa zero — at walang paraan para bawiin. */
+    const phaseHTML = (!isExchange && a._phaseReady)
+      ? `<div class="acct-phase-up" onclick='event.stopPropagation();'>
+           <div class="acct-breach-txt">${escapeHtml(a._phaseReady.text)}</div>
+           <button class="acct-phase-btn" onclick='advanceAccountPhase(${a.id})'
+             >Move to ${escapeHtml(a._phaseReady.next)}</button>
+         </div>`
+      : '';
+
     /* Bakit ito bumagsak. Ang isang account na "Failed" na walang dahilan ay
        isang bagay na hindi mo na maaalala — at ang mga naunang bumagsak ay
        walang naitalang dahilan, kaya sinasabi nito iyon nang tahasan sa halip
@@ -20848,6 +20903,7 @@ function accountCardHTML(a){
         ${balanceHTML}
         <div class="account-card-rules">${rules.join('') || '<span class="pill pill-muted">No rules set</span>'}</div>
         ${breachHTML}
+        ${phaseHTML}
         ${failHTML}
         ${riskHTML}
         <button class="account-edit-btn-corner" onclick='event.stopPropagation(); openAccountModal(${a.id})' title="Edit account">${accountEditIconSVG()}</button>
@@ -23313,7 +23369,8 @@ async function saveAccount(){
 
   // Phase / Phase Start Date / Phase Start Balance have no visible control
   // anymore — set once, on creation, then left alone. Editing an existing
-  // account never touches them here; only _autoAdvanceAccountPhases() does.
+  // account never touches them here; only advanceAccountPhase() does, and
+  // that one waits for a button now.
   if(!isExchange && !editingAccountId){
     payload.phase = 'Evaluation Phase 1';
     payload.phase_start_date = payload.start_date;
