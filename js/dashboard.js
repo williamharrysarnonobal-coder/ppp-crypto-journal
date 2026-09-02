@@ -5744,11 +5744,17 @@ const SETUP_DIMENSIONS = [
   // items say WHICH part of the score was carrying it, which is the only
   // version of this that can change how the next trade is taken.
   { group:'3 · Running the checklist', dims:[
-    // The highest timeframe on each checklist — 1H on the shorter setups, 4H on
-    // the 1 hour ones. Matched by pattern so one card covers every setup. It is
-    // first here because it is question 1 on every one of your checklists.
+    /* Ang pinakamataas na timeframe sa bawat checklist — at ang panuntunan ay
+       hindi "1H o 4H" kundi "ang UNANG tanong". Ang pangalan ng timeframe ay
+       naka-hardcode noon, na tama lang hangga't dalawa ang posible: dumating
+       ang Creation na may 15M sa itaas (zero hit) at ang 4H na may 1H din sa
+       loob (dalawang hit, at ang una ang nakukuha nang aksidente).
+
+       Ang ayos ang tunay na panuntunan, at nakasulat na ito sa komento noon:
+       "question 1 on every one of your checklists". Iyon ang sinusundan ngayon,
+       kaya walang pangalan ng timeframe na kailangang panatilihin. */
     { label:'HTF bias', q:'the top timeframe with you or against you', order:MET_ORDER,
-      of: t => _confluenceItemAnswer(t, it => /^MACD · (1H|4H)$/.test(it.tag)) },
+      of: t => _confluenceItemAnswer(t, (it, i) => i === 0) },
     { label:'Divergence', q:'the opposite hand showing before you entered', order:MET_ORDER,
       of: t => _confluenceItemAnswer(t, it => it.tag === 'Divergence') },
     { label:'Sequence', q:'the 1st HL/LH or the 4th', order:SEQ_ORDER,
@@ -6433,10 +6439,18 @@ function renderBarChart(labels, values, colors, onClick){
 const FIELD_OPTIONS = {
   win_loss: ['Loss','Win','Breakeven','Liquidated'],
   trade_type: ['Short','Long'],
-  trade_setup: ['Bounce Play','Rejection Play','Invalidation Play'],
-  pattern_type: ['5 mins HL','5 mins LH','15 mins HL','15 mins LH','1 hour HL','1 hour LH','30 mins Invalidation Play','4 Hour HL','4 Hour LH'],
+  // Ang Creation Play ay ang ikaapat: hindi pagtalbog sa isang antas na naroon
+  // na at hindi pagtanggi rito, kundi ang pagbuo pa lamang ng antas na iyon.
+  trade_setup: ['Bounce Play','Rejection Play','Invalidation Play','Creation Play'],
+  /* Ang "Creation" ay ibang tanong sa mga nauna: hindi kung tumutugma ang isang
+     antas na naroon na, kundi kung NABUBUO pa lamang ito. May sariling
+     checklist ang bawat isa — tingnan ang CONFLUENCE_SETUPS. */
+  pattern_type: ['5 mins HL','5 mins LH','15 mins HL','15 mins LH','1 hour HL','1 hour LH','30 mins Invalidation Play','4 Hour HL','4 Hour LH',
+    '15M HL Creation','15M LH Creation','1H HL Creation','1H LH Creation','4H HL Creation','4H LH Creation'],
   execution_tf: ['1 min','3 min','5 min','15 min','30 min','1 hr'],
-  aof_phase: ['IC','EM','LM','Extended Movement','Invalidation','5 mins Scalping'],
+  /* Ang Creation ay hindi puwesto sa loob ng isang galaw gaya ng IC/EM/LM —
+     wala pang galaw na mapupuwestuhan. Iyon mismo ang sinasabi nito. */
+  aof_phase: ['IC','EM','LM','Extended Movement','Invalidation','5 mins Scalping','Creation'],
   rules_followed: ['Yes','No'],
   account_type: ['Demo','Evaluation','Funded'],
   exit_type: ['Manual Early TP - Valid','Manual Early TP - Invalid','Stop Profit','TP Hit','SL Hit','Cut Loss','BE Hit'],
@@ -19730,7 +19744,20 @@ const PATTERN_EXEC_TF = {
 // The 5 min plays are scalps, and that pins their AOF Phase outright. This is
 // the one pattern-driven AOF, and it deliberately outranks the Sequence
 // mapping below — a 5 min play is "5 mins Scalping" whichever HL it is.
+/* Ang anim na Creation ay may sariling AOF Phase at sariling Play, at pareho
+   silang natutukoy ng pattern lamang — walang tatanungin. Ang Creation ay hindi
+   puwesto sa loob ng isang galaw (IC / EM / LM); wala pang galaw. */
+const CREATION_PATTERNS = ['4H HL Creation','4H LH Creation','1H HL Creation',
+                           '1H LH Creation','15M HL Creation','15M LH Creation'];
+
 const PATTERN_FIXED_AOF = { '5 mins HL':'5 mins Scalping', '5 mins LH':'5 mins Scalping' };
+CREATION_PATTERNS.forEach(p => { PATTERN_FIXED_AOF[p] = 'Creation'; });
+
+/* Ang Play ay galing sa direksyon (TRADE_TYPE_SETUP_MAP) — pero ang Creation
+   ay hindi Bounce at hindi Rejection kahit long o short ito. Ang pattern ang
+   mas tiyak na pahayag sa dalawa, kaya ito ang nananaig. */
+const PATTERN_FIXED_SETUP = {};
+CREATION_PATTERNS.forEach(p => { PATTERN_FIXED_SETUP[p] = 'Creation Play'; });
 
 const _execTfFor = p => PATTERN_EXEC_TF[p] || null;
 
@@ -19747,6 +19774,9 @@ function _setDrawerField(key, value){
 function syncExecutionFromPattern(patternValue){
   _setDrawerField('execution_tf', _execTfFor(patternValue));
   _setDrawerField('aof_phase', PATTERN_FIXED_AOF[patternValue]);
+  // Ang Creation ay hindi Bounce at hindi Rejection. Ang _setDrawerField ay
+  // bumabalik agad kapag walang halaga, kaya walang ibang pattern ang naaapektuhan.
+  _setDrawerField('trade_setup', PATTERN_FIXED_SETUP[patternValue]);
 }
 
 // Direction implies the play: a higher low is what Bounce Play trades, a lower
@@ -21049,6 +21079,99 @@ const CONFLUENCE_SETUPS = {
     patterns: ['Double Top', 'Triple Top', 'H&S',
                'FVG', 'FVG + Fib', 'Fib .382', 'Fib .5', 'Fib .618', 'SnR Flip']
   },
+
+  /* ---------------- ANG CREATION SETUP ----------------
+
+     Ibang tanong ito sa walo sa itaas. Ang mga iyon ay nagtatanong kung
+     TUMUTUGMA ang isang antas na naroon na; ito ay nagtatanong kung
+     NABUBUO pa lamang ang antas — kaya pababa ang basa: ang mataas na
+     timeframe ay humihina, ang nasa gitna ay nauuna nang bumitaw, at ang
+     mababa ang nagsasabi kung nagkaroon nga ng HL o LH.
+
+     Anim na tanong at isang Reaction Area kada isa — pito, gaya ng talahanayan
+     niya. Ang Reaction Area ay hindi isang item kundi ang listahan ng chart
+     pattern: iyon ang ikapitong puntos na binibilang ng _confluenceProgress,
+     at walang tanong na kasama ito sa talahanayan — mga pagpipilian lamang.
+
+     WALANG PATTERN_EXEC_TF ang anim na ito nang sadya. Ang bawat isa ay may
+     DALAWANG tamang execution timeframe ("Retest on 3M or 5M?"), at ang
+     pagpuno ng isa ay tama lang sa kalahati ng panahon — mas mabuting blangko
+     na pipiliin niya kaysa sagot na kailangan niyang mapansing mali. */
+
+  'Long|4H HL Creation': {
+    minConfluencePct: 60,
+    items: [
+      {tag:'MACD · 4H',         text:'4H MACD in Bear Territory (Green Weakening)?'},
+      {tag:'MACD · 1H',         text:'1H Pre-Breakdown?'},
+      {tag:'MACD · 30M',        text:'30M Breakdown / Invalidation?'},
+      {tag:'Structure · 15M',   text:'Did it create a 15M HL?'},
+      {tag:'Execution · 3M/5M', text:'Retest on 3M or 5M?', exec:true, retest:true},
+      {tag:'Reaction',          text:'Where did it bounce?'},
+    ],
+    patterns: ['Fib .382', 'Fib .5', 'Fib .618', 'Market OB', 'FVG']
+  },
+  'Short|4H LH Creation': {
+    minConfluencePct: 60,
+    items: [
+      {tag:'MACD · 4H',         text:'4H MACD in Bull Territory (Red Weakening)?'},
+      {tag:'MACD · 1H',         text:'1H Pre-Breakout?'},
+      {tag:'MACD · 30M',        text:'30M Breakout / Invalidation?'},
+      {tag:'Structure · 15M',   text:'Did it create a 15M LH?'},
+      {tag:'Execution · 3M/5M', text:'Retest on 3M or 5M?', exec:true, retest:true},
+      {tag:'Reaction',          text:'Where did it reject?'},
+    ],
+    patterns: ['Fib .382', 'Fib .5', 'Fib .618', 'Market OB', 'FVG']
+  },
+
+  'Long|1H HL Creation': {
+    minConfluencePct: 60,
+    items: [
+      {tag:'MACD · 1H',         text:'1H MACD in Bear Territory (Green Weakening)?'},
+      {tag:'MACD · 15M',        text:'15M Pre-Breakdown?'},
+      {tag:'MACD · 3M',         text:'3M Breakdown / Invalidation?'},
+      {tag:'Structure · 5M',    text:'Did it create a 5M HL?'},
+      {tag:'Execution · 1M/3M', text:'Retest on 1M or RT 3M?', exec:true, retest:true},
+      {tag:'Reaction',          text:'Where did it bounce?'},
+    ],
+    patterns: ['Fib .382', 'Fib .5', 'Fib .618', 'Market OB', 'FVG']
+  },
+  'Short|1H LH Creation': {
+    minConfluencePct: 60,
+    items: [
+      {tag:'MACD · 1H',         text:'1H MACD in Bull Territory (Red Weakening)?'},
+      {tag:'MACD · 15M',        text:'15M Pre-Breakout?'},
+      {tag:'MACD · 3M',         text:'3M Breakout / Invalidation?'},
+      {tag:'Structure · 5M',    text:'Did it create a 5M LH?'},
+      {tag:'Execution · 1M/3M', text:'Retest on 1M or RT 3M?', exec:true, retest:true},
+      {tag:'Reaction',          text:'Where did it reject?'},
+    ],
+    patterns: ['Fib .382', 'Fib .5', 'Fib .618', 'Market OB', 'FVG']
+  },
+
+  'Long|15M HL Creation': {
+    minConfluencePct: 60,
+    items: [
+      {tag:'MACD · 15M',        text:'15M MACD in Bear Territory (Green Weakening)?'},
+      {tag:'MACD · 5M',         text:'5M Pre-Breakdown?'},
+      {tag:'MACD · 3M',         text:'3M Breakdown / Invalidation?'},
+      {tag:'Structure · 1M',    text:'Did it create a 1M HL?'},
+      {tag:'Execution · 1M/3M', text:'Retest on 1M or 3M?', exec:true, retest:true},
+      {tag:'Reaction',          text:'Where did it bounce?'},
+    ],
+    patterns: ['Fib .382', 'Fib .5', 'Fib .618', 'Market OB', 'FVG']
+  },
+  'Short|15M LH Creation': {
+    minConfluencePct: 60,
+    items: [
+      {tag:'MACD · 15M',        text:'15M MACD in Bull Territory (Red Weakening)?'},
+      {tag:'MACD · 5M',         text:'5M Pre-Breakout?'},
+      {tag:'MACD · 3M',         text:'3M Breakout / Invalidation?'},
+      {tag:'Structure · 1M',    text:'Did it create a 1M LH?'},
+      {tag:'Execution · 1M/3M', text:'Retest on 1M or 3M?', exec:true, retest:true},
+      {tag:'Reaction',          text:'Where did it reject?'},
+    ],
+    patterns: ['Fib .382', 'Fib .5', 'Fib .618', 'Market OB', 'FVG']
+  },
 };
 
 /* MARAMING CHART PATTERN SA IISANG TRADE.
@@ -21940,6 +22063,13 @@ function _bulkJournalRows(shared){
 
     // Trade Type is a BULK_HIDDEN_KEY, so its change event never fires here and
     // the Trade Setup cascade the drawer relies on never runs. Repeat it.
+    /* Ang pattern muna, saka ang direksyon: ang Creation ay hindi Bounce at
+       hindi Rejection kahit long o short ito, at ang cascade ng drawer ay hindi
+       tumatakbo sa isang bulk run. */
+    if(!patch.trade_setup && patch.pattern_type){
+      const byPattern = PATTERN_FIXED_SETUP[patch.pattern_type];
+      if(byPattern) patch.trade_setup = byPattern;
+    }
     if(!patch.trade_setup && patch.trade_type){
       const mappedSetup = TRADE_TYPE_SETUP_MAP[patch.trade_type];
       if(mappedSetup) patch.trade_setup = mappedSetup;
