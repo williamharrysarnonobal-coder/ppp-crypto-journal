@@ -7152,7 +7152,11 @@ const ALL_DRAWER_FIELDS = [
   {key:'profit_loss', label:'Profit/Loss', widget:'number', editable:true, realOnly:true},
   {key:'pnl_percent', label:'PNL Percent', widget:'number', editable:true, realOnly:true},
   {key:'fee', label:'Fee', widget:'number', editable:false, realOnly:true},
-  {key:'rr', label:'RR', widget:'number', editable:false},
+  /* Ang RR ng isang trade na NANGYARI. Sa paper trade ay walang ganito at
+     laging blangko ito — at ang blangkong "RR" sa tabi ng isang "Planned RR"
+     na may laman ay mukhang sirang field, hindi isang walang sagot. Ang
+     planned_rr ang bersyon doon, at kinukuwenta iyon mula sa entry/TP/SL. */
+  {key:'rr', label:'RR', widget:'number', editable:false, realOnly:true},
   {key:'entry_price', label:'Entry Price', widget:'number', editable:true},
   {key:'close_price', label:'Close Price', widget:'number', editable:true, realOnly:true},
   {key:'tp_price', label:'TP Price', widget:'number', editable:true},
@@ -7191,8 +7195,13 @@ const ALL_DRAWER_FIELDS = [
      naroon, ang plano ay naroon, hindi ka lang pumindot, at ang tanong ay kung
      BAKIT. Nakatago ito sa isang tunay na trade: walang saysay ang "bakit hindi
      mo kinuha" sa isang trade na kinuha mo. */
+  /* Nakagrupo sa dropdown: nadama / setup / buhay. Ang labing-apat na
+     pagpipilian sa isang patag na listahan ay isang paghahanap; nakagrupo ay
+     isang pagpili. Ang parehong grupo ay ginagamit ng dashboard para sagutin
+     ang "kasalanan ko ba ito", kaya iisang pinagmumulan ang dalawa. */
   {key:'no_trade_reason', label:'Why you did not take it', widget:'select',
-   editable:true, options:NO_TRADE_REASONS, paperOnly:true},
+   editable:true, options:NO_TRADE_REASONS, optionGroups:NO_TRADE_REASON_GROUPS,
+   paperOnly:true},
   /* ANG OUTCOME NG SETUP NA HINDI MO KINUHA.
 
      Ito ang kalahati ng tanong na hindi pa nasasagot. Ang dahilan ay nagsasabi
@@ -14768,8 +14777,38 @@ function _renderDrawerFieldRow(f, mode, row){
        ay teksto habang ang ilang option ay numero, at ang isang pares na
        magkatulad ang mukha ay hindi tutugma kung magkaiba ang uri.
        Naka-escape ang value dahil isinusulat na niya mismo ito ngayon. */
-    const opts = selectOptions.map(o =>
-      `<option value="${escapeHtml(String(o))}" ${rawStr===String(o)?'selected':''}>${escapeHtml(String(o))}</option>`).join('');
+    const optTag = o =>
+      `<option value="${escapeHtml(String(o))}" ${rawStr===String(o)?'selected':''}>${escapeHtml(String(o))}</option>`;
+    /* NAKAGRUPO KUNG MAY GRUPO.
+
+       Ang "Why you did not take it" ay may labing-apat na pagpipilian at
+       nakagrupo na sila mula pa noon — nadama / setup / buhay — pero ang grupo
+       ay ginagamit lang sa dashboard. Sa dropdown ay isang patag na listahan
+       ito, at ang paghahanap ng tamang dahilan sa labing-apat na magkakatulad
+       na linya ay mas mabagal kaysa sa dapat.
+
+       Ang <optgroup> ang paraan ng browser para dito: nakikita mo agad kung
+       aling bahagi ang tungkol sa IYO at kung alin ang tungkol sa merkado.
+       Ang halagang hindi kilala ay nasa labas ng grupo, kaya hindi ito
+       nawawala kahit hindi ito kabilang kahit saan. */
+    const grouped = f.optionGroups && f.optionGroups.length;
+    const inGroups = grouped
+      ? new Set(f.optionGroups.flatMap(g => g.items.map(String))) : null;
+    const opts = grouped
+      ? (selectOptions.filter(o => !inGroups.has(String(o))).map(optTag).join('')
+         + f.optionGroups.map(g => {
+             const items = g.items.filter(o => selectOptions.some(x => String(x) === String(o)));
+             /* Ang pangalan AT ang paliwanag sa label ng grupo. Hindi
+                nabibigyan ng estilo ang <optgroup>, kaya ang "sometimes a
+                correct pass" ay kailangang nasa mismong pangalan — at iyon ang
+                pinaka-mahalagang bagay na masasabi sa gitna ng pagpili: hindi
+                lahat ng hindi kinuhang trade ay pagkakamali. */
+             const title = g.name + (g.sub ? ' — ' + g.sub : '');
+             return items.length
+               ? `<optgroup label="${escapeHtml(title)}">${items.map(optTag).join('')}</optgroup>`
+               : '';
+           }).join(''))
+      : selectOptions.map(optTag).join('');
     const onchange = f.key === 'account' ? ` onchange="syncAccountTypeFromAccount(this.value)"`
       : f.key === 'trade_type' ? ` onchange="syncTradeSetupFromType(this.value)"`
       : f.key === 'trade_setup' ? ` onchange="syncPatternTypeFromSetup(this.value)"`
@@ -22869,6 +22908,49 @@ function _reportTradingStats(start, end){
   return { total, wins, totalPnl, winRate, avgRR, bestTrade, worstTrade, trades };
 }
 
+/* ANG MGA SETUP NA HINDI MO KINUHA, SA RECAP.
+
+   Ang Reports ay ang buod na binabasa mo pagkatapos ng linggo o ng buwan, at
+   ito rin ang lumalabas sa PDF. Ang isang recap na nagsasabi lamang ng mga
+   trade na KINUHA mo ay kalahating kuwento: ang linggong walang talo dahil
+   apat na beses kang natakot ay mukhang perpekto doon.
+
+   Ang petsa ay open_date — kung kailan mo NAKITA ang setup. Walang close_date
+   ang paper trade dahil walang nagsara, at ang pagsala sa close_date ay
+   magbibigay ng walang laman magpakailanman. */
+function _reportPaperStats(start, end){
+  const rows = (PAPER_TRADES || []).filter(t => {
+    const d = t.open_date || t.close_date;
+    return d && d >= start && d <= end;
+  });
+  const answered = rows.filter(t => String(t.no_trade_reason || '').trim());
+
+  const byKind = { felt: 0, setup: 0, life: 0 };
+  const byReason = new Map();
+  answered.forEach(t => {
+    const r = t.no_trade_reason.trim();
+    byReason.set(r, (byReason.get(r) || 0) + 1);
+    const k = NO_TRADE_KIND[r.toLowerCase()];
+    if(k) byKind[k]++;
+  });
+  const topReason = [...byReason.entries()].sort((a, b) => b[1] - a[1])[0] || null;
+
+  // Ang "Never filled" ay wala sa alinmang panig — tingnan ang renderTriggerPanel.
+  const kindOf = t => PAPER_OUTCOME_KIND[String(t.paper_outcome || '').toLowerCase()];
+  const missed = rows.filter(t => kindOf(t) === 'missed');
+  const saved  = rows.filter(t => kindOf(t) === 'saved');
+  const neverFilled = rows.filter(t => kindOf(t) === 'moot').length;
+  const checked = missed.length + saved.length;
+
+  const rrSum = list => list.map(_plannedRR).filter(x => x !== null)
+    .reduce((a, b) => a + b, 0);
+  const missedRR = rrSum(missed), savedRR = rrSum(saved);
+
+  return { total: rows.length, answered: answered.length, byKind, topReason,
+           missed: missed.length, saved: saved.length, neverFilled, checked,
+           missedRR, savedRR, netRR: missedRR - savedRR };
+}
+
 function _reportFinanceStats(start, end){
   const inPeriod = FIN_TXNS.filter(t => t.tx_date && new Date(t.tx_date + 'T00:00:00') >= start && new Date(t.tx_date + 'T00:00:00') <= end);
   // Transfers move money between your own accounts — they're neither income
@@ -22938,6 +23020,7 @@ function renderReportPreview(){
   document.getElementById('reportPeriodLabel').textContent = label;
 
   const trading = _reportTradingStats(start, end);
+  const paper = _reportPaperStats(start, end);
   const finance = _reportFinanceStats(start, end);
   const mood = _reportMoodStats(start, end);
   const insight = _reportMoodInsightData(_reportMoodPnlBreakdown(trading, mood));
@@ -22958,6 +23041,30 @@ function renderReportPreview(){
           &nbsp;·&nbsp; Worst trade: <span class="neg" style="font-weight:600;">${trading.worstTrade ? fmtMoney(netPnl(trading.worstTrade)) : '—'}</span> (${escapeHtml(trading.worstTrade?.symbol || '—')})
         </div>
       ` : `<div class="report-empty">No trades in this period.</div>`}
+    </div>
+
+    <div class="report-section">
+      <div class="report-section-title">Setups you passed on</div>
+      ${paper.total ? `
+        <div class="kpi-grid" style="margin-bottom:0;">
+          <div class="kpi"><div class="label">Passed</div><div class="value">${paper.total}</div></div>
+          <div class="kpi"><div class="label">Would have won</div><div class="value neg">${paper.missed}</div></div>
+          <div class="kpi"><div class="label">Would have lost</div><div class="value pos">${paper.saved}</div></div>
+          <div class="kpi"><div class="label">Net</div><div class="value ${paper.netRR > 0 ? 'neg' : 'pos'}">${
+            paper.checked ? (paper.netRR > 0 ? '−' : '+') + fmtNum(Math.abs(paper.netRR), 1) + 'R' : '—'}</div></div>
+        </div>
+        <div style="margin-top:14px;font-size:12.5px;color:var(--muted);">
+          ${paper.checked
+            ? (paper.netRR > 0.5
+                ? `Hesitating cost about <span class="neg" style="font-weight:600;">${fmtNum(paper.netRR, 1)}R</span> across ${paper.checked} checked setup${paper.checked === 1 ? '' : 's'}.`
+                : paper.netRR < -0.5
+                ? `Passing saved about <span class="pos" style="font-weight:600;">${fmtNum(Math.abs(paper.netRR), 1)}R</span> — the ones you let go would have lost.`
+                : `Roughly even — ${paper.missed} would have won, ${paper.saved} would have lost.`)
+            : `None checked against the chart yet.`}
+          ${paper.neverFilled ? `&nbsp;·&nbsp; ${paper.neverFilled} never filled` : ''}
+          ${paper.topReason ? `<br>Most common reason: <span style="color:var(--ink);font-weight:600;">${escapeHtml(paper.topReason[0])}</span> (${paper.topReason[1]}×)` : ''}
+        </div>
+      ` : `<div class="report-empty">No setups logged as passed on in this period.</div>`}
     </div>
 
     <div class="report-section">
@@ -23019,6 +23126,7 @@ function downloadReportPDF(){
 
   const { start, end, label } = _reportGetRange();
   const trading = _reportTradingStats(start, end);
+  const paper = _reportPaperStats(start, end);
   const finance = _reportFinanceStats(start, end);
   const mood = _reportMoodStats(start, end);
   const insight = _reportMoodInsightData(_reportMoodPnlBreakdown(trading, mood));
@@ -23090,6 +23198,34 @@ function downloadReportPDF(){
     noteLine(`Best trade: ${trading.bestTrade ? fmtMoney(netPnl(trading.bestTrade)) : '—'} (${trading.bestTrade?.symbol || '—'})   ·   Worst trade: ${trading.worstTrade ? fmtMoney(netPnl(trading.worstTrade)) : '—'} (${trading.worstTrade?.symbol || '—'})`);
   }else{
     emptyLine('No trades in this period.');
+  }
+
+  /* Ang mga setup na hindi mo kinuha.
+
+     Nasa PDF ito nang sadya at hindi lang sa screen: ang recap na binabasa mo
+     makalipas ang isang buwan ay hindi dapat nagsasabi lamang ng mga trade na
+     kinuha mo. Ang buwang walang talo dahil limang beses kang natakot ay
+     mukhang perpekto kung ito lang ang nakasulat. */
+  sectionTitle('Setups you passed on');
+  if(paper.total){
+    statRow([
+      { label: 'Passed', value: String(paper.total) },
+      { label: 'Would have won', value: String(paper.missed), color: paper.missed ? LOSS : INK },
+      { label: 'Would have lost', value: String(paper.saved), color: paper.saved ? WIN : INK },
+      { label: 'Net', value: paper.checked
+          ? (paper.netRR > 0 ? '-' : '+') + fmtNum(Math.abs(paper.netRR), 1) + 'R' : '—',
+        color: paper.checked ? (paper.netRR > 0 ? LOSS : WIN) : INK }
+    ]);
+    noteLine(paper.checked
+      ? (paper.netRR > 0.5
+          ? `Hesitating cost about ${fmtNum(paper.netRR, 1)}R across ${paper.checked} checked setup${paper.checked === 1 ? '' : 's'}.`
+          : paper.netRR < -0.5
+          ? `Passing saved about ${fmtNum(Math.abs(paper.netRR), 1)}R — the ones you let go would have lost.`
+          : `Roughly even — ${paper.missed} would have won, ${paper.saved} would have lost.`)
+      : 'None checked against the chart yet.');
+    if(paper.topReason) noteLine(`Most common reason: ${paper.topReason[0]} (${paper.topReason[1]}x)`);
+  }else{
+    emptyLine('No setups logged as passed on in this period.');
   }
 
   // Finance
