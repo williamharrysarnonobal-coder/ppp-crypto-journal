@@ -1,0 +1,28 @@
+# Netlify cache rules. Ang Cloudflare Worker ay may katumbas nito sa
+# serveAsset() — dalawang host, iisang panuntunan, para hindi mag-iba ang
+# hitsura ng site depende kung alin ang sumasagot.
+#
+# ANG HTML AY HINDI DAPAT MA-CACHE. ANG IBA, OO.
+#
+# Ang bawat <script> at <link> ay may `?v=NNN`, at iyon ang nagsasabi sa
+# browser na may bago. Pero nakasulat ang bilang na iyon SA LOOB ng
+# dashboard.html — kaya kung ang HTML ang naka-cache, hihingin pa rin nito ang
+# lumang `?v=` at hindi mababago ang pahina kahit ilang beses pang mag-deploy.
+# Walang error at walang babala; mukha lang hindi gumagana ang mga pagbabago.
+#
+# `no-cache` ay hindi "huwag itabi" — itinatabi pa rin, tinatanong lang muna
+# kung nagbago. Isang 304 kapag pareho, ang bagong pahina kapag hindi.
+
+/*.html
+  Cache-Control: no-cache, must-revalidate
+
+/
+  Cache-Control: no-cache, must-revalidate
+
+# Ang JS at CSS ay may `?v=` na, kaya ligtas silang itabi nang matagal — ang
+# bagong bilang ang bumubuo ng bagong URL, at hindi na kailangang magtanong.
+/js/*
+  Cache-Control: public, max-age=31536000
+
+/css/*
+  Cache-Control: public, max-age=31536000

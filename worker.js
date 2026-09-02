@@ -18,9 +18,35 @@ export default {
     const url = new URL(request.url);
     if (url.pathname === '/api/transcribe') return handleTranscribe(request, env);
     // Everything else is the site itself.
-    return env.ASSETS.fetch(request);
+    return serveAsset(request, env);
   }
 };
+
+/* ANG HTML AY HINDI DAPAT MA-CACHE. ANG IBA, OO.
+
+   Ang bawat <script> at <link> sa mga pahina ay may `?v=NNN`, at iyon ang
+   nagsasabi sa browser na may bagong bersyon. Pero ang bilang na iyon ay
+   NAKASULAT SA LOOB ng dashboard.html — kaya kung ang HTML mismo ang naka-cache,
+   hihingin pa rin nito ang lumang `?v=` at hindi mababago ang pahina kahit
+   ilang beses pang mag-deploy.
+
+   Iyon mismo ang nangyari: naka-push at naka-deploy na ang bagong code, pero
+   ang browser ay nagsasalita pa rin sa lumang HTML. Walang error, walang
+   babala — mukhang hindi lang gumagana ang mga pagbabago.
+
+   `no-cache` ay HINDI "huwag itabi": itinatabi pa rin ito, tinatanong lang muna
+   kung nagbago bago gamitin. Isang mabilis na 304 kapag pareho, ang bagong
+   pahina kapag hindi. Ang JS at CSS ay nananatiling naka-cache nang matagal —
+   sila ang may `?v=`, at iyon ang tamang paraan para sa kanila. */
+async function serveAsset(request, env) {
+  const res = await env.ASSETS.fetch(request);
+  const type = res.headers.get('content-type') || '';
+  if (!type.includes('text/html')) return res;
+
+  const out = new Response(res.body, res);
+  out.headers.set('Cache-Control', 'no-cache, must-revalidate');
+  return out;
+}
 
 async function handleTranscribe(request, env) {
   // Open /api/transcribe in a browser to see whether this Worker can actually

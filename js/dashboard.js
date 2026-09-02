@@ -7538,13 +7538,32 @@ function saveOptionsConfig(){
 
 function loadOptionsConfig(){
   try{
+    /* MERGE, HINDI PALIT — ang parehong dahilan na nakasulat na sa ibaba para
+       sa UNFOLLOWED_RULES_OPTIONS, na hindi kailanman naisagawa rito.
+
+       Ang naka-save na kopya ay mas matanda kaysa sa anumang option na
+       naidagdag pagkatapos noon. Ang tuwirang pagpalit ay nangangahulugang ang
+       BAWAT bagong pagpipilian sa code ay hindi kailanman aabot sa sinumang
+       minsan nang nagbukas ng Options editor — at walang error, walang babala:
+       nag-deploy ka, nag-clear ka ng cache, at wala pa ring nagbago, dahil ang
+       nasa localStorage ang nananaig sa tuwing magbubukas ang app.
+
+       Ganito ito lumitaw: anim na bagong Pattern Type, isang bagong Trade
+       Setup at isang bagong AOF Phase ang naidagdag at naka-deploy, at wala ni
+       isa ang lumabas sa kanya.
+
+       Ang naka-save ang nauuna — kanya ang ayos na iyon at maaaring may
+       sarili siyang naidagdag doon. Ang wala pa ay idinudugtong sa dulo. */
     const savedFieldOpts = JSON.parse(localStorage.getItem('ledger-field-options') || 'null');
     if(savedFieldOpts){
       Object.keys(savedFieldOpts).forEach(k => {
-        if(FIELD_OPTIONS[k]){
-          FIELD_OPTIONS[k].length = 0;
-          FIELD_OPTIONS[k].push(...savedFieldOpts[k]);
-        }
+        if(!FIELD_OPTIONS[k]) return;
+        const saved = (savedFieldOpts[k] || []).map(String);
+        const seen = new Set(saved.map(s => s.trim().toLowerCase()));
+        const missing = FIELD_OPTIONS[k].filter(o =>
+          !seen.has(String(o).trim().toLowerCase()));
+        FIELD_OPTIONS[k].length = 0;
+        FIELD_OPTIONS[k].push(...saved, ...missing);
       });
     }
     const savedUnfollowed = JSON.parse(localStorage.getItem('ledger-unfollowed-rules-options') || 'null');
