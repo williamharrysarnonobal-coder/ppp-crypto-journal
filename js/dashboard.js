@@ -19468,7 +19468,7 @@ async function loadAccounts(){
     console.error("Couldn't load trading accounts:", e);
     TRADING_ACCOUNTS = [];
   }
-  await _autoDetectAccountStatus();
+  _flagAccountBreaches();
   await _autoAdvanceAccountPhases();
   syncAccountFieldOptions();
   renderAccountsList();
@@ -19582,36 +19582,93 @@ async function _autoAdvanceAccountPhases(){
   }
 }
 
-// Auto-fails an account the moment its own rules are breached (Max Daily
-// Loss for any single day, or Max Total Drawdown on current balance) — a
-// breach is permanent in a real challenge, so this never runs on an account
-// already marked Failed/Passed, and never reverts one back to Ongoing.
-async function _autoDetectAccountStatus(){
-  for(const acc of TRADING_ACCOUNTS){
-    if(acc.account_type === 'Exchange') continue;
-    if(acc.status === 'Failed' || acc.status === 'Passed') continue;
+/* ANG PROP FIRM ANG NAGSASABI KUNG BAGSAK KA, HINDI ANG JOURNAL NA ITO.
 
-    const s = computeAccountStats(acc);
-    const dailyBreach = s.dailyLossLimit > 0 && Object.values(s.dayPL || {}).some(v => v <= -s.dailyLossLimit);
-    const drawdownBreach = s.drawdownFloor > 0 && s.currentBalance <= s.drawdownFloor;
-    if(!dailyBreach && !drawdownBreach) continue;
+   Awtomatiko nitong minamarkahang Failed ang isang account noon, at agad ding
+   isinusulat sa database. Mali iyon sa dalawang paraan, at pareho silang
+   tahimik:
 
-    try{
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/trading_accounts?id=eq.${acc.id}`, {
-        method: 'PATCH',
-        headers: {
-          "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}`,
-          "Content-Type": "application/json", "Prefer": "return=representation"
-        },
-        body: JSON.stringify({ status: 'Failed' })
-      });
-      if(!res.ok) throw new Error(await res.text());
-      const updated = await res.json();
-      Object.assign(acc, updated[0] || { status: 'Failed' });
-      showToast(`⚠️ ${acc.account_name} marked Failed — ${dailyBreach ? 'Max Daily Loss' : 'Max Total Drawdown'} breached.`);
-    }catch(e){
-      console.error("Couldn't auto-fail account:", e);
+     1. Ang binibilang ay ang KABUUAN NG MGA NAITALANG TRADE sa isang araw,
+        habang ang balanseng nasa card ay ang `current_balance` na ikaw mismo
+        ang naglalagay. Dalawang magkaibang pinagmulan. Ang isang naitalang
+        araw na -$260 ay nagmamarka ng Failed kahit sinasabi ng balanse — at ng
+        website ng prop firm — na buo pa ang account.
+
+     2. Permanente ito at walang tanong. Ang pagbabalik sa Ongoing ay hindi
+        tumatagal: sa susunod na pagbukas ng app, muling babagsak ito.
+
+   Ang journal na ito ay isang TALA, hindi ang awtoridad. Kaya nagbababala na
+   lang ito ngayon at hindi na nagpapasya: nasa card ang mismong araw at ang
+   mismong halaga, at ikaw ang pipindot kung tama nga. Walang isinusulat dito. */
+function _accountBreachWarning(acc){
+  if(!acc || acc.account_type === 'Exchange') return null;
+  if(acc.status === 'Failed' || acc.status === 'Passed') return null;
+
+  const s = computeAccountStats(acc);
+
+  // Ang drawdown ay sinusukat sa balanse — iyon ang numerong sinusundan mo sa
+  // broker, kaya ito ang mas malapit sa totoo sa dalawa.
+  if(s.drawdownFloor > 0 && s.currentBalance <= s.drawdownFloor){
+    return { kind: 'drawdown',
+      text: `Balance $${s.currentBalance.toLocaleString()} is at or below the `
+          + `$${s.drawdownFloor.toLocaleString()} drawdown floor.` };
+  }
+
+  if(s.dailyLossLimit > 0){
+    const worst = Object.entries(s.dayPL || {})
+      .map(([k, v]) => ({ k: Number(k), v }))
+      .filter(d => d.v <= -s.dailyLossLimit)
+      .sort((a, b) => a.v - b.v)[0];
+    if(worst){
+      const day = new Date(worst.k).toLocaleDateString(undefined,
+        { day:'numeric', month:'short', year:'numeric', timeZone:'UTC' });
+      return { kind: 'daily',
+        text: `Your journal shows −$${Math.abs(worst.v).toFixed(2)} on ${day} (UTC), `
+            + `past the $${s.dailyLossLimit.toLocaleString()} daily loss limit. `
+            + `Your balance still reads $${s.currentBalance.toLocaleString()} — `
+            + `check the prop firm before marking this failed.` };
     }
+  }
+  return null;
+}
+
+// Walang isinusulat — tumatakbo lang ito bago mag-render para may maipakitang
+// babala ang card.
+function _flagAccountBreaches(){
+  (TRADING_ACCOUNTS || []).forEach(acc => {
+    try { acc._breach = _accountBreachWarning(acc); }
+    catch(e){ acc._breach = null; }
+  });
+}
+
+/* Ang tanging daan patungong Failed ay dito, at may tao sa dulo nito. */
+async function markAccountFailed(id){
+  const acc = (TRADING_ACCOUNTS || []).find(a => a.id === id);
+  if(!acc) return;
+  const w = acc._breach;
+  if(!(await customConfirm(
+      `Mark ${acc.account_name} as Failed?\n\n${w ? w.text : ''}\n\n`
+      + `Only do this if the prop firm has actually failed the account. `
+      + `You can set it back to Ongoing from Edit account.`,
+      'Mark Failed'))) return;
+  try{
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/trading_accounts?id=eq.${acc.id}`, {
+      method: 'PATCH',
+      headers: {
+        "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}`,
+        "Content-Type": "application/json", "Prefer": "return=representation"
+      },
+      body: JSON.stringify({ status: 'Failed' })
+    });
+    if(!res.ok) throw new Error(await res.text());
+    const updated = await res.json();
+    Object.assign(acc, updated[0] || { status: 'Failed' });
+    acc._breach = null;
+    renderAccountsList();
+    showToast(`${acc.account_name} marked Failed.`);
+  }catch(e){
+    console.error("Couldn't mark the account failed:", e);
+    showToast("Couldn't save that — please try again.");
   }
 }
 
@@ -20510,6 +20567,16 @@ function accountCardHTML(a){
 
     const cardClick = isExchange ? `openAccountModal(${a.id})` : `openAccountDetail(${a.id})`;
 
+    /* Ang babala, hindi ang hatol. Nasa card ang mismong araw at halaga para
+       may maihahambing ka sa website ng prop firm — at ang pindutan ay hindi
+       kumikilos nang mag-isa. */
+    const breachHTML = (!isExchange && a._breach)
+      ? `<div class="acct-breach" onclick='event.stopPropagation();'>
+           <div class="acct-breach-txt">${escapeHtml(a._breach.text)}</div>
+           <button class="acct-breach-btn" onclick='markAccountFailed(${a.id})'>Mark Failed</button>
+         </div>`
+      : '';
+
     return `
       <div class="account-card" onclick='${cardClick}'>
         ${statusBadge}
@@ -20517,6 +20584,7 @@ function accountCardHTML(a){
         <div class="account-card-meta">${metaLabel}</div>
         ${balanceHTML}
         <div class="account-card-rules">${rules.join('') || '<span class="pill pill-muted">No rules set</span>'}</div>
+        ${breachHTML}
         ${riskHTML}
         <button class="account-edit-btn-corner" onclick='event.stopPropagation(); openAccountModal(${a.id})' title="Edit account">${accountEditIconSVG()}</button>
       </div>

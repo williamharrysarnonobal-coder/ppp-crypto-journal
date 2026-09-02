@@ -27,19 +27,33 @@
 --    kaya UTC midnight ang paglipat. Ang trade mong sarado ng
 --    ala-1 ng umaga sa Dubai ay kabilang sa NAKARAANG araw sa UTC.
 -- ------------------------------------------------------------
+--    Hiwalay ang P&L at ang FEE dahil BINABAWAS ang fee bago ihambing sa
+--    -$250. Ang isang araw na patas ang mga trade pero may malaking fee ay
+--    lumalagpas pa rin — at iyon ay mahirap mapansin.
 select
   (close_date at time zone 'UTC')::date            as araw_utc,
   count(*)                                         as trades,
+  round(sum(coalesce(profit_loss,0))::numeric, 2)  as pl_bago_ang_fee,
+  round(sum(coalesce(fee,0))::numeric, 2)          as kabuuang_fee,
   round(sum(coalesce(profit_loss,0) - coalesce(fee,0))::numeric, 2) as pl_net,
   case
     when sum(coalesce(profit_loss,0) - coalesce(fee,0)) <= -250
-      then '<<< LUMAGPAS — ito ang nagpa-FAILED'
+      then case
+        when sum(coalesce(profit_loss,0)) > -250
+          then '<<< LUMAGPAS — ANG FEE ANG NAGBUHAT'
+        else '<<< LUMAGPAS — ito ang nagpa-FAILED'
+      end
     else ''
   end                                              as hatol
 from trading_journal
 where account = 'Upscale Trade 5K'
   and close_date is not null
   and coalesce(is_paper, false) = false
+  -- Ang app ay binibilang LAMANG ang mga trade mula sa simula ng phase.
+  -- Ang phase mo ay nagsimula 2026-09-02, kaya ito rin ang saklaw dito —
+  -- kung wala kang makikita sa ibaba, wala ring nakikita ang app, at ibang
+  -- bagay ang nagpa-Failed.
+  and close_date >= '2026-09-02'
 group by 1
 order by pl_net asc;
 
