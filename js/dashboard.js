@@ -19662,6 +19662,55 @@ function _accountPhaseStages(acc){
   return _accountPreset(acc)?.stages || ACCOUNT_PHASE_STAGES;
 }
 
+/* MULING KUWENTAHIN ANG BALANSE MULA SA MGA TRADE.
+
+   Manwal ang balanse nang sadya: ang broker ang awtoridad doon, at hindi lahat
+   ng trade ay laging naitatala — kaya ang tuloy-tuloy na pagkuha nito sa
+   journal ay magsisinungaling sa tuwing may nalilimutan.
+
+   Pero may pagkakataong ang manwal na numero ang nawawala. Napatungan ito ng
+   lumang auto-advance: nire-reset nito ang balanse sa laki ng account at
+   binubura ang tunay na numero, at wala nang paraan para makuha iyon pabalik
+   maliban sa Upscale mismo. Sa ganoong sandali, ang journal ang tanging
+   natitirang tala at mas mabuti iyon kaysa sa 5,000 na hindi naman totoo.
+
+   Ipinapakita muna bago isulat, at hindi ito nagse-save nang mag-isa: ang
+   kahon ang napupunan, at ikaw pa rin ang pipindot ng Save. */
+function recalcBalanceFromJournal(){
+  const note = document.getElementById('accRecalcNote');
+  const nameEl = document.getElementById('accName');
+  const sizeEl = document.getElementById('accSize');
+  const balEl = document.getElementById('accBalance');
+  if(!note || !balEl) return;
+
+  const name = (nameEl?.value || '').trim();
+  if(!name){ note.textContent = 'Give the account a name first.'; return; }
+
+  const rows = (ALL_TRADES || []).filter(t =>
+    t.account === name && t.close_date);
+  if(!rows.length){
+    note.textContent = `No closed trades recorded for “${name}” yet.`;
+    return;
+  }
+
+  /* Ang panimula ay ang laki ng account — iyon ang ibinibigay sa iyo ng prop
+     firm sa unang araw. Kung may phase start balance, iyon ang mas tama. */
+  const acc = (TRADING_ACCOUNTS || []).find(a => a.account_name === name);
+  const base = (acc && acc.phase_start_balance != null)
+    ? Number(acc.phase_start_balance)
+    : (Number(sizeEl?.value) || Number(acc?.account_size) || 0);
+
+  const pl = rows.reduce((s, t) => s + netPnl(t), 0);
+  const out = base + pl;
+  balEl.value = out.toFixed(2);
+
+  note.innerHTML = `${rows.length} closed trade${rows.length === 1 ? '' : 's'} · `
+    + `$${base.toLocaleString(undefined,{maximumFractionDigits:2})} `
+    + `${pl < 0 ? '−' : '+'} $${Math.abs(pl).toLocaleString(undefined,{maximumFractionDigits:2})} `
+    + `= <b>$${out.toLocaleString(undefined,{maximumFractionDigits:2})}</b>. `
+    + `Check it against the prop firm before saving — they are the authority, not this.`;
+}
+
 /* ANG PROP FIRM ANG NAGPAPASA SA IYO, HINDI ANG JOURNAL NA ITO.
 
    Kusang inaakyat nito ang account sa susunod na phase noon at agad ding
@@ -20781,25 +20830,18 @@ function accountCardHTML(a){
 
     const riskBase = a.account_size ? Number(a.account_size) : (a.current_balance != null ? Number(a.current_balance) : null);
 
-    /* IISANG SAKLAW SA BUONG CARD.
+    /* LAHAT NG TRADE SA ACCOUNT, hindi ang phase lamang.
 
-       Ang bilang ng trade ay LAHAT ng trade sa account noon, habang ang lahat
-       ng iba sa card — ang natitipon, ang porsyento ng target, ang guhit — ay
-       PHASE lamang. Kaya ang card ay nagsasabing "33 trades" katabi ng "+$0",
-       at mukhang sira ang dalawa kahit tama silang pareho: nasa Phase 1 ang 33
-       at ang phase na ito ay nagsimula pa lang.
+       Ini-scope ko ito sa phase para tumugma sa natitipon, na phase-only din —
+       "33 trades katabi ng +$0" ang mukhang sira noon. Pero mali ang inayos ko:
+       ang bilang ng trade ay isang bagay na ALAM na niya. Sinasabi ng filter
+       ng Trade Journals na 71 ang 10K, at ang card ay nagsasabing 53 — dalawang
+       lugar sa iisang app na hindi magkasundo tungkol sa isang bagay na
+       mabibilang, at siya ang naiwang mag-isip kung alin ang tama.
 
-       Ang phase ang nananaig, dahil iyon ang tinatanong ng card: gaano ka na
-       kalayo sa target na ito. Nasa hover ang kabuuang bilang, dahil totoo rin
-       naman iyon — hindi lang iyon ang tanong. */
-    const phaseStartForCount = a.phase_start_date
-      ? new Date(a.phase_start_date + 'T00:00:00') : null;
-    const accTrades = ALL_TRADES.filter(t => t.account === a.account_name);
-    const tradeCount = phaseStartForCount
-      ? accTrades.filter(t => t.close_date && t.close_date >= phaseStartForCount).length
-      : accTrades.length;
-    const tradeCountTitle = (phaseStartForCount && accTrades.length !== tradeCount)
-      ? ` title="This phase only. ${accTrades.length} on the account in total."` : '';
+       Ang PERA ang phase-scoped, at may dahilan iyon: nire-reset ng prop firm
+       ang balanse sa bawat phase. Ang KASAYSAYAN ay hindi nagre-reset. */
+    const tradeCount = ALL_TRADES.filter(t => t.account === a.account_name).length;
     // Per-account Risk % if set, otherwise fall back to the Profile-wide
     // default (My Trading Rules > Risk Per Trade) — was hardcoded to 0.3%
     // for every account regardless of what either of those actually said.
@@ -20852,7 +20894,7 @@ function accountCardHTML(a){
 
     const riskHTML = (riskBase != null || tradeCount > 0 || remainHTML)
       ? `<div class="account-card-risk">
-          <div${tradeCountTitle}>Total Trades: <span>${tradeCount}</span></div>
+          <div>Total Trades: <span>${tradeCount}</span></div>
           ${riskBase != null ? `<div>Risk Per Trade: <span>$${(riskBase * riskPct/100).toLocaleString(undefined,{maximumFractionDigits:2})}</span> <span class="account-risk-pct">(${riskPct}%)</span></div>` : ''}
           ${remainHTML}
         </div>`

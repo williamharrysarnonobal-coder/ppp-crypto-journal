@@ -17,7 +17,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<link rel="stylesheet" href="css/style.css?v=318">
+<link rel="stylesheet" href="css/style.css?v=319">
 </head>
 <body>
 
@@ -1917,6 +1917,19 @@
       <label>Current Balance ($)</label>
       <input id="accBalance" type="number" step="0.01" placeholder="e.g. 51200">
     </div>
+    <!-- Ang balanse ay manwal nang sadya — ang broker ang awtoridad doon, at
+         hindi lahat ng trade ay laging naitatala. Pero kapag nawala ito (o
+         napatungan gaya ng ginawa ng lumang auto-advance), ang journal ang
+         tanging natitirang tala — at ang muling pagkuwenta mula roon ay mas
+         mabuti kaysa sa isang blangkong kahon. Ipinapakita muna bago isulat. -->
+    <div class="field-row" id="accRecalcRow" style="margin-top:-6px;">
+      <label></label>
+      <div>
+        <button type="button" class="acct-recalc-btn" onclick="recalcBalanceFromJournal()"
+          >Recalculate from my trades</button>
+        <div class="acct-recalc-note" id="accRecalcNote"></div>
+      </div>
+    </div>
     <div class="field-row" id="accStatusReadoutRow">
       <label>Status</label>
       <div id="accStatusReadout" style="padding:8px 2px;font-weight:600;"></div>
@@ -2363,6 +2376,6 @@
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=2"></script>
-<script src="js/dashboard.js?v=528"></script>
+<script src="js/dashboard.js?v=529"></script>
 </body>
 </html>
