@@ -5178,6 +5178,56 @@ const TRADE_REPORTS = [
                txt:'would have reached take profit' } },
     ],
   },
+  /* TATLONG TANONG NA WALANG KAPAREHA.
+
+     Ang "Held Through Invalidation" ay may kabila — ang "Cut on Invalidation".
+     Ang tatlong ito ay wala: walang "Entered With Confirmation" na tag, at
+     walang dahilan para gumawa ng isa. Ang paghingi sa kanya na titikan ang
+     bawat malinis na entry ay trabahong para lang sa isang ulat, at hindi
+     niya gagawin nang tuloy-tuloy — kaya ang ulat ay magiging mali at hindi
+     mababasa kung bakit.
+
+     Kaya ang sinusukat dito ay ang MISMONG naitala niya: sa mga beses na
+     ginawa mo ito, ilan ang nanalo. Hindi ito paghahambing sa hindi paggawa —
+     hindi iyon masasagot ng datos na ito, at hindi ko sasabihing kaya nito.
+     Ang breakeven ay hindi kabilang sa alinmang panig: hindi ito nanalo at
+     hindi rin natalo, at ang pagbilang doon sa alinman ay magsisinungaling. */
+  {
+    id:'chased',
+    title:'Chasing',
+    q:'When I chase a move that already ran, does it work?',
+    keep:'Chasing has been working for you. Keep taking them.',
+    change:'Stop chasing extended moves.',
+    arms:[
+      { label:'Entries on an already-extended move',
+        good:{ sel: t => _hasTag(t, ['Chased Extended Move']) && _isWin(t),  txt:'won' },
+        bad: { sel: t => _hasTag(t, ['Chased Extended Move']) && _isLoss(t), txt:'lost' } },
+    ],
+  },
+  {
+    id:'key-level',
+    title:'Key levels',
+    q:'When I trade into a key level, does it work?',
+    keep:'Trading into the level has been working. Keep it.',
+    change:'Stop trading into key levels — wait for the reaction.',
+    arms:[
+      { label:'Entries straight into a key level',
+        good:{ sel: t => _hasTag(t, ['Traded Into Key Level']) && _isWin(t),  txt:'won' },
+        bad: { sel: t => _hasTag(t, ['Traded Into Key Level']) && _isLoss(t), txt:'lost' } },
+    ],
+  },
+  {
+    id:'no-confirm',
+    title:'Confirmation',
+    q:'When I enter without confirmation, does it work?',
+    keep:'Entering early has been working. Keep it.',
+    change:'Wait for confirmation before entering.',
+    arms:[
+      { label:'Entries without confirmation',
+        good:{ sel: t => _hasTag(t, ['Entered Without Confirmation']) && _isWin(t),  txt:'won' },
+        bad: { sel: t => _hasTag(t, ['Entered Without Confirmation']) && _isLoss(t), txt:'lost' } },
+    ],
+  },
   {
     id:'inval-hold',
     title:'Invalidation — holding',
@@ -20686,7 +20736,26 @@ function accountCardHTML(a){
     const statusBadge = !isExchange ? `<div class="account-card-status box-badge ${statusBoxClass}">${status}</div>` : '';
 
     const riskBase = a.account_size ? Number(a.account_size) : (a.current_balance != null ? Number(a.current_balance) : null);
-    const tradeCount = ALL_TRADES.filter(t => t.account === a.account_name).length;
+
+    /* IISANG SAKLAW SA BUONG CARD.
+
+       Ang bilang ng trade ay LAHAT ng trade sa account noon, habang ang lahat
+       ng iba sa card — ang natitipon, ang porsyento ng target, ang guhit — ay
+       PHASE lamang. Kaya ang card ay nagsasabing "33 trades" katabi ng "+$0",
+       at mukhang sira ang dalawa kahit tama silang pareho: nasa Phase 1 ang 33
+       at ang phase na ito ay nagsimula pa lang.
+
+       Ang phase ang nananaig, dahil iyon ang tinatanong ng card: gaano ka na
+       kalayo sa target na ito. Nasa hover ang kabuuang bilang, dahil totoo rin
+       naman iyon — hindi lang iyon ang tanong. */
+    const phaseStartForCount = a.phase_start_date
+      ? new Date(a.phase_start_date + 'T00:00:00') : null;
+    const accTrades = ALL_TRADES.filter(t => t.account === a.account_name);
+    const tradeCount = phaseStartForCount
+      ? accTrades.filter(t => t.close_date && t.close_date >= phaseStartForCount).length
+      : accTrades.length;
+    const tradeCountTitle = (phaseStartForCount && accTrades.length !== tradeCount)
+      ? ` title="This phase only. ${accTrades.length} on the account in total."` : '';
     // Per-account Risk % if set, otherwise fall back to the Profile-wide
     // default (My Trading Rules > Risk Per Trade) — was hardcoded to 0.3%
     // for every account regardless of what either of those actually said.
@@ -20739,7 +20808,7 @@ function accountCardHTML(a){
 
     const riskHTML = (riskBase != null || tradeCount > 0 || remainHTML)
       ? `<div class="account-card-risk">
-          <div>Total Trades: <span>${tradeCount}</span></div>
+          <div${tradeCountTitle}>Total Trades: <span>${tradeCount}</span></div>
           ${riskBase != null ? `<div>Risk Per Trade: <span>$${(riskBase * riskPct/100).toLocaleString(undefined,{maximumFractionDigits:2})}</span> <span class="account-risk-pct">(${riskPct}%)</span></div>` : ''}
           ${remainHTML}
         </div>`
