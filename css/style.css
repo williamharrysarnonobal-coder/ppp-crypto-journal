@@ -4041,4 +4041,44 @@ body.mobile-mode .yo-j-line{font-size:13px;}
   background:var(--surface-2);border:1px solid var(--rule);
   font-size:12px;line-height:1.55;color:var(--muted);
 }
-.ea-hint b{color:var(--ink);font-family:'IBM Plex Mono',monospace;font-weight:600;}
+.ea-hint b{color:var(--ink);font-weight:600;display:block;margin-bottom:7px;}
+/* Ang halimbawa: pangalan sa kaliwa, halaga sa kanan, sa monospace para
+   makita mo ang eksaktong hugis ng isasagot mo. */
+.ea-eg{
+  display:grid;grid-template-columns:auto 1fr;gap:3px 14px;
+  margin:0 0 9px;padding:9px 11px;border-radius:5px;
+  background:var(--surface-2);border:1px solid var(--rule);
+}
+.ea-eg span{color:var(--muted);font-size:11.5px;}
+.ea-eg em{font-style:normal;font-family:'IBM Plex Mono',monospace;
+  font-size:11.5px;color:var(--ink);}
+.ea-eg i{font-style:normal;color:var(--muted);font-family:inherit;}
+
+/* ---- Ang Manual na form ----
+   Isang kahon kada field, naka-grupo. Dalawang hanay sa desktop; isa sa
+   telepono, kung saan ang dalawang kahon sa isang hilera ay masyadong makitid
+   para sa isang petsa. */
+.ea-form{margin-top:12px;}
+.ea-g-title{
+  font-size:10px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--muted);margin:14px 0 7px;padding-bottom:5px;
+  border-bottom:1px solid var(--rule);
+}
+.ea-g-title:first-child{margin-top:0;}
+.ea-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px 12px;}
+.ea-f{display:flex;flex-direction:column;gap:4px;min-width:0;}
+.ea-f > span{font-size:11.5px;color:var(--muted);}
+.ea-f input, .ea-f select{
+  width:100%;min-width:0;padding:8px 10px;border-radius:6px;
+  background:var(--surface-2);border:1px solid var(--rule);
+  color:var(--ink);font-size:13px;font-family:'IBM Plex Mono',monospace;
+}
+.ea-f input:focus, .ea-f select:focus{outline:none;border-color:var(--accent);}
+.ea-f input::placeholder{color:var(--muted);opacity:.7;}
+/* Petsa at oras na magkatabi: ang oras ay makitid, ang petsa ang kumukuha ng
+   natitira — kabaligtaran ng 1fr 1fr, na nag-iiwan ng puwang sa oras at
+   pumipiga sa petsa hanggang sa hindi na mabasa. */
+.ea-dt{display:grid;grid-template-columns:1.35fr 1fr;gap:6px;}
+@media (max-width: 640px){
+  .ea-grid{grid-template-columns:1fr;}
+}

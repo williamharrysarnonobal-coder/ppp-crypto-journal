@@ -17,7 +17,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<link rel="stylesheet" href="css/style.css?v=297">
+<link rel="stylesheet" href="css/style.css?v=298">
 </head>
 <body>
 
@@ -1448,7 +1448,7 @@
   <div class="modal-box" style="position:relative;">
     <button class="modal-close" onclick="closeEasyAddModal()">✕</button>
     <h3>Easy Add</h3>
-    <div class="modal-sub">Copy the position card from your exchange (select the text and copy) and paste it below.</div>
+    <div class="modal-sub" id="easyAddSub">Copy the position card from your exchange (select the text and copy) and paste it below.</div>
     <div id="easyAddTarget" class="ea-target" style="display:none;"></div>
     <div class="field-row" style="margin-top:12px;">
       <label>Broker / Format</label>
@@ -1457,13 +1457,23 @@
         <option value="manual">Manual — any other broker or prop firm</option>
       </select>
     </div>
-    <!-- Ang format ay nasa LABAS ng kahon nang sadya: ang halimbawang naiwan
-         sa loob ng template ay babasahin ng parser bilang sagot. -->
+    <!-- Ang gabay ay isang halimbawa, hindi isang paglalarawan: mas mabilis
+         basahin ang isang punong-punong hilera kaysa sa isang talata tungkol
+         dito. Nasa labas ito ng form, kaya walang halimbawang maiiwan sa loob
+         ng isang kahon at masasabing sagot. -->
     <div class="ea-hint" id="easyAddHint" style="display:none;">
-      Fill in the value under each label. Dates take two lines —
-      <b>DD.MM.YYYY</b> then <b>HH:MM</b>. Leave anything you do not have blank;
-      a blank line is skipped, never read as zero.
+      <b>A filled-in example</b>
+      <div class="ea-eg">
+        <span>Open Date</span><em>15/03/2026 &nbsp; 09:30</em>
+        <span>Symbol</span><em>BTC &nbsp; <i>→ saved as BTC/USD</i></em>
+        <span>Entry Price</span><em>64000</em>
+        <span>SL Price</span><em>63500</em>
+        <span>Realized P&amp;L</span><em>450.25 &nbsp; <i>use −450.25 for a loss</i></em>
+        <span>Account</span><em>FTMO 50K &nbsp; <i>type a new firm, or pick a saved one</i></em>
+      </div>
+      Fill in what you have — anything left blank stays blank.
     </div>
+    <div class="ea-form" id="easyAddForm" style="display:none;"></div>
     <textarea id="easyAddInput" placeholder="Paste here…" style="width:100%;min-height:200px;margin-top:10px;padding:10px 12px;background:var(--surface-2);border:1px solid var(--rule);border-radius:6px;color:var(--ink);font-size:13px;font-family:'IBM Plex Mono',monospace;resize:vertical;"></textarea>
     <div id="easyAddError" class="auth-error"></div>
     <button class="ai-btn" style="margin-top:14px;width:100%;" onclick="parseEasyAddText()">Proceed</button>
@@ -2281,6 +2291,6 @@
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=2"></script>
-<script src="js/dashboard.js?v=488"></script>
+<script src="js/dashboard.js?v=489"></script>
 </body>
 </html>

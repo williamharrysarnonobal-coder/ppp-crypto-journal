@@ -5038,11 +5038,14 @@ function renderDisciplinePanel(){
    pulled toward zero until roughly EM_PRIOR trades stand behind it, so 100%
    off three cannot outrank 60% off forty. The true figure is always printed
    beside the bar — nothing is hidden, only ranked carefully. */
-function _setupStats(trades, keyOf, order){
+function _setupStats(trades, keyOf, order, many){
   const g = {};
   trades.forEach(t => {
     const k = keyOf(t);
     if(k === null || k === undefined || k === '' || k === 'Unspecified') return;
+    // Isang trade, maraming halaga: mabibilang ito sa bawat isa. Tingnan ang
+    // many:true sa SETUP_DIMENSIONS.
+    if(many){ _patternList(k).forEach(v => { (g[v] = g[v] || []).push(t); }); return; }
     (g[k] = g[k] || []).push(t);
   });
   // Your own win rate over everything in view is the reference. A group is not
@@ -5170,7 +5173,11 @@ const SETUP_DIMENSIONS = [
     { label:'Pattern',  q:'which setup pays',  of:t => t.pattern_type },
     { label:'Direction', q:'long or short',    of:t => t.trade_type },
     { label:'Play',     q:'bounce, rejection or invalidation', of:t => t.trade_setup },
-    { label:'Chart pattern', q:'the shape you traded', of:t => t.chart_pattern },
+    /* many:true — maraming pattern na ang isang trade. Ang isang trade na
+       "Double Bottom, FVG" ay dapat mabilang sa DALAWA, hindi bumuo ng
+       ikatlong bucket na "Double Bottom, FVG" na wala namang ibig sabihin.
+       Ganito rin ang ginagawa sa mga nasirang rule, na matagal nang ganito. */
+    { label:'Chart pattern', q:'the shape you traded', of:t => t.chart_pattern, many:true },
     { label:'AOF phase', q:'where in the move you found it', of:t => t.aof_phase },
   ]},
   // The checklist opened up. The band alone says whether a high score pays; the
@@ -5219,7 +5226,12 @@ function _sxFiltered(exceptLabel){
   if(!keys.length) return FILTERED;
   return FILTERED.filter(t => keys.every(k => {
     const d = _sxDim(k);
-    return d ? d.of(t) === SX_FILTERS[k] : true;
+    if(!d) return true;
+    // Sa many, ang pagpili ng "FVG" ay dapat manatili ang trade na "Double
+    // Bottom, FVG". Ang === ay maghahanap ng eksaktong string at magbubura ng
+    // bawat trade na may higit sa isang pattern.
+    if(d.many) return _patternList(d.of(t)).includes(SX_FILTERS[k]);
+    return d.of(t) === SX_FILTERS[k];
   }));
 }
 function _sxDim(label){
@@ -5254,7 +5266,7 @@ function renderSetupPanel(){
   Object.keys(SX_FILTERS).forEach(k => { if(!_sxDim(k)) delete SX_FILTERS[k]; });
 
   const table = SETUP_DIMENSIONS.map(g => ({ group:g.group,
-    dims: g.dims.map(d => ({ d, rows:_setupStats(_sxFiltered(d.label), d.of, d.order) })) }));
+    dims: g.dims.map(d => ({ d, rows:_setupStats(_sxFiltered(d.label), d.of, d.order, d.many) })) }));
   let max = 0.01;
   table.forEach(g => g.dims.forEach(({ rows }) => rows.forEach(r => {
     if(r.shown !== null) max = Math.max(max, Math.abs(r.shown));
@@ -11760,7 +11772,11 @@ const JOURNAL_FILTER_EXTRA = [
 ];
 // Held as a comma-separated list on each trade, so it matches by membership:
 // picking "Moved Stop Loss" has to find trades that broke it alongside others.
-const JOURNAL_MULTI_KEYS = new Set(['unfollowed_rules']);
+// Ang chart_pattern ay ganito na rin: maraming hugis sa isang trade, kaya ang
+// pagpili ng "FVG" ay dapat makita ang trade na "Double Bottom, FVG". Kung wala
+// ito rito, ang bawat kombinasyon ay magiging sarili nitong pagpipilian sa
+// +Filter at wala ni isa sa kanila ang makakahanap ng tama.
+const JOURNAL_MULTI_KEYS = new Set(['unfollowed_rules', 'chart_pattern']);
 // [{key, value}] — the filters currently on, in the order they were added.
 let JOURNAL_ACTIVE_FILTERS = [];
 
@@ -12433,8 +12449,13 @@ function _journalInvalidFields(r){
   // valid moves with Trade Type and Pattern Type.
   if(!_isBlankish(r.chart_pattern)){
     const cfg = CONFLUENCE_SETUPS[`${r.trade_type}|${r.pattern_type}`];
-    if(cfg && cfg.patterns && !cfg.patterns.includes(r.chart_pattern)){
-      bad.push({ key:'chart_pattern', label:'Chart Pattern', value:String(r.chart_pattern) });
+    /* Bawat pattern ay sinusuri nang isa-isa. Ang pagsusuri sa buong string ay
+       magsasabing mali ang "Double Bottom, FVG" kahit tama ang dalawa — at
+       tatahimik naman sa isang tunay na maling pangalan na nakatago sa dulo. */
+    const strays = cfg && cfg.patterns
+      ? _patternList(r.chart_pattern).filter(p => !cfg.patterns.includes(p)) : [];
+    if(strays.length){
+      bad.push({ key:'chart_pattern', label:'Chart Pattern', value:strays.join(', ') });
     }
   }
 
@@ -13301,73 +13322,122 @@ function _toISODateInput(val){
    "incomplete" sa journal at kailangan mo pa ring buksan ang drawer — kaya
    walang naitipid. Ang punto ng Manual ay makapasok ang buong trade nang minsan.
 
-   Ang blangkong linya ay ayos: ang parser ay nilalaktawan ang field na walang
-   halaga at hindi ito napipilitan sa zero. */
+   HIWA-HIWALAY NA KAHON, HINDI ISANG TEMPLATE NA TEKSTO.
+
+   Ang una nitong bersyon ay isang textarea na may listahan ng label at
+   blangkong linya sa ilalim ng bawat isa. Gumagana iyon, pero dalawang bagay
+   ang mali. Kailangan mong protektahan ang hugis habang nagta-type ka — isang
+   maling enter at ang halaga ay dumadapo sa maling label. At ang blangkong
+   linya ay tinatanggal bago basahin, kaya ang field na iniwang blangko ay
+   kumukuha ng pangalan ng KASUNOD bilang sagot; kinailangan pa ng hiwalay na
+   bantay para lang doon.
+
+   Ang isang kahon kada field ay wala ang dalawang problemang iyon: walang
+   hugis na masisira at walang blangkong maililipat. Ang bawat kahon ay alam
+   din kung ano ang tinatanggap nito — petsa, oras, numero, o pagpipilian —
+   kaya ang keyboard sa telepono ay tama na agad at hindi na kailangan ng
+   paliwanag kung paano isulat ang petsa.
+
+   Ang HTML ay walang listahan ng field. Dito lang, sa iisang array na ito —
+   ang pagdagdag ng field dito ay lumilikha ng kahon nang kusa. */
 const EASY_ADD_FIELD_SPECS = [
-  {label:'open date', valueLines:2, key:'open_date'},
-  {label:'close date', valueLines:2, key:'close_date'},
-  {label:'symbol', valueLines:1, key:'symbol'},
-  {label:'realized p&l', valueLines:1, key:'profit_loss'},
-  {label:'fee', valueLines:1, key:'fee'},
-  {label:'entry price', valueLines:1, key:'entry_price'},
-  {label:'close price', valueLines:1, key:'close_price'},
-  {label:'tp price', valueLines:1, key:'tp_price'},
-  {label:'sl price', valueLines:1, key:'sl_price'},
-  {label:'position size', valueLines:1, key:'position_size'},
-  {label:'rr', valueLines:1, key:'rr'},
-  {label:'win/loss', valueLines:1, key:'win_loss', text:true},
-  {label:'trade type', valueLines:1, key:'trade_type', text:true},
-  {label:'account', valueLines:1, key:'account', text:true},
+  {key:'open_date',     label:'Open Date',     input:'datetime', group:'When'},
+  {key:'close_date',    label:'Close Date',    input:'datetime', group:'When'},
+  {key:'symbol',        label:'Symbol',        input:'text',   ph:'BTC',        group:'What'},
+  {key:'trade_type',    label:'Trade Type',    input:'select', from:'trade_type', group:'What'},
+  {key:'account',       label:'Account',       input:'account',ph:'FTMO 50K',   group:'What'},
+  {key:'entry_price',   label:'Entry Price',   input:'number', ph:'64000',      group:'Prices'},
+  {key:'close_price',   label:'Close Price',   input:'number', ph:'64900',      group:'Prices'},
+  {key:'tp_price',      label:'TP Price',      input:'number', ph:'65000',      group:'Prices'},
+  {key:'sl_price',      label:'SL Price',      input:'number', ph:'63500',      group:'Prices'},
+  {key:'position_size', label:'Position Size', input:'number', ph:'0.5',        group:'Size'},
+  {key:'rr',            label:'RR',            input:'number', ph:'2.5',        group:'Size'},
+  {key:'win_loss',      label:'Win / Loss',    input:'select', from:'win_loss', group:'Result'},
+  {key:'profit_loss',   label:'Realized P&L',  input:'number', ph:'450.25  (negative for a loss)', group:'Result'},
+  {key:'fee',           label:'Fee',           input:'number', ph:'2.10',       group:'Result'},
 ];
 
-/* Ang blangkong linya ay tinatanggal ng filter bago pa mabasa ang template,
-   kaya ang "halaga" ng isang field na iniwang blangko ay ang SUSUNOD NA LABEL.
-   Sa isang numero ito ay NaN at tahimik na nalalaktawan — kaya ligtas ito nang
-   hindi sinasadya. Pero ang Win/Loss, Trade Type at Account ay salita:
-   tinatanggap nila ang label bilang sagot, at ang isang blangkong Win/Loss ay
-   nagiging win_loss = "Trade Type" — isang sirang trade na mukhang buo.
+/* Ang form, binuo mula sa listahan sa itaas. Naka-grupo dahil ang labing-apat
+   na kahon sa isang hanay ay isang pader; ang "When / What / Prices / Size /
+   Result" ay ang parehong pagkakasunod na binabasa mo sa isang position card. */
+function renderEasyAddForm(){
+  const host = document.getElementById('easyAddForm');
+  if(!host) return;
 
-   Kaya: hindi kailanman maaaring maging halaga ang isang bagay na label mismo.
-   Sa Set ito nakalagay at hindi sa bawat sanga, para saklaw nito ang petsa,
-   ang numero at ang salita nang sabay. */
-const EASY_ADD_LABELS = new Set(EASY_ADD_FIELD_SPECS.map(s => s.label));
+  const accounts = [...new Set((TRADING_ACCOUNTS || [])
+    .map(a => a.account_name).filter(Boolean))];
 
-/* Blangko ang bawat halaga nang sadya. Ang paglalagay ng "DD.MM.YYYY" o ng
-   "Win" bilang halimbawa ay nangangahulugang babasahin sila ng parser bilang
-   sagot — at ang isang halimbawang naiwan ay isang trade na may maling laman.
-   Ang format ay nasa hint sa itaas ng kahon, kung saan hindi ito mapapasa.
+  let html = '', lastGroup = null;
+  EASY_ADD_FIELD_SPECS.forEach(f => {
+    if(f.group !== lastGroup){
+      if(lastGroup !== null) html += '</div>';
+      html += `<div class="ea-g-title">${escapeHtml(f.group)}</div><div class="ea-grid">`;
+      lastGroup = f.group;
+    }
+    let field;
+    if(f.input === 'datetime'){
+      /* Dalawang kahon, hindi isang datetime-local: sa telepono ang huli ay
+         isang kontrol na kailangan mong buksan bago makita ang laman. */
+      field = `<div class="ea-dt">
+        <input type="date" data-ea="${f.key}" data-ea-part="date">
+        <input type="time" data-ea="${f.key}" data-ea-part="time"></div>`;
+    }else if(f.input === 'select'){
+      const opts = (FIELD_OPTIONS[f.from] || []);
+      field = `<select data-ea="${f.key}"><option value="">—</option>${
+        opts.map(o => `<option value="${escapeHtml(String(o))}">${escapeHtml(String(o))}</option>`).join('')
+      }</select>`;
+    }else if(f.input === 'account'){
+      /* Text na may datalist, hindi isang select: ang buong dahilan ng Manual
+         ay isang prop firm na WALA pa sa listahan mo. Ang mga kilala ay
+         nasa dropdown pa rin para hindi mo na kailangang i-type. */
+      field = `<input type="text" data-ea="${f.key}" list="eaAccountList"
+        placeholder="${escapeHtml(f.ph || '')}" autocomplete="off">`;
+    }else{
+      field = `<input type="${f.input === 'number' ? 'number' : 'text'}"
+        ${f.input === 'number' ? 'step="any" inputmode="decimal"' : ''}
+        data-ea="${f.key}" placeholder="${escapeHtml(f.ph || '')}" autocomplete="off">`;
+    }
+    html += `<label class="ea-f"><span>${escapeHtml(f.label)}</span>${field}</label>`;
+  });
+  if(lastGroup !== null) html += '</div>';
+  html += `<datalist id="eaAccountList">${
+    accounts.map(a => `<option value="${escapeHtml(a)}"></option>`).join('')}</datalist>`;
 
-   Ang Open at Close Date ay may DALAWANG blangkong linya: petsa tapos oras. */
-const EASY_ADD_TEMPLATE = `Open Date
+  host.innerHTML = html;
+}
 
-
-Close Date
-
-
-Symbol
-
-Win/Loss
-
-Trade Type
-
-Account
-
-Entry Price
-
-Close Price
-
-TP Price
-
-SL Price
-
-Position Size
-
-RR
-
-Realized P&L
-
-Fee
-`;
+/* Binabasa ang form. Ang blangko ay nananatiling blangko — walang field na
+   napipilitang maging zero, at walang halagang nakakalipat sa katabi nito. */
+function _readEasyAddForm(){
+  const out = {};
+  const val = sel => { const el = document.querySelector(`#easyAddForm ${sel}`);
+    return el ? el.value.trim() : ''; };
+  EASY_ADD_FIELD_SPECS.forEach(f => {
+    if(f.input === 'datetime'){
+      const d = val(`[data-ea="${f.key}"][data-ea-part="date"]`);
+      const t = val(`[data-ea="${f.key}"][data-ea-part="time"]`);
+      // Walang petsa, walang halaga. Ang oras lang ay hindi isang sandali.
+      if(!d) return;
+      out[f.key] = `${d}T${t || '00:00'}:00`;
+      return;
+    }
+    const v = val(`[data-ea="${f.key}"]`);
+    if(!v) return;
+    if(f.key === 'symbol'){
+      let s = v.toUpperCase();
+      if(!s.includes('/')) s += '/USD';
+      out.symbol = s;
+      return;
+    }
+    if(f.input === 'number'){
+      const n = parseFloat(v.replace(/,/g, ''));
+      if(!isNaN(n)) out[f.key] = n;
+      return;
+    }
+    out[f.key] = v;
+  });
+  return out;
+}
 
 // Set by journalFromSetup() right before opening Easy Add, so the parsed
 // paste-text can be merged with the calculator/notes data we already have
@@ -13438,22 +13508,30 @@ function closeEasyAddModal(keepQueue){
 function switchEasyAddBroker(){
   const broker = document.getElementById('easyAddBroker').value;
   const input = document.getElementById('easyAddInput');
+  const form  = document.getElementById('easyAddForm');
+  const hint  = document.getElementById('easyAddHint');
+  const sub   = document.getElementById('easyAddSub');
   document.getElementById('easyAddError').textContent = '';
 
-  const hint = document.getElementById('easyAddHint');
+  /* Dalawang magkaibang paraan ng paglalagay, hindi dalawang hugis ng iisa:
+     ang Upscale ay isang paste, ang Manual ay isang form. Ang nakikita mo ay
+     ang isa o ang isa, hindi pareho. */
   if(broker === 'manual'){
-    input.value = EASY_ADD_TEMPLATE;
-    input.placeholder = 'Fill in the values under each label…';
+    input.style.display = 'none';
+    input.value = '';
+    renderEasyAddForm();
+    form.style.display = '';
     if(hint) hint.style.display = '';
-    // Ang caret ay dumadapo sa unang blangko, hindi sa simula ng teksto —
-    // isang linya sa ibaba ng "Open Date".
-    const pos = EASY_ADD_TEMPLATE.indexOf('Open Date') + 'Open Date'.length + 1;
-    input.focus();
-    input.setSelectionRange(pos, pos);
+    if(sub) sub.textContent = 'Fill in what you have. Anything you leave blank stays blank — nothing is guessed or set to zero.';
+    const first = form.querySelector('input, select');
+    if(first) first.focus();
   }else{
+    form.style.display = 'none';
+    input.style.display = '';
     input.value = '';
     input.placeholder = 'Paste the full position card from Upscale here…';
     if(hint) hint.style.display = 'none';
+    if(sub) sub.textContent = 'Copy the position card from your exchange (select the text and copy) and paste it below.';
     input.focus();
   }
 }
@@ -13575,36 +13653,9 @@ function parseEasyAddText(){
   if(broker === 'upscale'){
     parsed = parseUpscaleEasyAddText(raw);
   }else{
-    const lines = raw.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-    parsed = {};
-    EASY_ADD_FIELD_SPECS.forEach(spec => {
-      const idx = lines.findIndex(l => l.toLowerCase() === spec.label);
-      if(idx === -1) return;
-      const values = lines.slice(idx+1, idx+1+spec.valueLines);
-      if(values.length < spec.valueLines) return;
-      // Blangko ang field na ito — ang nakuha ay ang label ng kasunod. Tingnan
-      // ang EASY_ADD_LABELS sa itaas.
-      if(values.some(v => EASY_ADD_LABELS.has(v.toLowerCase()))) return;
-
-      if(spec.key === 'open_date' || spec.key === 'close_date'){
-        const iso = _parseExchangeDateTime(values[0], values[1]);
-        if(iso) parsed[spec.key] = iso;
-      }else if(spec.key === 'symbol'){
-        let sym = values[0].toUpperCase();
-        if(!sym.includes('/')) sym += '/USD';
-        parsed.symbol = sym;
-      }else if(spec.text){
-        /* Ang Win/Loss, Trade Type at Account ay salita, hindi numero. Ang
-           parseFloat sa kanila ay NaN, at ang NaN ay tahimik na nilalaktawan —
-           kaya bago ito, ang tatlong field na ito ay hindi kailanman pumapasok
-           kahit isinulat mo sila. */
-        const v = values[0].trim();
-        if(v) parsed[spec.key] = v;
-      }else{
-        const num = parseFloat(values[0].replace(/,/g,''));
-        if(!isNaN(num)) parsed[spec.key] = num;
-      }
-    });
+    // Ang Manual ay isang form na ngayon, hindi teksto — walang pagbabasa ng
+    // label at walang hugis na masisira.
+    parsed = _readEasyAddForm();
   }
 
   // Merge in the calculator/notes data from "Journal", if that's how this
@@ -13615,7 +13666,11 @@ function parseEasyAddText(){
   }
 
   if(!Object.keys(parsed).length){
-    errEl.textContent = "Couldn't recognize any fields in that text. Make sure you copied the full position card.";
+    // Magkaibang problema, magkaibang sasabihin: sa Manual ay walang teksto na
+    // "hindi nakilala" — blangko lang ang bawat kahon.
+    errEl.textContent = broker === 'upscale'
+      ? "Couldn't recognize any fields in that text. Make sure you copied the full position card."
+      : "Nothing filled in yet. Enter at least one value — Symbol and Realized P&L are the two worth starting with.";
     return;
   }
 
@@ -18870,7 +18925,7 @@ function setPsBbAnswer(i, val){
 }
 
 function selectPsBbChartPattern(p){
-  psBbChartPattern = (p === 'None') ? null : p;
+  psBbChartPattern = _patternToggle(psBbChartPattern, p);
   renderPsBbChecklist();
   _psBbQueueSave();
 }
@@ -19243,6 +19298,31 @@ const CONFLUENCE_SETUPS = {
   },
 };
 
+/* MARAMING CHART PATTERN SA IISANG TRADE.
+
+   Isang tunay na setup ay bihirang isang hugis lang — pwedeng Double Bottom na
+   nasa loob din ng isang FVG. Comma-joined string ang imbakan, kapareho ng
+   unfollowed_rules na ganito na simula pa noon: walang bagong column, walang
+   migration, at ang bawat lumang trade na may iisang pangalan ay nababasa pa
+   rin nang tama — ang isang pangalang walang kuwit ay isang listahan ng isa.
+
+   Ang GRADING ay hindi nagbabago, gaya ng hiniling niya: ang chart pattern ay
+   isang tsek pa rin sa confluence, sagot man ito ng isa o ng tatlo. */
+function _patternList(v){
+  if(Array.isArray(v)) return v.map(s => String(s).trim()).filter(Boolean);
+  return String(v || '').split(',').map(s => s.trim()).filter(Boolean);
+}
+/* Ang pagpindot ay TOGGLE: idinadagdag kung wala pa, tinatanggal kung nandoon
+   na. Ang "None" ay naglilinis. Null ang ibinabalik kapag naubos, hindi "" —
+   iyon ang inaasahan ng bawat tumatawag at ng database. */
+function _patternToggle(current, p){
+  if(p === 'None') return null;
+  const list = _patternList(current);
+  const i = list.indexOf(p);
+  if(i > -1) list.splice(i, 1); else list.push(p);
+  return list.length ? list.join(', ') : null;
+}
+
 // A trade saved under the old (reversed) lists still holds a pattern that its
 // setup no longer offers. The chips render from cfg.patterns alone, so that
 // value would show nothing selected — present in the database, invisible on
@@ -19250,7 +19330,9 @@ const CONFLUENCE_SETUPS = {
 // changeable; it drops out of the list the moment a listed one is picked.
 function _confluencePatternChoices(cfg, current){
   const list = (cfg && cfg.patterns) ? cfg.patterns.slice() : [];
-  if(current && !list.includes(current)) list.push(current);
+  // Bawat naka-save na halagang wala sa listahan, hindi lang ang una — maraming
+  // pattern na ngayon ang isang trade, kaya marami rin ang pwedeng maligaw.
+  _patternList(current).forEach(p => { if(!list.includes(p)) list.push(p); });
   return list;
 }
 
@@ -19599,8 +19681,9 @@ function renderConfluenceChecklist(){
     _renderConfluenceItemRow(it, i, confluenceAnswers[i], 'setConfluenceAnswer')
   ).join('');
 
+  const picked = _patternList(confluenceChartPattern);
   const chipsHtml = ['None', ..._confluencePatternChoices(cfg, confluenceChartPattern)].map(p => {
-    const isActive = (p === 'None' && !confluenceChartPattern) || p === confluenceChartPattern;
+    const isActive = (p === 'None' && !picked.length) || picked.includes(p);
     return `<span class="cfl-pattern-chip ${p==='None'?'cfl-none':''} ${isActive?'active':''}" onclick="selectConfluenceChartPattern('${p.replace(/'/g,"\\'")}')">${p}</span>`;
   }).join('');
 
@@ -19633,7 +19716,7 @@ function setConfluenceAnswer(i, val){
 }
 
 function selectConfluenceChartPattern(p){
-  confluenceChartPattern = (p === 'None') ? null : p;
+  confluenceChartPattern = _patternToggle(confluenceChartPattern, p);
   renderConfluenceChecklist();
 }
 
@@ -21187,7 +21270,7 @@ function setBbAnswer(i, val){
 }
 
 function selectBbChartPattern(p){
-  bbChartPattern = (p === 'None') ? null : p;
+  bbChartPattern = _patternToggle(bbChartPattern, p);
   renderBbChecklist();
 }
 
@@ -21216,8 +21299,9 @@ function _bbRenderChecklist({ ttId, ptId, bodyId, answers, chartPattern, setAnsw
     _renderConfluenceItemRow(it, i, answers[i], setAnswerFn)
   ).join('');
 
+  const picked = _patternList(chartPattern);
   const chipsHtml = ['None', ..._confluencePatternChoices(cfg, chartPattern)].map(p => {
-    const isActive = (p === 'None' && !chartPattern) || p === chartPattern;
+    const isActive = (p === 'None' && !picked.length) || picked.includes(p);
     return `<span class="cfl-pattern-chip ${p==='None'?'cfl-none':''} ${isActive?'active':''}" onclick="${setPatternFn}('${p.replace(/'/g,"\\'")}')">${p}</span>`;
   }).join('');
 
