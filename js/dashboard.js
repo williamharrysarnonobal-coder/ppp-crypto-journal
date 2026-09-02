@@ -20989,8 +20989,33 @@ function renderAccountsList(){
   propPanel.style.display = propFirmAccounts.length ? 'block' : 'none';
   exchPanel.style.display = exchangeAccounts.length ? 'block' : 'none';
 
-  document.getElementById('accountsListPropFirm').innerHTML = propFirmAccounts.map(accountCardHTML).join('');
-  document.getElementById('accountsListExchange').innerHTML = exchangeAccounts.map(accountCardHTML).join('');
+  /* ISANG SIRANG ACCOUNT AY HINDI DAPAT MAGTAGO SA LAHAT.
+
+     Ang `.map()` ay bumabagsak sa unang pagkakamali, kaya ang isang account na
+     may hindi inaasahang datos ay nagbibigay ng BLANGKONG pahina — mukhang
+     nabura ang lahat ng account mo. Nangyari nga iyon: isang ReferenceError sa
+     loob ng accountCardHTML at wala ni isang card ang lumabas.
+
+     Ang bawat card ay hiwalay nang binubuo ngayon. Ang bumagsak ay nagpapakita
+     ng sarili nitong hilera na may pangalan pa rin nito at may Edit — hindi
+     mawawala ang account, at masasabi mo sa akin kung alin ang may sira. */
+  const cards = list => list.map(a => {
+    try { return accountCardHTML(a); }
+    catch(e){
+      console.error('Account card failed:', a && a.account_name, e);
+      return `<div class="account-card">
+        <div class="account-card-name">${escapeHtml(a?.account_name || 'Account')}</div>
+        <div class="acct-failed-why"><div>This card could not be drawn —
+          the account and its trades are safe. Tell Claude:
+          <b>${escapeHtml(String(e && e.message || e).slice(0, 120))}</b></div></div>
+        <button class="account-edit-btn-corner" onclick='openAccountModal(${a?.id})'
+          title="Edit account">${accountEditIconSVG()}</button>
+      </div>`;
+    }
+  }).join('');
+
+  document.getElementById('accountsListPropFirm').innerHTML = cards(propFirmAccounts);
+  document.getElementById('accountsListExchange').innerHTML = cards(exchangeAccounts);
 }
 
 function accountCardHTML(a){
@@ -21792,55 +21817,57 @@ const CONFLUENCE_SETUPS = {
      humihina, ang nasa gitna ay nauuna nang bumitaw, at ang mababa ang
      nagsasabi kung nagkaroon nga ng HL o LH.
 
-     Pito ang hilera kada isa, gaya ng talahanayan niya: anim na tanong at ang
-     Chart Pattern, na siyang +1 na binibilang ng _confluenceProgress.
+     Walong hilera ang talahanayan niya; anim na item ito at isang listahan ng
+     chart pattern. Ang "Reaction" at ang "Reaction Area" ay iisang tanong —
+     ang una ang itinatanong, ang ikalawa ang mga sagot — kaya isang select
+     sila at hindi dalawang hilera. Ang Chart Pattern ay ang +1 na binibilang
+     ng _confluenceProgress, kaya pito pa rin ang kabuuan.
 
-     Dalawa sa anim ay SELECT at hindi oo-o-hindi, at pareho silang allGood:
-     ang "3M o 5M" at ang "saan ito tumalbog" ay nagtatanong ng ALIN, hindi ng
-     gaano kabuti. Kung wala ang allGood, ang ikalimang reaction area (FVG) ay
-     makakakuha ng zero — isang tamang sagot na binibilang na parang hindi mo
-     sinagot.
+     Dalawa sa anim ay SELECT at pareho silang allGood: ang "3M o 5M" at ang
+     "saan ito tumalbog" ay nagtatanong ng ALIN, hindi ng gaano kabuti. Kung
+     wala ang allGood, ang ikalimang reaction area (FVG) ay makakakuha ng zero
+     — isang tamang sagot na binibilang na parang hindi mo sinagot.
 
-     WALANG PATTERN_EXEC_TF ang anim na ito nang sadya. May dalawang tamang
-     execution timeframe ang bawat isa, at ang pagpuno ng isa ay tama lang sa
-     kalahati ng panahon.
-
-     Ang 1H ay hindi kasama sa ibinigay niya — hinuha ko ito mula sa 4H at 15M,
-     na parehong bumababa ng tatlong hakbang mula sa pangalan nito. */
+     WALANG PATTERN_EXEC_TF ang anim na ito nang sadya: may dalawang tamang
+     execution timeframe ang bawat isa. */
 
   'Long|4H HL Creation': {
     minConfluencePct: 60,
     items: [
-      {tag:'MACD · 4H',        text:'4H MACD in Bear Territory (Green Weakening)?'},
-      {tag:'MACD · 1H',              text:'1H Bear Territory?'},
-      {tag:'MACD · 30M',             text:'30M Breakdown / Bearish Invalidation?'},
-      {tag:'15M Structure',   text:'Did it create a 15M HL?'},
-      /* Dalawang sagot at pareho silang tama — ang tanong ay SAAN nakumpirma,
-         hindi kung gaano kabuti. Tingnan ang allGood sa _selectCredit. */
-      {tag:'Execution · 3/5M', text:'Execution confirmed on 3M or 5M Retest?',
+      {tag:'MACD · 4H',           text:'4H MACD in Bear Territory (Green Weakening)?'},
+      {tag:'MACD · 1H',           text:'1H Pre-Breakdown?'},
+      {tag:'MACD · 30M',          text:'30M Breakdown / Invalidation?'},
+      {tag:'Structure · 15M',     text:'Did it create a 15M HL?'},
+      /* Dalawang sagot at pareho silang tama — ang tanong ay ALIN, hindi
+         gaano kabuti. Tingnan ang allGood sa _selectCredit. */
+      {tag:'Execution · 3/5M',    text:'3M or 5M Retest?',
         select:['3M', '5M'], allGood:true, exec:true},
-      {tag:'Reaction',          text:'Where did it bounce?',
+      /* Ang "Reaction Area" na hilera ng talahanayan niya: ang tanong ay
+         nasa Reaction, ang mga sagot ay ang limang lugar. */
+      {tag:'Reaction',            text:'Where did it bounce?',
         select:['.382', '.5', '.618', 'Market OB', 'FVG'], allGood:true},
     ],
-    // Ang ikapitong hilera ng talahanayan niya: anong hugis ang nabuo.
+    // Ang huling hilera ng talahanayan: anong hugis ang nabuo.
     patterns: ['Double Bottom', 'Triple Bottom', 'Inverse H&S',
                'FVG', 'FVG + Fib', 'Fib .382', 'Fib .5', 'Fib .618', 'SnR Flip']
   },
   'Short|4H LH Creation': {
     minConfluencePct: 60,
     items: [
-      {tag:'MACD · 4H',        text:'4H MACD in Bull Territory (Red Weakening)?'},
-      {tag:'MACD · 1H',              text:'1H Bull Territory?'},
-      {tag:'MACD · 30M',             text:'30M Breakout / Bullish Invalidation?'},
-      {tag:'15M Structure',   text:'Did it create a 15M LH?'},
-      /* Dalawang sagot at pareho silang tama — ang tanong ay SAAN nakumpirma,
-         hindi kung gaano kabuti. Tingnan ang allGood sa _selectCredit. */
-      {tag:'Execution · 3/5M', text:'Execution confirmed on 3M or 5M Retest?',
+      {tag:'MACD · 4H',           text:'4H MACD in Bull Territory (Red Weakening)?'},
+      {tag:'MACD · 1H',           text:'1H Pre-Breakout?'},
+      {tag:'MACD · 30M',          text:'30M Breakout / Invalidation?'},
+      {tag:'Structure · 15M',     text:'Did it create a 15M LH?'},
+      /* Dalawang sagot at pareho silang tama — ang tanong ay ALIN, hindi
+         gaano kabuti. Tingnan ang allGood sa _selectCredit. */
+      {tag:'Execution · 3/5M',    text:'3M or 5M Retest?',
         select:['3M', '5M'], allGood:true, exec:true},
-      {tag:'Reaction',          text:'Where did it reject?',
+      /* Ang "Reaction Area" na hilera ng talahanayan niya: ang tanong ay
+         nasa Reaction, ang mga sagot ay ang limang lugar. */
+      {tag:'Reaction',            text:'Where did it reject?',
         select:['.382', '.5', '.618', 'Market OB', 'FVG'], allGood:true},
     ],
-    // Ang ikapitong hilera ng talahanayan niya: anong hugis ang nabuo.
+    // Ang huling hilera ng talahanayan: anong hugis ang nabuo.
     patterns: ['Double Top', 'Triple Top', 'H&S',
                'FVG', 'FVG + Fib', 'Fib .382', 'Fib .5', 'Fib .618', 'SnR Flip']
   },
@@ -21848,36 +21875,40 @@ const CONFLUENCE_SETUPS = {
   'Long|1H HL Creation': {
     minConfluencePct: 60,
     items: [
-      {tag:'MACD · 1H',        text:'1H MACD in Bear Territory (Green Weakening)?'},
-      {tag:'MACD · 15M',             text:'15M Bear Territory?'},
-      {tag:'MACD · 3M',              text:'3M Breakdown / Bearish Invalidation?'},
-      {tag:'5M Structure',   text:'Did it create a 5M HL?'},
-      /* Dalawang sagot at pareho silang tama — ang tanong ay SAAN nakumpirma,
-         hindi kung gaano kabuti. Tingnan ang allGood sa _selectCredit. */
-      {tag:'Execution · 1/3M', text:'Execution confirmed on 1M or 3M Retest?',
+      {tag:'MACD · 1H',           text:'1H MACD in Bear Territory (Green Weakening)?'},
+      {tag:'MACD · 15M',          text:'15M Pre-Breakdown?'},
+      {tag:'MACD · 3M',           text:'3M Breakdown / Invalidation?'},
+      {tag:'Structure · 5M',      text:'Did it create a 5M HL?'},
+      /* Dalawang sagot at pareho silang tama — ang tanong ay ALIN, hindi
+         gaano kabuti. Tingnan ang allGood sa _selectCredit. */
+      {tag:'Execution · 1M/3M',   text:'1M or RT 3M?',
         select:['1M', '3M'], allGood:true, exec:true},
-      {tag:'Reaction',          text:'Where did it bounce?',
+      /* Ang "Reaction Area" na hilera ng talahanayan niya: ang tanong ay
+         nasa Reaction, ang mga sagot ay ang limang lugar. */
+      {tag:'Reaction',            text:'Where did it bounce?',
         select:['.382', '.5', '.618', 'Market OB', 'FVG'], allGood:true},
     ],
-    // Ang ikapitong hilera ng talahanayan niya: anong hugis ang nabuo.
+    // Ang huling hilera ng talahanayan: anong hugis ang nabuo.
     patterns: ['Double Bottom', 'Triple Bottom', 'Inverse H&S',
                'FVG', 'FVG + Fib', 'Fib .382', 'Fib .5', 'Fib .618', 'SnR Flip']
   },
   'Short|1H LH Creation': {
     minConfluencePct: 60,
     items: [
-      {tag:'MACD · 1H',        text:'1H MACD in Bull Territory (Red Weakening)?'},
-      {tag:'MACD · 15M',             text:'15M Bull Territory?'},
-      {tag:'MACD · 3M',              text:'3M Breakout / Bullish Invalidation?'},
-      {tag:'5M Structure',   text:'Did it create a 5M LH?'},
-      /* Dalawang sagot at pareho silang tama — ang tanong ay SAAN nakumpirma,
-         hindi kung gaano kabuti. Tingnan ang allGood sa _selectCredit. */
-      {tag:'Execution · 1/3M', text:'Execution confirmed on 1M or 3M Retest?',
+      {tag:'MACD · 1H',           text:'1H MACD in Bull Territory (Red Weakening)?'},
+      {tag:'MACD · 15M',          text:'15M Pre-Breakout?'},
+      {tag:'MACD · 3M',           text:'3M Breakout / Invalidation?'},
+      {tag:'Structure · 5M',      text:'Did it create a 5M LH?'},
+      /* Dalawang sagot at pareho silang tama — ang tanong ay ALIN, hindi
+         gaano kabuti. Tingnan ang allGood sa _selectCredit. */
+      {tag:'Execution · 1M/3M',   text:'1M or RT 3M?',
         select:['1M', '3M'], allGood:true, exec:true},
-      {tag:'Reaction',          text:'Where did it reject?',
+      /* Ang "Reaction Area" na hilera ng talahanayan niya: ang tanong ay
+         nasa Reaction, ang mga sagot ay ang limang lugar. */
+      {tag:'Reaction',            text:'Where did it reject?',
         select:['.382', '.5', '.618', 'Market OB', 'FVG'], allGood:true},
     ],
-    // Ang ikapitong hilera ng talahanayan niya: anong hugis ang nabuo.
+    // Ang huling hilera ng talahanayan: anong hugis ang nabuo.
     patterns: ['Double Top', 'Triple Top', 'H&S',
                'FVG', 'FVG + Fib', 'Fib .382', 'Fib .5', 'Fib .618', 'SnR Flip']
   },
@@ -21885,36 +21916,40 @@ const CONFLUENCE_SETUPS = {
   'Long|15M HL Creation': {
     minConfluencePct: 60,
     items: [
-      {tag:'MACD · 15M',        text:'15M MACD in Bear Territory (Green Weakening)?'},
-      {tag:'MACD · 5M',              text:'5M Bear Territory?'},
-      {tag:'MACD · 3M',              text:'3M Breakdown / Bearish Invalidation?'},
-      {tag:'1M Structure',   text:'Did it create a 1M HL?'},
-      /* Dalawang sagot at pareho silang tama — ang tanong ay SAAN nakumpirma,
-         hindi kung gaano kabuti. Tingnan ang allGood sa _selectCredit. */
-      {tag:'Execution · 1/3M', text:'Execution confirmed on 1M or 3M Retest?',
+      {tag:'MACD · 15M',          text:'15M MACD in Bear Territory (Green Weakening)?'},
+      {tag:'MACD · 5M',           text:'5M Pre-Breakdown?'},
+      {tag:'MACD · 3M',           text:'3M Breakdown / Invalidation?'},
+      {tag:'Structure · 1M',      text:'Did it create a 1M HL?'},
+      /* Dalawang sagot at pareho silang tama — ang tanong ay ALIN, hindi
+         gaano kabuti. Tingnan ang allGood sa _selectCredit. */
+      {tag:'Execution · 1M/3M',   text:'1M or 3M Retest?',
         select:['1M', '3M'], allGood:true, exec:true},
-      {tag:'Reaction',          text:'Where did it bounce?',
+      /* Ang "Reaction Area" na hilera ng talahanayan niya: ang tanong ay
+         nasa Reaction, ang mga sagot ay ang limang lugar. */
+      {tag:'Reaction',            text:'Where did it bounce?',
         select:['.382', '.5', '.618', 'Market OB', 'FVG'], allGood:true},
     ],
-    // Ang ikapitong hilera ng talahanayan niya: anong hugis ang nabuo.
+    // Ang huling hilera ng talahanayan: anong hugis ang nabuo.
     patterns: ['Double Bottom', 'Triple Bottom', 'Inverse H&S',
                'FVG', 'FVG + Fib', 'Fib .382', 'Fib .5', 'Fib .618', 'SnR Flip']
   },
   'Short|15M LH Creation': {
     minConfluencePct: 60,
     items: [
-      {tag:'MACD · 15M',        text:'15M MACD in Bull Territory (Red Weakening)?'},
-      {tag:'MACD · 5M',              text:'5M Bull Territory?'},
-      {tag:'MACD · 3M',              text:'3M Breakout / Bullish Invalidation?'},
-      {tag:'1M Structure',   text:'Did it create a 1M LH?'},
-      /* Dalawang sagot at pareho silang tama — ang tanong ay SAAN nakumpirma,
-         hindi kung gaano kabuti. Tingnan ang allGood sa _selectCredit. */
-      {tag:'Execution · 1/3M', text:'Execution confirmed on 1M or 3M Retest?',
+      {tag:'MACD · 15M',          text:'15M MACD in Bull Territory (Red Weakening)?'},
+      {tag:'MACD · 5M',           text:'5M Pre-Breakout?'},
+      {tag:'MACD · 3M',           text:'3M Breakout / Invalidation?'},
+      {tag:'Structure · 1M',      text:'Did it create a 1M LH?'},
+      /* Dalawang sagot at pareho silang tama — ang tanong ay ALIN, hindi
+         gaano kabuti. Tingnan ang allGood sa _selectCredit. */
+      {tag:'Execution · 1M/3M',   text:'1M or 3M Retest?',
         select:['1M', '3M'], allGood:true, exec:true},
-      {tag:'Reaction',          text:'Where did it reject?',
+      /* Ang "Reaction Area" na hilera ng talahanayan niya: ang tanong ay
+         nasa Reaction, ang mga sagot ay ang limang lugar. */
+      {tag:'Reaction',            text:'Where did it reject?',
         select:['.382', '.5', '.618', 'Market OB', 'FVG'], allGood:true},
     ],
-    // Ang ikapitong hilera ng talahanayan niya: anong hugis ang nabuo.
+    // Ang huling hilera ng talahanayan: anong hugis ang nabuo.
     patterns: ['Double Top', 'Triple Top', 'H&S',
                'FVG', 'FVG + Fib', 'Fib .382', 'Fib .5', 'Fib .618', 'SnR Flip']
   },
