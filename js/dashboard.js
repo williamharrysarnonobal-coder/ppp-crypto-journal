@@ -21386,6 +21386,23 @@ const BULK_HIDDEN_KEYS = new Set([
   // the wrong one does get picked there, and this is the last point before
   // three rows are written with it.
 ]);
+/* "May confluence ba ang setup na ito?"
+
+   Ang bawat gate sa app ay nagtatanong nito sa pamamagitan ng `s.pattern_type`,
+   na hindi ang tanong. Ang Pattern Type ay naitatakda sa sandaling buksan ang
+   modal at pumili ng pattern — bago pa may kahit isang sagot na natsek. Kaya
+   ang isang setup na binuksan at isinara ay mukhang tapos: "Edit Confluence"
+   ang sabi ng pindutan, gumagana ang Journal, at pumapasa ito sa bulk.
+
+   Ang dinadala nito sa trade ay isang walang lamang `{}`, at ang walang lamang
+   na iyon ay lumalabas na "—" sa Confluence Score — walang sinabing kahit ano
+   ang app. Ang tunay na tanong ay kung may SAGOT, kaya iyon ang itinatanong. */
+function _setupHasConfluence(s){
+  return !!(s && s.confluence_answers
+    && typeof s.confluence_answers === 'object'
+    && Object.keys(s.confluence_answers).length);
+}
+
 async function journalSelectedSetups(){
   const pending = SAVED_SETUPS.filter(s => (s.status || 'Pending') !== 'Journaled');
   const picked = pending.filter(s => SELECTED_SETUP_IDS.has(s.id));
@@ -21394,8 +21411,8 @@ async function journalSelectedSetups(){
   // Same gate as the per-row Journal button, which sits disabled until a
   // confluence exists — enforced again here so ticking a row can't route
   // around it.
-  const ready = picked.filter(s => s.pattern_type);
-  const missing = picked.filter(s => !s.pattern_type);
+  const ready = picked.filter(_setupHasConfluence);
+  const missing = picked.filter(s => !_setupHasConfluence(s));
   if(!ready.length){
     await customAlert('Fill in Confluence first — none of the selected setups have one yet.');
     return;
@@ -21742,9 +21759,11 @@ function setupRowHTML(s, selectable){
     <td style="white-space:nowrap;">${priceCell(s.sl_price, 'var(--loss)')}</td>
     <td><span class="pill ${statusPillClass}">${escapeHtml(status)}</span></td>
     <td style="white-space:nowrap;">
-      <button class="poscalc-accent-btn" onclick="event.stopPropagation(); openConfluenceModal(${s.id})">${s.pattern_type ? 'Edit Confluence' : 'Confluence'}</button>
+      <!-- Sagot ang tinitingnan, hindi Pattern Type — tingnan ang
+           _setupHasConfluence. Ang "Edit" ay nangangahulugang may laman na. -->
+      <button class="poscalc-accent-btn" onclick="event.stopPropagation(); openConfluenceModal(${s.id})">${_setupHasConfluence(s) ? 'Edit Confluence' : 'Confluence'}</button>
       ${status !== 'Journaled'
-        ? `<button class="poscalc-accent-btn" ${!s.pattern_type ? 'disabled title="Fill in Confluence first"' : ''} onclick="event.stopPropagation(); journalFromSetup(${s.id})">Journal</button>`
+        ? `<button class="poscalc-accent-btn" ${!_setupHasConfluence(s) ? 'disabled title="Fill in Confluence first"' : ''} onclick="event.stopPropagation(); journalFromSetup(${s.id})">Journal</button>`
         : `<button class="poscalc-accent-btn" onclick="event.stopPropagation(); setSetupStatus(${s.id}, 'Pending')">Revert to Pending</button>`}
       <button class="drawer-danger-btn" onclick="event.stopPropagation(); deleteSavedSetup(${s.id})">Delete</button>
     </td>
