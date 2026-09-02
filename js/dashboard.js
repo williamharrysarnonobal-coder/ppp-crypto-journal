@@ -1648,10 +1648,26 @@ function computeDayOfWeek(row){
   return d.toLocaleDateString('en-US', {weekday:'long'});
 }
 
+/* ---------------- Ang buod ----------------
+
+   Ang buod ay isang pangungusap tungkol sa trade, kaya dapat lamang nitong
+   sabihin ang mga bagay na TALAGANG mayroon ang trade na iyon.
+
+   Sa isang paper trade, walo sa mga linya ng tunay na buod ay laging "—":
+   Objective, Result, Profit/Loss, PNL Percent, Fee, Trade Duration, Rules
+   Followed at Trade Tags. Hindi sila blangko dahil nakalimutan mong punan —
+   hindi sila umiiral, dahil hindi mo pinasok ang trade. Isang buod na kalahati
+   ay gitling ay hindi buod; hindi mo mabasa ang tanging bagay na naroon.
+
+   Kaya may dalawang hugis ito. Ang parehong hati — setup, plano, resulta,
+   notes — pero ang PAPER ay nagtatanong ng ibang tatlong tanong: ano ang nakita
+   mo, ano ang plano mo, at bakit hindi ka pumasok. */
 function computeTradeSummary(row){
   const val = (v) => (v === null || v === undefined || v === '') ? '—' : v;
   const money = (v) => { const n = parseFloat(v); return isNaN(n) ? val(v) : fmtMoney(n); };
   const pct = (v) => { const n = parseFloat(v); return isNaN(n) ? val(v) : n.toFixed(2)+'%'; };
+
+  if(row && (row.is_paper === true || row.is_paper === 'true')) return _paperTradeSummary(row, val);
 
   return [
     `<b>Symbol:</b> ${val(row.symbol)}`,
@@ -1677,6 +1693,57 @@ function computeTradeSummary(row){
     `<hr>`,
     `<b>Rules Followed?:</b> ${val(row.rules_followed)}`,
     `<b>Trade Tags:</b> ${val(row.unfollowed_rules)}`,
+    ``,
+    `<b>Notes:</b>`,
+    `<hr>`,
+    _allNotesText(row)
+  ].join('<br>');
+}
+
+/* Ang parehong column na nakikita mo sa Paper Trade Journal, walang dagdag at
+   walang bawas — kung wala ito sa talahanayan doon, wala rin dito.
+
+   Ang "Setup You Saw" ay kung ano ang nasa chart. Ang "Your Plan" ay ang tatlong
+   presyo mula sa exchange at ang RR na kinukuwenta mula sa kanila — iyon ang
+   nagsasabi kung ano ang isinuko mo. Ang "What Happened" ang dahilan kung bakit
+   may pahinang ito: ang dalawang tanong na walang tunay na trade. */
+function _paperTradeSummary(row, val){
+  const price = (v) => { const n = parseFloat(v); return isNaN(n) ? val(v) : fmtNum(n, 2); };
+  const rr = _plannedRR(row);
+  const conf = _confluenceCellData(row);
+  const seen = row.open_date || row.close_date;
+
+  return [
+    `<b>Symbol:</b> ${val(row.symbol)}`,
+    `<hr>`,
+    `<b>Setup You Saw:</b>`,
+    `<hr>`,
+    `<b>Date Seen:</b> ${seen ? new Date(seen).toLocaleString(undefined, {dateStyle:'medium', timeStyle:'short'}) : '—'}`,
+    `<b>Trade Setup:</b> ${val(row.trade_setup)}`,
+    `<b>Pattern Type:</b> ${val(row.pattern_type)}`,
+    `<b>AOF Phase:</b> ${val(row.aof_phase)}`,
+    `<b>Execution TF:</b> ${val(row.execution_tf)}`,
+    `<b>Trade Type:</b> ${val(row.trade_type)}`,
+    /* Nakaimbak O kinukuwenta, gaya ng sa column ng journal. Ang buod ay
+       binibigyan ng HILAW na hilera, na hindi pa dumadaan sa normalizeTrade —
+       kaya kung hindi ito babagsak sa compute, "—" ang lalabas sa isang setup na
+       may petsa naman. */
+    `<b>Session:</b> ${val(row.session || computeSession(row))}`,
+    `<b>Day of Week:</b> ${val(row.day_of_week || computeDayOfWeek(row))}`,
+    `<b>Confluence Score:</b> ${conf ? conf.pct + '%' : '—'}`,
+    ``,
+    `<b>Your Plan:</b>`,
+    `<hr>`,
+    `<b>Entry Price:</b> ${price(row.entry_price)}`,
+    `<b>TP Price:</b> ${price(row.tp_price)}`,
+    `<b>SL Price:</b> ${price(row.sl_price)}`,
+    // Kinukuwenta mula sa tatlong presyo sa itaas, hindi itinatago.
+    `<b>Planned RR:</b> ${rr === null ? '—' : fmtNum(rr, 2)}`,
+    ``,
+    `<b>What Happened:</b>`,
+    `<hr>`,
+    `<b>Why you did not take it:</b> ${val(row.no_trade_reason)}`,
+    `<b>What would have happened:</b> ${val(row.paper_outcome)}`,
     ``,
     `<b>Notes:</b>`,
     `<hr>`,
@@ -14977,9 +15044,6 @@ function openDrawer(mode, positionId, prefill){
   drawerRowData = mode === 'view' ? (RAW_TRADES.find(r => r.position_id === positionId) || {}) : (prefill || {});
 
   renderDrawerFields();
-  // Ang pindutang paglipat ay nakadepende sa panig ng trade, kaya sinusundan
-  // nito ang bawat pagbukas.
-  _syncDrawerMoveBtn();
 
   document.getElementById('drawerOverlay').classList.add('open');
   document.getElementById('drawer').classList.add('open');
@@ -15525,114 +15589,6 @@ function _applyMovedStopFlags(patch){
     .filter(r => _tagKind(r) !== 'sentinel');
   patch.unfollowed_rules = merged.join(', ');
   patch.rules_followed = 'No';
-}
-
-/* ---------------- Paglipat ng trade sa tamang panig ----------------
-
-   May mga trade na napunta sa maling listahan, at may dalawang paraan iyon
-   nangyari. Ang una ay ang bug na naayos na: habang bukas ang Paper Trade
-   Journal, ang pagbukas ng TUNAY na trade ay nagpapakita rito ng mga tanong ng
-   paper, at ang pag-save noon ay nagsusulat ng sagot sa maling lugar. Ang
-   pangalawa ay mas matanda pa: bago pa may Paper Trade Journal, ang setup na
-   hindi mo kinuha ay walang ibang lalagyan kundi ang Trade Journals.
-
-   Sa SQL mahahanap ang marami nang sabay (supabase_find_leaked_paper_trades.sql).
-   Ito ang para sa isa-isa, kung saan ikaw ang humahatol — at para sa susunod na
-   pagkakamali, na hindi na mangangailangan ng SQL. */
-function _syncDrawerMoveBtn(){
-  const btn = document.getElementById('drawerMoveBtn');
-  if(!btn) return;
-  const row = drawerRowData;
-  // Sa naitalang trade lang: walang panig ang hindi pa nase-save na entry.
-  if(drawerMode !== 'view' || !row || !row.position_id){
-    btn.style.display = 'none';
-    return;
-  }
-  const isPaper = !!row.is_paper;
-  btn.style.display = '';
-  btn.textContent = isPaper ? 'Move to Trade Journal' : 'Move to Paper Journal';
-  btn.title = isPaper
-    ? 'This was a setup you did not take. Moving it to the Trade Journal makes it count in your P&L, win rate and account balance.'
-    : 'This was not a trade you actually took. Moving it to the Paper Journal takes it out of your P&L, win rate and account balance.';
-}
-
-async function moveTradeSide(){
-  const row = drawerRowData;
-  if(!row || !row.position_id) return;
-  const toPaper = !row.is_paper;
-
-  /* ANG PERA ANG PINAKAMAHALAGANG TANONG DITO.
-
-     Ang trade na may P&L ay gumalaw ng balanse sa isang account. Ang paglipat
-     noon sa paper ay nag-aalis nito sa bawat bilang — ang P&L, ang win rate,
-     ang drawdown — pero HINDI ibinabalik ang balanse ng account, dahil ang
-     balanseng iyon ay isang tunay na numero mula sa broker at hindi akin.
-
-     Sinasabi ko iyon nang tahasan bago magpatuloy, sa halip na tahimik na
-     gawin at hayaan siyang makakita ng account na hindi na tugma. */
-  const money = Number(row.profit_loss);
-  const movedMoney = toPaper && Number.isFinite(money) && money !== 0;
-
-  const msg = toPaper
-    ? `Move this to the Paper Journal?\n\n`
-      + `It stops counting in your P&L, win rate, discipline and account rules — `
-      + `it becomes a setup you did not take.`
-      + (movedMoney
-          ? `\n\nThis trade recorded ${fmtMoney(money)}. That amount already moved your `
-            + `account balance, and this will NOT put it back — fix the balance on `
-            + `My Accounts if it was never a real trade.`
-          : '')
-    : `Move this to the Trade Journal?\n\n`
-      + `It starts counting in your P&L, win rate, discipline and account rules — `
-      + `it becomes a trade you took.`;
-
-  if(!(await customConfirm(msg, toPaper ? 'Move to Paper' : 'Move to Trade Journal'))) return;
-
-  const btn = document.getElementById('drawerMoveBtn');
-  const errEl = document.getElementById('drawerError');
-  if(errEl) errEl.textContent = '';
-  if(btn){ btn.disabled = true; btn.textContent = 'Moving…'; }
-
-  /* Ang is_paper LANG ang binabago rito nang sadya. Ang paglilinis ng account,
-     quantity at P&L ay isang PANGALAWANG desisyon — at kung gagawin ko iyon
-     nang sabay, walang paraan para bawiin ito kung nagkamali siya. Ang mga
-     field na iyon ay nakatago naman sa paper drawer, kaya hindi sila
-     nakakagulo; nananatili silang nakasulat kung sakaling ibalik niya ito. */
-  const patch = { is_paper: toPaper };
-
-  try{
-    const res = await fetch(
-      `${SUPABASE_URL}/rest/v1/${TABLE_NAME}?position_id=eq.${encodeURIComponent(row.position_id)}`, {
-      method: 'PATCH',
-      headers: {
-        "apikey": SUPABASE_KEY,
-        "Authorization": `Bearer ${USER_ACCESS_TOKEN}`,
-        "Content-Type": "application/json",
-        "Prefer": "return=representation"
-      },
-      body: JSON.stringify(patch)
-    });
-    if(!res.ok) throw new Error(await res.text());
-
-    const idx = RAW_TRADES.findIndex(r => r.position_id === row.position_id);
-    if(idx > -1) RAW_TRADES[idx].is_paper = toPaper;
-
-    _rebuildTradeArrays();
-    _rebuildTradeNumbers();
-    applyFilters();
-    renderJournalTable();
-    if(typeof renderPaperTable === 'function') renderPaperTable();
-    refreshAllNavBadges();
-    closeDrawer();
-    showToast(toPaper
-      ? 'Moved to the Paper Journal — it no longer counts in your numbers.'
-      : 'Moved to the Trade Journal — it now counts in your numbers.');
-  }catch(e){
-    console.error("Couldn't move this trade:", e);
-    if(errEl) errEl.textContent = "Couldn't move this trade — please try again.";
-    if(btn){ btn.disabled = false; }
-    _syncDrawerMoveBtn();
-  }
 }
 
 async function saveDrawer(){
