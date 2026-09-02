@@ -1109,12 +1109,6 @@
    7.5px ay humila rito palayo sa dulo ng fill — limang pixel na hindi
    nakahanay. Ang 190px ay nakapirmi nang may dahilan; ang teksto sa kanan ang
    inaayos, at iyon ay nasa nowrap na sa itaas. */
-/* Mahina nang sadya: isang paalala ito, hindi isang babala. Walang mali —
-   dalawang panahon lang ang nasa isang screen, at ito ang nagsasabi kung alin. */
-.cal-scope{
-  font-size:10px;letter-spacing:.04em;color:var(--muted);opacity:.75;
-  white-space:nowrap;cursor:help;padding:0 2px;
-}
   .cal-head-actions > .poscalc-accent-btn{padding:5px 12px;font-size:11.5px;white-space:nowrap;}
 
   /* ---------- Settings page ---------- */
@@ -4162,6 +4156,34 @@ body.mobile-mode .yo-j-line{font-size:13px;}
   font-size:12px;line-height:1.55;color:var(--muted);
 }
 .ea-hint b{color:var(--ink);font-weight:600;display:block;margin-bottom:7px;}
+
+/* ---- Admin: ang performance ng ibang user ----
+   Ang hanay ng bilang ay tabular at nakahanay sa kanan, kaya nababasa mo ang
+   isang hanay pababa nang hindi hinahabol ng mata ang bawat numero. */
+.admin-perf-table td.n, .admin-perf-table th.n{
+  text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;
+}
+.adm-sub{font-size:11px;color:var(--muted);font-weight:400;}
+.adm-none{color:var(--muted);font-style:italic;font-size:12px;}
+.adm-quiet td{opacity:.72;}
+/* Parehong tatlong banda ng Rules Kept sa buong app — berde kapag mahigpit,
+   kahel kapag katamtaman, pula kapag hindi, abo kapag kulang ang datos. */
+.adm-win  {color:var(--win);font-weight:700;}
+.adm-mid  {color:var(--accent);font-weight:700;}
+.adm-loss {color:var(--loss);font-weight:700;}
+.adm-na{color:var(--muted);}
+.adm-kpis{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));
+  gap:1px;background:var(--rule);border:1px solid var(--rule);border-radius:8px;overflow:hidden;
+}
+.adm-kpi{
+  background:var(--surface);padding:11px 13px;display:flex;flex-direction:column;gap:3px;min-width:0;
+}
+.adm-kpi span{font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);}
+.adm-kpi b{
+  font-family:'IBM Plex Mono',monospace;font-size:17px;font-weight:700;
+  color:var(--ink);font-variant-numeric:tabular-nums;
+}
 /* Ang halimbawa: pangalan sa kaliwa, halaga sa kanan, sa monospace para
    makita mo ang eksaktong hugis ng isasagot mo. */
 .ea-eg{

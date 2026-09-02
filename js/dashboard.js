@@ -990,10 +990,315 @@ async function renderAdminConsole(){
     profileRows.forEach(p => { profileByUser[p.user_id] = p; });
     const merged = accessRows.map(r => ({ ...r, ...(profileByUser[r.user_id] || {}) }));
     renderAdminUserList(merged);
+    // Ang Performance tab ay nagmumula sa parehong listahan ng user. Kung ito
+    // ang bukas na tab, iguhit ito ngayong dumating na ang mga pangalan.
+    if(ADMIN_TAB === 'performance') renderAdminPerformance();
   }catch(e){
     console.error("Couldn't load user list:", e);
     pendingList.innerHTML = `<div class="empty-state">Couldn't load users.</div>`;
   }
+}
+
+/* ============================================================================
+   ADMIN — ANG PERFORMANCE NG IBANG USER
+
+   Ang buong pagbabawal ay nasa server. Ang isAdminUser() sa ibaba ay
+   nagtatago lang ng pindutan; ang humahadlang sa datos ay ang RLS sa
+   supabase_admin_view_all_trading.sql. Kung may makakapasok dito nang hindi
+   admin, magbabalik ang Postgres ng sarili niyang trade lamang — hindi ng
+   walang laman, at hindi ng iba. Iyon ang tamang gawi at hindi aksidente.
+
+   Ang paghahambing ay sa PORSYENTO at sa disiplina, hindi sa pera. Ang isang
+   50K na account ay palaging mukhang mas mahusay kaysa sa isang 5K kahit mas
+   mahina ang trading; ang win rate, ang RR at ang rules kept ay hindi
+   nagsisinungaling tungkol doon.
+   ========================================================================= */
+let ADMIN_ALL_TRADES = null;    // null = hindi pa kinukuha
+let ADMIN_ALL_ACCOUNTS = [];
+let ADMIN_PERF_ROWS = [];
+let ADMIN_TAB = 'users';
+let ADMIN_OPEN_USER = null;
+
+function switchAdminTab(tab){
+  ADMIN_TAB = tab;
+  const u = document.getElementById('adminTabUsers');
+  const p = document.getElementById('adminTabPerf');
+  if(!u || !p) return;
+  u.style.display = tab === 'users' ? '' : 'none';
+  p.style.display = tab === 'performance' ? '' : 'none';
+  document.getElementById('adminTabUsersBtn')?.classList.toggle('primary', tab === 'users');
+  document.getElementById('adminTabPerfBtn')?.classList.toggle('primary', tab === 'performance');
+  if(tab === 'performance') renderAdminPerformance();
+}
+
+/* Kinukuha nang isang beses kada pagbisita sa pahina. Ang buong journal ng
+   lahat ay maaaring malaki, at ang muling pagkuha nito sa bawat pagpindot ng
+   tab ay isang paghihintay na walang bagong sinasabi. */
+async function _adminLoadAllTrades(force){
+  if(ADMIN_ALL_TRADES && !force) return ADMIN_ALL_TRADES;
+  const h = { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}` };
+  const [tRes, aRes] = await Promise.all([
+    fetch(`${SUPABASE_URL}/rest/v1/${TABLE_NAME}?select=*&order=close_date.asc`, { headers: h }),
+    fetch(`${SUPABASE_URL}/rest/v1/trading_accounts?select=*`, { headers: h })
+  ]);
+  if(!tRes.ok) throw new Error(await tRes.text());
+  ADMIN_ALL_TRADES = await tRes.json();
+  ADMIN_ALL_ACCOUNTS = aRes.ok ? await aRes.json() : [];
+  return ADMIN_ALL_TRADES;
+}
+
+/* Ang buod ng isang user. Ginagamit ang MISMONG mga helper ng app — _isWin,
+   _isLoss, netPnl, _winRateOf, _brokenRuleTags — kaya ang bilang na nakikita
+   mo tungkol sa isang user ay ang parehong bilang na nakikita niya tungkol sa
+   sarili niya. Ang isang pangalawang kopya ng aritmetika ay isang pangalawang
+   sagot na mag-aaway sa una. */
+function _adminUserStats(rawRows, accounts){
+  /* Normalize muna, kagaya ng bawat ibang bahagi ng app. Ang hilaw na row ay
+     may petsa na teksto at RR na maaaring string; ang normalizeTrade ang
+     naglalagay sa kanila sa hugis na inaasahan ng bawat helper sa ibaba. */
+  const rows = rawRows.map(normalizeTrade);
+  const real = rows.filter(t => !t.is_paper);
+  const closed = real.filter(t => t.close_date);
+  const wins = real.filter(_isWin), losses = real.filter(_isLoss);
+  const net = real.reduce((s, t) => s + netPnl(t), 0);
+
+  const netWin = wins.reduce((s, t) => s + Math.max(netPnl(t), 0), 0);
+  const netLoss = Math.abs(losses.reduce((s, t) => s + Math.min(netPnl(t), 0), 0));
+  const pf = netLoss > 0 ? netWin / netLoss : (netWin > 0 ? Infinity : null);
+
+  /* PAREHONG SALAIN ng tatlong ibang lugar na kumukuwenta ng Avg RR. Sinubukan
+     ko munang gamitin ang Number.isFinite at nahuli ito ng sim-avgrr: ang
+     Number(null) ay ZERO, at ang zero ay finite — kaya ang bawat trade na
+     walang RR ay mabibilang bilang RR na 0 at hihilahin pababa ang average ng
+     isang user. Isang salain sa buong app, at ito iyon. */
+  const rrVals = real.map(t => t.rr).filter(x => x !== null && !isNaN(x));
+  const avgRR = rrVals.length ? rrVals.reduce((a, b) => a + b, 0) / rrVals.length : null;
+
+  // Tinatakan lamang ang denominador, kapareho ng Calendar at ng Year overview.
+  const tagged = real.filter(t => _ruleTags(t.unfollowed_rules).length);
+  const broke = tagged.filter(t => _brokenRuleTags(t.unfollowed_rules).length);
+  const kept = tagged.length ? (tagged.length - broke.length) / tagged.length * 100 : null;
+
+  /* Ang paglago ay laban sa KABUUANG laki ng account, hindi sa pera — iyon ang
+     tanging paraan para makapantay ang isang 5K at isang 100K sa iisang hanay. */
+  const size = accounts.filter(a => a.account_type !== 'Exchange')
+    .reduce((s, a) => s + (Number(a.account_size) || 0), 0);
+  const growth = size > 0 ? net / size * 100 : null;
+
+  const days = new Set();
+  closed.forEach(t => { const d = new Date(t.close_date); if(!isNaN(d)) days.add(_dayKeyLocal(d)); });
+
+  const last = closed.length
+    ? closed.map(t => new Date(t.close_date)).sort((a, b) => b - a)[0] : null;
+
+  return { n: real.length, paper: rows.length - real.length,
+           wins: wins.length, losses: losses.length,
+           winRate: _winRateOf(real), avgRR, pf, kept, tagged: tagged.length,
+           net, growth, accountSize: size, days: days.size, last };
+}
+
+function renderAdminPerformance(){
+  const body = document.getElementById('adminPerfList');
+  if(!body) return;
+  body.innerHTML = `<tr><td colspan="10"><div class="empty-state">Loading everyone's trades…</div></td></tr>`;
+
+  _adminLoadAllTrades().then(() => {
+    const byUser = {};
+    ADMIN_ALL_TRADES.forEach(t => {
+      (byUser[t.user_id] = byUser[t.user_id] || []).push(t);
+    });
+    const acctByUser = {};
+    ADMIN_ALL_ACCOUNTS.forEach(a => { (acctByUser[a.user_id] = acctByUser[a.user_id] || []).push(a); });
+
+    /* Ang listahan ay galing sa user_access, hindi sa mga trade — ang isang
+       user na naaprubahan pero hindi pa nagsisimula ay dapat lumitaw na may
+       zero, at hindi mawala. Iyon ang mismong bagay na gusto mong makita. */
+    const rows = (ADMIN_USER_ROWS.length ? ADMIN_USER_ROWS : [])
+      .filter(u => u.status === 'approved' || u.role === 'admin')
+      .map(u => ({ u, s: _adminUserStats(byUser[u.user_id] || [], acctByUser[u.user_id] || []) }));
+
+    // Ang hindi pa nagsisimula ay nasa dulo; ang iba ay ayon sa disiplina at
+    // sa win rate — kung ano ang mauulit, hindi kung ano ang nangyari minsan.
+    rows.sort((a, b) => {
+      if(!a.s.n !== !b.s.n) return a.s.n ? -1 : 1;
+      const ka = a.s.kept ?? -1, kb = b.s.kept ?? -1;
+      if(kb !== ka) return kb - ka;
+      return (b.s.winRate ?? -1) - (a.s.winRate ?? -1);
+    });
+    ADMIN_PERF_ROWS = rows;
+
+    const basis = document.getElementById('adminPerfBasis');
+    if(basis){
+      const total = rows.reduce((s, r) => s + r.s.n, 0);
+      basis.style.display = '';
+      basis.innerHTML = `${rows.length} approved user${rows.length === 1 ? '' : 's'} · `
+        + `${total} real trade${total === 1 ? '' : 's'} · paper trades excluded`;
+    }
+
+    if(!rows.length){
+      body.innerHTML = `<tr><td colspan="10"><div class="empty-state">No approved users yet.</div></td></tr>`;
+      return;
+    }
+
+    const name = u => u.display_name || u.username || u.email || u.user_id.slice(0, 8);
+    const pct = (v, d) => v === null || v === undefined ? '—' : v.toFixed(d ?? 0) + '%';
+    body.innerHTML = rows.map(({ u, s }) => {
+      if(!s.n) return `<tr class="adm-quiet">
+        <td>${escapeHtml(name(u))}<div class="adm-sub">${escapeHtml(u.email || '')}</div></td>
+        <td colspan="8"><span class="adm-none">No trades logged yet</span></td>
+        <td></td></tr>`;
+      const wrTone = _winRateTintRR(s.winRate, s.avgRR, s.wins + s.losses);
+      /* Ang _rulesKeptClass ay nagbabalik ng 'none' kapag kulang ang datos, at
+         ang .adm-none ay ginagamit na ng "No trades logged yet". Dalawang
+         magkaibang bagay na may iisang pangalan ay isang bug na naghihintay —
+         kaya 'na' ang tawag dito. */
+      const keptCls = (c => c === 'none' ? 'na' : c)(_rulesKeptClass(s.kept ?? 0, s.tagged));
+      return `<tr>
+        <td>${escapeHtml(name(u))}<div class="adm-sub">${escapeHtml(u.email || '')}</div></td>
+        <td class="n">${s.n}${s.paper ? `<span class="adm-sub"> +${s.paper} paper</span>` : ''}</td>
+        <td class="n" style="color:${wrTone};font-weight:700;"
+            title="${escapeHtml(_winRateWhy(s.winRate, s.avgRR, s.wins + s.losses))}">${pct(s.winRate)}</td>
+        <td class="n">${s.avgRR === null ? '—' : fmtNum(s.avgRR, 2)}</td>
+        <td class="n">${s.pf === null ? '—' : (s.pf === Infinity ? '∞' : fmtNum(s.pf, 2))}</td>
+        <td class="n adm-${keptCls}" title="${s.tagged} of ${s.n} trades have their tags filled in">${pct(s.kept)}</td>
+        <td class="n" style="color:${s.growth === null ? 'var(--muted)' : (s.growth >= 0 ? 'var(--win)' : 'var(--loss)')};"
+            title="${s.accountSize > 0
+              ? `${fmtMoney(s.net)} against ${_salMoney(s.accountSize, 'USD')} of account size`
+              : 'No account size recorded, so growth cannot be worked out'}">${
+          s.growth === null ? '—' : (s.growth >= 0 ? '+' : '') + s.growth.toFixed(1) + '%'}</td>
+        <td class="n">${s.days}</td>
+        <td>${s.last ? s.last.toLocaleDateString(undefined, { day:'numeric', month:'short', year:'numeric' }) : '—'}</td>
+        <td><button class="poscalc-accent-btn" onclick="openAdminUser('${u.user_id}')">Open</button></td>
+      </tr>`;
+    }).join('');
+
+    if(ADMIN_OPEN_USER) openAdminUser(ADMIN_OPEN_USER);
+  }).catch(e => {
+    console.error("Couldn't load everyone's trades:", e);
+    /* Ang pinakamalamang na dahilan ay hindi pa napapatakbo ang SQL — sabihin
+       iyon nang tahasan sa halip na isang pangkalahatang "may mali". */
+    body.innerHTML = `<tr><td colspan="10"><div class="empty-state">
+      Couldn't load other users' trades. If this is the first time, run
+      <b>supabase_admin_view_all_trading.sql</b> in Supabase — without it the
+      database returns only your own rows, which is exactly what it should do.
+    </div></td></tr>`;
+  });
+}
+
+/* Ang isang user, nang buo. Ito ang hiniling niya: "buo kasi dapat ma manage
+   ko sila" — kaya kasama ang bawat trade at hindi lang ang buod. */
+function openAdminUser(userId){
+  ADMIN_OPEN_USER = userId;
+  const host = document.getElementById('adminUserDetail');
+  if(!host || !ADMIN_ALL_TRADES) return;
+  const row = ADMIN_PERF_ROWS.find(r => r.u.user_id === userId);
+  if(!row) return;
+  const { u, s } = row;
+  const name = u.display_name || u.username || u.email || userId.slice(0, 8);
+
+  // Ganoon din ang _adminUserStats sa loob nito — iisang hugis, iisang sagot.
+  const mine = ADMIN_ALL_TRADES.filter(t => t.user_id === userId).map(normalizeTrade);
+  const real = mine.filter(t => !t.is_paper);
+  const paper = mine.filter(t => t.is_paper);
+
+  // Buwan-buwan, pinakabago muna — ang hugis ng pag-unlad, hindi isang bilang.
+  const months = {};
+  real.filter(t => t.close_date).forEach(t => {
+    const k = _salaryMonthKey(t.close_date);
+    (months[k] = months[k] || []).push(t);
+  });
+  const monthRows = Object.entries(months).sort((a, b) => b[0].localeCompare(a[0])).slice(0, 12)
+    .map(([k, arr]) => {
+      const net = arr.reduce((sum, t) => sum + netPnl(t), 0);
+      const wr = _winRateOf(arr);
+      return `<tr>
+        <td>${escapeHtml(_salaryMonthLabel(k))}</td>
+        <td class="n">${arr.length}</td>
+        <td class="n" style="color:${net >= 0 ? 'var(--win)' : 'var(--loss)'};">${fmtMoney(net)}</td>
+        <td class="n">${wr === null ? '—' : Math.round(wr) + '%'}</td>
+      </tr>`;
+    }).join('');
+
+  const tradeRows = real.slice().reverse().slice(0, 200).map(t => {
+    const n = netPnl(t);
+    const broken = _brokenRuleTags(t.unfollowed_rules);
+    return `<tr>
+      <td>${t.close_date ? t.close_date.toLocaleDateString(undefined,{day:'numeric',month:'short',year:'numeric'}) : '—'}</td>
+      <td>${escapeHtml(t.symbol || '—')}</td>
+      <td>${escapeHtml(t.trade_type || '—')}</td>
+      <td>${escapeHtml(t.win_loss || '—')}</td>
+      <td class="n" style="color:${n >= 0 ? 'var(--win)' : 'var(--loss)'};">${fmtMoney(n)}</td>
+      <td class="n">${t.rr === null || t.rr === undefined || t.rr === '' ? '—' : fmtNum(Number(t.rr), 2)}</td>
+      <td>${escapeHtml(t.account || '—')}</td>
+      <td>${broken.length
+        ? `<span class="adm-loss">${escapeHtml(broken.join(', '))}</span>`
+        : '<span class="adm-win">clean</span>'}</td>
+    </tr>`;
+  }).join('');
+
+  const paperRows = paper.slice().reverse().slice(0, 60).map(t => `<tr>
+      <td>${t.close_date ? t.close_date.toLocaleDateString(undefined,{day:'numeric',month:'short'}) : '—'}</td>
+      <td>${escapeHtml(t.symbol || '—')}</td>
+      <td>${escapeHtml(t.trade_setup || '—')}</td>
+      <td>${escapeHtml(t.no_trade_reason || '—')}</td>
+    </tr>`).join('');
+
+  host.innerHTML = `
+    <div class="panel" style="margin-bottom:20px;">
+      <h2 style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
+        <span>${escapeHtml(name)}</span>
+        <button class="poscalc-accent-btn" onclick="closeAdminUser()">Close</button>
+      </h2>
+      <div class="adm-kpis">
+        ${[['Trades', s.n], ['Win rate', s.winRate === null ? '—' : Math.round(s.winRate) + '%'],
+           ['Avg RR', s.avgRR === null ? '—' : fmtNum(s.avgRR, 2)],
+           ['Profit factor', s.pf === null ? '—' : (s.pf === Infinity ? '∞' : fmtNum(s.pf, 2))],
+           ['Rules kept', s.kept === null ? '—' : Math.round(s.kept) + '%'],
+           ['Days traded', s.days],
+           ['Growth', s.growth === null ? '—' : (s.growth >= 0 ? '+' : '') + s.growth.toFixed(1) + '%'],
+           ['Paper trades', s.paper]]
+          .map(([k, v]) => `<div class="adm-kpi"><span>${k}</span><b>${v}</b></div>`).join('')}
+      </div>
+    </div>
+
+    <div class="row-2" style="align-items:start;">
+      <div class="panel">
+        <h2>Month by month</h2>
+        <div style="overflow-x:auto;">
+          <table class="breakdown">
+            <thead><tr><th>Month</th><th class="n">Trades</th><th class="n">Net</th><th class="n">Win rate</th></tr></thead>
+            <tbody>${monthRows || '<tr><td colspan="4"><div class="empty-state">No closed trades.</div></td></tr>'}</tbody>
+          </table>
+        </div>
+      </div>
+      <div class="panel">
+        <h2>Setups they did not take ${paper.length ? `<span class="pill pill-muted">${paper.length}</span>` : ''}</h2>
+        <div style="overflow-x:auto;">
+          <table class="breakdown">
+            <thead><tr><th>Date</th><th>Symbol</th><th>Setup</th><th>Why not</th></tr></thead>
+            <tbody>${paperRows || '<tr><td colspan="4"><div class="empty-state">No paper trades logged.</div></td></tr>'}</tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Trade journal ${real.length > 200 ? '<span class="pill pill-muted">latest 200</span>' : ''}</h2>
+      <div style="overflow-x:auto;">
+        <table class="breakdown">
+          <thead><tr><th>Date</th><th>Symbol</th><th>Type</th><th>Result</th>
+            <th class="n">Net</th><th class="n">RR</th><th>Account</th><th>Tags</th></tr></thead>
+          <tbody>${tradeRows || '<tr><td colspan="8"><div class="empty-state">No trades.</div></td></tr>'}</tbody>
+        </table>
+      </div>
+    </div>`;
+  host.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function closeAdminUser(){
+  ADMIN_OPEN_USER = null;
+  const host = document.getElementById('adminUserDetail');
+  if(host) host.innerHTML = '';
 }
 
 let ADMIN_USER_ROWS = [];
@@ -2797,26 +3102,10 @@ function renderCalendar(){
   const y = calMonth.getFullYear(), m = calMonth.getMonth();
   document.getElementById('calLabel').textContent = calMonth.toLocaleDateString('en-US',{month:'long', year:'numeric'});
 
-  /* Ang calendar ay may sariling buwan. Kapag walang filter na buwan, ang ‹ ›
-     ay naglilipat DITO lang — at ang Profit Factor, ang win rate at ang bawat
-     numero sa itaas ay nananatili sa buong panahon ng filter. Tama ang dalawa,
-     pero magkaiba, at walang nagsabi noon. Sinasabi na ngayon. */
-  (() => {
-    const note = document.getElementById('calScopeNote');
-    if(!note) return;
-    const fy = document.getElementById('yearFilter')?.value;
-    const fm = document.getElementById('monthFilter')?.value;
-    // Sumusunod ang KPI kapag may piniling buwan — walang dapat sabihin doon.
-    const sameScope = fm && fm !== 'all' && Number(fm) === m &&
-                      (!fy || fy === 'all' || Number(fy) === y);
-    if(sameScope){ note.style.display = 'none'; note.textContent = ''; return; }
-    const scope = (!fy || fy === 'all') ? 'all time' : String(fy);
-    note.style.display = '';
-    note.textContent = `stats above: ${scope}`;
-    note.title = `The numbers at the top of the page cover ${scope}. `
-      + `This calendar is showing ${calMonth.toLocaleDateString('en-US',{month:'long', year:'numeric'})} on its own — `
-      + `pick a month in the filter if you want both to match.`;
-  })();
+  /* Ang "stats above: 2026" ay nandito noon para sabihing ang calendar at ang
+     mga numero sa itaas ay maaaring magkaibang panahon. Inalis niya ito: sapat
+     na ang buwan at taon sa tabi ng ‹ ›. Ang paliwanag ay nasa "N trades in
+     view · 2026" pa rin sa itaas, kung saan mismo naroon ang mga numero. */
 
   const byDay = {};
   const monthTrades = [];

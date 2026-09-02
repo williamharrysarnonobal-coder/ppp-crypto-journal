@@ -17,7 +17,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<link rel="stylesheet" href="css/style.css?v=302">
+<link rel="stylesheet" href="css/style.css?v=303">
 </head>
 <body>
 
@@ -144,9 +144,6 @@
           <span class="nav">
             <button onclick="shiftMonth(-1)">‹</button>
             <span id="calLabel">—</span>
-            <!-- Lumalabas lamang kapag ang buwang ito ay wala sa panahong sakop
-                 ng mga bilang sa itaas. Tingnan ang renderCalendar. -->
-            <span id="calScopeNote" class="cal-scope" style="display:none;"></span>
             <button onclick="shiftMonth(1)">›</button>
           </span>
         </span>
@@ -934,6 +931,17 @@
       </div>
     </header>
 
+    <!-- Dalawang trabaho, dalawang tab: kung SINO ang nakakapasok, at KUMUSTA
+         sila kapag nakapasok na. Magkaibang tanong ang mga ito at halos hindi
+         magkasabay ang pagtatanong. -->
+    <div class="paper-tabs" style="margin-bottom:18px;">
+      <button class="poscalc-accent-btn primary" id="adminTabUsersBtn"
+              onclick="switchAdminTab('users')">Users</button>
+      <button class="poscalc-accent-btn" id="adminTabPerfBtn"
+              onclick="switchAdminTab('performance')">Performance</button>
+    </div>
+
+    <div id="adminTabUsers">
     <div class="panel" style="margin-bottom:20px;">
       <h2>Pending approval <span class="pill pill-orange" id="adminPendingCount">0</span></h2>
       <div style="overflow-x:auto;">
@@ -955,6 +963,31 @@
           <tbody id="adminAllUsersList"></tbody>
         </table>
       </div>
+    </div>
+    </div><!-- /adminTabUsers -->
+
+    <div id="adminTabPerf" style="display:none;">
+      <div class="panel" style="margin-bottom:20px;">
+        <h2 style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
+          <span>How everyone is trading</span>
+          <span class="ea-hint" id="adminPerfBasis" style="display:none;margin:0;"></span>
+        </h2>
+        <div style="overflow-x:auto;">
+          <table class="breakdown admin-perf-table">
+            <thead><tr>
+              <th>User</th><th class="n">Trades</th><th class="n">Win rate</th>
+              <th class="n">Avg RR</th><th class="n">Profit factor</th>
+              <th class="n">Rules kept</th><th class="n">Growth</th>
+              <th class="n">Days traded</th><th>Last trade</th><th></th>
+            </tr></thead>
+            <tbody id="adminPerfList"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Lumalabas lamang kapag may piniling user. Ang buod muna, tapos ang
+           mismong journal nila sa ibaba. -->
+      <div id="adminUserDetail"></div>
     </div>
   </div>
 
@@ -2294,6 +2327,6 @@
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=2"></script>
-<script src="js/dashboard.js?v=493"></script>
+<script src="js/dashboard.js?v=494"></script>
 </body>
 </html>
