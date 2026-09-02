@@ -114,6 +114,22 @@ function _isPaperMode(){
   return !!(root && root.closest('#paperCalcHost'));
 }
 
+/* ANG HILAW NA HILERA NG TUNAY NA TRADE LAMANG.
+
+   Ang RAW_TRADES ay naglalaman ng LAHAT — tunay at paper — dahil iisang
+   talahanayan sila sa database. Ang ALL_TRADES ay ang nasala nang bersyon, pero
+   ito ay NORMALIZED: may Date object, may kinuwentang field. May mga lugar na
+   nangangailangan ng hilaw na hilera (ang talahanayan ng Journal, ang mga
+   pagpipilian sa +Filter, ang tseke ng kulang na field) at ang mga iyon ay
+   dumiretso sa RAW_TRADES — kaya nakita niya ang paper trade sa Trade Journals
+   at nabilang silang lahat bilang "incomplete", dahil wala nga silang account,
+   win/loss o P&L at hindi naman sila dapat magkaroon.
+
+   Ito ang nawawalang piraso: hilaw, pero tunay lamang. */
+function _realRawTrades(){
+  return (RAW_TRADES || []).filter(r => !(r.is_paper === true || r.is_paper === 'true'));
+}
+
 function _rebuildTradeArrays(){
   const all = RAW_TRADES.map(normalizeTrade);
   ALL_TRADES   = all.filter(t => !t.is_paper);
@@ -6675,9 +6691,15 @@ function renderPaperTable(){
              ay para sa trade na nangyari at laging blangko rito. */
           if(c.key === 'rr'){ const r = _plannedRR(t);
             return r === null ? '—' : fmtNum(r, 2); }
-          // Ang natitira ay dumadaan sa mismong formatter ng Trade Journals,
-          // kaya pareho ang hitsura ng bawat numero sa dalawang pahina.
+          /* Ang natitira ay dumadaan sa mismong formatter NG Trade Journals —
+             at pati sa kulay nito. Ang _journalCellValue lang ay nagbibigay ng
+             hubad na teksto: ang Confluence Score ay nawawalan ng kulay at ng
+             hover na nagsasabi kung anong tanong ang sinagot, at ang Trade
+             Tags ay nagiging listahan ng salita. Dalawang pahina, iisang
+             hitsura — iyon ang buong punto ng paggamit ng column mo. */
           const v = _journalCellValue(t, c.key);
+          const colored = _journalColoredCell(c.key, t, v);
+          if(colored) return colored;
           return (v === null || v === undefined || v === '') ? '—' : v;
         }
       })))
@@ -12647,13 +12669,13 @@ let JOURNAL_ACTIVE_FILTERS = [];
 function _journalFilterValues(key){
   if(JOURNAL_MULTI_KEYS.has(key)){
     const set = new Set();
-    RAW_TRADES.forEach(r => (r[key] || '').split(/[,;]/)
+    _realRawTrades().forEach(r => (r[key] || '').split(/[,;]/)
       .map(s => s.trim())
       .filter(s => s && s.toLowerCase() !== 'rules followed')
       .forEach(s => set.add(s)));
     return [...set].sort();
   }
-  return [...new Set(RAW_TRADES.map(r => r[key]).filter(v => v !== null && v !== undefined && String(v).trim() !== ''))]
+  return [...new Set(_realRawTrades().map(r => r[key]).filter(v => v !== null && v !== undefined && String(v).trim() !== ''))]
     .map(String).sort();
 }
 
@@ -12815,7 +12837,9 @@ function renderJournalFilterChips(){
    thing you do before anything else, on nearly every visit. Keyed on close
    date, matching the dashboard and the rest of the app. */
 function _journalTradeYears(){
-  return [...new Set(RAW_TRADES
+  // Tunay lamang — ang paper trade ay walang close_date at hindi dapat
+  // nagdadagdag ng taon sa filter ng Trade Journals.
+  return [...new Set(_realRawTrades()
     .map(r => r.close_date && new Date(r.close_date).getFullYear())
     .filter(Boolean))].sort((a,b) => b - a);
 }
@@ -12840,7 +12864,7 @@ function _renderJournalMonthOptions(){
   if(!yearSel || !monthSel) return;
 
   const year = yearSel.value;
-  const months = [...new Set(RAW_TRADES
+  const months = [...new Set(_realRawTrades()
     .filter(r => r.close_date && (year === 'all' || new Date(r.close_date).getFullYear() === Number(year)))
     .map(r => new Date(r.close_date).getMonth()))].sort((a,b) => a - b);
 
@@ -13116,7 +13140,8 @@ function _journalColoredCell(key, row, plainVal){
 function getFilteredJournalRows(exceptKey){
   const query = (document.getElementById('journalSearch')?.value || '').trim().toLowerCase();
 
-  let rows = RAW_TRADES;
+  // Tunay lamang: ang paper trade ay may sariling pahina at sariling talahanayan.
+  let rows = _realRawTrades();
   if(query){
     rows = rows.filter(r => {
       return ['symbol','position_id','trade_setup','pattern_type','session','account']
@@ -14951,6 +14976,9 @@ function openDrawer(mode, positionId, prefill){
   drawerRowData = mode === 'view' ? (RAW_TRADES.find(r => r.position_id === positionId) || {}) : (prefill || {});
 
   renderDrawerFields();
+  // Ang pindutang paglipat ay nakadepende sa panig ng trade, kaya sinusundan
+  // nito ang bawat pagbukas.
+  _syncDrawerMoveBtn();
 
   document.getElementById('drawerOverlay').classList.add('open');
   document.getElementById('drawer').classList.add('open');
@@ -15496,6 +15524,114 @@ function _applyMovedStopFlags(patch){
     .filter(r => _tagKind(r) !== 'sentinel');
   patch.unfollowed_rules = merged.join(', ');
   patch.rules_followed = 'No';
+}
+
+/* ---------------- Paglipat ng trade sa tamang panig ----------------
+
+   May mga trade na napunta sa maling listahan, at may dalawang paraan iyon
+   nangyari. Ang una ay ang bug na naayos na: habang bukas ang Paper Trade
+   Journal, ang pagbukas ng TUNAY na trade ay nagpapakita rito ng mga tanong ng
+   paper, at ang pag-save noon ay nagsusulat ng sagot sa maling lugar. Ang
+   pangalawa ay mas matanda pa: bago pa may Paper Trade Journal, ang setup na
+   hindi mo kinuha ay walang ibang lalagyan kundi ang Trade Journals.
+
+   Sa SQL mahahanap ang marami nang sabay (supabase_find_leaked_paper_trades.sql).
+   Ito ang para sa isa-isa, kung saan ikaw ang humahatol — at para sa susunod na
+   pagkakamali, na hindi na mangangailangan ng SQL. */
+function _syncDrawerMoveBtn(){
+  const btn = document.getElementById('drawerMoveBtn');
+  if(!btn) return;
+  const row = drawerRowData;
+  // Sa naitalang trade lang: walang panig ang hindi pa nase-save na entry.
+  if(drawerMode !== 'view' || !row || !row.position_id){
+    btn.style.display = 'none';
+    return;
+  }
+  const isPaper = !!row.is_paper;
+  btn.style.display = '';
+  btn.textContent = isPaper ? 'Move to Trade Journal' : 'Move to Paper Journal';
+  btn.title = isPaper
+    ? 'This was a setup you did not take. Moving it to the Trade Journal makes it count in your P&L, win rate and account balance.'
+    : 'This was not a trade you actually took. Moving it to the Paper Journal takes it out of your P&L, win rate and account balance.';
+}
+
+async function moveTradeSide(){
+  const row = drawerRowData;
+  if(!row || !row.position_id) return;
+  const toPaper = !row.is_paper;
+
+  /* ANG PERA ANG PINAKAMAHALAGANG TANONG DITO.
+
+     Ang trade na may P&L ay gumalaw ng balanse sa isang account. Ang paglipat
+     noon sa paper ay nag-aalis nito sa bawat bilang — ang P&L, ang win rate,
+     ang drawdown — pero HINDI ibinabalik ang balanse ng account, dahil ang
+     balanseng iyon ay isang tunay na numero mula sa broker at hindi akin.
+
+     Sinasabi ko iyon nang tahasan bago magpatuloy, sa halip na tahimik na
+     gawin at hayaan siyang makakita ng account na hindi na tugma. */
+  const money = Number(row.profit_loss);
+  const movedMoney = toPaper && Number.isFinite(money) && money !== 0;
+
+  const msg = toPaper
+    ? `Move this to the Paper Journal?\n\n`
+      + `It stops counting in your P&L, win rate, discipline and account rules — `
+      + `it becomes a setup you did not take.`
+      + (movedMoney
+          ? `\n\nThis trade recorded ${fmtMoney(money)}. That amount already moved your `
+            + `account balance, and this will NOT put it back — fix the balance on `
+            + `My Accounts if it was never a real trade.`
+          : '')
+    : `Move this to the Trade Journal?\n\n`
+      + `It starts counting in your P&L, win rate, discipline and account rules — `
+      + `it becomes a trade you took.`;
+
+  if(!(await customConfirm(msg, toPaper ? 'Move to Paper' : 'Move to Trade Journal'))) return;
+
+  const btn = document.getElementById('drawerMoveBtn');
+  const errEl = document.getElementById('drawerError');
+  if(errEl) errEl.textContent = '';
+  if(btn){ btn.disabled = true; btn.textContent = 'Moving…'; }
+
+  /* Ang is_paper LANG ang binabago rito nang sadya. Ang paglilinis ng account,
+     quantity at P&L ay isang PANGALAWANG desisyon — at kung gagawin ko iyon
+     nang sabay, walang paraan para bawiin ito kung nagkamali siya. Ang mga
+     field na iyon ay nakatago naman sa paper drawer, kaya hindi sila
+     nakakagulo; nananatili silang nakasulat kung sakaling ibalik niya ito. */
+  const patch = { is_paper: toPaper };
+
+  try{
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/${TABLE_NAME}?position_id=eq.${encodeURIComponent(row.position_id)}`, {
+      method: 'PATCH',
+      headers: {
+        "apikey": SUPABASE_KEY,
+        "Authorization": `Bearer ${USER_ACCESS_TOKEN}`,
+        "Content-Type": "application/json",
+        "Prefer": "return=representation"
+      },
+      body: JSON.stringify(patch)
+    });
+    if(!res.ok) throw new Error(await res.text());
+
+    const idx = RAW_TRADES.findIndex(r => r.position_id === row.position_id);
+    if(idx > -1) RAW_TRADES[idx].is_paper = toPaper;
+
+    _rebuildTradeArrays();
+    _rebuildTradeNumbers();
+    applyFilters();
+    renderJournalTable();
+    if(typeof renderPaperTable === 'function') renderPaperTable();
+    refreshAllNavBadges();
+    closeDrawer();
+    showToast(toPaper
+      ? 'Moved to the Paper Journal — it no longer counts in your numbers.'
+      : 'Moved to the Trade Journal — it now counts in your numbers.');
+  }catch(e){
+    console.error("Couldn't move this trade:", e);
+    if(errEl) errEl.textContent = "Couldn't move this trade — please try again.";
+    if(btn){ btn.disabled = false; }
+    _syncDrawerMoveBtn();
+  }
 }
 
 async function saveDrawer(){
@@ -16085,7 +16221,11 @@ function getMissingFieldLabels(t){
 }
 
 function getIncompleteTrades(){
-  return RAW_TRADES.filter(t => {
+  /* Tunay lamang. Ang paper trade ay walang account, walang win/loss at walang
+     P&L — hindi dahil nakalimutan mo kundi dahil hindi ito nangyari. Ang
+     pagbilang sa kanila rito ay nagbibigay ng babalang hindi mo kailanman
+     mapapatahimik: "3 trades incomplete" na hindi mo maaayos. */
+  return _realRawTrades().filter(t => {
     if(!(t.position_id || '').startsWith('WEB-')) return false;
     return REQUIRED_JOURNAL_FIELDS.some(key => t[key] === null || t[key] === undefined || t[key] === '');
   });

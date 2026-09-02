@@ -1296,10 +1296,22 @@
 table.breakdown tbody tr{cursor:pointer;}
   table.breakdown tbody tr:hover{background:var(--surface-2);}
 
-  /* ---------- Modal ---------- */
+  /* ---------- Modal ----------
+
+     SA IBABAW NG DRAWER, HINDI SA LIKOD.
+
+     Ang drawer ay z-index 301 at ang modal ay 200 noon. Kaya kapag binuksan mo
+     ang Confluence MULA sa drawer — na siyang tanging paraan para buksan ito
+     para sa isang trade — lumalabas ang modal sa LIKOD ng drawer: nakikita mo
+     ito, hindi mo mapipindot, at walang nagsasabi kung bakit.
+
+     Ang 400 ay nasa ibabaw ng lahat, at tama iyon para sa isang modal: ito ang
+     pinakahuling bagay na binuksan, at wala nang ibang gagawin hangga't hindi
+     ito nasasagot. Ang kabaligtaran — drawer na binubuksan mula sa modal — ay
+     isinasara muna ang modal bago buksan ang drawer, kaya walang naaapektuhan. */
   .modal-overlay{
     display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);
-    z-index:200;align-items:center;justify-content:center;padding:20px;
+    z-index:400;align-items:center;justify-content:center;padding:20px;
   }
   .modal-overlay.open{display:flex;}
   .modal-box{
