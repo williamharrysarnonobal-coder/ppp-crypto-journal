@@ -21216,7 +21216,17 @@ const BULK_HIDDEN_KEYS = new Set([
   'tp_price','sl_price','entry_price','close_price',
   'profit_loss','pnl_percent','fee','rr','win_loss',
   'symbol','open_date','close_date','duration','day_of_week',
-  'trade_type'
+  'trade_type',
+  /* Ang leverage ay kada-account, gaya ng quantity: may sariling "LONG x1" ang
+     bawat position card. Nakalimutan kong ilagay ito rito nang idagdag ko ang
+     column, at ang epekto ay hindi lang "walang kahon" — ito ay PAGBURA.
+
+     Ang hilera ay binubuo bilang { ...t.parsed, ...answered }, kaya ang sagot
+     sa kabahaging drawer ay nananaig sa bawat ticket. Ang isang nakikitang
+     kahon ng Leverage na iniwang blangko ay nagbabalik ng null, at ang null na
+     iyon ay pumapatong sa leverage na kinuha mula sa bawat card. Kaya gumana
+     ito nang isahan at nawala sa bulk. */
+  'leverage'
   // pattern_type is deliberately NOT hidden. It arrives from the Setup, but
   // the wrong one does get picked there, and this is the last point before
   // three rows are written with it.
