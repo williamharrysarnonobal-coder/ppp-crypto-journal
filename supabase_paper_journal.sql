@@ -18,6 +18,19 @@ alter table trading_journal
 alter table trading_journal
   add column if not exists no_trade_reason text;
 
+-- Ano sana ang nangyari.
+--
+-- Ang dahilan ay nagsasabi kung BAKIT ka hindi pumasok. Ito ang nagsasabi kung
+-- TAMA ka ba — at kung wala ito, ang buong pahina ay isang talaan ng takot na
+-- walang paraan para malaman kung ang takot na iyon ay nagliligtas sa iyo o
+-- nagpapamahal. 'Hit TP' · 'Hit SL' · 'Never filled' · 'Not checked yet'.
+--
+-- Walang historical na presyo sa database, kaya ikaw ang nagmamarka nito kapag
+-- tiningnan mo ulit ang chart. Ang paghula nito ay mas masahol kaysa sa
+-- pagtatanong.
+alter table trading_journal
+  add column if not exists paper_outcome text;
+
 -- Ang tanong na sinasagot ng buong pahina ay "bakit ako hindi pumipindot", at
 -- ang sagot ay hinahanap sa mga paper trade lang. Ang index ay nagpapabilis
 -- doon at hindi hinahawakan ang mga tunay na trade.

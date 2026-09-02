@@ -69,6 +69,23 @@ let PAPER_TRADES = [];
    binubuksan mo (may is_paper na ito), at isang BAGONG entry na ginagawa mula
    sa Paper Trade Journal (wala pa itong row — ang kinaroroonan ng calculator
    ang sumasagot). */
+/* ANG RR NG PLANO.
+
+   Ang paper trade ay walang quantity, walang account at walang P&L — pero may
+   entry, TP at SL, dahil galing sila sa calculator bago ka pa magpasya. Iyon
+   ay sapat na para sa RR, at ang RR ang nagsasabi kung magkano ang halaga ng
+   setup na pinalampas mo.
+
+   Ibinabalik ang null at hindi zero kapag kulang: ang zero ay isang sagot at
+   ang wala ay hindi. */
+function _plannedRR(t){
+  const e = Number(t.entry_price), tp = Number(t.tp_price), sl = Number(t.sl_price);
+  if(![e, tp, sl].every(Number.isFinite)) return null;
+  const risk = Math.abs(e - sl);
+  if(!risk) return null;
+  return Math.abs(tp - e) / risk;
+}
+
 function _drawerIsPaper(row){
   if(row && row.is_paper) return true;
   return _isPaperMode();
@@ -1485,6 +1502,8 @@ function normalizeTrade(r){
     // Bakit hindi mo ito kinuha. Ang tanging bagay na hindi nasa isang tunay
     // na trade, at ang buong dahilan kung bakit may pahinang ito.
     no_trade_reason: r.no_trade_reason || "",
+    // Ano sana ang nangyari. Blangko hangga't hindi mo tinitingnan ang chart.
+    paper_outcome: r.paper_outcome || "",
     /* Ang leverage na TALAGANG ginamit, hindi ang binalak — ang huli ay nasa
        position_setups mula pa noon. Null kapag wala, hindi zero: ang zero ay
        isang sagot at ang wala ay hindi. */
@@ -6311,6 +6330,62 @@ function renderTriggerPanel(){
   const top = [...byReason.entries()].sort((a, b) => b[1] - a[1]);
   const pct = n => Math.round(n / answered.length * 100);
 
+  /* ANG NAGLIGTAS BA SA IYO ANG TAKOT, O NAGPAMAHAL?
+
+     Ito ang tanong na hindi masasagot ng dahilan mag-isa. Ang "natakot ako" ay
+     isang katotohanan tungkol sa iyo; kung tama ka bang natakot ay isang
+     katotohanan tungkol sa merkado, at ang dalawa ay kailangang magkatabi bago
+     may matutunan.
+
+     Ang "Never filled" ay hindi binibilang sa alinmang panig nang sadya: ang
+     setup na hindi umabot sa entry mo ay hindi patunay na tama ka o mali ka.
+     Ang pagbilang doon bilang iniwasang talo ay magbibigay sa iyo ng dahilan
+     para ipagdiwang ang isang bagay na hindi nangyari. */
+  const checked = rows.filter(t =>
+    ['missed','saved'].includes(PAPER_OUTCOME_KIND[String(t.paper_outcome||'').toLowerCase()]));
+  const missed = checked.filter(t => String(t.paper_outcome).toLowerCase() === 'hit tp');
+  const saved  = checked.filter(t => String(t.paper_outcome).toLowerCase() === 'hit sl');
+  const neverFilled = rows.filter(t => String(t.paper_outcome||'').toLowerCase() === 'never filled').length;
+  const unchecked = rows.length - checked.length - neverFilled;
+
+  // Ang halaga, sa RR — hindi sa pera. Walang quantity ang paper trade, kaya
+  // walang halagang dolyar na hindi ko iimbentuhin.
+  const rrOf = t => _plannedRR(t);
+  const missedRR = missed.map(rrOf).filter(x => x !== null).reduce((a, b) => a + b, 0);
+  const savedRR  = saved.map(rrOf).filter(x => x !== null).reduce((a, b) => a + b, 0);
+
+  const outcomeHtml = checked.length ? (() => {
+    const net = missedRR - savedRR;
+    const tone = net > 0.5 ? 'bad' : net < -0.5 ? 'good' : 'wait';
+    const line = net > 0.5
+      ? `The setups you passed on were mostly right. Hesitating cost you about `
+        + `${fmtNum(net, 1)}R across ${checked.length} checked setup${checked.length === 1 ? '' : 's'}.`
+      : net < -0.5
+      ? `Passing saved you. The ones you let go would have lost about `
+        + `${fmtNum(Math.abs(net), 1)}R — your caution is earning its keep.`
+      : `It roughly evens out — ${missed.length} would have won, ${saved.length} would have lost. `
+        + `Passing is neither helping nor hurting you yet.`;
+    return `
+      <div class="dx-s-verdict ${tone}" style="margin-top:14px;">
+        <span class="dx-dot ${tone}"></span>
+        <b>${escapeHtml(line)}</b>
+        <span>${checked.length} of ${rows.length} checked${
+          neverFilled ? ` · ${neverFilled} never filled` : ''}${
+          unchecked ? ` · ${unchecked} still unchecked` : ''}</span>
+      </div>
+      <div class="dx-s-cards">
+        <div class="dx-s-card bad"><span class="dx-s-k">Would have won</span>
+          <span class="dx-s-v">${missed.length}</span>
+          <span class="dx-s-m">${fmtNum(missedRR, 1)}R left on the table</span></div>
+        <div class="dx-s-card good"><span class="dx-s-k">Would have lost</span>
+          <span class="dx-s-v">${saved.length}</span>
+          <span class="dx-s-m">${fmtNum(savedRR, 1)}R you did not give away</span></div>
+      </div>`;
+  })() : `<div class="empty-state" style="margin-top:14px;">
+      None of these have been checked against the chart yet. Open one and set
+      <b>What would have happened</b> — that is what turns this from a list of
+      hesitations into an answer about whether they cost you.</div>`;
+
   const cards = ['felt','setup','life'].filter(k => byKind[k]).map(k => `
     <div class="dx-s-card ${KIND[k].cls}">
       <span class="dx-s-k">${escapeHtml(KIND[k].t)}</span>
@@ -6337,6 +6412,7 @@ function renderTriggerPanel(){
         <span>${answered.length} of ${rows.length} paper trades answered</span>
       </div>
       <div class="dx-s-cards">${cards}</div>
+      ${outcomeHtml}
     </div>
     <table class="dx-tbl" style="margin-top:16px;">
       <thead><tr><th>Why you let it go</th><th class="n">Times</th><th class="n">Share</th></tr></thead>
@@ -6518,11 +6594,22 @@ function renderPaperTable(){
     { k: 'Symbol', get: t => escapeHtml(t.symbol || '—') },
     { k: 'Setup',  get: t => escapeHtml(t.trade_setup || '—') },
     { k: 'Session',get: t => escapeHtml(t.session || '—') },
-    { k: 'RR',     get: t => t.rr === null ? '—' : fmtNum(t.rr, 2) },
+    /* Ang RR ng PLANO, kinukuwenta mula sa entry, TP at SL — hindi ang rr
+       column, na para sa isang trade na nangyari. Ang paper trade ay walang
+       resulta pero may plano, at ang plano ay may RR. */
+    { k: 'RR',     get: t => { const r = _plannedRR(t);
+        return r === null ? '—' : fmtNum(r, 2); } },
     { k: 'Why you did not take it', wide: true, get: t => t.no_trade_reason
         ? `<span class="paper-why ${NO_TRADE_KIND[t.no_trade_reason.toLowerCase()] || ''}"
              >${escapeHtml(t.no_trade_reason)}</span>`
         : `<span class="paper-why none">not answered yet</span>` },
+    /* Ang kalahating hindi pa nasasagot noon. Ang dahilan ay nagsasabi kung
+       bakit ka hindi pumasok; ito ang nagsasabi kung tama ka ba. */
+    { k: 'What happened', get: t => {
+        const kind = PAPER_OUTCOME_KIND[String(t.paper_outcome || '').toLowerCase()] || 'unknown';
+        return t.paper_outcome
+          ? `<span class="paper-out ${kind}">${escapeHtml(t.paper_outcome)}</span>`
+          : `<span class="paper-out unknown">not checked</span>`; } },
   ];
   head.innerHTML = cols.map(c => `<th${c.wide ? ' class="paper-why-col"' : ''}>${escapeHtml(c.k)}</th>`).join('');
   // openDrawer('view', positionId) — ang parehong drawer ng tunay na journal,
@@ -6574,6 +6661,27 @@ const NO_TRADE_REASONS = NO_TRADE_REASON_GROUPS.flatMap(g => g.items);
 const NO_TRADE_KIND = {};
 NO_TRADE_REASON_GROUPS.forEach((g, i) =>
   g.items.forEach(x => { NO_TRADE_KIND[x.toLowerCase()] = ['felt','setup','life'][i]; }));
+
+/* ANG APAT NA MAAARING NANGYARI SA SETUP NA HINDI MO KINUHA.
+
+   Ang "Never filled" ay hindi isang detalye. Ito ang pagkakaiba sa pagitan ng
+   "iniwasan mo ang talo" at "walang talong iiwasan" — at kung isasama ito sa
+   Hit SL, bibigyan ka ng app ng dahilan para ipagdiwang ang isang bagay na
+   hindi naman nangyari. Ang pinakamadalas na sagot sa totoong buhay ay ito.
+
+   Ang "Not checked yet" ay ang default at kusang naitatala kapag nag-save ka
+   nang hindi ito sinasagot: mas mainam ang tapat na "hindi ko pa alam" kaysa
+   sa isang blangkong ituturing ng bilang bilang zero. */
+const PAPER_OUTCOMES = [
+  'Hit TP', 'Hit SL', 'Never filled', 'Not checked yet'
+];
+// Alin sa kanila ang nagsasabing may nawala sa iyo, at alin ang nagligtas.
+const PAPER_OUTCOME_KIND = {
+  'hit tp': 'missed',      // tama sana ang setup
+  'hit sl': 'saved',       // iniligtas ka ng hindi pagpasok
+  'never filled': 'moot',  // walang nangyari; walang patunay
+  'not checked yet': 'unknown'
+};
 
 const UNFOLLOWED_RULES_OPTIONS = [
   'Rules Followed',"Would Have BE'd Out",
@@ -7038,28 +7146,28 @@ function removeOption(key, index){
 const ALL_DRAWER_FIELDS = [
   {key:'symbol', label:'Symbol', widget:'text', editable:false},
   {key:'open_date', label:'Open Date', widget:'date', editable:false},
-  {key:'close_date', label:'Close Date', widget:'date', editable:false},
-  {key:'duration', label:'Duration', widget:'text', editable:false},
-  {key:'objective', label:'Objective', widget:'text', editable:false},
-  {key:'profit_loss', label:'Profit/Loss', widget:'number', editable:true},
-  {key:'pnl_percent', label:'PNL Percent', widget:'number', editable:true},
-  {key:'fee', label:'Fee', widget:'number', editable:false},
+  {key:'close_date', label:'Close Date', widget:'date', editable:false, realOnly:true},
+  {key:'duration', label:'Duration', widget:'text', editable:false, realOnly:true},
+  {key:'objective', label:'Objective', widget:'text', editable:false, realOnly:true},
+  {key:'profit_loss', label:'Profit/Loss', widget:'number', editable:true, realOnly:true},
+  {key:'pnl_percent', label:'PNL Percent', widget:'number', editable:true, realOnly:true},
+  {key:'fee', label:'Fee', widget:'number', editable:false, realOnly:true},
   {key:'rr', label:'RR', widget:'number', editable:false},
   {key:'entry_price', label:'Entry Price', widget:'number', editable:true},
-  {key:'close_price', label:'Close Price', widget:'number', editable:true},
+  {key:'close_price', label:'Close Price', widget:'number', editable:true, realOnly:true},
   {key:'tp_price', label:'TP Price', widget:'number', editable:true},
   {key:'sl_price', label:'SL Price', widget:'number', editable:true},
-  {key:'position_size', label:'Quantity', widget:'number', editable:true},
+  {key:'position_size', label:'Quantity', widget:'number', editable:true, realOnly:true},
   /* Ang leverage ay nasa position_setups mula pa noon pero WALA sa journal —
      kaya ang binalak mong leverage ay naitatala at ang ginamit mo ay hindi.
      Ito ang bumubuo ng pagkakaiba: dalawang trade na may parehong quantity
      pero magkaibang leverage ay magkaibang panganib sa account. */
-  {key:'leverage', label:'Leverage', widget:'number', editable:true},
+  {key:'leverage', label:'Leverage', widget:'number', editable:true, realOnly:true},
   // Computed, never stored: |entry − SL| × quantity. Everything it needs is
   // already on the trade, so a column would only be a second copy that could
   // drift out of step with the prices.
-  {key:'risk_amount', label:'Risk Amount ($)', widget:'text', editable:false},
-  {key:'win_loss', label:'Win/Loss', widget:'select', editable:true, options:FIELD_OPTIONS.win_loss},
+  {key:'risk_amount', label:'Risk Amount ($)', widget:'text', editable:false, realOnly:true},
+  {key:'win_loss', label:'Win/Loss', widget:'select', editable:true, options:FIELD_OPTIONS.win_loss, realOnly:true},
   {key:'trade_type', label:'Trade Type', widget:'select', editable:true, options:FIELD_OPTIONS.trade_type},
   {key:'trade_setup', label:'Trade Setup', widget:'select', editable:true, options:FIELD_OPTIONS.trade_setup},
   {key:'pattern_type', label:'Pattern Type', widget:'select', editable:true, options:FIELD_OPTIONS.pattern_type},
@@ -7067,13 +7175,13 @@ const ALL_DRAWER_FIELDS = [
   {key:'aof_phase', label:'AOF Phase', widget:'select', editable:true, options:FIELD_OPTIONS.aof_phase},
   // Filled in for you as the tags are ticked, but still yours to change — the
   // journal suggests, it does not decide.
-  {key:'rules_followed', label:'Rules Followed?', widget:'select', editable:true, options:FIELD_OPTIONS.rules_followed},
-  {key:'unfollowed_rules', label:'Trade Tags', widget:'checklist', editable:true, options:UNFOLLOWED_RULES_OPTIONS},
-  {key:'exit_type', label:'Exit Type', widget:'select', editable:true, options:FIELD_OPTIONS.exit_type},
-  {key:'post_be_result', label:'Post-BE Result', widget:'select', editable:true, options:FIELD_OPTIONS.post_be_result},
-  {key:'post_cutloss_result', label:'Post-Cutloss Result', widget:'select', editable:true, options:FIELD_OPTIONS.post_cutloss_result},
-  {key:'account', label:'Account', widget:'select', editable:true, options:FIELD_OPTIONS.account},
-  {key:'account_type', label:'Account Type', widget:'select', editable:true, options:FIELD_OPTIONS.account_type},
+  {key:'rules_followed', label:'Rules Followed?', widget:'select', editable:true, options:FIELD_OPTIONS.rules_followed, realOnly:true},
+  {key:'unfollowed_rules', label:'Trade Tags', widget:'checklist', editable:true, options:UNFOLLOWED_RULES_OPTIONS, realOnly:true},
+  {key:'exit_type', label:'Exit Type', widget:'select', editable:true, options:FIELD_OPTIONS.exit_type, realOnly:true},
+  {key:'post_be_result', label:'Post-BE Result', widget:'select', editable:true, options:FIELD_OPTIONS.post_be_result, realOnly:true},
+  {key:'post_cutloss_result', label:'Post-Cutloss Result', widget:'select', editable:true, options:FIELD_OPTIONS.post_cutloss_result, realOnly:true},
+  {key:'account', label:'Account', widget:'select', editable:true, options:FIELD_OPTIONS.account, realOnly:true},
+  {key:'account_type', label:'Account Type', widget:'select', editable:true, options:FIELD_OPTIONS.account_type, realOnly:true},
   {key:'session', label:'Session', widget:'select', editable:true, options:FIELD_OPTIONS.session},
   // Read-only: always derived from the open date now, so an edit here would be
   // silently discarded on the next load. Change the Open Date instead.
@@ -7085,6 +7193,23 @@ const ALL_DRAWER_FIELDS = [
      mo kinuha" sa isang trade na kinuha mo. */
   {key:'no_trade_reason', label:'Why you did not take it', widget:'select',
    editable:true, options:NO_TRADE_REASONS, paperOnly:true},
+  /* ANG OUTCOME NG SETUP NA HINDI MO KINUHA.
+
+     Ito ang kalahati ng tanong na hindi pa nasasagot. Ang dahilan ay nagsasabi
+     kung BAKIT ka hindi pumasok; ito ang nagsasabi kung TAMA ka ba.
+
+     Ikaw ang nagmamarka nito kapag tiningnan mo ulit ang chart — walang
+     historical na presyo sa database, at ang paghula nito ay mas masahol kaysa
+     sa pagtatanong.
+
+     Ang "Never filled" ay hiwalay sa "Hit SL" nang sadya at hindi ito
+     detalye: ang setup na hindi umabot sa entry mo ay hindi patunay ng kahit
+     ano, at ang pagbilang doon bilang iniwasang talo ay magbibigay sa iyo ng
+     dahilan para ipagdiwang ang isang bagay na hindi nangyari. */
+  {key:'paper_outcome', label:'What would have happened', widget:'select',
+   editable:true, options:PAPER_OUTCOMES, paperOnly:true},
+  // Kinukuwenta mula sa entry, TP at SL — ang plano ay may RR kahit walang trade.
+  {key:'planned_rr', label:'Planned RR', widget:'text', editable:false, paperOnly:true},
   {key:'notes', label:'Notes', widget:'textarea', editable:true},
   {key:'link', label:'Chart Link', widget:'text', editable:true},
   {key:'trade_summary', label:'Trade Summary', widget:'textarea', editable:false}
@@ -14303,7 +14428,11 @@ function openTradeViewModal(positionId){
 // right point by both render functions below (JOURNAL_FIELD_GROUPS_PRE_CONFLUENCE
 // vs the rest).
 const JOURNAL_FIELD_GROUPS = [
-  { title: 'Overview', keys: ['symbol','open_date','close_date','duration','objective','no_trade_reason'] },
+  /* Sa isang paper trade, ang open_date ay "kung kailan mo NAKITA" at hindi
+     kung kailan ito bumukas — wala itong binuksan. Ang close_date, ang
+     duration at ang objective ay realOnly at hindi lumalabas doon. */
+  { title: 'Overview', keys: ['symbol','open_date','close_date','duration','objective',
+                              'no_trade_reason','paper_outcome','planned_rr'] },
   { title: 'Result', keys: ['win_loss','profit_loss','pnl_percent','rr','fee','entry_price','close_price','tp_price','sl_price','position_size','leverage','risk_amount'] },
   { title: 'Account', keys: ['account','account_type','session','day_of_week'] },
   { title: 'Setup & Strategy', keys: ['trade_type','trade_setup','pattern_type','execution_tf','aof_phase'] },
@@ -14315,9 +14444,21 @@ const TRADE_VIEW_WIDE_FIELDS = new Set(['notes','trade_summary','unfollowed_rule
 
 function _renderTradeViewFieldRow(f, row){
   const spanCls = TRADE_VIEW_WIDE_FIELDS.has(f.key) ? ' span-2' : '';
+  // Gaya ng drawer: "Date seen", hindi "Open Date", sa isang setup na hindi
+  // kailanman bumukas.
+  if(f.key === 'open_date' && _drawerIsPaper(row)) f = { ...f, label: 'Date seen' };
   if(f.key === 'objective' || f.key === 'duration'){
     const computed = f.key === 'objective' ? computeObjective(row) : computeDuration(row);
     return `<div class="field-row${spanCls}"><label>${f.label}</label><div class="field-static">${computed || '—'}</div></div>`;
+  }
+  if(f.key === 'planned_rr'){
+    // Kinukuwenta mula sa entry, TP at SL — walang column para dito, dahil ang
+    // pag-iimbak nito ay isang pangalawang kopya na maaaring humiwalay sa
+    // presyong pinagmulan nito.
+    const r = _plannedRR(row);
+    return `<div class="field-row${spanCls}"><label>${f.label}</label><div class="field-static"
+      title="Worked out from the entry, TP and SL you planned — the trade never happened, but the plan still has a reward-to-risk."
+      >${r === null ? '— needs entry, TP and SL' : fmtNum(r, 2)}</div></div>`;
   }
   if(f.key === 'risk_amount'){
     // Same helper the Breakeven-Saved stat uses, so the two can't disagree.
@@ -14444,12 +14585,20 @@ function renderTradeViewModal(){
   document.getElementById('tradeViewTitle').textContent = (row.symbol || 'Trade') + (_tradeNo(row) ? ` · #${_tradeNo(row)}` : '');
   document.getElementById('tradeViewSetupNotesBtn').style.display = row.linked_setup_id ? 'flex' : 'none';
 
-  /* Ang paperOnly na field ay lumalabas LANG sa isang paper trade. Walang
-     kahulugan ang "bakit hindi mo kinuha" sa isang trade na kinuha mo, at ang
-     blangkong dropdown na iyon sa bawat tunay na trade ay isang tanong na
-     hindi mo kailanman masasagot. */
+  /* DALAWANG DIREKSYON NG PAGSALA.
+
+     Ang paperOnly ay lumalabas LANG sa paper trade: walang kahulugan ang "bakit
+     hindi mo kinuha" sa isang trade na kinuha mo.
+
+     Ang realOnly ay NAWAWALA sa paper trade, at ito ang mas mahalaga. Ang paper
+     trade ay isang setup na HINDI NANGYARI — walang account na pinasukan,
+     walang quantity na binili, walang close price at walang panuntunang
+     nasira, dahil walang trade na masisira. Ang pagtatanong ng mga iyon ay
+     nagbibigay sa iyo ng anyong sira: isang mahabang form na puno ng kahong
+     walang sagot, at isang talahanayang puno ng blangko na mukhang nawawalang
+     datos gayong wala talagang datos doon kailanman. */
   const fieldByKey = {};
-  DRAWER_FIELDS.filter(f => !f.paperOnly || _drawerIsPaper(row))
+  DRAWER_FIELDS.filter(f => _drawerIsPaper(row) ? !f.realOnly : !f.paperOnly)
     .forEach(f => { fieldByKey[f.key] = f; });
 
   const renderGroup = g => {
@@ -14546,9 +14695,23 @@ function _updateDrawerRiskAmount(){
 }
 
 function _renderDrawerFieldRow(f, mode, row){
+  /* Sa paper trade, ang Open Date ay hindi kung kailan bumukas ang posisyon —
+     walang posisyong bumukas. Ito ay kung kailan mo NAKITA ang setup, at
+     nasusulatan mo ito: sa isang tunay na trade ay galing ito sa broker, dito
+     ay ikaw lang ang nakakaalam. */
+  if(f.key === 'open_date' && _drawerIsPaper(row)){
+    f = { ...f, label: 'Date seen', editable: true };
+  }
   if(f.key === 'objective' || f.key === 'duration'){
     const computed = f.key === 'objective' ? computeObjective(row) : computeDuration(row);
     return `<div class="field-row"><label>${f.label}</label><div class="field-static">${computed || '—'}</div></div>`;
+  }
+  if(f.key === 'planned_rr'){
+    // Kinukuwenta, hindi naka-imbak. Tingnan ang _plannedRR.
+    const r = _plannedRR(row);
+    return `<div class="field-row"><label>${f.label}</label><div class="field-static"
+      title="Worked out from the entry, TP and SL you planned — the trade never happened, but the plan still has a reward-to-risk."
+      >${r === null ? '— needs entry, TP and SL' : fmtNum(r, 2)}</div></div>`;
   }
   if(f.key === 'risk_amount'){
     // Computed, not stored — so it fell through to the generic path and
@@ -14680,12 +14843,20 @@ function renderDrawerFields(){
 
   _drawerRow = row;
   const body = document.getElementById('drawerBody');
-  /* Ang paperOnly na field ay lumalabas LANG sa isang paper trade. Walang
-     kahulugan ang "bakit hindi mo kinuha" sa isang trade na kinuha mo, at ang
-     blangkong dropdown na iyon sa bawat tunay na trade ay isang tanong na
-     hindi mo kailanman masasagot. */
+  /* DALAWANG DIREKSYON NG PAGSALA.
+
+     Ang paperOnly ay lumalabas LANG sa paper trade: walang kahulugan ang "bakit
+     hindi mo kinuha" sa isang trade na kinuha mo.
+
+     Ang realOnly ay NAWAWALA sa paper trade, at ito ang mas mahalaga. Ang paper
+     trade ay isang setup na HINDI NANGYARI — walang account na pinasukan,
+     walang quantity na binili, walang close price at walang panuntunang
+     nasira, dahil walang trade na masisira. Ang pagtatanong ng mga iyon ay
+     nagbibigay sa iyo ng anyong sira: isang mahabang form na puno ng kahong
+     walang sagot, at isang talahanayang puno ng blangko na mukhang nawawalang
+     datos gayong wala talagang datos doon kailanman. */
   const fieldByKey = {};
-  DRAWER_FIELDS.filter(f => !f.paperOnly || _drawerIsPaper(row))
+  DRAWER_FIELDS.filter(f => _drawerIsPaper(row) ? !f.realOnly : !f.paperOnly)
     .forEach(f => { fieldByKey[f.key] = f; });
 
   const renderGroup = g => {

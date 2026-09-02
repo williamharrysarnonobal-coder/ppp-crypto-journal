@@ -4157,6 +4157,20 @@ body.mobile-mode .yo-j-line{font-size:13px;}
 }
 .ea-hint b{color:var(--ink);font-weight:600;display:block;margin-bottom:7px;}
 
+/* ---- Ano sana ang nangyari sa setup na hindi mo kinuha ----
+   Ang kulay ay ang HATOL, hindi ang resulta: ang pula ay "may nawala sa iyo"
+   at ang berde ay "iniligtas ka" — kabaligtaran ng karaniwan, dahil ang
+   tinitingnan dito ay ang pagpapasya at hindi ang trade. */
+.paper-out{
+  display:inline-block;padding:2px 8px;border-radius:999px;
+  font-size:11px;font-weight:600;white-space:nowrap;
+}
+.paper-out.missed{background:color-mix(in srgb, var(--loss) 18%, transparent);color:var(--loss);}
+.paper-out.saved {background:color-mix(in srgb, var(--win) 18%, transparent);color:var(--win);}
+/* Ang hindi na-fill ay walang hatol — walang nangyari, kaya walang matutunan. */
+.paper-out.moot   {background:var(--surface-2);color:var(--muted);}
+.paper-out.unknown{background:transparent;color:var(--muted);font-style:italic;font-weight:500;}
+
 /* ---- Admin: ang performance ng ibang user ----
    Ang hanay ng bilang ay tabular at nakahanay sa kanan, kaya nababasa mo ang
    isang hanay pababa nang hindi hinahabol ng mata ang bawat numero. */
