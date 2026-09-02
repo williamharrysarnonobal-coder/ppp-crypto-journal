@@ -1954,6 +1954,16 @@ table.breakdown tbody tr{cursor:pointer;}
   .account-card-risk{margin-top:14px;padding-top:14px;border-top:1px solid var(--rule);font-size:13px;color:var(--muted);display:flex;flex-direction:column;gap:6px;}
   .account-card-risk span{color:var(--ink);font-weight:700;}
   .account-card-risk .account-risk-pct{color:var(--muted);font-weight:400;font-size:11.5px;}
+  /* "Ilan pa ang buhay ko." Ang BILANG lang ang may kulay, hindi ang buong
+     hilera: ang isang pulang linya ay mukhang error, samantalang ito ay
+     katotohanan lang tungkol sa account. Mahina ang unit para ang bilang ang
+     unang nababasa. Nasa loob ito ng parehong bloke ng .account-card-risk
+     nang sadya, kaya iisa ang saklaw ng dalawa. */
+  .acc-remain em{font-style:normal;color:var(--muted);font-weight:400;font-size:11.5px;}
+  .acc-remain.ok  span{color:var(--win);}
+  .acc-remain.low span{color:var(--accent);}
+  .acc-remain.out span{color:var(--loss);}
+  .acc-remain.out em{color:var(--loss);}
   .account-edit-btn-corner{position:absolute;bottom:14px;right:14px;background:none;border:none;color:var(--muted);cursor:pointer;padding:6px;border-radius:6px;display:flex;}
   .account-edit-btn-corner:hover{color:var(--ink);background:var(--surface);}
 
@@ -3781,10 +3791,28 @@ table.breakdown tbody tr{cursor:pointer;}
 }
 
 /* ---- 2. Year overview: bawat buwan (maliit) ----
-   Ang mga bar na ito ay NAG-IISA sa sariling hilera, walang tekstong katabi,
-   kaya kasya ang bula sa loob ng sariling kahon at hindi na kailangang
-   lumutang palabas. */
+   May salitang "Goal" na sa kaliwa ng mga bar na ito, pero ang bula ay
+   lumulutang pa rin sa loob ng sariling kahon at hindi lumalabas. */
 .yo-bar{height:36px;}
+
+/* ANG PAGPAPANTAY NG SALITANG "Goal" SA RAIL.
+
+   Ang bar ay 36px ang taas pero ang rail ay nasa 27px mula sa itaas — hindi sa
+   gitna — dahil ang bula ay lumulutang sa itaas ng rail. Kaya ang
+   align-items:center ay maglalagay ng label sa 18px: siyam na pixel na
+   masyadong mataas. Iyan mismo ang "hindi talaga pantay ang progressbar at
+   Goal na word" na napansin niya noon sa Calendar.
+
+   Sa flex-end: ang ilalim ng label ay dumidikit sa ilalim ng bar (36px), kaya
+   ang gitna nito ay nasa 36 - (line-height / 2). Ang 18px na line-height ay
+   naglalagay noon sa 36 - 9 = 27px — eksakto sa gitna ng rail. Kung magbabago
+   ang taas ng bar o ang 27px sa itaas, dito rin dapat magbago ang 18px. */
+.yo-m-goal{display:flex;align-items:flex-end;gap:9px;}
+.yo-mg-label{
+  font-size:10px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--muted);line-height:18px;white-space:nowrap;flex:none;
+}
+.yo-m-goal .yo-bar{flex:1;min-width:0;margin-top:0;}
 .yo-bar::before{top:27px;}
 .yo-bar i{top:27px;}
 .yo-bar .yo-bar-end{top:27px;}
@@ -3902,15 +3930,25 @@ body.mobile-mode .yo-j-line{font-size:13px;}
    sa itaas, kung PAANO mo ito nakuha sa ibaba. Ang label ay mahina at ang
    bilang ang may kulay, kaya ang mata ay dumadapo sa bilang. */
 .yo-f-row{flex-wrap:wrap;row-gap:4px;}
+/* TATLONG SECTION, hindi isang pill na may tatlong salita sa loob.
+
+   Ang "Rules Kept 8/10 80%" sa iisang kahon ay kailangan pang hatiin ng mata:
+   alin ang pangalan, alin ang bilang, alin ang porsyento. Bilang tatlong
+   magkahiwalay na kahon ay agad na malinaw — at pareho na ito ng anyo sa RR at
+   Win rate na dalawang kahon sa itaas mismo nito.
+
+   Walang background ang lalagyanan; ang tatlong anak ang may sariling kahon. */
 .yo-f-rules{
-  display:flex;align-items:baseline;gap:6px;
+  display:flex;align-items:stretch;gap:4px;
   font-family:'IBM Plex Mono',monospace;font-size:10px;
-  padding:4px 6px;border-radius:4px;
-  background:var(--surface);
 }
-.yo-f-rules span{color:var(--muted);letter-spacing:.02em;}
+.yo-f-rules span, .yo-f-rules b, .yo-f-rules i{
+  padding:4px 6px;border-radius:4px;background:var(--surface);
+  display:flex;align-items:center;
+}
+.yo-f-rules span{color:var(--muted);letter-spacing:.02em;flex:1;min-width:0;}
 .yo-f-rules b{font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums;}
-.yo-f-rules i{margin-left:auto;font-style:normal;color:var(--muted);font-variant-numeric:tabular-nums;}
+.yo-f-rules i{font-style:normal;color:var(--muted);font-variant-numeric:tabular-nums;}
 /* Tatlong banda, gaya ng win rate sa buong app: berde kapag mahigpit ka,
    kahel kapag katamtaman, pula kapag hindi. Ang abo ay para sa kulang na
    datos — hindi ito hatol, wala pang masasabi. */
@@ -3923,8 +3961,8 @@ body.mobile-mode .yo-j-line{font-size:13px;}
    NAKAHANAY ang labindalawang linya sa buong grid. Kung mag-iiba ng lapad ang
    "5/10" at ang "2/2", ang porsyento ay uurong-sulong sa bawat card at iyon
    ang nakikitang hindi pantay-pantay. */
-.yo-f-rules b{min-width:44px;text-align:right;}
-.yo-f-rules i{min-width:34px;text-align:right;}
+.yo-f-rules b{min-width:44px;justify-content:flex-end;}
+.yo-f-rules i{min-width:34px;justify-content:flex-end;}
 
 /* ---- Ang RR at ang Win rate, sa sariling hilera ----
 

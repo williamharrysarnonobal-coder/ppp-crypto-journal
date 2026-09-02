@@ -2708,10 +2708,11 @@ function _yearGoalStrip(y, net, goalUsd, today){
    header is the one live thing, and these twelve are a record. */
 function _yearGoalBar(mo, goalUsd){
   if(goalUsd === null){
-    return `<div class="yo-bar none"
+    return `<div class="yo-m-goal"><span class="yo-mg-label">Goal</span>
+      <div class="yo-bar none"
       title="Set your monthly salary on the Salary vs Trading page and this fills in."
       ><i style="width:0%"></i><b style="--p:0%">—</b>
-      <span class="yo-bar-end">${_GOAL_TROPHY}</span></div>`;
+      <span class="yo-bar-end">${_GOAL_TROPHY}</span></div></div>`;
   }
   const pct = Math.max(0, Math.min(100, mo.goalPct));
   /* Same end-cap rule as both other bars, and it was missing here: the trophy
@@ -2720,12 +2721,21 @@ function _yearGoalBar(mo, goalUsd){
      left to mark — a reached month was showing no number at all. */
   const tip = `${mo.hitGoal ? 'Salary goal reached' : 'Short of the salary goal'} — `
     + `${Math.round(mo.goalPct)}% · ${fmtMoney(mo.net)} against ${_salMoney(goalUsd, 'USD')}`;
-  return `<div class="yo-bar ${mo.goalTone}" title="${escapeHtml(tip)}">
+  /* Ang salitang "Goal" bago ang bar. Sa taon ito ay "Year goal" at sa
+     Calendar ay "Goal" — ang buwanang bar lang ang walang pangalan, kaya isa
+     itong guhit na kailangan mong hulaan.
+
+     Naka-align ang label sa RAIL at hindi sa gitna ng kahon: 36px ang taas ng
+     .yo-bar pero nasa 27px ang rail, dahil lumulutang ang bula sa itaas. Ang
+     align-items:center ay maglalagay ng label na 12px na masyadong mataas —
+     iyon mismo ang "hindi pantay" na napansin niya noon sa Calendar. */
+  return `<div class="yo-m-goal"><span class="yo-mg-label">Goal</span>
+    <div class="yo-bar ${mo.goalTone}" title="${escapeHtml(tip)}">
     <i style="width:${pct.toFixed(1)}%"></i>
     ${mo.hitGoal ? '' : `<u style="--p:${pct.toFixed(1)}%"></u>`}
     ${mo.hitGoal ? '' : `<b style="--p:${pct.toFixed(1)}%">${Math.round(mo.goalPct)}%</b>`}
     <span class="yo-bar-end">${mo.hitGoal ? `${Math.round(mo.goalPct)}%` : _GOAL_TROPHY}</span>
-  </div>`;
+  </div></div>`;
 }
 
 /* One month as a small day grid, with the date printed in every cell. Same week
@@ -13310,6 +13320,18 @@ const EASY_ADD_FIELD_SPECS = [
   {label:'account', valueLines:1, key:'account', text:true},
 ];
 
+/* Ang blangkong linya ay tinatanggal ng filter bago pa mabasa ang template,
+   kaya ang "halaga" ng isang field na iniwang blangko ay ang SUSUNOD NA LABEL.
+   Sa isang numero ito ay NaN at tahimik na nalalaktawan — kaya ligtas ito nang
+   hindi sinasadya. Pero ang Win/Loss, Trade Type at Account ay salita:
+   tinatanggap nila ang label bilang sagot, at ang isang blangkong Win/Loss ay
+   nagiging win_loss = "Trade Type" — isang sirang trade na mukhang buo.
+
+   Kaya: hindi kailanman maaaring maging halaga ang isang bagay na label mismo.
+   Sa Set ito nakalagay at hindi sa bawat sanga, para saklaw nito ang petsa,
+   ang numero at ang salita nang sabay. */
+const EASY_ADD_LABELS = new Set(EASY_ADD_FIELD_SPECS.map(s => s.label));
+
 /* Blangko ang bawat halaga nang sadya. Ang paglalagay ng "DD.MM.YYYY" o ng
    "Win" bilang halimbawa ay nangangahulugang babasahin sila ng parser bilang
    sagot — at ang isang halimbawang naiwan ay isang trade na may maling laman.
@@ -13560,6 +13582,9 @@ function parseEasyAddText(){
       if(idx === -1) return;
       const values = lines.slice(idx+1, idx+1+spec.valueLines);
       if(values.length < spec.valueLines) return;
+      // Blangko ang field na ito — ang nakuha ay ang label ng kasunod. Tingnan
+      // ang EASY_ADD_LABELS sa itaas.
+      if(values.some(v => EASY_ADD_LABELS.has(v.toLowerCase()))) return;
 
       if(spec.key === 'open_date' || spec.key === 'close_date'){
         const iso = _parseExchangeDateTime(values[0], values[1]);
@@ -13919,7 +13944,27 @@ function _renderDrawerFieldRow(f, mode, row){
     if(f.key === 'pattern_type' && row.trade_setup && TRADE_SETUP_PATTERN_MAP[row.trade_setup]){
       selectOptions = TRADE_SETUP_PATTERN_MAP[row.trade_setup];
     }
-    const opts = selectOptions.map(o => `<option value="${o}" ${raw===o?'selected':''}>${o}</option>`).join('');
+    /* Ang halagang wala sa listahan ay tahimik na nawawala: walang option na
+       tumutugma, kaya bumabagsak ang select sa "—" at binubura ito ng save.
+
+       Dalawang beses itong nangyayari sa totoo. Una, isang bagong prop firm na
+       galing sa Manual na format — wala pa ito sa My Accounts, kaya wala rin
+       sa dropdown, at iyon mismo ang dahilan kung bakit Manual ang ginamit.
+       Pangalawa, isang lumang trade na ang halaga ay tinanggal na sa listahan
+       mula noon. Sa parehong kaso ay may isinulat siya at ang app ang nagbura.
+
+       Kaya ang hindi kilalang halaga ay ipinapasok bilang sarili nitong
+       option: nananatili, nakikita, at nase-save. */
+    const rawStr = (raw === null || raw === undefined) ? '' : String(raw);
+    if(rawStr && !selectOptions.some(o => String(o) === rawStr)){
+      selectOptions = [rawStr, ...selectOptions];
+    }
+    /* Sa String ang paghahambing, hindi sa ===: ang halagang galing sa Manual
+       ay teksto habang ang ilang option ay numero, at ang isang pares na
+       magkatulad ang mukha ay hindi tutugma kung magkaiba ang uri.
+       Naka-escape ang value dahil isinusulat na niya mismo ito ngayon. */
+    const opts = selectOptions.map(o =>
+      `<option value="${escapeHtml(String(o))}" ${rawStr===String(o)?'selected':''}>${escapeHtml(String(o))}</option>`).join('');
     const onchange = f.key === 'account' ? ` onchange="syncAccountTypeFromAccount(this.value)"`
       : f.key === 'trade_type' ? ` onchange="syncTradeSetupFromType(this.value)"`
       : f.key === 'trade_setup' ? ` onchange="syncPatternTypeFromSetup(this.value)"`
@@ -18588,10 +18633,56 @@ function accountCardHTML(a){
     // for every account regardless of what either of those actually said.
     const riskPct = a.risk_per_trade_pct != null ? Number(a.risk_per_trade_pct)
       : (PROFILE_DATA?.risk_per_trade != null ? Number(PROFILE_DATA.risk_per_trade) : 0.3);
-    const riskHTML = (riskBase != null || tradeCount > 0)
+    /* ILANG TALO PA BAGO MABLOWN — ang tanong niya: "ilan pa ang buhay ko".
+
+       Ang distansya sa drawdown floor, hinati sa laki ng isang talo. Ang laki
+       ng talo ay galing sa TOTOONG mga talo ng account na ito kung may
+       hindi bababa sa tatlo — ang isang 5K at isang 50K na account ay may
+       magkaibang laki ng talo, kaya ang pinaghalong average ng lahat ay
+       magkakamali sa dalawa. Kulang sa tatlo: ang lahat ng talo muna, at kung
+       wala pa talagang talo, ang binalak na risk per trade. Nasa hover kung
+       alin sa tatlo ang ginamit, dahil magkaiba ang bigat ng mga ito.
+
+       Ganito rin ang sagot ng "How close am I to breaking a prop firm rule?"
+       sa Ask my data — sinasadya: dalawang lugar, iisang paraan ng pagbilang. */
+    const remainHTML = (() => {
+      if(isExchange || a.max_total_drawdown_pct == null) return '';
+      if(!(Number(a.account_size) > 0)) return '';
+      const s = computeAccountStats(a);
+      if(!(s.drawdownFloor > 0) || s.currentBalance == null) return '';
+
+      const mine = ALL_TRADES.filter(t => t.account === a.account_name && _isLoss(t));
+      const pool = mine.length >= 3 ? mine : ALL_TRADES.filter(_isLoss);
+      const avgLoss = pool.length
+        ? Math.abs(pool.reduce((sum, t) => sum + netPnl(t), 0) / pool.length) : 0;
+      const planned = riskBase != null ? riskBase * riskPct / 100 : 0;
+      const size = avgLoss > 0 ? avgLoss : planned;
+      if(!(size > 0)) return '';
+
+      const basis = avgLoss > 0
+        ? (mine.length >= 3
+            ? `your ${mine.length} losing trades on this account, averaging $${avgLoss.toLocaleString(undefined,{maximumFractionDigits:2})}`
+            : `all ${pool.length} of your losing trades, averaging $${avgLoss.toLocaleString(undefined,{maximumFractionDigits:2})} — this account has too few of its own yet`)
+        : `your planned ${riskPct}% risk, since no losing trade is recorded yet`;
+
+      const room = s.currentBalance - s.drawdownFloor;
+      // Nasira na: walang natitirang bilang na may kahulugan.
+      if(room <= 0){
+        return `<div class="acc-remain out" title="The balance is already at or below the drawdown floor of $${s.drawdownFloor.toLocaleString(undefined,{maximumFractionDigits:0})}."
+          >Remaining Trades: <span>0</span> <em>floor breached</em></div>`;
+      }
+      const left = Math.floor(room / size);
+      const cls = left <= 3 ? 'out' : left <= 8 ? 'low' : 'ok';
+      return `<div class="acc-remain ${cls}"
+        title="$${room.toLocaleString(undefined,{maximumFractionDigits:0})} above the drawdown floor of $${s.drawdownFloor.toLocaleString(undefined,{maximumFractionDigits:0})}, divided by ${basis}."
+        >Remaining Trades: <span>${left}</span> <em>${left === 1 ? 'loss' : 'losses'} left</em></div>`;
+    })();
+
+    const riskHTML = (riskBase != null || tradeCount > 0 || remainHTML)
       ? `<div class="account-card-risk">
           <div>Total Trades: <span>${tradeCount}</span></div>
           ${riskBase != null ? `<div>Risk Per Trade: <span>$${(riskBase * riskPct/100).toLocaleString(undefined,{maximumFractionDigits:2})}</span> <span class="account-risk-pct">(${riskPct}%)</span></div>` : ''}
+          ${remainHTML}
         </div>`
       : '';
 
@@ -18990,7 +19081,9 @@ const CONFLUENCE_SETUPS = {
       {tag:'Execution · 1min BB50', text:'Did BB50 and the .382 Fib or MOBV align at your entry level?', exec:true},
       {tag:'Execution', text:'Did MACD cross the zero line upward when your order triggered?', exec:true, retest:true},
     ],
-    patterns: ['Double Bottom', 'Triple Bottom', 'Inverse H&S']
+    // Ang FVG ay walang direksyon — pareho itong lumalabas sa long at sa short,
+    // kaya nasa lahat ng walong setup ito at hindi lang sa isang panig.
+    patterns: ['Double Bottom', 'Triple Bottom', 'Inverse H&S', 'FVG', 'FVG + Fib']
   },
   'Short|5 mins LH': {
     minConfluencePct: 60,
@@ -19004,7 +19097,7 @@ const CONFLUENCE_SETUPS = {
       {tag:'Execution · 1min BB50', text:'Did BB50 and the .382 Fib or MOBV align at your entry level?', exec:true},
       {tag:'Execution', text:'Did MACD cross the zero line downward when your order triggered?', exec:true, retest:true},
     ],
-    patterns: ['Double Top', 'Triple Top', 'H&S']
+    patterns: ['Double Top', 'Triple Top', 'H&S', 'FVG', 'FVG + Fib']
   },
   // NOTE on ordering: answers are stored keyed by their POSITION in this array
   // (confluence_answers = {0:'yes', 1:'no', ...}). Inserting an item in the
@@ -19027,7 +19120,9 @@ const CONFLUENCE_SETUPS = {
       {tag:'Execution', text:'Did MACD cross the zero line upward when your order triggered?', exec:true, retest:true},
       {tag:'Divergence', text:'Left Hand Present?', invert:true},
     ],
-    patterns: ['Double Bottom', 'Triple Bottom', 'Inverse H&S']
+    // Ang FVG ay walang direksyon — pareho itong lumalabas sa long at sa short,
+    // kaya nasa lahat ng walong setup ito at hindi lang sa isang panig.
+    patterns: ['Double Bottom', 'Triple Bottom', 'Inverse H&S', 'FVG', 'FVG + Fib']
   },
   'Short|15 mins LH': {
     minConfluencePct: 60,
@@ -19045,7 +19140,7 @@ const CONFLUENCE_SETUPS = {
       {tag:'Execution', text:'Did MACD cross the zero line downward when your order triggered?', exec:true, retest:true},
       {tag:'Divergence', text:'Right Hand Present?', invert:true},
     ],
-    patterns: ['Double Top', 'Triple Top', 'H&S']
+    patterns: ['Double Top', 'Triple Top', 'H&S', 'FVG', 'FVG + Fib']
   },
   // 1 Hour setups.
   'Long|1 hour HL': {
@@ -19073,7 +19168,9 @@ const CONFLUENCE_SETUPS = {
       {tag:'Execution · 5min/3min BB50', text:'Did BB50 and the .382 Fib or MOBV align at your entry level?', exec:true},
       {tag:'Execution', text:'Did MACD cross the zero line upward when your order triggered?', exec:true, retest:true},
     ],
-    patterns: ['Double Bottom', 'Triple Bottom', 'Inverse H&S']
+    // Ang FVG ay walang direksyon — pareho itong lumalabas sa long at sa short,
+    // kaya nasa lahat ng walong setup ito at hindi lang sa isang panig.
+    patterns: ['Double Bottom', 'Triple Bottom', 'Inverse H&S', 'FVG', 'FVG + Fib']
   },
   'Short|1 hour LH': {
     minConfluencePct: 60,
@@ -19087,7 +19184,7 @@ const CONFLUENCE_SETUPS = {
       {tag:'Execution · 5min/3min BB50', text:'Did BB50 and the .382 Fib or MOBV align at your entry level?', exec:true},
       {tag:'Execution', text:'Did MACD cross the zero line downward when your order triggered?', exec:true, retest:true},
     ],
-    patterns: ['Double Top', 'Triple Top', 'H&S']
+    patterns: ['Double Top', 'Triple Top', 'H&S', 'FVG', 'FVG + Fib']
   },
   // The 30 mins Invalidation Play is read exactly like the 15 mins setup — the
   // item list is assigned below rather than copied here, so the two can never
@@ -19126,7 +19223,9 @@ const CONFLUENCE_SETUPS = {
     ],
     // Same direction convention as every other setup: bullish reversal
     // patterns on the Long side. These two lists were the wrong way round.
-    patterns: ['Double Bottom', 'Triple Bottom', 'Inverse H&S']
+    // Ang FVG ay walang direksyon — pareho itong lumalabas sa long at sa short,
+    // kaya nasa lahat ng walong setup ito at hindi lang sa isang panig.
+    patterns: ['Double Bottom', 'Triple Bottom', 'Inverse H&S', 'FVG', 'FVG + Fib']
   },
   'Short|30 mins Invalidation Play': {
     minConfluencePct: 60,
@@ -19140,7 +19239,7 @@ const CONFLUENCE_SETUPS = {
       {tag:'Execution', text:'Did MACD cross the zero line downward when your order triggered?', exec:true, retest:true},
       {tag:'Divergence', text:'Right Hand Present?', invert:true},
     ],
-    patterns: ['Double Top', 'Triple Top', 'H&S']
+    patterns: ['Double Top', 'Triple Top', 'H&S', 'FVG', 'FVG + Fib']
   },
 };
 
