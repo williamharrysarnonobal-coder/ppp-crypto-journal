@@ -5150,6 +5150,41 @@ function _sessionUaeWindow(name, at){
   return `${_hr(w[0] + dxb)}–${_hr(w[1] + dxb)}`;
 }
 
+/* ANG ORAS NA IPINAPAKITA AY DAPAT ANG ORAS NA GINAMIT SA PAGBILANG.
+
+   Dalawang bagay ang nangyayari dito, at isa lang ang napansin niya.
+
+   Ang napansin: ang "Low Liquidity" ay walang oras. Wala itong entry sa
+   SESSION_WINDOWS dahil hindi ito window ng isang market — ito ang natitira.
+
+   Ang hindi napansin, at mas malaki: ang bilang sa card ay galing sa
+   computeSession, na gumagamit ng NAKAPIRMING lokal na oras (London = 12–17).
+   Ang orasang ipinapakita sa tabi nito ay galing sa SESSION_WINDOWS, na
+   kinukuwenta mula sa tunay na timezone ng market (London = 12–21 sa Dubai).
+   Dalawang magkaibang sagot sa iisang card — at ang isa sa kanila ay hindi ang
+   sagot na binilang.
+
+   Kaya binabasa ko ang window mula sa computeSession mismo: dinadaanan ang
+   dalawampu't apat na oras at tinitingnan kung saan napupunta ang bawat isa.
+   Kung ano ang binibilang, iyon ang ipinapakita — at ang Low Liquidity ay
+   nagkakaroon ng oras nang hindi na kailangang isulat kahit saan. */
+function _sessionLocalWindow(name){
+  const hours = [];
+  for(let h = 0; h < 24; h++){
+    if(computeSession({ open_date: new Date(2026, 0, 5, h, 30) }) === name) hours.push(h);
+  }
+  if(!hours.length || hours.length === 24) return null;
+  /* Ang New York ay lumalampas sa hatinggabi (21–2), kaya ang listahan ay
+     [0,1,21,22,23] — hindi magkasunod sa papel pero iisang bloke sa orasan.
+     Hinahanap ko ang simula: ang oras na ang nauuna ay HINDI kabilang. */
+  const has = h => hours.includes(((h % 24) + 24) % 24);
+  const start = hours.find(h => !has(h - 1));
+  if(start === undefined) return null;
+  let end = start;
+  while(has(end + 1) && end - start < 24) end++;
+  return `${_hr(start)}–${_hr(end + 1)}`;
+}
+
 const MET_ORDER = ['Met', 'Half met', 'Missed'];
 const SEQ_ORDER = ['1st', '2nd', '3rd', '4th', '5th'];
 
@@ -5165,7 +5200,7 @@ const SEQ_ORDER = ['1st', '2nd', '3rd', '4th', '5th'];
 const SETUP_DIMENSIONS = [
   { group:'1 · Before you sit down', dims:[
     { label:'Session',  q:'when to be at the desk', of:t => t.session,
-      note: _sessionUaeWindow },
+      note: _sessionLocalWindow },
     { label:'Day',      q:'which days are worth trading', of:t => t.day_of_week,
       order:['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'] },
   ]},
@@ -6596,6 +6631,11 @@ const ALL_DRAWER_FIELDS = [
   {key:'tp_price', label:'TP Price', widget:'number', editable:true},
   {key:'sl_price', label:'SL Price', widget:'number', editable:true},
   {key:'position_size', label:'Quantity', widget:'number', editable:true},
+  /* Ang leverage ay nasa position_setups mula pa noon pero WALA sa journal —
+     kaya ang binalak mong leverage ay naitatala at ang ginamit mo ay hindi.
+     Ito ang bumubuo ng pagkakaiba: dalawang trade na may parehong quantity
+     pero magkaibang leverage ay magkaibang panganib sa account. */
+  {key:'leverage', label:'Leverage', widget:'number', editable:true},
   // Computed, never stored: |entry − SL| × quantity. Everything it needs is
   // already on the trade, so a column would only be a second copy that could
   // drift out of step with the prices.
@@ -6710,6 +6750,7 @@ const ALL_JOURNAL_COLUMNS = [
   {key:'tp_price', label:'TP Price'},
   {key:'sl_price', label:'SL Price'},
   {key:'position_size', label:'Quantity'},
+  {key:'leverage', label:'Leverage'},
   {key:'rules_followed', label:'Rules Followed?'},
   {key:'unfollowed_rules', label:'Trade Tags'},
   {key:'exit_type', label:'Exit Type'},
@@ -13350,12 +13391,58 @@ const EASY_ADD_FIELD_SPECS = [
   {key:'close_price',   label:'Close Price',   input:'number', ph:'64900',      group:'Prices'},
   {key:'tp_price',      label:'TP Price',      input:'number', ph:'65000',      group:'Prices'},
   {key:'sl_price',      label:'SL Price',      input:'number', ph:'63500',      group:'Prices'},
-  {key:'position_size', label:'Position Size', input:'number', ph:'0.5',        group:'Size'},
-  {key:'rr',            label:'RR',            input:'number', ph:'2.5',        group:'Size'},
+  /* "Quantity", hindi "Position Size". Ang huli ay nabasa niya bilang HALAGA
+     sa dolyar — ipinasok niya ang 39,983 imbes na ang 0.6204, at ang Risk
+     Amount ay naging $62,569 na may babala. Ang label ang nag-aayos noon, at
+     hindi isang tseke pagkatapos: ang tanong ay dapat malinaw bago pa sagutin. */
+  {key:'position_size', label:'Quantity (coins, not $)', input:'number', ph:'0.6204', group:'Size'},
+  {key:'leverage',      label:'Leverage',      input:'number', ph:'5',          group:'Size'},
+  {key:'rr',            label:'RR',            input:'number', ph:'auto mula sa entry, SL at TP', group:'Size', auto:true},
   {key:'win_loss',      label:'Win / Loss',    input:'select', from:'win_loss', group:'Result'},
   {key:'profit_loss',   label:'Realized P&L',  input:'number', ph:'450.25  (negative for a loss)', group:'Result'},
   {key:'fee',           label:'Fee',           input:'number', ph:'2.10',       group:'Result'},
+  {key:'pnl_percent',   label:'P&L %',         input:'number', ph:'auto mula sa P&L at sa posisyon', group:'Result', auto:true},
 ];
+
+/* ANG MGA KINUKUWENTA HABANG NAGTA-TYPE KA.
+
+   Apat ang hindi mo na kailangang isulat dahil nasa ibang kahon na ang sagot.
+   Hindi sila naka-lock — kung may isusulat ka, iyon ang mananalo at hihinto
+   ang pagkuwenta para sa field na iyon. Ang isang numerong galing sa broker ay
+   palaging mas totoo kaysa sa hinuha ko.
+
+   Ang trade_type ay galing sa TP laban sa entry, hindi sa close price: ang
+   plano ang nagsasabi ng direksyon, at ang isang short na natalo ay nagsasara
+   sa itaas ng entry — kaya ang close price ay magsasabi ng kabaligtaran. */
+function _easyAddDerive(v){
+  const n = k => { const x = parseFloat(v[k]); return Number.isFinite(x) ? x : null; };
+  const entry = n('entry_price'), sl = n('sl_price'), tp = n('tp_price'),
+        qty = n('position_size'), pl = n('profit_loss'), lev = n('leverage');
+  const out = {};
+
+  if(entry !== null && tp !== null && tp !== entry){
+    out.trade_type = tp > entry ? 'Long' : 'Short';
+  }
+  if(entry !== null && sl !== null && tp !== null && entry !== sl){
+    const risk = Math.abs(entry - sl), reward = Math.abs(tp - entry);
+    if(risk > 0) out.rr = +(reward / risk).toFixed(2);
+  }
+  /* Ang P&L % ay laban sa MARGIN na inilagay mo, hindi sa notional — iyon ang
+     tunay mong inilagay sa panganib. Walang leverage, walang margin, kaya ang
+     notional na ang sagot; sinasabi ng hover kung alin ang ginamit. */
+  if(pl !== null && qty !== null && entry !== null && qty * entry !== 0){
+    const notional = qty * entry;
+    const base = (lev !== null && lev > 0) ? notional / lev : notional;
+    out.pnl_percent = +(pl / base * 100).toFixed(2);
+    out.__pnlBasis = (lev !== null && lev > 0)
+      ? `margin: ${qty} × ${entry} ÷ ${lev}x` : `position: ${qty} × ${entry}`;
+  }
+  if(entry !== null && sl !== null && qty !== null && entry !== sl && qty !== 0){
+    out.__risk = Math.abs(entry - sl) * qty;
+    out.__stopPct = Math.abs(entry - sl) / entry * 100;
+  }
+  return out;
+}
 
 /* Ang form, binuo mula sa listahan sa itaas. Naka-grupo dahil ang labing-apat
    na kahon sa isang hanay ay isang pader; ang "When / What / Prices / Size /
@@ -13402,8 +13489,77 @@ function renderEasyAddForm(){
   if(lastGroup !== null) html += '</div>';
   html += `<datalist id="eaAccountList">${
     accounts.map(a => `<option value="${escapeHtml(a)}"></option>`).join('')}</datalist>`;
+  /* Ang Risk Amount ay ipinapakita BAGO mag-save, hindi pagkatapos. Ito ang
+     numerong nagsabi sa kanya na may mali ("$62,569.20 — check the entry, SL
+     and quantity") — pero nakita niya lang ito sa drawer, matapos na ang
+     paglalagay. Dito, habang nagta-type pa siya, ang mali ay mapapansin agad. */
+  html += `<div class="ea-calc" id="easyAddCalc"></div>`;
 
   host.innerHTML = html;
+  /* Ang pag-type sa isang kinukuwentang kahon ay humihinto sa pagkuwenta para
+     doon. Ang oninput ay pumuputok LAMANG sa tunay na pagpindot ng tao — ang
+     _easyAddRecalc ay nagtatakda ng .value nang tuwiran at hindi nagpapaputok
+     nito, kaya walang panganib na ituring nitong "typed" ang sarili nitong
+     isinulat. Ang pagbura ng kahon ay nagbabalik sa awtomatiko. */
+  const mark = el => {
+    if(!el || !el.hasAttribute || !el.hasAttribute('data-ea')) return;
+    const key = el.getAttribute('data-ea');
+    const spec = EASY_ADD_FIELD_SPECS.find(f => f.key === key);
+    if((spec && spec.auto) || key === 'trade_type'){
+      el.dataset.typed = el.value.trim() ? '1' : '0';
+      if(el.value.trim()) el.classList.remove('ea-auto');
+    }
+  };
+  host.oninput  = e => { mark(e.target); _easyAddRecalc(); };
+  host.onchange = e => { mark(e.target); _easyAddRecalc(); };
+  _easyAddRecalc();
+}
+
+/* Pinupunan ang mga kinukuwenta at iginuguhit ang Risk Amount. Tumatakbo sa
+   bawat pindot ng teklado — walang timer, walang pagkaantala, dahil ito ay
+   ilang paghahati lang. */
+function _easyAddRecalc(){
+  const host = document.getElementById('easyAddForm');
+  if(!host) return;
+  const raw = {};
+  host.querySelectorAll('[data-ea]:not([data-ea-part])').forEach(el => {
+    raw[el.getAttribute('data-ea')] = el.value;
+  });
+  const d = _easyAddDerive(raw);
+
+  EASY_ADD_FIELD_SPECS.filter(f => f.auto).forEach(f => {
+    const el = host.querySelector(`[data-ea="${f.key}"]`);
+    if(!el) return;
+    /* Ang sarili mong isinulat ay hindi kailanman pinapalitan. Ang isang
+       kahon na binura mo ay bumabalik sa awtomatiko — iyon ang paraan para
+       bawiin ang pagkuwenta nang hindi kailangang mag-reload. */
+    if(el.dataset.typed === '1') return;
+    el.value = d[f.key] != null ? d[f.key] : '';
+    el.classList.toggle('ea-auto', d[f.key] != null);
+  });
+  // Ang trade type ay isang dropdown; pinupunan lang kapag wala kang pinili.
+  const tt = host.querySelector('[data-ea="trade_type"]');
+  if(tt && tt.dataset.typed !== '1' && d.trade_type){
+    tt.value = d.trade_type;
+    tt.classList.add('ea-auto');
+  }
+
+  const box = document.getElementById('easyAddCalc');
+  if(!box) return;
+  const bits = [];
+  if(d.__risk != null){
+    // Parehong hangganan ng _beAvoidedLoss, kaya iisa ang sinasabi ng dalawa.
+    const bad = d.__stopPct > 25;
+    bits.push(`<span class="${bad ? 'warn' : ''}">Risk if stopped
+      <b>$${d.__risk.toLocaleString(undefined,{maximumFractionDigits:2})}</b>
+      <em>${d.__stopPct.toFixed(2)}% stop</em>${bad
+        ? ' <i>— that stop looks too far. Is Quantity in coins, not dollars?</i>' : ''}</span>`);
+  }
+  if(d.pnl_percent != null){
+    bits.push(`<span>P&L <b>${d.pnl_percent}%</b> <em>${escapeHtml(d.__pnlBasis || '')}</em></span>`);
+  }
+  box.innerHTML = bits.join('');
+  box.style.display = bits.length ? '' : 'none';
 }
 
 /* Binabasa ang form. Ang blangko ay nananatiling blangko — walang field na
@@ -13456,8 +13612,19 @@ let drawerJournalSetupId = null;
 // every "is this a bulk save" check reads.
 let drawerBulkTargets = null;
 
+/* Ang huling format na pinili mo, natatandaan.
+
+   Ang bulk ay bumubukas ng modal na ito nang isang beses kada account, at ang
+   pag-reset sa "upscale" sa bawat pagbukas ay nangangahulugang muling pagpili
+   ng Manual para sa BAWAT account sa pila — at ang unang hindi mo mapapansin
+   ay isang pinandikit na teksto sa maling parser.
+
+   Nasa memorya lang ito at hindi sa localStorage nang sadya: ang format ay
+   pagpapasya ng isang upuan, hindi isang setting. */
+let LAST_EASY_ADD_BROKER = 'upscale';
+
 function openEasyAddModal(){
-  document.getElementById('easyAddBroker').value = 'upscale';
+  document.getElementById('easyAddBroker').value = LAST_EASY_ADD_BROKER;
   document.getElementById('easyAddError').textContent = '';
   _renderEasyAddTarget();
   document.getElementById('easyAddModal').classList.add('open');
@@ -13507,6 +13674,7 @@ function closeEasyAddModal(keepQueue){
 
 function switchEasyAddBroker(){
   const broker = document.getElementById('easyAddBroker').value;
+  LAST_EASY_ADD_BROKER = broker;
   const input = document.getElementById('easyAddInput');
   const form  = document.getElementById('easyAddForm');
   const hint  = document.getElementById('easyAddHint');
@@ -13717,7 +13885,7 @@ function openTradeViewModal(positionId){
 // vs the rest).
 const JOURNAL_FIELD_GROUPS = [
   { title: 'Overview', keys: ['symbol','open_date','close_date','duration','objective','no_trade_reason'] },
-  { title: 'Result', keys: ['win_loss','profit_loss','pnl_percent','rr','fee','entry_price','close_price','tp_price','sl_price','position_size','risk_amount'] },
+  { title: 'Result', keys: ['win_loss','profit_loss','pnl_percent','rr','fee','entry_price','close_price','tp_price','sl_price','position_size','leverage','risk_amount'] },
   { title: 'Account', keys: ['account','account_type','session','day_of_week'] },
   { title: 'Setup & Strategy', keys: ['trade_type','trade_setup','pattern_type','execution_tf','aof_phase'] },
   { title: 'Discipline', keys: ['rules_followed','unfollowed_rules','exit_type','post_be_result','post_cutloss_result'] },
@@ -19144,9 +19312,12 @@ const CONFLUENCE_SETUPS = {
       {tag:'Execution · 1min BB50', text:'Did BB50 and the .382 Fib or MOBV align at your entry level?', exec:true},
       {tag:'Execution', text:'Did MACD cross the zero line upward when your order triggered?', exec:true, retest:true},
     ],
-    // Ang FVG ay walang direksyon — pareho itong lumalabas sa long at sa short,
-    // kaya nasa lahat ng walong setup ito at hindi lang sa isang panig.
-    patterns: ['Double Bottom', 'Triple Bottom', 'Inverse H&S', 'FVG', 'FVG + Fib']
+    /* Ang FVG, ang mga Fib level at ang SnR Flip ay walang direksyon — pareho
+       silang lumalabas sa long at sa short, kaya nasa lahat ng walong setup
+       sila at hindi lang sa isang panig. Ang may direksyon lang (Double Bottom
+       laban sa Double Top) ang nananatiling nakahiwalay. */
+    patterns: ['Double Bottom', 'Triple Bottom', 'Inverse H&S',
+               'FVG', 'FVG + Fib', 'Fib .382', 'Fib .5', 'Fib .618', 'SnR Flip']
   },
   'Short|5 mins LH': {
     minConfluencePct: 60,
@@ -19160,7 +19331,8 @@ const CONFLUENCE_SETUPS = {
       {tag:'Execution · 1min BB50', text:'Did BB50 and the .382 Fib or MOBV align at your entry level?', exec:true},
       {tag:'Execution', text:'Did MACD cross the zero line downward when your order triggered?', exec:true, retest:true},
     ],
-    patterns: ['Double Top', 'Triple Top', 'H&S', 'FVG', 'FVG + Fib']
+    patterns: ['Double Top', 'Triple Top', 'H&S',
+               'FVG', 'FVG + Fib', 'Fib .382', 'Fib .5', 'Fib .618', 'SnR Flip']
   },
   // NOTE on ordering: answers are stored keyed by their POSITION in this array
   // (confluence_answers = {0:'yes', 1:'no', ...}). Inserting an item in the
@@ -19183,9 +19355,12 @@ const CONFLUENCE_SETUPS = {
       {tag:'Execution', text:'Did MACD cross the zero line upward when your order triggered?', exec:true, retest:true},
       {tag:'Divergence', text:'Left Hand Present?', invert:true},
     ],
-    // Ang FVG ay walang direksyon — pareho itong lumalabas sa long at sa short,
-    // kaya nasa lahat ng walong setup ito at hindi lang sa isang panig.
-    patterns: ['Double Bottom', 'Triple Bottom', 'Inverse H&S', 'FVG', 'FVG + Fib']
+    /* Ang FVG, ang mga Fib level at ang SnR Flip ay walang direksyon — pareho
+       silang lumalabas sa long at sa short, kaya nasa lahat ng walong setup
+       sila at hindi lang sa isang panig. Ang may direksyon lang (Double Bottom
+       laban sa Double Top) ang nananatiling nakahiwalay. */
+    patterns: ['Double Bottom', 'Triple Bottom', 'Inverse H&S',
+               'FVG', 'FVG + Fib', 'Fib .382', 'Fib .5', 'Fib .618', 'SnR Flip']
   },
   'Short|15 mins LH': {
     minConfluencePct: 60,
@@ -19203,7 +19378,8 @@ const CONFLUENCE_SETUPS = {
       {tag:'Execution', text:'Did MACD cross the zero line downward when your order triggered?', exec:true, retest:true},
       {tag:'Divergence', text:'Right Hand Present?', invert:true},
     ],
-    patterns: ['Double Top', 'Triple Top', 'H&S', 'FVG', 'FVG + Fib']
+    patterns: ['Double Top', 'Triple Top', 'H&S',
+               'FVG', 'FVG + Fib', 'Fib .382', 'Fib .5', 'Fib .618', 'SnR Flip']
   },
   // 1 Hour setups.
   'Long|1 hour HL': {
@@ -19231,9 +19407,12 @@ const CONFLUENCE_SETUPS = {
       {tag:'Execution · 5min/3min BB50', text:'Did BB50 and the .382 Fib or MOBV align at your entry level?', exec:true},
       {tag:'Execution', text:'Did MACD cross the zero line upward when your order triggered?', exec:true, retest:true},
     ],
-    // Ang FVG ay walang direksyon — pareho itong lumalabas sa long at sa short,
-    // kaya nasa lahat ng walong setup ito at hindi lang sa isang panig.
-    patterns: ['Double Bottom', 'Triple Bottom', 'Inverse H&S', 'FVG', 'FVG + Fib']
+    /* Ang FVG, ang mga Fib level at ang SnR Flip ay walang direksyon — pareho
+       silang lumalabas sa long at sa short, kaya nasa lahat ng walong setup
+       sila at hindi lang sa isang panig. Ang may direksyon lang (Double Bottom
+       laban sa Double Top) ang nananatiling nakahiwalay. */
+    patterns: ['Double Bottom', 'Triple Bottom', 'Inverse H&S',
+               'FVG', 'FVG + Fib', 'Fib .382', 'Fib .5', 'Fib .618', 'SnR Flip']
   },
   'Short|1 hour LH': {
     minConfluencePct: 60,
@@ -19247,7 +19426,8 @@ const CONFLUENCE_SETUPS = {
       {tag:'Execution · 5min/3min BB50', text:'Did BB50 and the .382 Fib or MOBV align at your entry level?', exec:true},
       {tag:'Execution', text:'Did MACD cross the zero line downward when your order triggered?', exec:true, retest:true},
     ],
-    patterns: ['Double Top', 'Triple Top', 'H&S', 'FVG', 'FVG + Fib']
+    patterns: ['Double Top', 'Triple Top', 'H&S',
+               'FVG', 'FVG + Fib', 'Fib .382', 'Fib .5', 'Fib .618', 'SnR Flip']
   },
   // The 30 mins Invalidation Play is read exactly like the 15 mins setup — the
   // item list is assigned below rather than copied here, so the two can never
@@ -19286,9 +19466,12 @@ const CONFLUENCE_SETUPS = {
     ],
     // Same direction convention as every other setup: bullish reversal
     // patterns on the Long side. These two lists were the wrong way round.
-    // Ang FVG ay walang direksyon — pareho itong lumalabas sa long at sa short,
-    // kaya nasa lahat ng walong setup ito at hindi lang sa isang panig.
-    patterns: ['Double Bottom', 'Triple Bottom', 'Inverse H&S', 'FVG', 'FVG + Fib']
+    /* Ang FVG, ang mga Fib level at ang SnR Flip ay walang direksyon — pareho
+       silang lumalabas sa long at sa short, kaya nasa lahat ng walong setup
+       sila at hindi lang sa isang panig. Ang may direksyon lang (Double Bottom
+       laban sa Double Top) ang nananatiling nakahiwalay. */
+    patterns: ['Double Bottom', 'Triple Bottom', 'Inverse H&S',
+               'FVG', 'FVG + Fib', 'Fib .382', 'Fib .5', 'Fib .618', 'SnR Flip']
   },
   'Short|30 mins Invalidation Play': {
     minConfluencePct: 60,
@@ -19302,7 +19485,8 @@ const CONFLUENCE_SETUPS = {
       {tag:'Execution', text:'Did MACD cross the zero line downward when your order triggered?', exec:true, retest:true},
       {tag:'Divergence', text:'Right Hand Present?', invert:true},
     ],
-    patterns: ['Double Top', 'Triple Top', 'H&S', 'FVG', 'FVG + Fib']
+    patterns: ['Double Top', 'Triple Top', 'H&S',
+               'FVG', 'FVG + Fib', 'Fib .382', 'Fib .5', 'Fib .618', 'SnR Flip']
   },
 };
 

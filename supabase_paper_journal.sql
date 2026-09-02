@@ -39,6 +39,15 @@ create index if not exists position_setups_is_paper_idx
   on position_setups (user_id, is_paper)
   where is_paper = true;
 
+-- Ang LEVERAGE.
+--
+-- Nasa position_setups ito mula pa noon pero wala sa trading_journal — kaya
+-- ang leverage na BINALAK mo ay naitatala at ang GINAMIT mo ay hindi. Dalawang
+-- trade na may parehong quantity pero magkaibang leverage ay magkaibang
+-- panganib sa account, at hindi mo iyon makikita nang wala ito.
+alter table trading_journal
+  add column if not exists leverage numeric;
+
 -- Suriin: dapat zero ang bilang bago ka magsimula, at dapat walang tunay na
 -- trade na naging paper.
 --   select is_paper, count(*) from trading_journal group by is_paper;

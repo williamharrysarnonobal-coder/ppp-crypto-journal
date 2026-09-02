@@ -3789,7 +3789,17 @@ table.breakdown tbody tr{cursor:pointer;}
    .cal-h2 (0,1,0). Ang .panel h2.cal-h2 ay 0,2,1 — sapat para manalo, at
    nakatali pa rin sa iisang header na ito lang. Ang pamagat na "Calendar" ay
    isang hubad na text node, kaya ang line-height ang humuhubog sa kahon nito. */
-.panel h2.cal-h2{align-items:flex-end;line-height:20px;}
+/* At ang HULING piraso: ang 40px na kahon ay tama para sa pagkakahanay pero
+   mali para sa daloy. Ang ibaba lang nito ang may teksto — ang itaas na 20px
+   ay puwang para sa bula, at halos palaging bakante iyon. Idinaragdag iyon ng
+   layout sa padding ng panel, kaya ang "Calendar" ay parang may malaking bakod
+   sa itaas nito. Iyon ang nakita niya.
+
+   Ang negatibong margin ang nagsasauli ng daloy sa dating taas (40 − 14 = 26,
+   ang taas noon) habang ang KAHON ay nananatiling 40px — kaya buo pa rin ang
+   pagkakahanay sa loob at ang bula ay lumalapat sa padding ng panel, kung saan
+   may lugar naman. Isang numero, at ito ay 14. */
+.panel h2.cal-h2{align-items:flex-end;line-height:20px;margin-top:-14px;}
 .cal-goal{align-items:flex-end;}
 .cal-goal-label{line-height:20px;}
 .cal-goal-track{height:40px;}
@@ -3977,22 +3987,27 @@ body.mobile-mode .yo-j-line{font-size:13px;}
    sa itaas, kung PAANO mo ito nakuha sa ibaba. Ang label ay mahina at ang
    bilang ang may kulay, kaya ang mata ay dumadapo sa bilang. */
 .yo-f-row{flex-wrap:wrap;row-gap:4px;}
-/* TATLONG SECTION, hindi isang pill na may tatlong salita sa loob.
+/* IISANG KAHON, TATLONG BAHAGI — hinati ng GUHIT, hindi ng puwang.
 
-   Ang "Rules Kept 8/10 80%" sa iisang kahon ay kailangan pang hatiin ng mata:
-   alin ang pangalan, alin ang bilang, alin ang porsyento. Bilang tatlong
-   magkahiwalay na kahon ay agad na malinaw — at pareho na ito ng anyo sa RR at
-   Win rate na dalawang kahon sa itaas mismo nito.
+   Tatlong magkahiwalay na kahon ito noon. Mali iyon: ang RR at ang Win rate ay
+   dalawang MAGKAIBANG sukat, kaya tama ang dalawang kahon doon. Ang "Rules
+   Kept", ang "8/10" at ang "80%" ay iisang sukat na sinabi sa tatlong paraan —
+   ang paghahati sa kanila ay nagsasabing tatlo sila, at hindi.
 
-   Walang background ang lalagyanan; ang tatlong anak ang may sariling kahon. */
+   Kaya isang kahon, at ang segregation ay isang manipis na guhit sa pagitan.
+   Nakikita mo pa rin ang tatlong bahagi nang hindi sinasabing tatlong bagay. */
 .yo-f-rules{
-  display:flex;align-items:stretch;gap:4px;
+  display:flex;align-items:stretch;
   font-family:'IBM Plex Mono',monospace;font-size:10px;
+  border-radius:4px;background:var(--surface);overflow:hidden;
 }
 .yo-f-rules span, .yo-f-rules b, .yo-f-rules i{
-  padding:4px 6px;border-radius:4px;background:var(--surface);
-  display:flex;align-items:center;
+  padding:4px 7px;display:flex;align-items:center;
 }
+/* Ang guhit ay nasa KALIWA ng ikalawa at ikatlo — hindi sa kanan ng una at
+   ikalawa. Pareho ang mukha, pero ang huli ay nag-iiwan ng guhit sa dulo kung
+   sakaling may matanggal na bahagi. */
+.yo-f-rules b, .yo-f-rules i{box-shadow:inset 1px 0 0 var(--rule);}
 .yo-f-rules span{color:var(--muted);letter-spacing:.02em;flex:1;min-width:0;}
 .yo-f-rules b{font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums;}
 .yo-f-rules i{font-style:normal;color:var(--muted);font-variant-numeric:tabular-nums;}
@@ -4121,7 +4136,25 @@ body.mobile-mode .yo-j-line{font-size:13px;}
   color:var(--ink);font-size:13px;font-family:'IBM Plex Mono',monospace;
 }
 .ea-f input:focus, .ea-f select:focus{outline:none;border-color:var(--accent);}
-.ea-f input::placeholder{color:var(--muted);opacity:.7;}
+.ea-f input::placeholder{color:var(--muted);opacity:.7;font-family:var(--font-ui);font-size:11.5px;}
+/* Ang kinuwenta ko, hindi ang isinulat mo. Magkaibang kulay para malinaw kung
+   alin ang galing sa iyo — at kung magta-type ka doon, nawawala ang tanda
+   dahil sa iyo na ito. */
+.ea-f input.ea-auto, .ea-f select.ea-auto{
+  color:var(--accent);border-style:dashed;
+}
+.ea-calc{
+  margin-top:12px;padding:9px 11px;border-radius:6px;
+  background:var(--surface-2);border:1px solid var(--rule);
+  display:flex;flex-wrap:wrap;gap:6px 20px;
+  font-size:11.5px;color:var(--muted);
+}
+.ea-calc span{display:inline-flex;align-items:baseline;gap:6px;}
+.ea-calc b{font-family:'IBM Plex Mono',monospace;font-size:13px;
+  font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums;}
+.ea-calc em{font-style:normal;font-size:10.5px;opacity:.85;}
+.ea-calc .warn b{color:var(--loss);}
+.ea-calc .warn i{font-style:normal;color:var(--loss);}
 /* Petsa at oras na magkatabi: ang oras ay makitid, ang petsa ang kumukuha ng
    natitira — kabaligtaran ng 1fr 1fr, na nag-iiwan ng puwang sa oras at
    pumipiga sa petsa hanggang sa hindi na mabasa. */
