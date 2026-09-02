@@ -41,6 +41,49 @@ function applyFeatureLocks(){
 }
 
 let ALL_TRADES = [];
+/* ---------------- Paper Trade Journal ----------------
+
+   Iisang talahanayan sa database, DALAWANG listahan sa app.
+
+   Ang paper trade ay isang setup na hindi mo kinuha — mayroon itong lahat ng
+   detalye ng isang tunay na trade maliban sa isa: hindi ito nangyari. Kaya
+   hindi ito dapat pumasok sa P&L mo, sa win rate, sa salary goal, sa prop firm
+   drawdown, o sa alinman sa tatlumpung lugar na bumabasa ng ALL_TRADES.
+
+   Ang paghahati ay ginagawa SA PINAGMUMULAN, hindi sa bawat gumagamit. Ang
+   ALL_TRADES ay hindi kailanman naglalaman ng paper trade, kaya bawat umiiral
+   na bilang ay tama nang walang binabago — at walang lugar na maaari kong
+   makalimutan. */
+let PAPER_TRADES = [];
+
+/* Naka-on ba ang paper mode. Hindi ito setting — ito ay kung SAAN nakatira
+   ngayon ang calculator. Kapag nasa Paper Trade Journal ito, lahat ng
+   ijo-journal mula rito ay paper; kapag nasa sariling pahina, tunay.
+
+   Ang estado ay ang mismong DOM, hindi isang hiwalay na flag na maaaring
+   maghiwalay dito: tinatanong lang kung nasaan ang calculator. Isang bagay na
+   hindi maaaring magsinungaling. */
+/* Paper ba ang bukas na trade sa drawer?
+
+   Dalawang sitwasyon, at pareho silang totoo: isang umiiral na paper trade na
+   binubuksan mo (may is_paper na ito), at isang BAGONG entry na ginagawa mula
+   sa Paper Trade Journal (wala pa itong row — ang kinaroroonan ng calculator
+   ang sumasagot). */
+function _drawerIsPaper(row){
+  if(row && row.is_paper) return true;
+  return _isPaperMode();
+}
+
+function _isPaperMode(){
+  const root = document.getElementById('calcRoot');
+  return !!(root && root.closest('#paperCalcHost'));
+}
+
+function _rebuildTradeArrays(){
+  const all = RAW_TRADES.map(normalizeTrade);
+  ALL_TRADES   = all.filter(t => !t.is_paper);
+  PAPER_TRADES = all.filter(t =>  t.is_paper);
+}
 let RAW_TRADES = [];
 let FILTERED = [];
 let SETUP_SCREENSHOTS = {}; // { [position_setups.id]: {before_screenshot, after_screenshot} }, for trades with linked_setup_id
@@ -625,6 +668,12 @@ function switchView(view){
   document.getElementById('view-' + view).classList.add('active');
   document.querySelectorAll('.nav-item').forEach(n => n.classList.toggle('active', n.dataset.view === view));
 
+  /* Ang calculator ay isang DOM node na may dalawang tahanan. Ang paglipat ay
+     ginagawa BAWAT paglipat ng pahina, hindi lang papasok sa Paper Journal —
+     kung hindi, ang pag-alis papunta sa ibang pahina ay mag-iiwan dito at
+     magiging blangko ang Position Calculator. */
+  if(view === 'paper') renderPaperJournal();
+  else _restoreCalculatorHome();
   if(view === 'journal') renderJournalTable();
   if(view === 'config'){ renderColumnConfigUI(); renderOptionsEditor(); renderFormFieldConfigUI(); }
   if(view === 'alerts'){ loadSignalAlerts(); loadScreenerData(); startAlertsPolling(); } else { stopAlertsPolling(); }
@@ -850,7 +899,7 @@ async function initApp(){
 
     const data = await res.json();
     RAW_TRADES = data;
-    ALL_TRADES = data.map(normalizeTrade);
+    _rebuildTradeArrays();
     _rebuildTradeNumbers();
 
     // Rebuild the Account dropdown now that the trades are actually here.
@@ -1125,6 +1174,12 @@ function normalizeTrade(r){
     // back, so every trade came out of here with no AOF Phase at all. It is
     // the one column of the thirty-three that was write-only.
     aof_phase: r.aof_phase || "Unspecified",
+    /* Ang Paper Trade Journal. Iisang talahanayan sa database, dalawang
+       listahan sa app — tingnan ang _rebuildTradeArrays. */
+    is_paper: r.is_paper === true || r.is_paper === 'true',
+    // Bakit hindi mo ito kinuha. Ang tanging bagay na hindi nasa isang tunay
+    // na trade, at ang buong dahilan kung bakit may pahinang ito.
+    no_trade_reason: r.no_trade_reason || "",
     exit_type: r.exit_type || "",
     // Both of these read straight through. What price did after a stop or a cut
     // took you out is not on the trade — a blank stays blank so the journal can
@@ -1393,6 +1448,8 @@ function applyFilters(){
   renderDashGreeting();
 
   renderKPIs();
+  // Nabubuhay lang ito kapag may paper trade; kung wala, nagtatago ang panel.
+  renderTriggerPanel();
   renderCalendar();
   renderEquityCurve();
   renderWinLossChart();
@@ -2541,16 +2598,14 @@ function renderYearOverview(){
              hilerang laging pareho ang hugis ay nagpapapantay sa lahat ng
              labindalawang card, na siyang hiniling niya. -->
         <div class="yo-f-pair">
-          <span class="yo-p-k">RR</span>
-          <span class="yo-p-v" title="${mo.rrN
+          <span class="yo-p-box" title="${mo.rrN
             ? `Average planned RR across the ${mo.rrN} of ${mo.n} trades that have one recorded`
             : 'No trade this month has an RR recorded'}"
-            >${mo.rr === null ? '—' : fmtNum(mo.rr, 2)}</span>
-          <span class="yo-p-k">Win rate</span>
-          <span class="yo-p-v" style="color:${_winRateTintRR(mo.rate, mo.rr, mo.wins + mo.losses)}"
+            ><em>RR</em><b>${mo.rr === null ? '—' : fmtNum(mo.rr, 2)}</b></span>
+          <span class="yo-p-box" style="--v:${_winRateTintRR(mo.rate, mo.rr, mo.wins + mo.losses)}"
             title="${escapeHtml(_winRateWhy(mo.rate, mo.rr, mo.wins + mo.losses))}${
             mo.bes ? ` The ${mo.bes} breakeven${mo.bes === 1 ? '' : 's'} are not counted, same as the Calendar.` : ''}"
-            >${mo.rate === null ? '—' : Math.round(mo.rate) + '%'}</span>
+            ><em>Win rate</em><b>${mo.rate === null ? '—' : Math.round(mo.rate) + '%'}</b></span>
         </div>
         ${(() => {
           /* Ang disiplina ng buwan, sa SARILING linya sa ilalim ng mga bilang.
@@ -5814,6 +5869,236 @@ const FIELD_OPTIONS = {
   day_of_week: ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday']
 };
 
+/* ---------------- Dashboard: bakit hindi ka pumindot ----------------
+
+   Ang kabaligtaran ng Discipline panel. Doon ay kung ano ang ginawa mo sa isang
+   trade; dito ay kung bakit WALANG trade.
+
+   Ang pinakamahalagang hati ay hindi kung aling dahilan ang pinakamadalas kundi
+   kung ANONG URI ito. Ang "natakot ako" ay isang bagay na sasanayin. Ang "wala
+   ako sa bahay" ay isang alarm. Ang "hindi malinaw ang structure" ay maaaring
+   TAMA — hindi lahat ng hindi kinuhang trade ay pagkakamali, at ang panel na
+   nagsasabing pagkakamali ang lahat ay magtuturo sa iyong mag-overtrade.
+
+   Hindi ito sumusunod sa filter ng dashboard: kakaunti ang paper trade, at ang
+   pagsala ng isang maliit na bilang sa isang buwan ay nag-iiwan ng wala. */
+function renderTriggerPanel(){
+  const panel = document.getElementById('triggerPanel');
+  const body  = document.getElementById('triggerBody');
+  if(!panel || !body) return;
+
+  const rows = PAPER_TRADES;
+  if(!rows.length){ panel.style.display = 'none'; return; }
+  panel.style.display = '';
+
+  const answered = rows.filter(t => String(t.no_trade_reason || '').trim());
+  if(!answered.length){
+    body.innerHTML = `<div class="empty-state">${rows.length} paper trade${rows.length === 1 ? '' : 's'}
+      logged, but none of them say why yet. Open one and answer
+      <b>Why you did not take it</b> — that answer is the whole point of this page.</div>`;
+    return;
+  }
+
+  // Ayon sa uri muna: ito ang sagot sa "kasalanan ko ba ito".
+  const KIND = { felt:  { t:'What you felt',       s:'the ones to train out',        cls:'bad'  },
+                 setup: { t:'What the setup did',  s:'sometimes a correct pass',     cls:'good' },
+                 life:  { t:'What life did',       s:'nothing to do with trading',   cls:'wait' } };
+  const byKind = { felt:0, setup:0, life:0, other:0 };
+  const byReason = new Map();
+  answered.forEach(t => {
+    const r = t.no_trade_reason.trim();
+    byReason.set(r, (byReason.get(r) || 0) + 1);
+    byKind[NO_TRADE_KIND[r.toLowerCase()] || 'other']++;
+  });
+
+  const top = [...byReason.entries()].sort((a, b) => b[1] - a[1]);
+  const pct = n => Math.round(n / answered.length * 100);
+
+  const cards = ['felt','setup','life'].filter(k => byKind[k]).map(k => `
+    <div class="dx-s-card ${KIND[k].cls}">
+      <span class="dx-s-k">${escapeHtml(KIND[k].t)}</span>
+      <span class="dx-s-v">${byKind[k]} of ${answered.length}</span>
+      <span class="dx-s-m">${pct(byKind[k])}% · ${escapeHtml(KIND[k].s)}</span>
+    </div>`).join('');
+
+  /* Ang headline ay hindi ang pinakamadalas na dahilan kundi ang pinakamadalas
+     na URI, dahil iyon ang nagsasabi kung ano ang dapat mong gawin. */
+  const lead = byKind.felt > byKind.setup && byKind.felt > byKind.life
+    ? `Most of the trades you let go, you let go because of how you felt — `
+      + `${byKind.felt} of ${answered.length}. That is the part you can train.`
+    : byKind.setup >= byKind.felt && byKind.setup >= byKind.life
+    ? `Most of your passes were about the setup, not about you — `
+      + `${byKind.setup} of ${answered.length}. A lot of those were probably correct.`
+    : `Most of what you missed was life, not trading — ${byKind.life} of ${answered.length}. `
+      + `That is a scheduling problem, not a discipline one.`;
+
+  body.innerHTML = `
+    <div class="dx-summary">
+      <div class="dx-s-verdict ${byKind.felt > byKind.setup ? 'bad' : 'good'}">
+        <span class="dx-dot ${byKind.felt > byKind.setup ? 'bad' : 'good'}"></span>
+        <b>${escapeHtml(lead)}</b>
+        <span>${answered.length} of ${rows.length} paper trades answered</span>
+      </div>
+      <div class="dx-s-cards">${cards}</div>
+    </div>
+    <table class="dx-tbl" style="margin-top:16px;">
+      <thead><tr><th>Why you let it go</th><th class="n">Times</th><th class="n">Share</th></tr></thead>
+      <tbody>${top.map(([r, n]) => {
+        const k = NO_TRADE_KIND[r.toLowerCase()] || '';
+        return `<tr class="${k === 'felt' ? 'bad' : k === 'setup' ? 'good' : ''}">
+          <td>${escapeHtml(r)}</td>
+          <td class="n">${n}</td>
+          <td class="n rate">${pct(n)}%</td>
+        </tr>`;
+      }).join('')}</tbody>
+    </table>`;
+}
+
+/* ============================================================================
+   PAPER TRADE JOURNAL — ang pahina
+
+   Dalawang tab. Ang una ay ang MISMONG Position Size Calculator, inilipat dito
+   bilang DOM node. Hindi ito kopya at hindi ito ikalawang calculator: ang
+   paglipat ng node ay nagdadala ng bawat listener, ng bawat halagang naka-type
+   na, at ng bawat naka-save na draft. Ang isang kopya ay maghihiwalay sa unang
+   pagbabago; ito ay hindi kailanman.
+   ========================================================================= */
+let PAPER_TAB = 'calc';
+
+function _restoreCalculatorHome(){
+  const root = document.getElementById('calcRoot');
+  const home = document.getElementById('view-calculator');
+  if(!root || !home) return;
+  if(root.parentElement === home) return;
+  // Pagkatapos ng <header class="top"> — doon ito nakatira.
+  const hdr = home.querySelector('header.top');
+  hdr ? hdr.after(root) : home.appendChild(root);
+}
+
+function switchPaperTab(tab){
+  PAPER_TAB = tab;
+  const calc = document.getElementById('paperTabCalc');
+  const jr = document.getElementById('paperTabJournal');
+  if(!calc || !jr) return;
+  calc.style.display = tab === 'calc' ? '' : 'none';
+  jr.style.display   = tab === 'journal' ? '' : 'none';
+  document.getElementById('paperTabCalcBtn')?.classList.toggle('primary', tab === 'calc');
+  document.getElementById('paperTabJournalBtn')?.classList.toggle('primary', tab === 'journal');
+  if(tab === 'calc'){
+    const root = document.getElementById('calcRoot');
+    const host = document.getElementById('paperCalcHost');
+    if(root && host && root.parentElement !== host) host.appendChild(root);
+    // Ang mga panel ay iginuhit para sa dating lapad; muling iguhit sa bago.
+    if(typeof refreshPosSizeCalculator === 'function') refreshPosSizeCalculator();
+    if(typeof renderSavedSetups === 'function') renderSavedSetups();
+  }else{
+    _restoreCalculatorHome();
+    renderPaperTable();
+  }
+}
+
+function renderPaperJournal(){
+  switchPaperTab(PAPER_TAB);
+  if(PAPER_TAB === 'journal') renderPaperTable();
+}
+
+/* Ang talahanayan. Ginagamit nito ang parehong napiling column ng Trade
+   Journals — kung ano ang mahalaga sa iyo doon ay mahalaga rin dito — at
+   isang dagdag na column sa dulo na siyang buong dahilan ng pahinang ito. */
+function renderPaperTable(){
+  const head = document.getElementById('paperHead');
+  const body = document.getElementById('paperBody');
+  const tbl  = document.getElementById('paperTable');
+  const empty = document.getElementById('paperEmpty');
+  const count = document.getElementById('paperCount');
+  if(!head || !body) return;
+
+  const rows = [...PAPER_TRADES].sort((a, b) =>
+    (b.close_date || b.open_date || 0) - (a.close_date || a.open_date || 0));
+  if(count) count.textContent = rows.length
+    ? `${rows.length} logged` : '';
+
+  if(!rows.length){
+    tbl.style.display = 'none';
+    empty.style.display = 'block';
+    empty.innerHTML = `Nothing here yet. Open the <b>Position Size Calculator</b> tab, plan the
+      setup exactly as you would a real one, then journal it — and say why you did not take it.`;
+    return;
+  }
+  tbl.style.display = '';
+  empty.style.display = 'none';
+
+  /* Ilang column lang, at sinadya iyon: ang buong journal ay may tatlumpu't
+     tatlong column at ang pahinang ito ay may isang tanong. Ang detalye ay
+     nasa drawer, isang pindot ang layo. */
+  /* Ang parehong maikling petsa na ginagamit ng buong app. Nag-imbento ako ng
+     fmtDate() rito noong una at wala pala iyon — dumaan sa node -c at sasabog
+     lang kapag binuksan ang pahina. */
+  const dt = d => d
+    ? d.toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' })
+    : '—';
+  const cols = [
+    { k: 'Date',   get: t => dt(t.close_date || t.open_date) },
+    { k: 'Symbol', get: t => escapeHtml(t.symbol || '—') },
+    { k: 'Setup',  get: t => escapeHtml(t.trade_setup || '—') },
+    { k: 'Session',get: t => escapeHtml(t.session || '—') },
+    { k: 'RR',     get: t => t.rr === null ? '—' : fmtNum(t.rr, 2) },
+    { k: 'Why you did not take it', wide: true, get: t => t.no_trade_reason
+        ? `<span class="paper-why ${NO_TRADE_KIND[t.no_trade_reason.toLowerCase()] || ''}"
+             >${escapeHtml(t.no_trade_reason)}</span>`
+        : `<span class="paper-why none">not answered yet</span>` },
+  ];
+  head.innerHTML = cols.map(c => `<th${c.wide ? ' class="paper-why-col"' : ''}>${escapeHtml(c.k)}</th>`).join('');
+  // openDrawer('view', positionId) — ang parehong drawer ng tunay na journal,
+  // kaya ang bawat field ay naitatama rito nang walang ikalawang form.
+  body.innerHTML = rows.map(t => `<tr class="paper-row"
+    onclick="openDrawer('view', ${_attrJson(String(t.position_id || ''))})"
+    >${cols.map(c => `<td>${c.get(t)}</td>`).join('')}</tr>`).join('');
+}
+
+/* ---------------- Bakit hindi mo kinuha ang trade ----------------
+
+   Ito ang tanging field na nasa Paper Trade Journal at wala sa tunay na
+   journal, at ito ang buong dahilan kung bakit may pahinang iyon. Ang setup ay
+   naroon, ang plano ay naroon — hindi ka lang pumindot. Ang tanong ay kung
+   BAKIT, at ang sagot ay tungkol sa iyo, hindi sa merkado.
+
+   Nakagrupo sila ayon sa kung ANO ang pinagmumulan, dahil magkaiba ang lunas:
+   ang isang takot ay isang bagay na sasanayin, ang isang wala ka sa bahay ay
+   isang bagay na aayusin ng alarm, at ang isang hindi malinaw na structure ay
+   maaaring TAMANG pagliban — hindi lahat ng hindi kinuhang trade ay pagkakamali.
+
+   Naitatama mo ito sa Configuration gaya ng ibang listahan ng option. */
+const NO_TRADE_REASON_GROUPS = [
+  { name: 'What you felt', sub: 'the ones to train out',
+    items: [
+      'Scared after a losing streak',
+      'Hesitated — pulled back at the entry',
+      'Feared missing a better setup',
+      'Overthinking the size',
+    ] },
+  { name: 'What the setup did', sub: 'sometimes a correct pass',
+    items: [
+      'Structure was not clean enough',
+      'Neckline did not line up',
+      'Not enough confluence',
+      'Against the higher timeframe bias',
+      'Already extended — missed the entry',
+    ] },
+  { name: 'What life did', sub: 'nothing to do with trading',
+    items: [
+      'Away from home — could not place the order',
+      'Taking a break by choice',
+      'Asleep or at work',
+      'Platform or connection problem',
+    ] },
+];
+const NO_TRADE_REASONS = NO_TRADE_REASON_GROUPS.flatMap(g => g.items);
+// Ang uri ng dahilan, para masagot ng dashboard ang "kasalanan ko ba ito".
+const NO_TRADE_KIND = {};
+NO_TRADE_REASON_GROUPS.forEach((g, i) =>
+  g.items.forEach(x => { NO_TRADE_KIND[x.toLowerCase()] = ['felt','setup','life'][i]; }));
+
 const UNFOLLOWED_RULES_OPTIONS = [
   'Rules Followed',"Would Have BE'd Out",
   'Overleveraged','Entered Without Confirmation','Moved Stop Loss',
@@ -6312,6 +6597,13 @@ const ALL_DRAWER_FIELDS = [
   // Read-only: always derived from the open date now, so an edit here would be
   // silently discarded on the next load. Change the Open Date instead.
   {key:'day_of_week', label:'Day of Week', widget:'select', editable:false, options:FIELD_OPTIONS.day_of_week},
+  /* Paper trade lang. Ito ang tanging field na wala sa isang tunay na trade,
+     at ito ang buong dahilan kung bakit may Paper Trade Journal — ang setup ay
+     naroon, ang plano ay naroon, hindi ka lang pumindot, at ang tanong ay kung
+     BAKIT. Nakatago ito sa isang tunay na trade: walang saysay ang "bakit hindi
+     mo kinuha" sa isang trade na kinuha mo. */
+  {key:'no_trade_reason', label:'Why you did not take it', widget:'select',
+   editable:true, options:NO_TRADE_REASONS, paperOnly:true},
   {key:'notes', label:'Notes', widget:'textarea', editable:true},
   {key:'link', label:'Chart Link', widget:'text', editable:true},
   {key:'trade_summary', label:'Trade Summary', widget:'textarea', editable:false}
@@ -12985,14 +13277,45 @@ function _toISODateInput(val){
 }
 
 /* ---------------- Easy Add (paste-to-prefill) ---------------- */
+/* ---------------- Manual entry ----------------
+
+   Ang Upscale ay may sariling parser dahil kilala ang hugis ng position card
+   nito. Ang Manual ay para sa lahat ng iba: isang bagong prop firm, isang
+   exchange na hindi pa namin nakikita, o isang screenshot na kailangan mong
+   i-type. Ang hugis ay label-tapos-halaga, kaya walang parser na kailangang
+   isulat para sa bawat bagong firm — ikaw ang naglalagay sa tamang puwang.
+
+   Ang listahan ay lumaki mula lima patungong labindalawa. Ang lima ay sapat
+   para makapasok ang isang trade sa journal, pero HINDI kumpleto: walang RR,
+   walang entry o exit price, walang win/loss. Ang trade na iyon ay lalabas na
+   "incomplete" sa journal at kailangan mo pa ring buksan ang drawer — kaya
+   walang naitipid. Ang punto ng Manual ay makapasok ang buong trade nang minsan.
+
+   Ang blangkong linya ay ayos: ang parser ay nilalaktawan ang field na walang
+   halaga at hindi ito napipilitan sa zero. */
 const EASY_ADD_FIELD_SPECS = [
   {label:'open date', valueLines:2, key:'open_date'},
   {label:'close date', valueLines:2, key:'close_date'},
   {label:'symbol', valueLines:1, key:'symbol'},
   {label:'realized p&l', valueLines:1, key:'profit_loss'},
-  {label:'fee', valueLines:1, key:'fee'}
+  {label:'fee', valueLines:1, key:'fee'},
+  {label:'entry price', valueLines:1, key:'entry_price'},
+  {label:'close price', valueLines:1, key:'close_price'},
+  {label:'tp price', valueLines:1, key:'tp_price'},
+  {label:'sl price', valueLines:1, key:'sl_price'},
+  {label:'position size', valueLines:1, key:'position_size'},
+  {label:'rr', valueLines:1, key:'rr'},
+  {label:'win/loss', valueLines:1, key:'win_loss', text:true},
+  {label:'trade type', valueLines:1, key:'trade_type', text:true},
+  {label:'account', valueLines:1, key:'account', text:true},
 ];
 
+/* Blangko ang bawat halaga nang sadya. Ang paglalagay ng "DD.MM.YYYY" o ng
+   "Win" bilang halimbawa ay nangangahulugang babasahin sila ng parser bilang
+   sagot — at ang isang halimbawang naiwan ay isang trade na may maling laman.
+   Ang format ay nasa hint sa itaas ng kahon, kung saan hindi ito mapapasa.
+
+   Ang Open at Close Date ay may DALAWANG blangkong linya: petsa tapos oras. */
 const EASY_ADD_TEMPLATE = `Open Date
 
 
@@ -13000,6 +13323,24 @@ Close Date
 
 
 Symbol
+
+Win/Loss
+
+Trade Type
+
+Account
+
+Entry Price
+
+Close Price
+
+TP Price
+
+SL Price
+
+Position Size
+
+RR
 
 Realized P&L
 
@@ -13077,15 +13418,20 @@ function switchEasyAddBroker(){
   const input = document.getElementById('easyAddInput');
   document.getElementById('easyAddError').textContent = '';
 
+  const hint = document.getElementById('easyAddHint');
   if(broker === 'manual'){
     input.value = EASY_ADD_TEMPLATE;
-    input.placeholder = 'Paste here…';
+    input.placeholder = 'Fill in the values under each label…';
+    if(hint) hint.style.display = '';
+    // Ang caret ay dumadapo sa unang blangko, hindi sa simula ng teksto —
+    // isang linya sa ibaba ng "Open Date".
     const pos = EASY_ADD_TEMPLATE.indexOf('Open Date') + 'Open Date'.length + 1;
     input.focus();
     input.setSelectionRange(pos, pos);
   }else{
     input.value = '';
     input.placeholder = 'Paste the full position card from Upscale here…';
+    if(hint) hint.style.display = 'none';
     input.focus();
   }
 }
@@ -13222,6 +13568,13 @@ function parseEasyAddText(){
         let sym = values[0].toUpperCase();
         if(!sym.includes('/')) sym += '/USD';
         parsed.symbol = sym;
+      }else if(spec.text){
+        /* Ang Win/Loss, Trade Type at Account ay salita, hindi numero. Ang
+           parseFloat sa kanila ay NaN, at ang NaN ay tahimik na nilalaktawan —
+           kaya bago ito, ang tatlong field na ito ay hindi kailanman pumapasok
+           kahit isinulat mo sila. */
+        const v = values[0].trim();
+        if(v) parsed[spec.key] = v;
       }else{
         const num = parseFloat(values[0].replace(/,/g,''));
         if(!isNaN(num)) parsed[spec.key] = num;
@@ -13283,7 +13636,7 @@ function openTradeViewModal(positionId){
 // right point by both render functions below (JOURNAL_FIELD_GROUPS_PRE_CONFLUENCE
 // vs the rest).
 const JOURNAL_FIELD_GROUPS = [
-  { title: 'Overview', keys: ['symbol','open_date','close_date','duration','objective'] },
+  { title: 'Overview', keys: ['symbol','open_date','close_date','duration','objective','no_trade_reason'] },
   { title: 'Result', keys: ['win_loss','profit_loss','pnl_percent','rr','fee','entry_price','close_price','tp_price','sl_price','position_size','risk_amount'] },
   { title: 'Account', keys: ['account','account_type','session','day_of_week'] },
   { title: 'Setup & Strategy', keys: ['trade_type','trade_setup','pattern_type','execution_tf','aof_phase'] },
@@ -13424,8 +13777,13 @@ function renderTradeViewModal(){
   document.getElementById('tradeViewTitle').textContent = (row.symbol || 'Trade') + (_tradeNo(row) ? ` · #${_tradeNo(row)}` : '');
   document.getElementById('tradeViewSetupNotesBtn').style.display = row.linked_setup_id ? 'flex' : 'none';
 
+  /* Ang paperOnly na field ay lumalabas LANG sa isang paper trade. Walang
+     kahulugan ang "bakit hindi mo kinuha" sa isang trade na kinuha mo, at ang
+     blangkong dropdown na iyon sa bawat tunay na trade ay isang tanong na
+     hindi mo kailanman masasagot. */
   const fieldByKey = {};
-  DRAWER_FIELDS.forEach(f => { fieldByKey[f.key] = f; });
+  DRAWER_FIELDS.filter(f => !f.paperOnly || _drawerIsPaper(row))
+    .forEach(f => { fieldByKey[f.key] = f; });
 
   const renderGroup = g => {
     const fields = g.keys.map(k => fieldByKey[k]).filter(Boolean);
@@ -13635,8 +13993,13 @@ function renderDrawerFields(){
 
   _drawerRow = row;
   const body = document.getElementById('drawerBody');
+  /* Ang paperOnly na field ay lumalabas LANG sa isang paper trade. Walang
+     kahulugan ang "bakit hindi mo kinuha" sa isang trade na kinuha mo, at ang
+     blangkong dropdown na iyon sa bawat tunay na trade ay isang tanong na
+     hindi mo kailanman masasagot. */
   const fieldByKey = {};
-  DRAWER_FIELDS.forEach(f => { fieldByKey[f.key] = f; });
+  DRAWER_FIELDS.filter(f => !f.paperOnly || _drawerIsPaper(row))
+    .forEach(f => { fieldByKey[f.key] = f; });
 
   const renderGroup = g => {
     // In a multi-account run only the unanswered fields are shown. Everything
@@ -13861,6 +14224,12 @@ async function saveDrawer(){
       const maxNo = RAW_TRADES.reduce((m,r) => { const n = parseFloat(r.no); return !isNaN(n) && n>m ? n : m; }, 0);
       patch.no = patch.no || (maxNo + 1);
       patch.position_id = 'WEB-' + Date.now().toString(36).toUpperCase();
+      /* Ang bagong entry ay paper kung ang calculator ay nakatira ngayon sa
+         Paper Trade Journal. Isinusulat lang ito sa PAGGAWA: ang paglipat ng
+         isang naitalang trade sa pagitan ng tunay at paper ay isang sadyang
+         desisyon, hindi isang bagay na dapat mangyari dahil lang nasa ibang
+         pahina ka nang buksan mo ito. */
+      if(_isPaperMode()) patch.is_paper = true;
       if(drawerJournalSetupId){
         patch.linked_setup_id = drawerJournalSetupId;
         // confluence_answers/chart_pattern aren't rendered drawer fields —
@@ -13911,7 +14280,7 @@ async function saveDrawer(){
       if(idx > -1 && updated[0]) RAW_TRADES[idx] = updated[0];
     }
 
-    ALL_TRADES = RAW_TRADES.map(normalizeTrade);
+    _rebuildTradeArrays();
   _rebuildTradeNumbers();
     populateAccountFilter();
   populateDashPeriodFilters();
@@ -13962,7 +14331,7 @@ async function deleteDrawer(){
     const linkedSetupId = drawerRowData.linked_setup_id || null;
 
     RAW_TRADES = RAW_TRADES.filter(r => r.position_id !== drawerPositionId);
-    ALL_TRADES = RAW_TRADES.map(normalizeTrade);
+    _rebuildTradeArrays();
   _rebuildTradeNumbers();
     populateAccountFilter();
   populateDashPeriodFilters();
@@ -19376,7 +19745,7 @@ async function _saveBulkJournal(shared){
   const inserted = await res.json();
   (inserted.length ? inserted : rows).forEach(r => RAW_TRADES.push(r));
 
-  ALL_TRADES = RAW_TRADES.map(normalizeTrade);
+  _rebuildTradeArrays();
   _rebuildTradeNumbers();
   populateAccountFilter();
   populateDashPeriodFilters();

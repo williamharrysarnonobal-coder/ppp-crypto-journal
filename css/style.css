@@ -3936,19 +3936,71 @@ body.mobile-mode .yo-j-line{font-size:13px;}
    dalawang label, dalawang bilang, nakapirming lapad — ay nagpapapantay sa
    labindalawang card. Ang lumang hilera ay may anim na chip na iba-iba ang
    haba kada buwan, kaya walang dalawang card na nakahanay. */
-.yo-f-pair{
-  display:flex;align-items:baseline;gap:6px;
-  font-family:'IBM Plex Mono',monospace;font-size:10px;
-  padding:4px 6px;border-radius:4px;
+/* Dalawang HIWALAY na kahon, hindi isang hilerang may apat na salita.
+
+   Magkadikit sila noon sa isang kahon at nagmumukhang isang mahabang linya:
+   "RR 2.13 Win rate 55%". Ang mata ay kailangang hatiin iyon mag-isa. Bilang
+   dalawang kahon ay agad na malinaw na dalawa silang magkaibang bagay — at
+   pareho pa rin silang nasa isang hilera, kaya buo pa rin ang pares.
+
+   Magkapantay ang lapad (1fr bawat isa), kaya nakahanay sila sa labindalawang
+   card kahit magkaiba ang haba ng laman. */
+.yo-f-pair{display:grid;grid-template-columns:1fr 1fr;gap:5px;}
+.yo-p-box{
+  display:flex;flex-direction:column;gap:1px;
+  font-family:'IBM Plex Mono',monospace;
+  padding:4px 7px;border-radius:4px;
   background:var(--surface);
+  min-width:0;
 }
-.yo-p-k{color:var(--muted);letter-spacing:.02em;}
-.yo-p-v{
-  font-weight:700;color:var(--ink);
+.yo-p-box em{
+  font-style:normal;font-size:9px;letter-spacing:.05em;
+  text-transform:uppercase;color:var(--muted);
+}
+.yo-p-box b{
+  font-size:12px;font-weight:700;
+  color:var(--v,var(--ink));
   font-variant-numeric:tabular-nums;
-  min-width:34px;
 }
-/* Ang pangalawang pares ay itinutulak sa kanan, kaya ang RR ay laging nasa
-   kaliwa at ang win rate ay laging nasa kanan sa bawat card. */
-.yo-f-pair .yo-p-k:nth-of-type(2){margin-left:auto;}
-.yo-f-pair .yo-p-v:last-child{min-width:30px;text-align:right;}
+
+/* ---------------- Paper Trade Journal ----------------
+
+   Ang banner ay hindi palamuti. Ito lang ang nagsasabi kung saan mapupunta ang
+   ijo-journal mo, at ang parehong calculator ay nakatira sa dalawang pahina —
+   kung wala ito, walang paraan para malaman kung alin ang nakikita mo. */
+.paper-banner{
+  display:flex;align-items:flex-start;gap:10px;
+  margin:0 0 16px;padding:11px 14px;
+  background:color-mix(in srgb, var(--info, var(--accent)) 9%, transparent);
+  border:1px solid color-mix(in srgb, var(--info, var(--accent)) 35%, transparent);
+  border-radius:8px;
+  font-size:12.5px;line-height:1.55;color:var(--muted);
+}
+.paper-banner svg{flex:none;margin-top:1px;color:var(--info, var(--accent));}
+.paper-banner b{color:var(--ink);}
+
+.paper-row{cursor:pointer;}
+.paper-why-col{min-width:220px;}
+
+/* Ang sagot sa "bakit hindi mo kinuha" ay may kulay ayon sa PINAGMUMULAN, at
+   iyon ang buong punto ng pahina: ang nararamdaman ay sasanayin, ang buhay ay
+   hindi mo kasalanan, at ang setup ay maaaring tamang pagliban. Ang parehong
+   tatlong kulay ay lumalabas sa dashboard. */
+.paper-why{
+  display:inline-block;padding:2px 9px;border-radius:999px;
+  font-size:11.5px;font-weight:600;
+  background:var(--surface-2);border:1px solid var(--rule);color:var(--muted);
+}
+.paper-why.felt {color:var(--loss); border-color:color-mix(in srgb, var(--loss) 40%, var(--rule));}
+.paper-why.setup{color:var(--win);  border-color:color-mix(in srgb, var(--win) 40%, var(--rule));}
+.paper-why.life {color:var(--muted);}
+.paper-why.none {font-style:italic;opacity:.75;}
+
+/* Ang hint ng Manual na format. Nasa labas ng textarea nang sadya — ang
+   halimbawang nasa loob ng template ay babasahin ng parser bilang sagot. */
+.ea-hint{
+  margin-top:10px;padding:9px 12px;border-radius:6px;
+  background:var(--surface-2);border:1px solid var(--rule);
+  font-size:12px;line-height:1.55;color:var(--muted);
+}
+.ea-hint b{color:var(--ink);font-family:'IBM Plex Mono',monospace;font-weight:600;}
