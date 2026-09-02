@@ -1485,6 +1485,15 @@ function normalizeTrade(r){
     // Bakit hindi mo ito kinuha. Ang tanging bagay na hindi nasa isang tunay
     // na trade, at ang buong dahilan kung bakit may pahinang ito.
     no_trade_reason: r.no_trade_reason || "",
+    /* Ang leverage na TALAGANG ginamit, hindi ang binalak — ang huli ay nasa
+       position_setups mula pa noon. Null kapag wala, hindi zero: ang zero ay
+       isang sagot at ang wala ay hindi. */
+    leverage: (r.leverage === null || r.leverage === undefined || r.leverage === '')
+      ? null : Number(r.leverage),
+    /* Kailan mo ito ISINULAT, hindi kung kailan ito nagsara. Null sa bawat
+       trade na naunang naitala kaysa sa column — at iyon ang tama; tingnan ang
+       supabase_trading_journal_created_at.sql. */
+    created_at: r.created_at || null,
     exit_type: r.exit_type || "",
     // Both of these read straight through. What price did after a stop or a cut
     // took you out is not on the trade — a blank stays blank so the journal can
@@ -17554,16 +17563,182 @@ function computeChallenges(trades, achRows){
     };
   }
 
-  return [c1,c2,c3,c4,c5,c6,c7,c8,c9,c10,c11,c12,c13,c14,c15,c17,c18,c19,c20,c21,c22,c23,c24,c25,c26,c27,c28,c29,c30,c31,c32,c33,c34].filter(Boolean);
+  /* ==========================================================================
+     ANG APAT NA BAGO — tatlo mula sa datos na wala pa noon, at isa na naghintay.
+
+     Ang "No Revenge Trading" ay nasa LOCKED_CHALLENGES nang matagal na may
+     dahilang "Needs a log of skipped signals — not tracked yet". Ang Paper
+     Trade Journal ay ang mismong talaang iyon: bawat setup na nakita mo at
+     hindi kinuha, may petsa at may dahilan. Kaya nabuksan ito — hindi dahil
+     may naisulat akong bagong panuntunan kundi dahil dumating ang datos.
+     ====================================================================== */
+
+  // ---- Ang paper trade, ayon sa araw. Ginagamit ng dalawa sa ibaba. ----
+  const paperByDay = {};
+  (PAPER_TRADES || []).forEach(t => {
+    const d = t.open_date || t.close_date;
+    if(!d) return;
+    (paperByDay[_dayKeyLocal(d)] = paperByDay[_dayKeyLocal(d)] || []).push(t);
+  });
+
+  /* c35. NO REVENGE TRADING.
+
+     Ang tanong ay hindi "tumigil ka ba" kundi "ano ang ginawa mo pagkatapos".
+     Pagkatapos ng bawat talo, tinitingnan ko ang natitirang bahagi ng araw:
+       — nag-log ka ng pass (paper trade)      -> disiplina
+       — pumasok ka agad ulit nang walang pass -> hinabol mo
+
+     Ang araw na natapos sa talo at wala nang sumunod ay HINDI binibilang sa
+     alinman: ang paghinto ay maaaring disiplina o maaaring pagsasara lang ng
+     laptop, at hindi ko alam kung alin — kaya hindi ako nagpapanggap. */
+  let revengeClean = 0, revengeBroken = 0, revengeStreak = 0, maxRevengeStreak = 0;
+  /* ISANG BANTAY BAGO ANG LAHAT.
+
+     Kung hindi mo pa nagagamit kahit minsan ang Paper Trade Journal, ang BAWAT
+     trade mo pagkatapos ng talo ay walang katibayan ng pass — at bibilangin ko
+     silang lahat bilang revenge. Mali iyon: pinaparusahan noon ang hindi
+     paggamit ng feature, hindi ang kawalan ng disiplina. Ang taong maayos na
+     nagta-trade pero hindi nagta-tala ng pass ay hindi dapat mukhang pinakamasama
+     sa listahan.
+
+     Kaya kapag walang pass kahit isa, walang sinusukat — isang paanyaya, hindi
+     isang marka. */
+  const hasAnyPass = Object.keys(paperByDay).length > 0;
+  if(hasAnyPass){
+    const byDayTrades = {};
+    closed.forEach(t => { (byDayTrades[_dayKeyLocal(t.close_date)] =
+      byDayTrades[_dayKeyLocal(t.close_date)] || []).push(t); });
+
+    Object.keys(byDayTrades).sort().forEach(day => {
+      const dayTrades = byDayTrades[day].slice()
+        .sort((a, b) => (a.open_date || a.close_date) - (b.open_date || b.close_date));
+      const passes = (paperByDay[day] || []).length;
+      dayTrades.forEach((t, i) => {
+        if(!_isLoss(t)) return;
+        const tradedAgain = i < dayTrades.length - 1;
+        if(!tradedAgain && !passes) return;      // walang sumunod na aksyon
+        if(passes > 0 && !tradedAgain){ revengeClean++; revengeStreak++; }
+        else if(tradedAgain && passes > 0){ revengeClean++; revengeStreak++; }
+        else { revengeBroken++; revengeStreak = 0; }
+        maxRevengeStreak = Math.max(maxRevengeStreak, revengeStreak);
+      });
+    });
+  }
+  const revengeSeen = revengeClean + revengeBroken;
+  const c35 = {
+    icon:'ban', title:'No Revenge Trading', points:60,
+    desc:'Logging a pass after a loss instead of jumping straight back in.',
+    howTo:'After every losing trade, looks at what you did next that same day. '
+      + 'If you logged a setup you passed on in the Paper Trade Journal, that counts as discipline; '
+      + 'if you took another trade with no pass logged, the streak resets. '
+      + 'A loss that simply ended the day counts as neither — stopping might be discipline or might '
+      + 'just be closing the laptop, and the journal cannot tell which. Levels: 3, 10, 25 in a row.',
+    current: maxRevengeStreak, tiers: [3, 10, 25], target: 25, done: maxRevengeStreak >= 25,
+    statOverride: revengeSeen
+      ? `${revengeClean} of ${revengeSeen} losses were followed by a logged pass`
+      : 'No losses with a next move recorded yet — log the setups you skip and this starts filling in.'
+  };
+
+  /* c36. TRIGGER HONESTY. Ang gantimpala ay sa pagiging tapat, hindi sa
+     pag-iwas: ang trade na hindi mo kinuha ay walang halaga bilang datos
+     hangga't hindi mo sinasabi kung bakit. */
+  const answeredPasses = (PAPER_TRADES || [])
+    .filter(t => String(t.no_trade_reason || '').trim()).length;
+  const topReason = (() => {
+    const c = {};
+    (PAPER_TRADES || []).forEach(t => {
+      const r = String(t.no_trade_reason || '').trim();
+      if(r) c[r] = (c[r] || 0) + 1;
+    });
+    const top = Object.entries(c).sort((a, b) => b[1] - a[1])[0];
+    return top ? top[0] : null;
+  })();
+  const c36 = {
+    icon:'clock', title:'Trigger Honesty', points:35,
+    desc:'Setups you passed on, with the reason written down.',
+    howTo:'Counts paper trades that have "Why you did not take it" answered. '
+      + 'Passing on a setup is not the achievement — saying why is. Without the reason it is '
+      + 'just a trade that did not happen; with it, it becomes the record of what actually stops you. '
+      + 'Levels: 10, 30, 75.',
+    current: answeredPasses, tiers: [10, 30, 75], target: 75, done: answeredPasses >= 75,
+    statOverride: topReason
+      ? `Most common reason: ${topReason}`
+      : 'No reasons recorded yet.'
+  };
+
+  /* c37. LEVERAGE DISCIPLINE. Bagong column ito at walang gumagamit pa. Ang
+     hangganan ay ang max_leverage ng account na tinatakan mismo ng trade —
+     hindi isang numerong pinili ko, kundi ang panuntunan ng prop firm mo. */
+  let levStreak = 0, maxLevStreak = 0, levChecked = 0, levOver = 0, levHigh = 0;
+  {
+    const capByAccount = {};
+    (TRADING_ACCOUNTS || []).forEach(a => {
+      if(a.account_name && Number(a.max_leverage) > 0) capByAccount[a.account_name] = Number(a.max_leverage);
+    });
+    closed.forEach(t => {
+      const used = Number(t.leverage);
+      const cap = capByAccount[t.account];
+      if(!Number.isFinite(used) || used <= 0 || !cap) return;   // walang masusukat
+      levChecked++;
+      levHigh = Math.max(levHigh, used);
+      if(used <= cap){ levStreak++; maxLevStreak = Math.max(maxLevStreak, levStreak); }
+      else { levOver++; levStreak = 0; }
+    });
+  }
+  const c37 = levChecked ? {
+    icon:'percent', title:'Leverage Discipline', points:45,
+    desc:'Consecutive trades kept inside your account’s leverage limit.',
+    howTo:'Compares the leverage recorded on each trade against the Max Leverage set on that '
+      + 'account in My Accounts. Only trades that have both are counted — the rest are skipped '
+      + 'rather than assumed safe. Going over resets the streak. Levels: 20, 50, 100.',
+    current: maxLevStreak, tiers: [20, 50, 100], target: 100, done: maxLevStreak >= 100,
+    statOverride: `${levChecked} trade${levChecked === 1 ? '' : 's'} have both a leverage and a limit`
+      + (levOver ? ` · ${levOver} went over` : '')
+      + (levHigh ? ` · highest used ${fmtNum(levHigh, levHigh % 1 ? 1 : 0)}x` : '')
+  } : null;
+
+  /* c38. SAME-DAY JOURNALING. Kailangan nito ang created_at, na idinagdag ng
+     supabase_trading_journal_created_at.sql. Ang mga lumang trade ay walang
+     nito at HINDI mabibilang — hindi ito kamalian kundi ang katotohanan: hindi
+     naitala kung kailan mo sila isinulat, at hindi na iyon mababawi. */
+  const withCreated = closed.filter(t => t.created_at && t.close_date);
+  let sameDay = 0;
+  withCreated.forEach(t => {
+    const made = new Date(t.created_at);
+    if(isNaN(made)) return;
+    if(Math.abs(made - t.close_date) <= 24 * 3600 * 1000) sameDay++;
+  });
+  const c38 = withCreated.length ? {
+    icon:'clock', title:'Same-Day Journaling', points:40,
+    desc:'Logging each trade within 24 hours of closing it.',
+    howTo:'Compares when the trade closed against when the row was actually created. '
+      + 'Trades saved before this was tracked have no creation time and are left out entirely '
+      + 'rather than counted as late — they were logged, the app just never wrote down when. '
+      + 'Levels: 10, 30, 75.',
+    current: sameDay, tiers: [10, 30, 75], target: 75, done: sameDay >= 75,
+    statOverride: `${sameDay} of ${withCreated.length} trade${withCreated.length === 1 ? '' : 's'} `
+      + `with a recorded logging time were journalled same-day`
+  } : null;
+
+  return [c1,c2,c3,c4,c5,c6,c7,c8,c9,c10,c11,c12,c13,c14,c15,c17,c18,c19,c20,c21,c22,c23,c24,c25,c26,c27,c28,c29,c30,c31,c32,c33,c34,
+          c35,c36,c37,c38].filter(Boolean);
 }
 
 // SL Discipline and Confluence Purist used to live here; they're now live as
 // Plan Your Exit and Confluence Discipline, since trades carry tp_price /
 // sl_price and confluence_answers.
+/* Tatlo ang umalis dito.
+
+   Ang "No Revenge Trading" ay naghintay ng "a log of skipped signals" — iyon
+   ang Paper Trade Journal, kaya buhay na ito. Ang "Same-Day Journaling" ay
+   naghintay ng created_at, at idinagdag na iyon. Ang "Leverage Discipline" ay
+   hindi pa nakalista rito pero ganoon din ang kuwento: dumating ang column.
+
+   Ang natitirang tatlo ay naka-lock pa rin at may TUNAY na dahilan. Hindi sila
+   mahirap gawin; wala lang talagang datos, at ang paggawa ng bilang mula sa
+   walang datos ay mas masahol kaysa sa pagsasabing hindi pa kaya. */
 const LOCKED_CHALLENGES = [
   {icon:'percent', title:'1% Risk Master', desc:'Risking ≤1% per trade, 30 trades in a row.', needs:'Entry and stop-loss prices exist now, but this also needs the account balance as it was on the day of each trade — only the current balance is stored, so old trades would be measured against the wrong number.'},
-  {icon:'ban', title:'No Revenge Trading', desc:'Skipping the next signal after a loss.', needs:'Needs a log of skipped signals — not tracked yet.'},
-  {icon:'clock', title:'Same-Day Journaling', desc:'Logging every trade within 24 hours.', needs:'Needs a "created_at" column on trading_journal that records when you actually logged the trade.'},
   {icon:'calendar', title:'Daily Check-in Streak', desc:'Visiting the dashboard every day.', needs:'Needs new tracking of login/visit dates — not derived from trades.'},
   {icon:'medal', title:'Tournament Placement', desc:'Placing Top 10 or winning a tournament.', needs:'Needs a structured "placement" field on Achievements (currently just free text in subject/body).'}
 ];
