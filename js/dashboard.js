@@ -6714,7 +6714,7 @@ function renderPaperTable(){
        sa nangingibabaw na hatol. Ang pagkulay sa bawat isa nang hiwalay ay
        magpapakita ng berde at pula sa iisang hilera para sa isang setup na may
        isang kahihinatnan lang. */
-    { k: 'What happened', get: t => {
+    { k: 'What happened', wide: true, get: t => {
         const list = _paperList(t.paper_outcome);
         if(!list.length) return `<span class="paper-out unknown">not checked</span>`;
         const kind = _paperOutcomeKind(t.paper_outcome);
@@ -6726,7 +6726,8 @@ function renderPaperTable(){
   // kaya ang bawat field ay naitatama rito nang walang ikalawang form.
   body.innerHTML = rows.map(t => `<tr class="paper-row"
     onclick="openDrawer('view', ${_attrJson(String(t.position_id || ''))})"
-    >${cols.map(c => `<td>${c.get(t)}</td>`).join('')}</tr>`).join('');
+    >${cols.map(c => `<td${c.wide ? ' class="paper-why-col"' : ''}
+      >${c.get(t)}</td>`).join('')}</tr>`).join('');
 }
 
 /* ---------------- Bakit hindi mo kinuha ang trade ----------------
