@@ -21590,6 +21590,43 @@ function journalFromSetup(id){
     sl_price: s.sl_price != null ? Number(s.sl_price) : undefined
   };
   pendingJournalSetupId = id;
+
+  /* ANG PAPER AY WALANG BROKER.
+
+     Sa isang tunay na trade, ang susunod na hakbang ay ang Easy Add: idikit ang
+     position card at kunin ang mga TUNAY na numero — ang naging fill, ang
+     naging P&L, ang bayad. Iyon ang dahilan kung bakit iniiwan ang entry_price
+     sa paste: maaaring iba ang naging fill sa binalak.
+
+     Wala nito ang paper trade. Walang card na idikit dahil walang order na
+     ipinadala, at ang paghingi ng broker format ay isang tanong na walang
+     sagot — "hahanapin padin yung sa from broker" ang sabi niya, at tama iyon.
+
+     Kaya dumidiretso ito sa drawer, at ang BINALAK na entry ang siyang entry:
+     ito ang tanging presyong umiiral. Ang TP at SL ay dala na ng prefill sa
+     itaas, kaya kumpleto ang tatlo — at may RR agad ang plano nang hindi ka
+     nagta-type. */
+  if(_isPaperMode()){
+    const prefill = { ...pendingJournalPrefill,
+      entry_price: s.entry_price != null ? Number(s.entry_price) : undefined,
+      // Ang petsa ngayon ang petsang nakita mo, maliban kung babaguhin mo. Ang
+      // widget mismo ang nagpo-format nito, kaya isang Date ang ibinibigay ko
+      // at hindi isang naka-format nang teksto.
+      open_date: new Date() };
+    /* Ang account at ang quantity ay realOnly at hindi lalabas sa drawer, pero
+       sila ay nasa prefill at ise-save nang tahimik. Ang isang paper trade na
+       may account ay isang trade na mukhang pumasok sa isang bagay na hindi
+       naman nito ginalaw. Inaalis dito, kung saan alam natin ang mode. */
+    delete prefill.account;
+    delete prefill.position_size;
+    delete prefill.rr;          // kinukuwenta mula sa entry/TP/SL, hindi naka-imbak
+    drawerJournalSetupId = id;
+    pendingJournalPrefill = null;
+    pendingJournalSetupId = null;
+    openDrawer('create', null, prefill);
+    return;
+  }
+
   openEasyAddModal();
 }
 
