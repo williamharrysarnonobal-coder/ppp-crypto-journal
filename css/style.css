@@ -2443,6 +2443,16 @@ table.breakdown tbody tr{cursor:pointer;}
   }
   .acct-breach-btn:hover{background:color-mix(in srgb, var(--warn) 16%, transparent);}
 
+  /* Ang preset na hindi galing sa dashboard niya. Nagbabago ang panuntunan ng
+     mga firm nang hindi nag-aabiso, at ang mga numerong ito ang nagtatakda ng
+     drawdown floor — kaya hindi ito dapat tahimik. */
+  .acc-preset-warn{
+    margin-top:8px;padding:7px 10px;border-radius:6px;
+    background:color-mix(in srgb, var(--warn) 10%, transparent);
+    border-left:2px solid color-mix(in srgb, var(--warn) 45%, transparent);
+    font-size:11px;line-height:1.5;color:var(--muted);
+  }
+
   /* Hindi tugma ang manwal na numero at ang journal. Sinasabi ito ng card sa
      halip na piliin ang isa nang tahimik. */
   .acct-gap{

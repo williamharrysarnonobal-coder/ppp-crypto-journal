@@ -19890,6 +19890,151 @@ const PROP_FIRM_PRESETS = {
       minTradingDays: 5, minDailyProfitPct: null, maxLeverage: 2,
       sizes: [5000,10000,25000]
     }
+  },
+
+  /* ---------------- ANG IBANG FIRM ----------------
+
+     Ang Upscale ay sa kanya, at napatunayan na niya ito sa sariling dashboard.
+     Ang natitira ay galing sa NAKALATHALANG panuntunan ng bawat firm, at
+     minarkahan silang `unverified` — nagpapakita iyon ng linya sa buod na
+     nagsasabing tingnan muna bago i-save.
+
+     Hindi ito pagiging maingat lang. Ang mga numerong ito ay nagtatakda ng
+     drawdown floor at ng babala ng account, at nakatago sila sa likod ng buod
+     — kaya ang maling preset ay hindi nagmumukhang mali, nagiging hangganan
+     lang ito na hindi niya pinili. Nagbabago rin ang panuntunan ng mga firm
+     nang hindi nag-aabiso.
+
+     Ang lahat ng ito ay napupunta sa mga kahon na maaari niyang baguhin —
+     "Edit these manually instead" ang nasa ilalim ng buod. */
+  'FTMO': {
+    'Challenge (2-step)': {
+      stages: ['Evaluation Phase 1','Evaluation Phase 2','Funded'],
+      maxDailyLossPct: 5, maxTotalDrawdownPct: 10,
+      phase1TargetPct: 10, phase2TargetPct: 5,
+      minTradingDays: 4, minDailyProfitPct: null, maxLeverage: 1,
+      sizes: [10000,25000,50000,100000,200000], unverified: true
+    },
+    'Swing': {
+      stages: ['Evaluation Phase 1','Evaluation Phase 2','Funded'],
+      maxDailyLossPct: 5, maxTotalDrawdownPct: 10,
+      phase1TargetPct: 10, phase2TargetPct: 5,
+      minTradingDays: 4, minDailyProfitPct: null, maxLeverage: 1,
+      sizes: [10000,25000,50000,100000,200000], unverified: true
+    }
+  },
+
+  'FundedNext': {
+    'Evaluation (2-step)': {
+      stages: ['Evaluation Phase 1','Evaluation Phase 2','Funded'],
+      maxDailyLossPct: 5, maxTotalDrawdownPct: 10,
+      phase1TargetPct: 8, phase2TargetPct: 5,
+      minTradingDays: 5, minDailyProfitPct: null, maxLeverage: 2,
+      sizes: [6000,15000,25000,50000,100000,200000], unverified: true
+    },
+    'Express (1-step)': {
+      stages: ['Evaluation Phase 1','Funded'],
+      maxDailyLossPct: 5, maxTotalDrawdownPct: 10,
+      phase1TargetPct: 8, phase2TargetPct: null,
+      minTradingDays: 5, minDailyProfitPct: null, maxLeverage: 2,
+      sizes: [6000,15000,25000,50000,100000,200000], unverified: true
+    }
+  },
+
+  'Funding Pips': {
+    'Evaluation (2-step)': {
+      stages: ['Evaluation Phase 1','Evaluation Phase 2','Funded'],
+      maxDailyLossPct: 5, maxTotalDrawdownPct: 10,
+      phase1TargetPct: 8, phase2TargetPct: 5,
+      minTradingDays: 3, minDailyProfitPct: null, maxLeverage: 2,
+      sizes: [5000,10000,25000,50000,100000,200000], unverified: true
+    },
+    'Zero (1-step)': {
+      stages: ['Evaluation Phase 1','Funded'],
+      maxDailyLossPct: 3, maxTotalDrawdownPct: 6,
+      phase1TargetPct: 10, phase2TargetPct: null,
+      minTradingDays: 3, minDailyProfitPct: null, maxLeverage: 2,
+      sizes: [5000,10000,25000,50000,100000], unverified: true
+    }
+  },
+
+  'Alpha Capital Group': {
+    'Evaluation (2-step)': {
+      stages: ['Evaluation Phase 1','Evaluation Phase 2','Funded'],
+      maxDailyLossPct: 5, maxTotalDrawdownPct: 10,
+      phase1TargetPct: 8, phase2TargetPct: 5,
+      minTradingDays: 3, minDailyProfitPct: null, maxLeverage: 2,
+      sizes: [10000,25000,50000,100000,200000], unverified: true
+    }
+  },
+
+  'E8 Markets': {
+    'E8 Account (2-step)': {
+      stages: ['Evaluation Phase 1','Evaluation Phase 2','Funded'],
+      maxDailyLossPct: 5, maxTotalDrawdownPct: 8,
+      phase1TargetPct: 8, phase2TargetPct: 5,
+      minTradingDays: 3, minDailyProfitPct: null, maxLeverage: 2,
+      sizes: [5000,10000,25000,50000,100000,250000], unverified: true
+    },
+    'E8 Track (1-step)': {
+      stages: ['Evaluation Phase 1','Funded'],
+      maxDailyLossPct: 4, maxTotalDrawdownPct: 8,
+      phase1TargetPct: 8, phase2TargetPct: null,
+      minTradingDays: 3, minDailyProfitPct: null, maxLeverage: 2,
+      sizes: [5000,10000,25000,50000,100000], unverified: true
+    }
+  },
+
+  'The5ers': {
+    'Hyper Growth': {
+      stages: ['Evaluation Phase 1','Evaluation Phase 2','Funded'],
+      maxDailyLossPct: 3, maxTotalDrawdownPct: 6,
+      phase1TargetPct: 6, phase2TargetPct: 6,
+      minTradingDays: 3, minDailyProfitPct: null, maxLeverage: 1,
+      sizes: [5000,10000,20000,60000,100000], unverified: true
+    },
+    'High Stakes': {
+      stages: ['Evaluation Phase 1','Evaluation Phase 2','Funded'],
+      maxDailyLossPct: 5, maxTotalDrawdownPct: 10,
+      phase1TargetPct: 8, phase2TargetPct: 5,
+      minTradingDays: 3, minDailyProfitPct: null, maxLeverage: 1,
+      sizes: [5000,10000,20000,60000,100000], unverified: true
+    }
+  },
+
+  // Crypto-native, kaya mas malapit sa ginagawa niya kaysa sa mga forex firm.
+  'Breakout': {
+    'Evaluation (2-step)': {
+      stages: ['Evaluation Phase 1','Evaluation Phase 2','Funded'],
+      maxDailyLossPct: 4, maxTotalDrawdownPct: 8,
+      phase1TargetPct: 8, phase2TargetPct: 5,
+      minTradingDays: 3, minDailyProfitPct: null, maxLeverage: 5,
+      sizes: [5000,10000,25000,50000,100000], unverified: true
+    },
+    'One Step': {
+      stages: ['Evaluation Phase 1','Funded'],
+      maxDailyLossPct: 3, maxTotalDrawdownPct: 6,
+      phase1TargetPct: 9, phase2TargetPct: null,
+      minTradingDays: 3, minDailyProfitPct: null, maxLeverage: 5,
+      sizes: [5000,10000,25000,50000,100000], unverified: true
+    }
+  },
+
+  'Crypto Fund Trader': {
+    'Evaluation (2-step)': {
+      stages: ['Evaluation Phase 1','Evaluation Phase 2','Funded'],
+      maxDailyLossPct: 5, maxTotalDrawdownPct: 10,
+      phase1TargetPct: 8, phase2TargetPct: 5,
+      minTradingDays: 3, minDailyProfitPct: null, maxLeverage: 5,
+      sizes: [5000,10000,25000,50000,100000,200000], unverified: true
+    },
+    'One Phase': {
+      stages: ['Evaluation Phase 1','Funded'],
+      maxDailyLossPct: 4, maxTotalDrawdownPct: 7,
+      phase1TargetPct: 9, phase2TargetPct: null,
+      minTradingDays: 3, minDailyProfitPct: null, maxLeverage: 5,
+      sizes: [5000,10000,25000,50000,100000], unverified: true
+    }
   }
 };
 
@@ -23868,7 +24013,17 @@ function applyAccountPreset(){
     preset.minDailyProfitPct != null ? `Min Daily Profit <strong>${preset.minDailyProfitPct}%</strong>` : null,
     preset.maxLeverage != null ? `Max Leverage <strong>x${preset.maxLeverage}</strong>` : null,
   ].filter(Boolean).map(r => `<div>${r}</div>`).join('');
-  summaryEl.innerHTML = rows + `<div style="margin-top:6px;"><a href="#" onclick="event.preventDefault(); accEditRulesManually();" style="color:var(--accent);">Edit these manually instead</a></div>`;
+
+  /* Ang bawat firm maliban sa Upscale ay galing sa nakalathalang panuntunan,
+     hindi sa dashboard mo. Ang mga numerong ito ay hindi palamuti: sila ang
+     nagtatakda ng drawdown floor at ng babala, at nakatago sila sa likod ng
+     buod na ito — kaya ang maling preset ay tahimik na nagiging maling
+     hangganan. Sinasabi kung alin ang hindi ko nabeberipika. */
+  const warn = preset.unverified
+    ? `<div class="acc-preset-warn">From the firm's public rules — check these
+         against your own dashboard before saving. They set your drawdown floor.</div>`
+    : '';
+  summaryEl.innerHTML = rows + warn + `<div style="margin-top:6px;"><a href="#" onclick="event.preventDefault(); accEditRulesManually();" style="color:var(--accent);">Edit these manually instead</a></div>`;
 }
 
 function _numOrNull(id){
