@@ -20331,6 +20331,24 @@ function syncPatternTypeFromSetup(setupValue){
     if(tt === 'Short') allowed = allowed.filter(p => p.includes('LH'));
   }
   const current = sel.value;
+
+  /* ANG PATTERN NA GALING SA SETUP AY HINDI BINUBURA.
+
+     Nililinis nito ang kahon kapag ang napiling Play ay hindi kayang hawakan
+     ang kasalukuyang pattern. Tama iyon kapag ang tao mismo ang pumili ng
+     bagong Play — pero hindi kapag ang Play ay hulang inilagay ng cascade at
+     ang pattern ay galing sa Confluence na sinagutan niya.
+
+     Doon nawawala ang confluence: naitatakda ang pattern mula sa setup,
+     hinuhulaan ng cascade ang Play, at ang hula ang bumubura ng pinagmumulan.
+     Kung ang pattern ay ang MISMONG nasa naka-link na setup, idinaragdag ito
+     sa listahan sa halip na itapon. */
+  const linked = drawerJournalSetupId
+    ? (SAVED_SETUPS || []).find(s => s.id === drawerJournalSetupId) : null;
+  if(current && linked && linked.pattern_type === current && !allowed.includes(current)){
+    allowed = allowed.concat(current);
+  }
+
   const opts = allowed.map(o => `<option value="${o}" ${current===o?'selected':''}>${o}</option>`).join('');
   sel.innerHTML = `<option value="">—</option>${opts}`;
   if(current && !allowed.includes(current)) sel.value = '';
@@ -20393,6 +20411,13 @@ function _setDrawerField(key, value){
   if(!value) return;
   const sel = document.querySelector(`#drawerBody [data-field="${key}"]`);
   if(!sel) return;
+  /* Kung ganoon na ang halaga, walang binabago — at ang pagpapadala pa rin ng
+     "change" ay hindi walang kabuluhan kundi mapanganib: ang Pattern Type at
+     ang Trade Setup ay parehong nakikinig sa isa't isa, kaya ang isang
+     walang-kabuluhang event ay nagiging walang katapusang pabalik-balik.
+     Naabot nito ang "Maximum call stack size exceeded" nang simulan ng
+     Creation Play na itakda ang sariling Play mula sa pattern. */
+  if(sel.value === value) return;
   sel.value = value;
   sel.dispatchEvent(new Event('change', { bubbles: true }));
 }
@@ -20410,10 +20435,28 @@ function syncExecutionFromPattern(patternValue){
 // is why the sync below only ever fills a blank.
 const TRADE_TYPE_SETUP_MAP = { 'Long':'Bounce Play', 'Short':'Rejection Play' };
 
+/* ANG PATTERN ANG MAS TIYAK NA PAHAYAG KAYSA SA DIREKSYON.
+
+   Ito ang tanikalang bumubura ng Pattern Type na kinuha sa setup:
+
+     prefill: trade_type=Short, pattern_type='4H LH Creation'
+       -> syncTradeSetupFromType('Short') -> trade_setup='Rejection Play'
+          -> syncPatternTypeFromSetup('Rejection Play')
+             -> ang pinapayagan ay ang limang lumang LH lamang
+             -> '4H LH Creation' ay wala doon, kaya nililinis ang kahon
+
+   Ang natitirang bakas ay ang AOF Phase na "Creation" — naitakda iyon ng
+   pattern bago ito mabura, kaya ang drawer ay nagsasabing Creation ang phase
+   ng isang trade na walang pattern.
+
+   Ang "Short" ay hindi nangangahulugang Rejection Play kapag ang pattern ay
+   isang Creation. Ang pattern ang tinitingnan muna ngayon; ang direksyon ang
+   panghuling hulaan. */
 function syncTradeSetupFromType(tradeTypeValue){
   const sel = document.querySelector('#drawerBody [data-field="trade_setup"]');
   if(!sel || sel.value) return;   // never overwrite a pick — Invalidation Play especially
-  const mapped = TRADE_TYPE_SETUP_MAP[tradeTypeValue];
+  const pat = document.querySelector('#drawerBody [data-field="pattern_type"]')?.value;
+  const mapped = (pat && PATTERN_FIXED_SETUP[pat]) || TRADE_TYPE_SETUP_MAP[tradeTypeValue];
   if(!mapped) return;
   sel.value = mapped;
   sel.dispatchEvent(new Event('change', { bubbles: true }));  // cascades into Pattern Type
