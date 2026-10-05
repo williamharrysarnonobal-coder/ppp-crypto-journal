@@ -15313,9 +15313,14 @@ function switchEasyAddBroker(){
     form.style.display = 'none';
     input.style.display = '';
     input.value = '';
-    input.placeholder = 'Paste the full position card from Upscale here…';
+    const the5 = broker === 'the5ers';
+    input.placeholder = the5
+      ? 'Paste one trade row from The5ers here — headers are optional…\n\nBuy\n02.10.26 12:02\n02.10.26 16:31\n$86,168.56\n$87,132.93\n0.66\n-$34.31\n$0\n+$602.17'
+      : 'Paste the full position card from Upscale here…';
     if(hint) hint.style.display = 'none';
-    if(sub) sub.textContent = 'Copy the position card from your exchange (select the text and copy) and paste it below.';
+    if(sub) sub.textContent = the5
+      ? 'Copy one row from your The5ers trade history and paste it below. Their P&L already has the fee taken off; the journal keeps the two apart.'
+      : 'Copy the position card from your exchange (select the text and copy) and paste it below.';
     input.focus();
   }
 }
@@ -15443,6 +15448,65 @@ function parseUpscaleEasyAddText(raw){
   return parsed;
 }
 
+/* THE5ERS — isang hilera ng kanilang trade history.
+
+   Side · Open Date · Close Date · Entry · Exit · Qty · Fee · Swap Fees · P&L ·
+   Status. Kadalasan WALANG header ang nakokopya, kaya binabasa ito ayon sa
+   pagkakasunod, hindi sa label: ang Side, tapos ang dalawang petsa, tapos ang
+   anim na numero sa ayos na iyon. Kung may header man, nilalaktawan lang.
+   Ang "Status" (↑ Win) ay hindi binabasa — ang tanda ng P&L ang nagpapasya.
+
+   Ang P&L nila ay NET na ng fee: (87,132.93 − 86,168.56) × 0.66 = 636.48,
+   bawas ang 34.31 = 602.17. Ang journal ay nag-iimbak ng gross at hiwalay na
+   fee (netPnl = profit_loss − fee), kaya ibinabalik ang fee sa profit_loss —
+   kung hindi, dalawang beses itong mababawas. */
+function parseThe5ersEasyAddText(raw){
+  const parsed = {};
+  const HEADERS = /^(side|open date|close date|entry|exit|qty|fee|swap fees?|p&[li]|status)$/i;
+  // Bawat linya, at bawat cell kung tab ang naghihiwalay (kopya ng isang hilera).
+  const cells = raw.split(/\r?\n|\t/).map(c => c.trim()).filter(c => c && !HEADERS.test(c));
+
+  const sideIdx = cells.findIndex(c => /^(buy|sell|long|short)$/i.test(c));
+  if(sideIdx !== -1) parsed.trade_type = /^(buy|long)$/i.test(cells[sideIdx]) ? 'Long' : 'Short';
+
+  const DT = /^(\d{1,2}\.\d{1,2}\.\d{2,4})\s+(\d{1,2}:\d{2}(?::\d{2})?)$/;
+  const dateIdx = [];
+  cells.forEach((c, i) => { if(DT.test(c)) dateIdx.push(i); });
+  const toIso = c => { const m = c.match(DT); return _parseExchangeDateTime(m[1], m[2]); };
+  if(dateIdx[0] != null) parsed.open_date = toIso(cells[dateIdx[0]]);
+  if(dateIdx[1] != null) parsed.close_date = toIso(cells[dateIdx[1]]);
+
+  // Ang anim na numero pagkatapos ng huling petsa: Entry, Exit, Qty, Fee, Swap, P&L.
+  const num = c => {
+    const m = String(c).replace(/[,\s]/g, '').match(/^([+-]?)\$?([+-]?)(\d+(?:\.\d+)?)$/);
+    if(!m) return null;
+    const neg = m[1] === '-' || m[2] === '-';
+    return (neg ? -1 : 1) * parseFloat(m[3]);
+  };
+  const start = dateIdx.length ? dateIdx[dateIdx.length - 1] + 1 : (sideIdx + 1);
+  const nums = cells.slice(start).map(num).filter(v => v !== null).slice(0, 6);
+  const [entry, exit, qty, fee, swap, pnl] = nums;
+  if(entry != null) parsed.entry_price = entry;
+  if(exit != null) parsed.close_price = exit;
+  if(qty != null) parsed.position_size = Math.abs(qty);
+
+  // Ang fee at swap ay may tanda: negatibo = gastos. Ang journal ay positibong gastos.
+  if(fee != null || swap != null){
+    const cost = -((fee || 0) + (swap || 0));
+    parsed.fee = Math.round(cost * 100) / 100;
+  }
+  if(pnl != null){
+    parsed.profit_loss = Math.round((pnl + (parsed.fee || 0)) * 100) / 100;
+    parsed.win_loss = pnl > 0 ? 'Win' : (pnl < 0 ? 'Loss' : 'Breakeven');
+  }
+
+  if(parsed.entry_price && parsed.close_price){
+    const rawPct = (parsed.close_price - parsed.entry_price) / parsed.entry_price * 100;
+    parsed.pnl_percent = parsed.trade_type === 'Short' ? -rawPct : rawPct;
+  }
+  return parsed;
+}
+
 function parseEasyAddText(){
   const raw = document.getElementById('easyAddInput').value;
   const errEl = document.getElementById('easyAddError');
@@ -15452,6 +15516,8 @@ function parseEasyAddText(){
   let parsed;
   if(broker === 'upscale'){
     parsed = parseUpscaleEasyAddText(raw);
+  }else if(broker === 'the5ers'){
+    parsed = parseThe5ersEasyAddText(raw);
   }else{
     // Ang Manual ay isang form na ngayon, hindi teksto — walang pagbabasa ng
     // label at walang hugis na masisira.
@@ -15468,7 +15534,9 @@ function parseEasyAddText(){
   if(!Object.keys(parsed).length){
     // Magkaibang problema, magkaibang sasabihin: sa Manual ay walang teksto na
     // "hindi nakilala" — blangko lang ang bawat kahon.
-    errEl.textContent = broker === 'upscale'
+    errEl.textContent = broker === 'the5ers'
+      ? "Couldn't recognize that row. Copy one trade row from The5ers — Buy/Sell, the two dates, then the numbers."
+      : broker === 'upscale'
       ? "Couldn't recognize any fields in that text. Make sure you copied the full position card."
       : "Nothing filled in yet. Enter at least one value — Symbol and Realized P&L are the two worth starting with.";
     return;
