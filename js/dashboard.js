@@ -1597,6 +1597,7 @@ function normalizeTrade(r){
     // ask for it rather than answer it for you.
     post_be_result: r.post_be_result || "",
     post_cutloss_result: r.post_cutloss_result || "",
+    post_stop_profit_result: r.post_stop_profit_result || "",
     chart_pattern: r.chart_pattern || "",
     confluence_answers: (r.confluence_answers && typeof r.confluence_answers === 'object') ? r.confluence_answers : null,
     session: r.session || computeSession(r) || "Unspecified",
@@ -6582,6 +6583,10 @@ const FIELD_OPTIONS = {
   // Cutloss" means the cut saved you the rest of the loss; "TP After Cutloss"
   // means the trade would have won and the cut is what lost it.
   post_cutloss_result: ['TP After Cutloss','SL After Cutloss','N/A'],
+  /* Ang ikatlo sa pamilya: ang stop na inilipat mo sa tubo ang nagsara sa iyo.
+     "TP After Stop Profit" — tumuloy pa pala sa TP, masyadong maaga ang stop.
+     "SL After Stop Profit" — bumalik sa SL, iniligtas ng stop ang tubo. */
+  post_stop_profit_result: ['TP After Stop Profit','SL After Stop Profit','N/A'],
   account: ['10k','25k','50k','100k','200k','Demo'],
   session: ['Asia','London','London + NY Overlap','New York','Low Liquidity'],
   day_of_week: ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday']
@@ -7658,6 +7663,7 @@ const OPTIONS_FIELD_META = [
   {key:'exit_type', label:'Exit Type'},
   {key:'post_be_result', label:'Post-BE Result'},
   {key:'post_cutloss_result', label:'Post-Cutloss Result'},
+  {key:'post_stop_profit_result', label:'Post-Stop Profit'},
   {key:'session', label:'Session'},
   {key:'day_of_week', label:'Day of Week'},
   {key:'unfollowed_rules', label:'Trade Tags (checklist)'}
@@ -7824,6 +7830,7 @@ const ALL_DRAWER_FIELDS = [
   {key:'exit_type', label:'Exit Type', widget:'select', editable:true, options:FIELD_OPTIONS.exit_type, realOnly:true},
   {key:'post_be_result', label:'Post-BE Result', widget:'select', editable:true, options:FIELD_OPTIONS.post_be_result, realOnly:true},
   {key:'post_cutloss_result', label:'Post-Cutloss Result', widget:'select', editable:true, options:FIELD_OPTIONS.post_cutloss_result, realOnly:true},
+  {key:'post_stop_profit_result', label:'Post-Stop Profit', widget:'select', editable:true, options:FIELD_OPTIONS.post_stop_profit_result, realOnly:true},
   {key:'account', label:'Account', widget:'select', editable:true, options:FIELD_OPTIONS.account, realOnly:true},
   {key:'account_type', label:'Account Type', widget:'select', editable:true, options:FIELD_OPTIONS.account_type, realOnly:true},
   {key:'session', label:'Session', widget:'select', editable:true, options:FIELD_OPTIONS.session},
@@ -7950,6 +7957,7 @@ const ALL_JOURNAL_COLUMNS = [
   {key:'exit_type', label:'Exit Type'},
   {key:'post_be_result', label:'Post-BE Result'},
   {key:'post_cutloss_result', label:'Post-Cutloss Result'},
+  {key:'post_stop_profit_result', label:'Post-Stop Profit'},
   {key:'confluence_score', label:'Confluence Score'},
   {key:'account', label:'Account'},
   {key:'account_type', label:'Account Type'},
@@ -7967,7 +7975,7 @@ const ALL_JOURNAL_COLUMNS = [
 ];
 
 const DEFAULT_JOURNAL_COLUMN_ORDER = [
-  'rules_followed','symbol','win_loss','profit_loss','exit_type','objective',
+  'rules_followed','symbol','win_loss','profit_loss','exit_type','post_stop_profit_result','objective',
   'trade_type','pattern_type','aof_phase','execution_tf','account','account_type',
   'session','day_of_week','duration','unfollowed_rules',
   'entry_price','close_price','position_size'
@@ -7984,6 +7992,18 @@ function loadColumnConfig(){
     const savedKeys = new Set(saved.map(c => c.key));
     const extra = ALL_JOURNAL_COLUMNS.filter(c => !savedKeys.has(c.key)).map(c => ({key:c.key, visible:false}));
     COLUMN_CONFIG = [...saved.filter(c => ALL_JOURNAL_COLUMNS.some(m => m.key === c.key)), ...extra];
+    /* Hiniling niya mismo ang Post-Stop Profit na column, kaya hindi ito
+       nakatagong idinadagdag sa dulo gaya ng ibang bago — lumalabas ito sa
+       tabi ng Exit Type nang isang beses. Kapag itinago niya ito pagkatapos,
+       nasa saved config na ang key at hindi na ito dadaan dito. */
+    if(!savedKeys.has('post_stop_profit_result')){
+      const i = COLUMN_CONFIG.findIndex(c => c.key === 'post_stop_profit_result');
+      const [col] = COLUMN_CONFIG.splice(i, 1);
+      col.visible = true;
+      const anchor = ['post_cutloss_result','post_be_result','exit_type']
+        .map(k => COLUMN_CONFIG.findIndex(c => c.key === k && c.visible)).find(x => x !== -1);
+      COLUMN_CONFIG.splice(anchor != null ? anchor + 1 : COLUMN_CONFIG.length, 0, col);
+    }
   }else{
     COLUMN_CONFIG = ALL_JOURNAL_COLUMNS
       .map(c => ({key:c.key, visible: DEFAULT_JOURNAL_COLUMN_ORDER.includes(c.key)}))
@@ -13936,10 +13956,46 @@ function warnIconSVG(){
 //                against it would flag every trade in the journal.
 //   `session`, `day_of_week` — always derived by computeSession/computeDayOfWeek
 //                on read, so they cannot hold anything else.
+/* MGA COLUMN NA BAKA WALA PA SA DATABASE.
+
+   Ang bagong column ay nangangailangan ng SQL na siya ang magpapatakbo sa
+   Supabase. Hanggang doon, ang bawat save na may dalang field na iyon ay
+   tatanggihan ng buo — at dahil laging nilalagyan ng N/A ang field, ibig
+   sabihin nito ay WALANG trade na mase-save. Kaya: kapag tinanggihan dahil sa
+   isa sa mga ito, alisin ito at subukan ulit, at huwag na itong ipadala sa
+   natitirang session. Ang tanging nawawala ay ang sagot sa bagong field. */
+const _OPTIONAL_JOURNAL_COLS = ['post_stop_profit_result'];
+const _missingJournalCols = new Set();
+async function _journalSend(url, method, body){
+  const strip = b => {
+    const one = o => { const c = { ...o }; _missingJournalCols.forEach(k => delete c[k]); return c; };
+    return Array.isArray(b) ? b.map(one) : one(b);
+  };
+  const send = b => fetch(url, {
+    method,
+    headers: {
+      'apikey': SUPABASE_KEY,
+      'Authorization': `Bearer ${USER_ACCESS_TOKEN}`,
+      'Content-Type': 'application/json',
+      'Prefer': 'return=representation'
+    },
+    body: JSON.stringify(strip(b))
+  });
+  const res = await send(body);
+  if(res.ok) return res;
+  const text = await res.clone().text();
+  const hit = _OPTIONAL_JOURNAL_COLS.filter(k => !_missingJournalCols.has(k) && text.includes(k));
+  if(!hit.length) return res;
+  hit.forEach(k => _missingJournalCols.add(k));
+  console.warn('Column(s) not in the database yet, saved without them:', hit.join(', '),
+    '— run supabase_trading_journal_add_post_stop_profit.sql');
+  return send(body);
+}
+
 const JOURNAL_VALIDATED_KEYS = [
   'win_loss','trade_type','trade_setup','pattern_type','execution_tf',
   'aof_phase','rules_followed','account_type','exit_type','post_be_result',
-  'post_cutloss_result'
+  'post_cutloss_result','post_stop_profit_result'
 ];
 
 // Values that mean "blank", not "wrong". normalizeTrade fills several columns
@@ -14023,6 +14079,13 @@ function _journalInvalidFields(r){
      String(r.exit_type || '').trim().toLowerCase() !== 'cut loss'){
     bad.push({ key:'post_cutloss_result', label:'Post-Cutloss Result',
                value:`${r.post_cutloss_result}, but Exit Type is ${r.exit_type || 'blank'}` });
+  }
+  // Ganoon din sa Stop Profit: ang sagot ay tungkol sa stop na nasa tubo, kaya
+  // wala itong lugar sa trade na hindi isinara ng stop na iyon.
+  if(!_isBlankish(r.post_stop_profit_result) && r.post_stop_profit_result !== 'N/A' &&
+     String(r.exit_type || '').trim().toLowerCase() !== 'stop profit'){
+    bad.push({ key:'post_stop_profit_result', label:'Post-Stop Profit',
+               value:`${r.post_stop_profit_result}, but Exit Type is ${r.exit_type || 'blank'}` });
   }
 
   // Chart Pattern is scoped to the setup that was traded, so what counts as
@@ -14165,6 +14228,10 @@ function _journalMissingFields(r){
   if(String(r.exit_type || '').trim().toLowerCase() === 'cut loss' &&
      visible.has('post_cutloss_result') && isBlank('post_cutloss_result')){
     missing.push(labelOf('post_cutloss_result'));
+  }
+  if(String(r.exit_type || '').trim().toLowerCase() === 'stop profit' &&
+     visible.has('post_stop_profit_result') && isBlank('post_stop_profit_result')){
+    missing.push(labelOf('post_stop_profit_result'));
   }
   return missing;
 }
@@ -15474,7 +15541,7 @@ const JOURNAL_FIELD_GROUPS = [
   { title: 'Result', keys: ['win_loss','profit_loss','pnl_percent','rr','fee','entry_price','close_price','tp_price','sl_price','position_size','leverage','risk_amount'] },
   { title: 'Account', keys: ['account','account_type','session','day_of_week'] },
   { title: 'Setup & Strategy', keys: ['trade_type','trade_setup','pattern_type','execution_tf','aof_phase'] },
-  { title: 'Discipline', keys: ['rules_followed','unfollowed_rules','exit_type','post_be_result','post_cutloss_result'] },
+  { title: 'Discipline', keys: ['rules_followed','unfollowed_rules','exit_type','post_be_result','post_cutloss_result','post_stop_profit_result'] },
 ];
 const JOURNAL_FIELD_GROUPS_PRE_CONFLUENCE_COUNT = 4; // Overview, Result, Account, Setup & Strategy
 const NOTES_LINKS_GROUP = { title: 'Notes & Links', keys: ['notes','link','trade_summary'] };
@@ -15842,7 +15909,7 @@ function _renderDrawerFieldRow(f, mode, row){
       : f.key === 'trade_type' ? ` onchange="syncTradeSetupFromType(this.value)"`
       : f.key === 'trade_setup' ? ` onchange="syncPatternTypeFromSetup(this.value)"`
       : f.key === 'pattern_type' ? ` onchange="syncExecutionFromPattern(this.value)"`
-      : f.key === 'exit_type' ? ` onchange="syncPostBEFromExitType(this.value); syncPostCutlossFromExitType(this.value);"`
+      : f.key === 'exit_type' ? ` onchange="syncPostBEFromExitType(this.value); syncPostCutlossFromExitType(this.value); syncPostStopProfitFromExitType(this.value);"`
       : f.key === 'win_loss' ? ` onchange="syncPostBEFromWinLoss(this.value); syncExitTypeFromWinLoss(this.value);"`
       : '';
     return `<div class="${rowCls}"><label>${f.label}</label><select data-field="${f.key}"${onchange}><option value="">—</option>${opts}</select></div>`;
@@ -16067,6 +16134,7 @@ function renderDrawerFields(){
     // halves off the form itself, so it needs no argument.
     syncPostBEFromWinLoss();
     syncPostCutlossFromExitType(row.exit_type);
+    syncPostStopProfitFromExitType(row.exit_type);
   }
 }
 
@@ -16157,6 +16225,10 @@ function _collectDrawerPatch(){
   if(!patch.post_cutloss_result && patch.exit_type &&
      String(patch.exit_type).trim().toLowerCase() !== 'cut loss'){
     patch.post_cutloss_result = 'N/A';
+  }
+  if(!patch.post_stop_profit_result && patch.exit_type &&
+     String(patch.exit_type).trim().toLowerCase() !== 'stop profit'){
+    patch.post_stop_profit_result = 'N/A';
   }
 
   // Create only. This flag exists to catch a moved stop the trader didn't
@@ -16290,16 +16362,7 @@ async function saveDrawer(){
         }
       }
 
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/${TABLE_NAME}`, {
-        method: 'POST',
-        headers: {
-          'apikey': SUPABASE_KEY,
-          'Authorization': `Bearer ${USER_ACCESS_TOKEN}`,
-          'Content-Type': 'application/json',
-          'Prefer': 'return=representation'
-        },
-        body: JSON.stringify(patch)
-      });
+      const res = await _journalSend(`${SUPABASE_URL}/rest/v1/${TABLE_NAME}`, 'POST', patch);
       if(!res.ok) throw new Error(await res.text());
       const inserted = await res.json();
       RAW_TRADES.push(inserted[0] || patch);
@@ -16312,16 +16375,7 @@ async function saveDrawer(){
       }
 
     }else{
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/${TABLE_NAME}?position_id=eq.${encodeURIComponent(drawerPositionId)}`, {
-        method: 'PATCH',
-        headers: {
-          'apikey': SUPABASE_KEY,
-          'Authorization': `Bearer ${USER_ACCESS_TOKEN}`,
-          'Content-Type': 'application/json',
-          'Prefer': 'return=representation'
-        },
-        body: JSON.stringify(patch)
-      });
+      const res = await _journalSend(`${SUPABASE_URL}/rest/v1/${TABLE_NAME}?position_id=eq.${encodeURIComponent(drawerPositionId)}`, 'PATCH', patch);
       if(!res.ok) throw new Error(await res.text());
       const updated = await res.json();
       const idx = RAW_TRADES.findIndex(r => r.position_id === drawerPositionId);
@@ -20799,6 +20853,7 @@ function syncExitTypeFromWinLoss(winLossValue){
   // cut-loss field has to be told too — otherwise a trade corrected to
   // Breakeven keeps whatever cut-loss answer was sitting there.
   syncPostCutlossFromExitType('BE Hit');
+  syncPostStopProfitFromExitType('BE Hit');
 }
 
 // Exit Type "BE Hit" makes Post-BE Result apply just as surely as Win/Loss
@@ -20813,9 +20868,16 @@ function syncPostBEFromExitType(){ _syncPostBE(); }
 // actually answered, which is the whole point: an unanswered cut is a cut
 // whose worth was never checked.
 function syncPostCutlossFromExitType(exitTypeValue){
-  const sel = document.querySelector('#drawerBody [data-field="post_cutloss_result"]');
+  _syncPostExitField('post_cutloss_result', 'cut loss', exitTypeValue);
+}
+// Parehong hugis, para sa Exit Type na "Stop Profit".
+function syncPostStopProfitFromExitType(exitTypeValue){
+  _syncPostExitField('post_stop_profit_result', 'stop profit', exitTypeValue);
+}
+function _syncPostExitField(field, exitMatch, exitTypeValue){
+  const sel = document.querySelector(`#drawerBody [data-field="${field}"]`);
   if(!sel) return;
-  if(String(exitTypeValue || '').trim().toLowerCase() !== 'cut loss'){
+  if(String(exitTypeValue || '').trim().toLowerCase() !== exitMatch){
     sel.value = 'N/A';
     sel.dispatchEvent(new Event('change', { bubbles: true }));
     const row = sel.closest('.field-row');
@@ -22029,7 +22091,11 @@ const CONFLUENCE_SETUPS = {
     // Unfollowed Rules stay entirely manual for this pattern.
     noAutoRules: true,
     items: [
-      {tag:'MACD · 1H', text:'1H MACD in Bull Territory (Green Histogram)?'},
+      /* Bear Territory, hindi Bull: ang Invalidation ay sumasalungat sa 1H —
+         nasa ilalim pa ng zero ang MACD pero berde na ang histogram. Salamin
+         ito ng Short ("Bull Territory (Red Histogram)"). Bull ang nakasulat
+         dati, kopya ng 15 mins HL. */
+      {tag:'MACD · 1H', text:'1H MACD in Bear Territory (Green Histogram)?'},
       // Plain yes/no, NOT inverted — unlike the 1 hour setups, where breaking
       // the zero line counts against you. Here the break is the signal.
       {tag:'MACD · 30M', text:'30M MACD Break Zero Line?'},
@@ -22907,16 +22973,7 @@ async function _saveBulkJournal(shared){
         `Journal without confluence`))) return;
   }
 
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/${TABLE_NAME}`, {
-    method: 'POST',
-    headers: {
-      'apikey': SUPABASE_KEY,
-      'Authorization': `Bearer ${USER_ACCESS_TOKEN}`,
-      'Content-Type': 'application/json',
-      'Prefer': 'return=representation'
-    },
-    body: JSON.stringify(rows)
-  });
+  const res = await _journalSend(`${SUPABASE_URL}/rest/v1/${TABLE_NAME}`, 'POST', rows);
   if(!res.ok) throw new Error(await res.text());
   const inserted = await res.json();
   (inserted.length ? inserted : rows).forEach(r => RAW_TRADES.push(r));
@@ -23218,6 +23275,10 @@ function _bulkJournalRows(shared){
     if(!patch.post_cutloss_result && patch.exit_type &&
        String(patch.exit_type).trim().toLowerCase() !== 'cut loss'){
       patch.post_cutloss_result = 'N/A';
+    }
+    if(!patch.post_stop_profit_result && patch.exit_type &&
+       String(patch.exit_type).trim().toLowerCase() !== 'stop profit'){
+      patch.post_stop_profit_result = 'N/A';
     }
     JOURNAL_COMPUTED_KEYS.forEach(k => delete patch[k]);
     return patch;
