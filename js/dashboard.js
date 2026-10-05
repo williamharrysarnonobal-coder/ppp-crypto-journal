@@ -8113,25 +8113,19 @@ function switchConfigTab(tab){
   document.querySelectorAll('#view-config .subnav-panel').forEach(el => el.classList.toggle('active', el.id === 'configPanel-' + tab));
 }
 
-// Risk Amount is deliberately MANUAL per account (not derived from account
-// size x risk %) — kept per device so it survives a refresh. Keyed by
-// account id, seeded once from the account's own size the first time an
-// account is seen, then never overwritten again.
-function _psRiskAmounts(){
-  try{
-    const raw = localStorage.getItem('possize-risk-amounts');
-    return raw ? JSON.parse(raw) : {};
-  }catch(e){ return {}; }
-}
-function _psSetRiskAmount(accountId, value){
-  const all = _psRiskAmounts();
-  all[accountId] = value;
-  try{
-    localStorage.setItem('possize-risk-amounts', JSON.stringify(all));
-    // Risk per account follows the account, not the browser.
-    syncUIPrefsToProfile();
-  }catch(e){}
-}
+/* ANG RISK AMOUNT AY GALING SA MY ACCOUNTS.
+
+   Manwal ito dati at naaalala kada account — kaya dalawang lugar ang
+   nagsasabi ng risk mo: ang Risk Per Trade % sa My Accounts, at ang kahon
+   dito, at maaaring magkaiba sila nang hindi mo napapansin. Ngayon ay iisa:
+   Account Size × Risk Per Trade %. Para baguhin nang tuluyan, sa My Accounts.
+
+   Ang pag-type dito ay pansamantalang palit lang para sa trade na ito — nasa
+   memorya, hindi sine-save, at bumabalik sa My Accounts pagka-reload o pagka-
+   save ng account. Ang lumang naka-save na halaga ay hindi na binabasa. */
+let PS_RISK_OVERRIDES = {};
+function _psRiskAmounts(){ return PS_RISK_OVERRIDES; }
+function _psSetRiskAmount(accountId, value){ PS_RISK_OVERRIDES[accountId] = value; }
 // Updates only the row being typed in — re-rendering the whole tbody on
 // every keystroke would destroy and recreate the very input holding focus,
 // dropping the caret mid-number.
@@ -8264,6 +8258,11 @@ const PS_SEED_RISK_BY_SIZE = { 50000: 230, 10000: 40, 5000: 20 };
 
 function _psSeedRisk(acc){
   const size = Number(acc.account_size ?? acc.current_balance ?? 0);
+  // My Accounts → Risk Per Trade %, tapos ang nasa Profile, tapos ang luma.
+  const pct = acc.risk_per_trade_pct != null && acc.risk_per_trade_pct !== ''
+    ? Number(acc.risk_per_trade_pct)
+    : (PROFILE_DATA?.risk_per_trade != null ? Number(PROFILE_DATA.risk_per_trade) : null);
+  if(size > 0 && pct > 0) return Math.round(size * pct) / 100;
   if(PS_SEED_RISK_BY_SIZE[size] != null) return PS_SEED_RISK_BY_SIZE[size];
   return size > 0 ? Math.round(size * 0.004) : '';
 }
@@ -20024,6 +20023,8 @@ async function loadAccounts(){
     // Naka-encrypt ito at walang silbi rito kung wala ang susi ng Worker —
     // pero walang dahilan para manatili ito sa browser, kaya itinatapon agad.
     TRADING_ACCOUNTS.forEach(a => { delete a.upscale_api_key_enc; });
+    // Bagong Risk Per Trade % → ang calculator ay sumusunod agad.
+    PS_RISK_OVERRIDES = {};
   }catch(e){
     console.error("Couldn't load trading accounts:", e);
     TRADING_ACCOUNTS = [];
