@@ -1786,7 +1786,7 @@ function _paperTradeSummary(row, val){
        binibigyan ng HILAW na hilera, na hindi pa dumadaan sa normalizeTrade —
        kaya kung hindi ito babagsak sa compute, "—" ang lalabas sa isang setup na
        may petsa naman. */
-    `<b>Session:</b> ${val(row.session || computeSession(row))}`,
+    `<b>Session:</b> ${val(computeSession(row) || row.session)}`,
     `<b>Day of Week:</b> ${val(row.day_of_week || computeDayOfWeek(row))}`,
     `<b>Confluence Score:</b> ${conf ? conf.pct + '%' : '—'}`,
     ``,
@@ -3874,7 +3874,7 @@ function renderSessionFrequencyChart(){
 
   const counts = {};
   FILTERED.forEach(t => {
-    const key = t.session || computeSession(t) || 'Unspecified';
+    const key = computeSession(t) || t.session || 'Unspecified';
     counts[key] = (counts[key] || 0) + 1;
   });
 
@@ -13244,7 +13244,13 @@ let PAPER_ACTIVE_FILTERS = [];
 let _openPaperChipMenu = null;
 
 function _paperRawTrades(){
-  return (RAW_TRADES || []).filter(r => r.is_paper === true || r.is_paper === 'true');
+  // Session at Day of Week ay kinukuwenta mula sa open date, gaya ng sa tunay
+  // na journal — kung hindi, ang filter dito ay nagbabasa ng lumang naka-save
+  // na session na hindi alam ang daylight saving.
+  return (RAW_TRADES || []).filter(r => r.is_paper === true || r.is_paper === 'true')
+    .map(r => ({ ...r,
+      session: computeSession(r) || r.session,
+      day_of_week: computeDayOfWeek(r) || r.day_of_week }));
 }
 
 function _paperFilterValues(key){
@@ -13616,8 +13622,8 @@ function _journalCellValue(row, key){
     const all = _allNotesText(row).replace(/<br>/g, ' ').replace(/\s+/g, ' ').trim();
     return all === '—' ? '—' : (all.length > 120 ? all.slice(0, 120) + '…' : all);
   }
-  if(key === 'session') return row.session || computeSession(row) || '—';
-  if(key === 'day_of_week') return row.day_of_week || computeDayOfWeek(row) || '—';
+  if(key === 'session') return computeSession(row) || row.session || '—';
+  if(key === 'day_of_week') return computeDayOfWeek(row) || row.day_of_week || '—';
 
   let v = row[key];
   if(v === null || v === undefined || v === '') return '—';
@@ -15914,8 +15920,10 @@ function _renderDrawerFieldRow(f, mode, row){
 
   const showWidget = mode === 'create' || f.editable || drawerEditing;
   let raw = row[f.key];
-  if(!raw && f.key === 'session') raw = computeSession(row) || '';
-  if(!raw && f.key === 'day_of_week') raw = computeDayOfWeek(row) || '';
+  // Kinukuwenta muna, gaya ng normalizeTrade — ang naka-save ay isinulat ng
+  // lumang pagkuwenta na hindi alam ang daylight saving.
+  if(f.key === 'session') raw = computeSession(row) || raw || '';
+  if(f.key === 'day_of_week') raw = computeDayOfWeek(row) || raw || '';
 
   if(!showWidget){
     const display = (raw === null || raw === undefined || raw === '') ? '—' : String(raw);
