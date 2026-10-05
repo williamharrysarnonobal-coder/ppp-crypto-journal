@@ -20930,12 +20930,27 @@ function computeAccountStats(acc){
     .filter(t => !phaseStartRaw || t.close_date >= phaseStartRaw)
     .reduce((s, t) => s + netPnl(t), 0);
 
-  const currentBalance = phaseBaseline + journalPL;
-  // Ang manwal na numero, itinatabi para sa paghahambing — hindi na para sa
-  // pagkuwenta. Null kapag hindi pa naitatakda o kapag tugma naman.
-  const manualBalance = acc.current_balance != null ? Number(acc.current_balance) : null;
-  const balanceGap = (manualBalance != null && Math.abs(manualBalance - currentBalance) >= 0.01)
-    ? manualBalance - currentBalance : null;
+  /* ANG ITINYPE MO ANG MASUSUNOD, KUNG MAYROON.
+
+     Binaligtad ko ito noon dahil sa 5K na account — pero ang sumira roon ay
+     ang auto-advance at auto-fail na nagsusulat sa balanse nang hindi mo
+     alam, at wala na ang dalawang iyon. Ang manwal na numero mismo ay hindi
+     ang problema: ito ang nakikita mo sa dashboard ng prop firm, at
+     sinasabayan pa ito ng adjustAccountBalance tuwing may trade.
+
+     Ang nangyari dahil sa pagbaligtad: nilagay mo ang 98,015 at $98,822.41 ang
+     lumabas — ang journal, na nag-iiba sa prop firm sa bawat fee o trade na
+     hindi naitala. Kaya ngayon: ang itinype mo ang headline at ang batayan ng
+     bawat bilang sa card; ang journal ang nasa tala sa ilalim kapag hindi
+     tugma; at ang "Recalculate from journal" sa Edit ang daan kung ang journal
+     ang tama. Ang journal ay ginagamit lang kapag walang naitype. */
+  const journalBalance = phaseBaseline + journalPL;
+  const manualBalance = acc.current_balance != null && acc.current_balance !== ''
+    && Number.isFinite(Number(acc.current_balance)) ? Number(acc.current_balance) : null;
+  const currentBalance = manualBalance != null ? manualBalance : journalBalance;
+  // Positibo kapag mas mataas ang itinype kaysa sa journal.
+  const balanceGap = (manualBalance != null && Math.abs(manualBalance - journalBalance) >= 0.01)
+    ? manualBalance - journalBalance : null;
 
   /* UTC nang sadya, hindi lokal — ito ang panuntunan ng prop firm at hindi
      ang kalendaryo mo. Ang natitira sa app ay lokal (Calendar, Day of Week,
@@ -21004,7 +21019,9 @@ function computeAccountStats(acc){
   // Parehong pinagmumulan ng balanse sa itaas — ang mga trade mo. Dating
   // `currentBalance - earnBaseline`, na manwal laban sa manwal.
   const earnBaseline = phaseBaseline;
-  const totalEarn = journalPL;
+  // Mula sa parehong balanse ng headline, para ang "(+$X)" sa tabi nito ay
+  // laging tumutugma sa numerong katabi.
+  const totalEarn = currentBalance - phaseBaseline;
   const targetEarn = accountSize * (Number(acc.profit_target_pct) || 0) / 100;
 
   // Tumutugma sa hati ng araw sa itaas — UTC, gaya ng panuntunan.
@@ -21013,7 +21030,7 @@ function computeAccountStats(acc){
   const msUntilReset = nextResetUTC - nowUTC;
 
   return {
-    accountSize, currentBalance, manualBalance, balanceGap,
+    accountSize, currentBalance, manualBalance, journalBalance, balanceGap,
     todaysPL, dailyLossUsed, dailyLossLimit, dayStartBalance, dailyStopBalance,
     drawdownFloor, profitGoal, balanceRangeFraction, profitableDaysCount, profitableDaysTarget,
     dailyProfitUsed, dailyProfitTarget, msUntilReset, dayPL,
@@ -21506,12 +21523,12 @@ function accountCardHTML(a){
        account sa isang ReferenceError. Nakita ito ng browser probe at hindi ng
        mga sim: walang sim na nagpapatakbo ng renderAccountsList. */
     const gapHTML = (cardStats && cardStats.balanceGap != null)
-      ? `<div class="acct-gap" title="The balance you typed in Edit account against what your journalled trades add up to.">
-           Your saved balance says
-           $${cardStats.manualBalance.toLocaleString(undefined,{maximumFractionDigits:2})}
+      ? `<div class="acct-gap" title="The balance shown is the one you typed in Edit account. This is what your journalled trades add up to instead.">
+           Your journal adds up to
+           $${cardStats.journalBalance.toLocaleString(undefined,{maximumFractionDigits:2})}
            — $${Math.abs(cardStats.balanceGap).toLocaleString(undefined,{maximumFractionDigits:2})}
-           ${cardStats.balanceGap > 0 ? 'more than' : 'less than'}
-           your journal. Probably a trade that never got logged.
+           ${cardStats.balanceGap > 0 ? 'less than' : 'more than'}
+           your balance. Usually fees or a trade that never got logged.
          </div>`
       : '';
 
