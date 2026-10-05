@@ -21241,6 +21241,37 @@ function renderAccountsList(){
   document.getElementById('accountsListExchange').innerHTML = cards(exchangeAccounts);
 }
 
+/* ANG LAKI NG ISANG TALO para sa "Remaining Trades".
+
+   Ang sariling mga talo ng account kung may hindi bababa sa tatlo. Kulang:
+   ang binalak na risk per trade ng account NA ITO — hindi ang average ng
+   lahat ng talo. Iyon ang dati, at ang 100K na bagong account ay humiram ng
+   ~$93 na talo ng mas maliliit na account, kaya 9,740 ang lumabas sa halip na
+   ~25. Ang lahat ng talo ay huling sandigan lang, kung walang account size. */
+function _accountLossSize(a){
+  const riskBase = a.account_size ? Number(a.account_size)
+    : (a.current_balance != null ? Number(a.current_balance) : null);
+  const riskPct = a.risk_per_trade_pct != null ? Number(a.risk_per_trade_pct)
+    : (PROFILE_DATA?.risk_per_trade != null ? Number(PROFILE_DATA.risk_per_trade) : 0.3);
+  const fmt = v => '$' + v.toLocaleString(undefined,{maximumFractionDigits:2});
+  const avg = arr => arr.length ? Math.abs(arr.reduce((s, t) => s + netPnl(t), 0) / arr.length) : 0;
+
+  const mine = ALL_TRADES.filter(t => t.account === a.account_name && _isLoss(t));
+  const mineAvg = mine.length >= 3 ? avg(mine) : 0;
+  if(mineAvg > 0) return { size: mineAvg,
+    basis: `your ${mine.length} losing trades on this account, averaging ${fmt(mineAvg)}` };
+
+  const planned = riskBase != null ? riskBase * riskPct / 100 : 0;
+  if(planned > 0) return { size: planned,
+    basis: `your planned ${riskPct}% risk (${fmt(planned)}) — this account has fewer than 3 losing trades of its own yet` };
+
+  const all = ALL_TRADES.filter(_isLoss);
+  const allAvg = avg(all);
+  if(allAvg > 0) return { size: allAvg,
+    basis: `all ${all.length} of your losing trades, averaging ${fmt(allAvg)}` };
+  return { size: 0, basis: '' };
+}
+
 function accountCardHTML(a){
     const isExchange = a.account_type === 'Exchange';
     /* Isang pagkuwenta para sa buong card. Ang malaking balanse, ang bar at
@@ -21365,19 +21396,8 @@ function accountCardHTML(a){
       const s = cardStats;
       if(!s || !(s.drawdownFloor > 0) || s.currentBalance == null) return '';
 
-      const mine = ALL_TRADES.filter(t => t.account === a.account_name && _isLoss(t));
-      const pool = mine.length >= 3 ? mine : ALL_TRADES.filter(_isLoss);
-      const avgLoss = pool.length
-        ? Math.abs(pool.reduce((sum, t) => sum + netPnl(t), 0) / pool.length) : 0;
-      const planned = riskBase != null ? riskBase * riskPct / 100 : 0;
-      const size = avgLoss > 0 ? avgLoss : planned;
+      const { size, basis } = _accountLossSize(a);
       if(!(size > 0)) return '';
-
-      const basis = avgLoss > 0
-        ? (mine.length >= 3
-            ? `your ${mine.length} losing trades on this account, averaging $${avgLoss.toLocaleString(undefined,{maximumFractionDigits:2})}`
-            : `all ${pool.length} of your losing trades, averaging $${avgLoss.toLocaleString(undefined,{maximumFractionDigits:2})} — this account has too few of its own yet`)
-        : `your planned ${riskPct}% risk, since no losing trade is recorded yet`;
 
       const room = s.currentBalance - s.drawdownFloor;
       // Nasira na: walang natitirang bilang na may kahulugan.
@@ -24072,10 +24092,33 @@ async function saveAccount(){
   // anymore — set once, on creation, then left alone. Editing an existing
   // account never touches them here; only advanceAccountPhase() does, and
   // that one waits for a button now.
+  /* ISANG SOBRANG ZERO. Nag-type siya ng 1,000,000 sa 100K na account, at
+     kinopya iyon sa phase start balance — kaya $1,000,000 ang balanse at
+     9,740 talo ang "natitira". Walang prop account na gumagalaw nang 50% mula
+     sa laki nito (bagsak na ito sa 10%), kaya ang ganoong layo ay typo. */
+  const _farFromSize = v => v != null && payload.account_size > 0
+    && (v >= payload.account_size * 1.5 || v <= payload.account_size * 0.5);
+  if(!isExchange && _farFromSize(payload.current_balance)){
+    errEl.textContent = `Current Balance $${payload.current_balance.toLocaleString()} is far from the account size of $${payload.account_size.toLocaleString()} — check for an extra or missing zero.`;
+    btn.disabled = false;
+    btn.textContent = editingAccountId ? 'Save changes' : 'Save Account';
+    return;
+  }
+
   if(!isExchange && !editingAccountId){
     payload.phase = 'Evaluation Phase 1';
     payload.phase_start_date = payload.start_date;
     payload.phase_start_balance = payload.current_balance;
+  }
+  /* Ang naunang typo ay nakabaon sa phase start balance, na walang kontrol sa
+     form. Kapag ang naka-save ay ganoon kalayo, palitan ng laki ng account. */
+  let _fixedStart = false;
+  if(!isExchange && editingAccountId){
+    const prev = (TRADING_ACCOUNTS || []).find(x => x.id === editingAccountId);
+    if(prev && _farFromSize(prev.phase_start_balance != null ? Number(prev.phase_start_balance) : null)){
+      payload.phase_start_balance = payload.account_size;
+      _fixedStart = true;
+    }
   }
 
   try{
@@ -24104,7 +24147,9 @@ async function saveAccount(){
 
     closeAccountModal();
     await loadAccounts();
-    showToast(editingAccountId ? 'Account updated' : 'Account added');
+    showToast(_fixedStart
+      ? 'Account updated — phase start balance reset to the account size'
+      : (editingAccountId ? 'Account updated' : 'Account added'));
   }catch(e){
     console.error("Couldn't save account:", e);
     let hint = '';
@@ -25640,8 +25685,9 @@ const ASK_QUESTIONS = [
         const s = computeAccountStats(a);
         const room = s.currentBalance - s.drawdownFloor;
         const toGoal = s.profitGoal - s.currentBalance;
+        const loss = _accountLossSize(a).size;
         rows.push({ name: a.account_name, room, toGoal,
-          trades: (avgLoss && avgLoss > 0) ? Math.floor(room / avgLoss) : null,
+          trades: loss > 0 ? Math.floor(room / loss) : null,
           daily: s.dailyLossLimit - s.dailyLossUsed });
       });
       rows.sort((a, b) => (a.trades ?? 1e9) - (b.trades ?? 1e9));
@@ -25649,7 +25695,7 @@ const ASK_QUESTIONS = [
 
       const lines = rows.map(r => {
         const bits = [`${r.name}: ${_askAmt(r.room)} above the floor`];
-        if(r.trades !== null) bits.push(`about ${r.trades} more losing trade${r.trades === 1 ? '' : 's'} at your average`);
+        if(r.trades !== null) bits.push(`about ${r.trades} more losing trade${r.trades === 1 ? '' : 's'} at this account's loss size`);
         if(r.toGoal > 0) bits.push(`${_askAmt(r.toGoal)} from the profit target`);
         return bits.join(' — ') + '.';
       });
