@@ -17,6 +17,7 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     if (url.pathname === '/api/transcribe') return handleTranscribe(request, env);
+    if (url.pathname === '/api/economic-events') return handleEconomicEvents(request);
     // Everything else is the site itself.
     return serveAsset(request, env);
   }
@@ -45,6 +46,74 @@ async function serveAsset(request, env) {
 
   const out = new Response(res.body, res);
   out.headers.set('Cache-Control', 'no-cache, must-revalidate');
+  return out;
+}
+
+/* ANG CALENDAR NA HINDI UMAASA SA BOT.
+
+   Ang economic_events ay pinupunan ng isang bot sa Google Apps Script tuwing
+   anim na oras. Kapag tumigil ang trigger nito — at tahimik itong tumitigil,
+   walang babala sa app — walang balita para sa buong buwan, gaya ng nangyari
+   noong Oktubre.
+
+   Kaya kinukuha rin ito ng Worker nang direkta mula sa parehong pinagkukunan.
+   Ang browser ay hindi makakakuha nito mismo: hinihingi ng TradingView ang
+   Origin header nila, na hindi maitatakda ng isang pahina. Pampublikong datos
+   ito at walang susi, kaya walang secret dito. Naka-cache nang 30 minuto para
+   hindi tamaan ang TradingView sa bawat pagbukas. Medium at High lamang, gaya
+   ng bot, para iisa ang laman ng dalawa. */
+const CALENDAR_URL = 'https://economic-calendar.tradingview.com/events';
+const CALENDAR_COUNTRIES = 'US,EU,GB,JP,CN,AU,CA,NZ,CH';
+const CALENDAR_IMPACT = { '0': 'Medium', '1': 'High' };
+
+async function handleEconomicEvents(request) {
+  if (request.method !== 'GET') return json({ error: 'GET only.' }, 405);
+
+  const cache = caches.default;
+  const now = new Date();
+  // Isang susi kada oras: sapat na sariwa, at iisa ang cache ng lahat.
+  const cacheKey = new Request(`https://cache.local/econ/${now.toISOString().slice(0, 13)}`);
+  const hit = await cache.match(cacheKey);
+  if (hit) return hit;
+
+  // Mula sa simula ng buwang ito hanggang 35 araw pasulong, para may laman ang
+  // buong kasalukuyang buwan sa calendar, hindi lang mula ngayon.
+  const from = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+  const to = new Date(now.getTime() + 35 * 86400000);
+  const upstream = `${CALENDAR_URL}?from=${encodeURIComponent(from.toISOString())}`
+    + `&to=${encodeURIComponent(to.toISOString())}&countries=${CALENDAR_COUNTRIES}`;
+
+  let data;
+  try {
+    const res = await fetch(upstream, {
+      headers: { Origin: 'https://www.tradingview.com', 'User-Agent': 'Mozilla/5.0' }
+    });
+    if (!res.ok) return json({ error: `Calendar source returned ${res.status}.` }, 502);
+    data = await res.json();
+  } catch {
+    return json({ error: 'Could not reach the calendar source.' }, 502);
+  }
+
+  const seen = new Set();
+  const events = [];
+  for (const e of (data && data.result) || []) {
+    const impact = CALENDAR_IMPACT[String(e.importance)];
+    const title = (e.title || '').trim();
+    if (!impact || !title || !e.date) continue;
+    const key = `${title}|${e.country || ''}|${e.date}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    events.push({
+      title, country: e.country || null, event_date: e.date, impact,
+      forecast: e.forecast ?? null, previous: e.previous ?? null,
+      actual: e.actual ?? null, comment: e.comment || null, comment_tl: null
+    });
+  }
+
+  const out = new Response(JSON.stringify({ events, fetched_at: now.toISOString() }), {
+    headers: { 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=1800' }
+  });
+  await cache.put(cacheKey, out.clone());
   return out;
 }
 

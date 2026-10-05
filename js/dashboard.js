@@ -18130,6 +18130,32 @@ async function loadMarketNewsWidget(){
     console.error("Couldn't load economic events:", e);
     ECON_EVENTS = [];
   }
+  /* Ang database ay pinupunan ng bot sa Apps Script; kapag tumigil iyon,
+     walang balita ang buong buwan. Kaya isinasama rin ang direktang kuha ng
+     Worker. Ang nasa database ang nananaig (may salin ito sa Tagalog); ang
+     direkta ay pumupuno lamang sa wala roon, at sa `actual` na hindi pa
+     naitatala ng bot. Kapag hindi maabot ang Worker, database lang. */
+  try{
+    const live = await fetch('/api/economic-events', { cache: 'no-store' });
+    if(live.ok){
+      const { events } = await live.json();
+      const keyOf = e => `${(e.title||'').trim()}|${e.country||''}|${new Date(e.event_date).getTime()}`;
+      const have = new Map(ECON_EVENTS.map(e => [keyOf(e), e]));
+      // Negatibong id para sa direkta: ang pag-click ay naghahanap ayon sa id,
+      // at hindi ito dapat bumangga sa id ng database.
+      let liveId = 0;
+      (events || []).forEach(e => {
+        const k = keyOf(e);
+        const db = have.get(k);
+        if(!db){ e.id = --liveId; ECON_EVENTS.push(e); have.set(k, e); }
+        else if((db.actual == null || db.actual === '') && e.actual != null) db.actual = e.actual;
+      });
+      ECON_EVENTS.sort((a, b) => new Date(a.event_date) - new Date(b.event_date));
+      lastEconSyncAt = new Date();
+    }
+  }catch(e){
+    console.warn("Live economic calendar unavailable:", e);
+  }
   renderEconSyncLabel();
   clearInterval(econSyncLabelTimer);
   econSyncLabelTimer = setInterval(renderEconSyncLabel, 30000);
