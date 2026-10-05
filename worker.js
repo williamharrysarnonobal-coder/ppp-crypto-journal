@@ -18,7 +18,7 @@ export default {
     const url = new URL(request.url);
     if (url.pathname === '/api/transcribe') return handleTranscribe(request, env);
     if (url.pathname === '/api/economic-events') return handleEconomicEvents(request);
-    const up = url.pathname.match(/^\/api\/upscale\/(check|link|unlink|quote|order)$/);
+    const up = url.pathname.match(/^\/api\/upscale\/(check|link|unlink|quote|order|cancel)$/);
     if (up) return handleUpscale(request, env, up[1]);
     // Everything else is the site itself.
     return serveAsset(request, env);
@@ -335,6 +335,21 @@ async function handleUpscale(request, env, action) {
       throw new UpscaleError(400, 'not_linked', `${row.account_name} has no Upscale API key yet.`);
     const key = await decrypt(env, row.upscale_api_key_enc);
     const upId = row.upscale_account_id;
+
+    if (action === 'cancel') {
+      const orderId = String(body.orderId || '');
+      if (!/^[0-9a-f-]{36}$/i.test(orderId)) throw new UpscaleError(400, 'bad_order', 'Which order?');
+      // Make sure the order belongs to this account before cancelling it.
+      const active = await upscale(key, 'GET', `/orders/${encodeURIComponent(upId)}/active`) || [];
+      const list = Array.isArray(active) ? active : (active.items || active.data || []);
+      if (!list.some(o => o && o.id === orderId)) {
+        throw new UpscaleError(409, 'not_active',
+          'That order is no longer waiting on Upscale — it has filled or was already cancelled. Check the terminal; if it filled, close the position there.');
+      }
+      await upscale(key, 'DELETE', `/orders/${encodeURIComponent(orderId)}`);
+      return json({ ok: true });
+    }
+
     const market = await findMarket(key, upId, body.symbol);
 
     if (action === 'quote') {

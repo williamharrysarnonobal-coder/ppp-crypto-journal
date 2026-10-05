@@ -22074,7 +22074,7 @@ function _renderUpscaleOrderRows(){
       loading: '<span class="up-row-status">Checking…</span>',
       ready:   `<span class="up-row-status ok">${type} at ${_upPx(entry)}</span>`,
       sending: '<span class="up-row-status">Sending…</span>',
-      done:    `<span class="up-row-status ok">✓ Placed${r.result && r.result.status ? ' · ' + escapeHtml(r.result.status) : ''}</span>`,
+      done:    '<span class="up-row-status ok">✓ Order Placed</span>',
       error:   '<span class="up-row-status bad">Not sent</span>',
       skip:    '<span class="up-row-status bad">Skipped</span>'
     }[r.state];
@@ -22118,7 +22118,8 @@ async function confirmUpscaleOrders(){
       r.state = 'done';
       // Kapareho ng Trade This Setup: naitatala rin bilang Pending setup, para
       // tuloy-tuloy ang journal pagkasara ng trade.
-      await tradeThisSetup(r.acc.id, { silent: true });
+      await tradeThisSetup(r.acc.id, { silent: true,
+        extra: { status: 'Order Placed', upscale_order_id: r.result.orderId || null } });
     }catch(e){
       r.state = 'error'; r.note = e.message;
     }
@@ -22193,17 +22194,30 @@ async function tradeThisSetup(accountId, opts){
      Kung wala ito, iisang listahan ng Pending Setups ang dalawang pahina —
      ang mismong "may connection" na napansin niya. */
   if(_isPaperMode()) payload.is_paper = true;
+  // Galing sa Place Order: "Order Placed" at ang order id para sa Cancel.
+  if(opts && opts.extra) Object.assign(payload, opts.extra);
 
   try{
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/position_setups`, {
+    const post = body => fetch(`${SUPABASE_URL}/rest/v1/position_setups`, {
       method: 'POST',
       headers: {
         "apikey": SUPABASE_KEY,
         "Authorization": `Bearer ${USER_ACCESS_TOKEN}`,
         "Content-Type": "application/json"
       },
-      body: JSON.stringify(payload)
+      body: JSON.stringify(body)
     });
+    let res = await post(payload);
+    // Kapag hindi pa naru-run ang supabase_position_setups_upscale_order.sql,
+    // ise-save pa rin ang setup — wala lang ang Cancel button para rito.
+    if(!res.ok && 'upscale_order_id' in payload){
+      const t = await res.clone().text();
+      if(t.includes('upscale_order_id')){
+        console.warn('Run supabase_position_setups_upscale_order.sql to enable Cancel Order.');
+        const { upscale_order_id, ...rest } = payload;
+        res = await post(rest);
+      }
+    }
     if(!res.ok) throw new Error(await res.text());
     loadSavedSetups();
   }catch(e){
@@ -22236,6 +22250,7 @@ async function loadSavedSetups(){
 
 function setupStatusPillClass(status){
   if(status === 'Pending') return 'pill-orange';
+  if(status === 'Order Placed') return 'pill-blue';
   if(status === 'Won' || status === 'Closed' || status === 'Journaled') return 'pill-green';
   if(status === 'Lost') return 'pill-red';
   return 'pill-muted';
@@ -23662,10 +23677,31 @@ function setupRowHTML(s, selectable){
       ${status !== 'Journaled'
         ? `<button class="poscalc-accent-btn" ${!_setupHasConfluence(s) ? 'disabled title="Fill in Confluence first"' : ''} onclick="event.stopPropagation(); journalFromSetup(${s.id})">Journal</button>`
         : `<button class="poscalc-accent-btn" onclick="event.stopPropagation(); setSetupStatus(${s.id}, 'Pending')">Revert to Pending</button>`}
+      ${status === 'Order Placed' && s.upscale_order_id
+        ? `<button class="drawer-danger-btn" onclick="event.stopPropagation(); cancelUpscaleOrder(${s.id}, this)">Cancel Order</button>`
+        : ''}
       <button class="drawer-danger-btn" onclick="event.stopPropagation(); deleteSavedSetup(${s.id})">Delete</button>
     </td>
   </tr>
 `;
+}
+
+/* Kinakansela ang order sa Upscale mismo, hindi lang dito. Kapag na-fill na
+   ito, hindi na ito "order" kundi posisyon — sinasabi iyon ng Worker, at ang
+   status dito ay hindi ginagalaw para hindi magmukhang wala nang bukas. */
+async function cancelUpscaleOrder(setupId, btn){
+  const s = SAVED_SETUPS.find(x => x.id === setupId);
+  if(!s || !s.upscale_order_id) return;
+  if(!(await customConfirm(`Cancel this ${s.symbol || ''} order on Upscale for ${s.account_name || 'this account'}?`))) return;
+  if(btn){ btn.disabled = true; btn.textContent = 'Cancelling…'; }
+  try{
+    await _upscaleCall('cancel', { tradingAccountId: s.account_id, orderId: s.upscale_order_id });
+    await setSetupStatus(setupId, 'Cancelled');
+    showToast('Order cancelled on Upscale');
+  }catch(e){
+    if(btn){ btn.disabled = false; btn.textContent = 'Cancel Order'; }
+    await customAlert(e.message);
+  }
 }
 
 /* ---------------- Journaled Setups: itago / ipakita ----------------
