@@ -8344,7 +8344,10 @@ function renderPosSizeCalculator(){
       <td style="white-space:nowrap;">
         <button type="button" class="poscalc-accent-btn" onclick="copyCellValue(this)" ${c.qty == null ? 'disabled' : ''}>Copy</button>
         <button type="button" class="poscalc-accent-btn" onclick="tradeThisSetup('${acc.id}')" ${c.minLev == null ? 'disabled' : ''}>Trade This Setup</button>
-        ${acc.upscale_account_id ? `<button type="button" class="up-order-btn up-order-btn-sm" onclick="placeUpscaleOrders(['${acc.id}'])" ${c.minLev == null ? 'disabled' : ''} title="Send this order to Upscale — ${escapeHtml(acc.upscale_account_label || '')}">Place Order</button>` : ''}
+        ${!acc.upscale_account_id ? ''
+          : _takePlacedOrder(acc.id, entry, sl)
+            ? `<span class="up-placed-pill">✓ Order Placed</span><button type="button" class="drawer-danger-btn up-cancel-btn" onclick="cancelPlacedFromRow('${acc.id}', this)">Cancel</button>`
+            : `<button type="button" class="up-order-btn up-order-btn-sm" onclick="placeUpscaleOrders(['${acc.id}'])" ${c.minLev == null ? 'disabled' : ''} title="Send this order to Upscale — ${escapeHtml(acc.upscale_account_label || '')}">Place Order</button>`}
       </td>
     </tr>`;
   }).join('');
@@ -22010,9 +22013,12 @@ async function placeUpscaleOrders(accountIds){
   }
   if(!symbol){ await customAlert('Enter the Symbol first (e.g. BTC/USD).'); return; }
 
-  const accs = TRADING_ACCOUNTS.filter(a => a.upscale_account_id && a.account_type !== 'Exchange'
+  const linked = TRADING_ACCOUNTS.filter(a => a.upscale_account_id && a.account_type !== 'Exchange'
     && (!accountIds || accountIds.map(String).includes(String(a.id))));
-  if(!accs.length){ await customAlert('No account here has an Upscale API key yet — add one in My Accounts → Edit.'); return; }
+  if(!linked.length){ await customAlert('No account here has an Upscale API key yet — add one in My Accounts → Edit.'); return; }
+  // Ang may order na sa parehong presyo ay nilalaktawan — walang dobleng order.
+  const accs = linked.filter(a => !_takePlacedOrder(a.id, entry, sl));
+  if(!accs.length){ await customAlert('This order is already placed on every account. Cancel it first to place it again.'); return; }
 
   const riskPerUnit = Math.abs(entry - sl);
   const saved = _psRiskAmounts();
@@ -22068,9 +22074,11 @@ function _renderUpscaleOrderRows(){
     const q = r.quote, m = q && q.market, ua = q && q.account;
     const type = m ? _upOrderTypeFor(direction, entry, m.price) : '';
     const cons = ua && ua.consistency;
-    const consLine = cons
-      ? `<div class="up-row-cons ${cons.met ? '' : 'warn'}">30% rule: best day $${_upPx(cons.bestDay || 0)}${cons.ratio != null ? ` · ${(cons.ratio * 100).toFixed(0)}% of profit` : ''}${cons.met ? '' : ' — not met yet'}</div>`
-      : '';
+    // Walang kita pa = walang masusukat; hindi iyon "hindi pasado".
+    const consLine = !cons ? ''
+      : !(cons.bestDay > 0)
+        ? '<div class="up-row-cons">30% rule: no profit yet</div>'
+        : `<div class="up-row-cons ${cons.met ? '' : 'warn'}">30% rule: best day $${_upPx(cons.bestDay)}${cons.ratio != null ? ` · ${(cons.ratio * 100).toFixed(0)}% of profit` : ''}${cons.met ? '' : ' — over 30%'}</div>`;
     const status = {
       loading: '<span class="up-row-status">Checking…</span>',
       ready:   `<span class="up-row-status ok">${type} at ${_upPx(entry)}</span>`,
@@ -22132,10 +22140,13 @@ async function confirmUpscaleOrders(){
 
   const done = UP_ORDER_ROWS.filter(r => r.state === 'done').length;
   const failed = UP_ORDER_ROWS.filter(r => r.state === 'error').length;
-  placeBtn.textContent = failed ? 'Retry failed' : 'Place Order';
-  placeBtn.disabled = !failed;
-  document.getElementById('upOrderCancelBtn').textContent = 'Close';
   if(done) showToast(`${done} order${done === 1 ? '' : 's'} placed on Upscale${failed ? ` · ${failed} failed` : ''}`);
+  // Lahat pumasok: isara. Ang "Order Placed" at Cancel ay nasa hilera na ng
+  // calculator. May pumalya: manatiling bukas para mabasa ang dahilan.
+  if(!failed){ closeUpscaleOrderModal(); return; }
+  placeBtn.textContent = 'Retry failed';
+  placeBtn.disabled = false;
+  document.getElementById('upOrderCancelBtn').textContent = 'Close';
 }
 
 // Ang huling order kada account+presyo, para sa Trade This Setup pagkatapos.
@@ -22153,16 +22164,37 @@ function _rememberPlacedOrder(accId, entry, sl, orderId){
     localStorage.setItem(_UP_PLACED_KEY, JSON.stringify(m));
   }catch(e){}
 }
+// Binabasa lang, hindi binubura: ang hilera sa calculator ay nananatiling
+// "Order Placed" hangga't hindi kinakansela, kahit na-save na bilang setup.
 function _takePlacedOrder(accId, entry, sl){
   try{
     const m = JSON.parse(localStorage.getItem(_UP_PLACED_KEY) || '{}');
-    const k = _placedKey(accId, entry, sl);
-    const hit = m[k];
+    const hit = m[_placedKey(accId, entry, sl)];
     if(!hit || Date.now() - hit.at > 86400000) return null;
-    delete m[k];
-    localStorage.setItem(_UP_PLACED_KEY, JSON.stringify(m));
     return hit.orderId;
   }catch(e){ return null; }
+}
+
+// Cancel mula sa hilera ng calculator.
+async function cancelPlacedFromRow(accId, btn){
+  const entry = parseFloat(document.getElementById('psEntry').value);
+  const sl = parseFloat(document.getElementById('psSL').value);
+  const orderId = _takePlacedOrder(accId, entry, sl);
+  const acc = TRADING_ACCOUNTS.find(a => String(a.id) === String(accId));
+  if(!orderId || !acc) return;
+  if(!(await customConfirm(`Cancel this order on Upscale for ${acc.account_name}?`))) return;
+  if(btn){ btn.disabled = true; btn.textContent = 'Cancelling…'; }
+  try{
+    await _upscaleCall('cancel', { tradingAccountId: acc.id, orderId });
+    _forgetPlacedOrder(orderId);
+    // Kung na-save na rin bilang setup, sabay itong nagiging Cancelled.
+    const s = SAVED_SETUPS.find(x => x.upscale_order_id === orderId && x.status === 'Order Placed');
+    if(s) await setSetupStatus(s.id, 'Cancelled');
+    showToast('Order cancelled on Upscale');
+  }catch(e){
+    await customAlert(e.message);
+  }
+  renderPosSizeCalculator();
 }
 function _forgetPlacedOrder(orderId){
   try{
@@ -22191,6 +22223,7 @@ async function cancelPlacedFromModal(idx){
 function closeUpscaleOrderModal(){
   document.getElementById('upOrderModal').classList.remove('open');
   UP_ORDER_ROWS = [];
+  if(typeof renderPosSizeCalculator === 'function') renderPosSizeCalculator();
 }
 
 async function tradeThisSetup(accountId, opts){

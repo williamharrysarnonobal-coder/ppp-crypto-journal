@@ -4577,6 +4577,13 @@ table.journal td.paper-why-col{line-height:1.5;}
 .up-order-btn:disabled{background:none;border-color:var(--rule);color:var(--muted);cursor:not-allowed;opacity:.6;filter:none;}
 .up-order-btn:focus-visible{outline:2px solid var(--ink);outline-offset:2px;}
 .up-order-btn-sm{padding:9px 12px;margin-left:4px;}
+.up-placed-pill{
+  display:inline-block;vertical-align:middle;margin-left:4px;padding:8px 12px;border-radius:6px;
+  font-size:12.5px;font-weight:700;color:var(--win);
+  background:color-mix(in srgb, var(--win) 14%, transparent);
+  border:1px solid color-mix(in srgb, var(--win) 45%, transparent);
+}
+.up-cancel-btn{margin-left:4px;}
 .up-order-all{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:0 0 12px;}
 .up-order-all-sub{font-size:11.5px;color:var(--muted);}
 
