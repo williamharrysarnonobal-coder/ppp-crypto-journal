@@ -18,7 +18,7 @@ export default {
     const url = new URL(request.url);
     if (url.pathname === '/api/transcribe') return handleTranscribe(request, env);
     if (url.pathname === '/api/economic-events') return handleEconomicEvents(request);
-    const up = url.pathname.match(/^\/api\/upscale\/(check|link|unlink|quote|order|cancel)$/);
+    const up = url.pathname.match(/^\/api\/upscale\/(check|link|unlink|quote|order|cancel|status)$/);
     if (up) return handleUpscale(request, env, up[1]);
     // Everything else is the site itself.
     return serveAsset(request, env);
@@ -335,6 +335,40 @@ async function handleUpscale(request, env, action) {
       throw new UpscaleError(400, 'not_linked', `${row.account_name} has no Upscale API key yet.`);
     const key = await decrypt(env, row.upscale_api_key_enc);
     const upId = row.upscale_account_id;
+
+    /* ANG KALAGAYAN NG MGA ORDER NA NILAGAY NATIN.
+
+       Order Placed  → nasa active orders pa (naghihintay ng presyo)
+       In Position   → na-execute na, at may bukas pang TP/SL na anak nito
+       Closed        → na-execute, at wala nang bukas na anak; ang TP o SL na
+                       na-execute ang nagsasabi kung alin ang tumama
+       Cancelled     → kinansela (ng tao, ng posisyon, o ng error)
+       Unknown       → hindi makita sa huling 100 — iniiwan ng app ang dati. */
+    if (action === 'status') {
+      const ids = (Array.isArray(body.orderIds) ? body.orderIds : [])
+        .map(String).filter(x => /^[0-9a-f-]{36}$/i.test(x)).slice(0, 20);
+      if (!ids.length) return json({ states: {} });
+      const asset = baseAssetOf(body.symbol) || 'BTC';
+      const asArr = x => Array.isArray(x) ? x : ((x && (x.data || x.items)) || []);
+      const active = asArr(await upscale(key, 'GET', `/orders/${encodeURIComponent(upId)}/active`));
+      const history = asArr(await upscale(key, 'GET',
+        `/orders/${encodeURIComponent(upId)}/${encodeURIComponent(asset)}/history?limit=100`));
+      const childOf = (o, id) => [].concat(o.parentOrderId || []).includes(id);
+      const states = {};
+      for (const id of ids) {
+        if (active.some(o => o.id === id)) { states[id] = { state: 'Order Placed' }; continue; }
+        const h = history.find(o => o.id === id);
+        if (!h) { states[id] = { state: 'Unknown' }; continue; }
+        if (String(h.status).startsWith('canceled')) { states[id] = { state: 'Cancelled' }; continue; }
+        if (h.status === 'active') { states[id] = { state: 'Order Placed' }; continue; }
+        if (h.status !== 'executed') { states[id] = { state: 'Unknown' }; continue; }
+        if (active.some(o => childOf(o, id))) { states[id] = { state: 'In Position' }; continue; }
+        const closer = history.find(o => childOf(o, id) && o.status === 'executed');
+        const how = closer ? (closer.type === 'take' ? 'TP Hit' : (closer.type === 'stop' || closer.type === 'trailing_stop') ? 'SL Hit' : null) : null;
+        states[id] = { state: 'Closed', how, pnl: closer ? fromFp9(closer.realizedPnl) : null };
+      }
+      return json({ states });
+    }
 
     if (action === 'cancel') {
       const orderId = String(body.orderId || '');

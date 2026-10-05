@@ -793,7 +793,7 @@ function switchView(view){
   }
   if(view === 'profile') loadProfile();
   if(view === 'accounts') loadAccounts();
-  if(view === 'calculator'){ refreshPosSizeCalculator(); loadSavedSetups(); }
+  if(view === 'calculator'){ refreshPosSizeCalculator(); loadSavedSetups(); refreshUpscaleOrderStates(true); }
   if(view === 'settings') renderSettingsPage();
   if(view === 'notebook') loadNotes();
   if(view === 'mood') loadMoodEntries();
@@ -8345,8 +8345,8 @@ function renderPosSizeCalculator(){
         <button type="button" class="poscalc-accent-btn" onclick="copyCellValue(this)" ${c.qty == null ? 'disabled' : ''}>Copy</button>
         <button type="button" class="poscalc-accent-btn" onclick="tradeThisSetup('${acc.id}')" ${c.minLev == null ? 'disabled' : ''}>Trade This Setup</button>
         ${!acc.upscale_account_id ? ''
-          : _takePlacedOrder(acc.id, entry, sl)
-            ? `<span class="up-placed-pill">✓ Order Placed</span><button type="button" class="drawer-danger-btn up-cancel-btn" onclick="cancelPlacedFromRow('${acc.id}', this)">Cancel</button>`
+          : _placedRecord(acc.id, entry, sl)
+            ? _placedRowHTML(acc, _placedRecord(acc.id, entry, sl))
             : `<button type="button" class="up-order-btn up-order-btn-sm" onclick="placeUpscaleOrders(['${acc.id}'])" ${c.minLev == null ? 'disabled' : ''} title="Send this order to Upscale — ${escapeHtml(acc.upscale_account_label || '')}">Place Order</button>`}
       </td>
     </tr>`;
@@ -22017,7 +22017,7 @@ async function placeUpscaleOrders(accountIds){
     && (!accountIds || accountIds.map(String).includes(String(a.id))));
   if(!linked.length){ await customAlert('No account here has an Upscale API key yet — add one in My Accounts → Edit.'); return; }
   // Ang may order na sa parehong presyo ay nilalaktawan — walang dobleng order.
-  const accs = linked.filter(a => !_takePlacedOrder(a.id, entry, sl));
+  const accs = linked.filter(a => { const rec = _placedRecord(a.id, entry, sl); return !rec || rec.state === 'Closed'; });
   if(!accs.length){ await customAlert('This order is already placed on every account. Cancel it first to place it again.'); return; }
 
   const riskPerUnit = Math.abs(entry - sl);
@@ -22166,13 +22166,101 @@ function _rememberPlacedOrder(accId, entry, sl, orderId){
 }
 // Binabasa lang, hindi binubura: ang hilera sa calculator ay nananatiling
 // "Order Placed" hangga't hindi kinakansela, kahit na-save na bilang setup.
-function _takePlacedOrder(accId, entry, sl){
+function _placedRecord(accId, entry, sl){
   try{
     const m = JSON.parse(localStorage.getItem(_UP_PLACED_KEY) || '{}');
     const hit = m[_placedKey(accId, entry, sl)];
     if(!hit || Date.now() - hit.at > 86400000) return null;
-    return hit.orderId;
+    return hit;
   }catch(e){ return null; }
+}
+function _takePlacedOrder(accId, entry, sl){
+  const r = _placedRecord(accId, entry, sl);
+  return r ? r.orderId : null;
+}
+
+/* ANG KALAGAYAN MULA SA UPSCALE.
+
+   Tuwing 30 segundo habang bukas ang Calculator (at nakikita ang tab),
+   tinatanong ang Upscale kung ano na ang nangyari sa mga order na nilagay
+   dito: naghihintay pa (Order Placed), na-fill na (In Position), sarado na
+   (Closed — TP Hit / SL Hit), o kinansela. Ang hilera sa calculator at ang
+   status sa Pending Setups ay sumusunod. Ang Cancel ay para lang sa naghihintay
+   pa — ang na-fill na ay posisyon, at sa terminal iyon isinasara. */
+const _UP_SETUP_LIVE = new Set(['Order Placed', 'In Position']);
+let _upStatusBusy = false, _upStatusLast = 0;
+
+async function refreshUpscaleOrderStates(force){
+  if(_upStatusBusy) return;
+  if(!force && Date.now() - _upStatusLast < 20000) return;
+  _upStatusBusy = true; _upStatusLast = Date.now();
+  try{
+    let m = {};
+    try{ m = JSON.parse(localStorage.getItem(_UP_PLACED_KEY) || '{}'); }catch(e){}
+    const calcSymbol = (document.getElementById('psSymbol')?.value || '').trim();
+    // accId -> { ids:Set, symbol }
+    const byAcc = {};
+    const add = (accId, id, symbol) => {
+      if(!accId || !id) return;
+      const k = String(accId);
+      byAcc[k] = byAcc[k] || { ids: new Set(), symbol: symbol || calcSymbol || 'BTC' };
+      byAcc[k].ids.add(id);
+    };
+    Object.entries(m).forEach(([k, v]) => {
+      if(!v || Date.now() - v.at > 86400000) return;
+      if(v.state === 'Closed' || v.state === 'Cancelled') return;
+      add(k.split('|')[0], v.orderId);
+    });
+    (SAVED_SETUPS || []).forEach(s => {
+      if(s.upscale_order_id && _UP_SETUP_LIVE.has(s.status)) add(s.account_id, s.upscale_order_id, s.symbol);
+    });
+
+    let changed = false;
+    for(const [accId, info] of Object.entries(byAcc)){
+      const acc = TRADING_ACCOUNTS.find(a => String(a.id) === accId);
+      if(!acc || !acc.upscale_account_id) continue;
+      let states;
+      try{
+        ({ states } = await _upscaleCall('status', { tradingAccountId: acc.id, symbol: info.symbol, orderIds: [...info.ids] }));
+      }catch(e){ console.warn('Upscale status check failed:', e.message); continue; }
+
+      Object.entries(states || {}).forEach(([orderId, st]) => {
+        if(!st || st.state === 'Unknown') return;
+        // Ang tala sa calculator.
+        Object.keys(m).forEach(k => {
+          if(m[k].orderId !== orderId) return;
+          if(st.state === 'Cancelled'){ delete m[k]; changed = true; return; }
+          if(m[k].state !== st.state || m[k].how !== st.how){
+            m[k].state = st.state; m[k].how = st.how || null; changed = true;
+          }
+        });
+        // Ang setup.
+        (SAVED_SETUPS || []).filter(s => s.upscale_order_id === orderId && _UP_SETUP_LIVE.has(s.status))
+          .forEach(s => { if(s.status !== st.state){ setSetupStatus(s.id, st.state); changed = true; } });
+      });
+    }
+    if(changed){
+      try{ localStorage.setItem(_UP_PLACED_KEY, JSON.stringify(m)); }catch(e){}
+      if(typeof renderPosSizeCalculator === 'function') renderPosSizeCalculator();
+    }
+  }finally{
+    _upStatusBusy = false;
+  }
+}
+setInterval(() => {
+  if(typeof currentView !== 'undefined' && currentView === 'calculator'
+     && document.visibilityState === 'visible') refreshUpscaleOrderStates();
+}, 30000);
+
+// Ang hilera pagkatapos mag-order, ayon sa kalagayan nito sa Upscale.
+function _placedRowHTML(acc, rec){
+  const st = rec.state || 'Order Placed';
+  if(st === 'In Position') return '<span class="up-placed-pill live">● In Position</span>';
+  if(st === 'Closed'){
+    const cls = rec.how === 'TP Hit' ? 'tp' : rec.how === 'SL Hit' ? 'sl' : 'closed';
+    return `<span class="up-placed-pill ${cls}">Closed${rec.how ? ' · ' + escapeHtml(rec.how) : ''}</span>`;
+  }
+  return `<span class="up-placed-pill">✓ Order Placed</span><button type="button" class="drawer-danger-btn up-cancel-btn" onclick="cancelPlacedFromRow('${acc.id}', this)">Cancel</button>`;
 }
 
 // Cancel mula sa hilera ng calculator.
@@ -22331,6 +22419,9 @@ async function loadSavedSetups(){
     if(!res.ok) throw new Error(await res.text());
     SAVED_SETUPS = await res.json();
     SAVED_SETUPS_LOADED = true;
+    // May order sa Upscale na nakabitin? Tingnan agad, huwag nang maghintay
+    // ng 30 segundo.
+    if(SAVED_SETUPS.some(s => s.upscale_order_id && _UP_SETUP_LIVE.has(s.status))) refreshUpscaleOrderStates(true);
   }catch(e){
     console.error("Couldn't load saved setups:", e);
     SAVED_SETUPS = [];
@@ -22341,6 +22432,7 @@ async function loadSavedSetups(){
 function setupStatusPillClass(status){
   if(status === 'Pending') return 'pill-orange';
   if(status === 'Order Placed') return 'pill-blue';
+  if(status === 'In Position') return 'pill-green';
   if(status === 'Won' || status === 'Closed' || status === 'Journaled') return 'pill-green';
   if(status === 'Lost') return 'pill-red';
   return 'pill-muted';

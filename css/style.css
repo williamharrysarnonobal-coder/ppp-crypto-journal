@@ -4584,6 +4584,10 @@ table.journal td.paper-why-col{line-height:1.5;}
   border:1px solid color-mix(in srgb, var(--win) 45%, transparent);
 }
 .up-cancel-btn{margin-left:4px;}
+.up-placed-pill.live{color:var(--accent);background:color-mix(in srgb, var(--accent) 14%, transparent);border-color:color-mix(in srgb, var(--accent) 45%, transparent);}
+.up-placed-pill.tp{color:var(--win);}
+.up-placed-pill.sl{color:var(--loss);background:color-mix(in srgb, var(--loss) 12%, transparent);border-color:color-mix(in srgb, var(--loss) 40%, transparent);}
+.up-placed-pill.closed{color:var(--muted);background:var(--surface-2);border-color:var(--rule);}
 .up-order-all{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:0 0 12px;}
 .up-order-all-sub{font-size:11.5px;color:var(--muted);}
 
