@@ -1600,7 +1600,10 @@ function normalizeTrade(r){
     post_stop_profit_result: r.post_stop_profit_result || "",
     chart_pattern: r.chart_pattern || "",
     confluence_answers: (r.confluence_answers && typeof r.confluence_answers === 'object') ? r.confluence_answers : null,
-    session: r.session || computeSession(r) || "Unspecified",
+    /* Laging kinukuwenta mula sa open date, gaya ng Day of Week. Ang naka-save
+       na session ay isinulat ng lumang pagkuwenta na hindi alam ang daylight
+       saving — kung uunahin iyon, mananatiling mali ang bawat lumang trade. */
+    session: computeSession(r) || r.session || "Unspecified",
     // Always derived, never read from the stored column: rows imported from
     // AppSheet carry a day computed off the CLOSE date, which disagrees with
     // Session (open date) for any trade entered late in the evening. Trusting
@@ -1672,12 +1675,22 @@ function computeSession(row){
   if(!row.open_date) return '';
   const open = new Date(row.open_date);
   if(isNaN(open)) return '';
-  const hour = open.getHours(); // uses the viewer's local timezone
-  if(hour >= 4 && hour < 12) return 'Asia';
-  if(hour >= 12 && hour < 17) return 'London';
-  if(hour >= 17 && hour < 21) return 'London + NY Overlap';
-  if(hour >= 21 || hour < 2) return 'New York';
-  return 'Low Liquidity';
+  /* ANG ORAS NG MARKET, HINDI ANG ORAS SA DUBAI.
+
+     Nakapirmi ito dati sa lokal na oras (London = 12–5pm). Tama iyon sa
+     taglamig lang: may daylight saving ang London at New York, wala ang UAE,
+     kaya mula Marso hanggang Oktubre ay 11am sa Dubai bumubukas ang London —
+     at ang trade niya na 11:49am ay naitalang Asia. Ngayon ay binabasa ito sa
+     SESSION_WINDOWS, ang parehong orasan na ipinapakita sa tabi ng bilang.
+
+     Pagkakasunod: ang overlap muna, tapos London, New York, Asia. Natatapos
+     ang Asia pagbukas ng London, gaya ng dati. Ang natitira ay Low Liquidity. */
+  const h = open.getUTCHours() + open.getUTCMinutes() / 60;
+  const inside = name => {
+    const w = _sessionUtcWindow(name, open);
+    return !!w && [-24, 0, 24].some(k => h + k >= w[0] && h + k < w[1]);
+  };
+  return ['London + NY Overlap', 'London', 'New York', 'Asia'].find(inside) || 'Low Liquidity';
 }
 
 // Keyed off OPEN date, matching computeSession above. Which day a trade
@@ -3850,16 +3863,8 @@ function renderDayOfWeekChart(){
 }
 
 /* ---------------- Session frequency ---------------- */
-// Matches the hour ranges inside computeSession() — shown on hover so the
-// session name isn't just a label, you can see exactly what window it
-// covers (in your own local time, same as computeSession() itself uses).
-const SESSION_TIME_RANGES = {
-  'Asia': '4:00 AM – 12:00 PM',
-  'London': '12:00 PM – 5:00 PM',
-  'London + NY Overlap': '5:00 PM – 9:00 PM',
-  'New York': '9:00 PM – 2:00 AM',
-  'Low Liquidity': '2:00 AM – 4:00 AM'
-};
+// The hover window is read off computeSession itself (_sessionLocalWindow),
+// for today's date — a typed-in table here went stale with daylight saving.
 
 function renderSessionFrequencyChart(){
   const canvas = document.getElementById('sessionFrequencyChart');
@@ -3897,8 +3902,8 @@ function renderSessionFrequencyChart(){
             label: (ctx) => {
               const count = ctx.parsed.x;
               const lines = [`${count} trade${count!==1?'s':''}`];
-              const range = SESSION_TIME_RANGES[ctx.label];
-              if(range) lines.push(`${range} (your local time)`);
+              const range = _sessionLocalWindow(ctx.label);
+              if(range) lines.push(`${range} (your local time, today)`);
               return lines;
             }
           }
@@ -5819,7 +5824,10 @@ function _sessionUaeWindow(name, at){
 function _sessionLocalWindow(name){
   const hours = [];
   for(let h = 0; h < 24; h++){
-    if(computeSession({ open_date: new Date(2026, 0, 5, h, 30) }) === name) hours.push(h);
+    // Ngayong araw, hindi isang petsa sa Enero: nagbabago ang mga oras sa
+    // daylight saving, at ang ipinapakita ay ang mga oras ngayon.
+    const d = new Date(); d.setHours(h, 30, 0, 0);
+    if(computeSession({ open_date: d }) === name) hours.push(h);
   }
   if(!hours.length || hours.length === 24) return null;
   /* Ang New York ay lumalampas sa hatinggabi (21–2), kaya ang listahan ay
@@ -7833,7 +7841,9 @@ const ALL_DRAWER_FIELDS = [
   {key:'post_stop_profit_result', label:'Post-Stop Profit', widget:'select', editable:true, options:FIELD_OPTIONS.post_stop_profit_result, realOnly:true},
   {key:'account', label:'Account', widget:'select', editable:true, options:FIELD_OPTIONS.account, realOnly:true},
   {key:'account_type', label:'Account Type', widget:'select', editable:true, options:FIELD_OPTIONS.account_type, realOnly:true},
-  {key:'session', label:'Session', widget:'select', editable:true, options:FIELD_OPTIONS.session},
+  // Read-only like Day of Week: always derived from the open date on load, so
+  // an edit here would be overwritten. Change the Open Date instead.
+  {key:'session', label:'Session', widget:'select', editable:false, options:FIELD_OPTIONS.session},
   // Read-only: always derived from the open date now, so an edit here would be
   // silently discarded on the next load. Change the Open Date instead.
   {key:'day_of_week', label:'Day of Week', widget:'select', editable:false, options:FIELD_OPTIONS.day_of_week},
@@ -21954,7 +21964,8 @@ const CONFLUENCE_SETUPS = {
        sila at hindi lang sa isang panig. Ang may direksyon lang (Double Bottom
        laban sa Double Top) ang nananatiling nakahiwalay. */
     patterns: ['Double Bottom', 'Triple Bottom', 'Inverse H&S',
-               'FVG', 'FVG + Fib', 'Fib .382', 'Fib .5', 'Fib .618', 'SnR Flip']
+               'FVG', 'FVG + Fib', 'FVG - Partial Fill', 'FVG - Half Fill', 'FVG - Full Fill',
+               'Fib .382', 'Fib .5', 'Fib .618', 'SnR Flip']
   },
   'Short|5 mins LH': {
     minConfluencePct: 60,
@@ -21969,7 +21980,8 @@ const CONFLUENCE_SETUPS = {
       {tag:'Execution', text:'Did MACD cross the zero line downward when your order triggered?', exec:true, retest:true},
     ],
     patterns: ['Double Top', 'Triple Top', 'H&S',
-               'FVG', 'FVG + Fib', 'Fib .382', 'Fib .5', 'Fib .618', 'SnR Flip']
+               'FVG', 'FVG + Fib', 'FVG - Partial Fill', 'FVG - Half Fill', 'FVG - Full Fill',
+               'Fib .382', 'Fib .5', 'Fib .618', 'SnR Flip']
   },
   // NOTE on ordering: answers are stored keyed by their POSITION in this array
   // (confluence_answers = {0:'yes', 1:'no', ...}). Inserting an item in the
@@ -21997,7 +22009,8 @@ const CONFLUENCE_SETUPS = {
        sila at hindi lang sa isang panig. Ang may direksyon lang (Double Bottom
        laban sa Double Top) ang nananatiling nakahiwalay. */
     patterns: ['Double Bottom', 'Triple Bottom', 'Inverse H&S',
-               'FVG', 'FVG + Fib', 'Fib .382', 'Fib .5', 'Fib .618', 'SnR Flip']
+               'FVG', 'FVG + Fib', 'FVG - Partial Fill', 'FVG - Half Fill', 'FVG - Full Fill',
+               'Fib .382', 'Fib .5', 'Fib .618', 'SnR Flip']
   },
   'Short|15 mins LH': {
     minConfluencePct: 60,
@@ -22016,7 +22029,8 @@ const CONFLUENCE_SETUPS = {
       {tag:'Divergence', text:'Right Hand Present?', invert:true},
     ],
     patterns: ['Double Top', 'Triple Top', 'H&S',
-               'FVG', 'FVG + Fib', 'Fib .382', 'Fib .5', 'Fib .618', 'SnR Flip']
+               'FVG', 'FVG + Fib', 'FVG - Partial Fill', 'FVG - Half Fill', 'FVG - Full Fill',
+               'Fib .382', 'Fib .5', 'Fib .618', 'SnR Flip']
   },
   // 1 Hour setups.
   'Long|1 hour HL': {
@@ -22049,7 +22063,8 @@ const CONFLUENCE_SETUPS = {
        sila at hindi lang sa isang panig. Ang may direksyon lang (Double Bottom
        laban sa Double Top) ang nananatiling nakahiwalay. */
     patterns: ['Double Bottom', 'Triple Bottom', 'Inverse H&S',
-               'FVG', 'FVG + Fib', 'Fib .382', 'Fib .5', 'Fib .618', 'SnR Flip']
+               'FVG', 'FVG + Fib', 'FVG - Partial Fill', 'FVG - Half Fill', 'FVG - Full Fill',
+               'Fib .382', 'Fib .5', 'Fib .618', 'SnR Flip']
   },
   'Short|1 hour LH': {
     minConfluencePct: 60,
@@ -22064,7 +22079,8 @@ const CONFLUENCE_SETUPS = {
       {tag:'Execution', text:'Did MACD cross the zero line downward when your order triggered?', exec:true, retest:true},
     ],
     patterns: ['Double Top', 'Triple Top', 'H&S',
-               'FVG', 'FVG + Fib', 'Fib .382', 'Fib .5', 'Fib .618', 'SnR Flip']
+               'FVG', 'FVG + Fib', 'FVG - Partial Fill', 'FVG - Half Fill', 'FVG - Full Fill',
+               'Fib .382', 'Fib .5', 'Fib .618', 'SnR Flip']
   },
   // The 30 mins Invalidation Play is read exactly like the 15 mins setup — the
   // item list is assigned below rather than copied here, so the two can never
@@ -22112,7 +22128,8 @@ const CONFLUENCE_SETUPS = {
        sila at hindi lang sa isang panig. Ang may direksyon lang (Double Bottom
        laban sa Double Top) ang nananatiling nakahiwalay. */
     patterns: ['Double Bottom', 'Triple Bottom', 'Inverse H&S',
-               'FVG', 'FVG + Fib', 'Fib .382', 'Fib .5', 'Fib .618', 'SnR Flip']
+               'FVG', 'FVG + Fib', 'FVG - Partial Fill', 'FVG - Half Fill', 'FVG - Full Fill',
+               'Fib .382', 'Fib .5', 'Fib .618', 'SnR Flip']
   },
   'Short|30 mins Invalidation Play': {
     minConfluencePct: 60,
@@ -22127,7 +22144,8 @@ const CONFLUENCE_SETUPS = {
       {tag:'Divergence', text:'Right Hand Present?', invert:true},
     ],
     patterns: ['Double Top', 'Triple Top', 'H&S',
-               'FVG', 'FVG + Fib', 'Fib .382', 'Fib .5', 'Fib .618', 'SnR Flip']
+               'FVG', 'FVG + Fib', 'FVG - Partial Fill', 'FVG - Half Fill', 'FVG - Full Fill',
+               'Fib .382', 'Fib .5', 'Fib .618', 'SnR Flip']
   },
 
   /* ---------------- ANG CREATION SETUP ----------------
@@ -22170,7 +22188,8 @@ const CONFLUENCE_SETUPS = {
     ],
     // Ang huling hilera ng talahanayan: anong hugis ang nabuo.
     patterns: ['Double Bottom', 'Triple Bottom', 'Inverse H&S',
-               'FVG', 'FVG + Fib', 'Fib .382', 'Fib .5', 'Fib .618', 'SnR Flip']
+               'FVG', 'FVG + Fib', 'FVG - Partial Fill', 'FVG - Half Fill', 'FVG - Full Fill',
+               'Fib .382', 'Fib .5', 'Fib .618', 'SnR Flip']
   },
   'Short|4H LH Creation': {
     minConfluencePct: 60,
@@ -22190,7 +22209,8 @@ const CONFLUENCE_SETUPS = {
     ],
     // Ang huling hilera ng talahanayan: anong hugis ang nabuo.
     patterns: ['Double Top', 'Triple Top', 'H&S',
-               'FVG', 'FVG + Fib', 'Fib .382', 'Fib .5', 'Fib .618', 'SnR Flip']
+               'FVG', 'FVG + Fib', 'FVG - Partial Fill', 'FVG - Half Fill', 'FVG - Full Fill',
+               'Fib .382', 'Fib .5', 'Fib .618', 'SnR Flip']
   },
 
   'Long|1H HL Creation': {
@@ -22211,7 +22231,8 @@ const CONFLUENCE_SETUPS = {
     ],
     // Ang huling hilera ng talahanayan: anong hugis ang nabuo.
     patterns: ['Double Bottom', 'Triple Bottom', 'Inverse H&S',
-               'FVG', 'FVG + Fib', 'Fib .382', 'Fib .5', 'Fib .618', 'SnR Flip']
+               'FVG', 'FVG + Fib', 'FVG - Partial Fill', 'FVG - Half Fill', 'FVG - Full Fill',
+               'Fib .382', 'Fib .5', 'Fib .618', 'SnR Flip']
   },
   'Short|1H LH Creation': {
     minConfluencePct: 60,
@@ -22231,7 +22252,8 @@ const CONFLUENCE_SETUPS = {
     ],
     // Ang huling hilera ng talahanayan: anong hugis ang nabuo.
     patterns: ['Double Top', 'Triple Top', 'H&S',
-               'FVG', 'FVG + Fib', 'Fib .382', 'Fib .5', 'Fib .618', 'SnR Flip']
+               'FVG', 'FVG + Fib', 'FVG - Partial Fill', 'FVG - Half Fill', 'FVG - Full Fill',
+               'Fib .382', 'Fib .5', 'Fib .618', 'SnR Flip']
   },
 
   'Long|15M HL Creation': {
@@ -22252,7 +22274,8 @@ const CONFLUENCE_SETUPS = {
     ],
     // Ang huling hilera ng talahanayan: anong hugis ang nabuo.
     patterns: ['Double Bottom', 'Triple Bottom', 'Inverse H&S',
-               'FVG', 'FVG + Fib', 'Fib .382', 'Fib .5', 'Fib .618', 'SnR Flip']
+               'FVG', 'FVG + Fib', 'FVG - Partial Fill', 'FVG - Half Fill', 'FVG - Full Fill',
+               'Fib .382', 'Fib .5', 'Fib .618', 'SnR Flip']
   },
   'Short|15M LH Creation': {
     minConfluencePct: 60,
@@ -22272,7 +22295,8 @@ const CONFLUENCE_SETUPS = {
     ],
     // Ang huling hilera ng talahanayan: anong hugis ang nabuo.
     patterns: ['Double Top', 'Triple Top', 'H&S',
-               'FVG', 'FVG + Fib', 'Fib .382', 'Fib .5', 'Fib .618', 'SnR Flip']
+               'FVG', 'FVG + Fib', 'FVG - Partial Fill', 'FVG - Half Fill', 'FVG - Full Fill',
+               'Fib .382', 'Fib .5', 'Fib .618', 'SnR Flip']
   },
 };
 
