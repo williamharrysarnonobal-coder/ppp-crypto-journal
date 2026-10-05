@@ -22074,7 +22074,8 @@ function _renderUpscaleOrderRows(){
       loading: '<span class="up-row-status">Checking…</span>',
       ready:   `<span class="up-row-status ok">${type} at ${_upPx(entry)}</span>`,
       sending: '<span class="up-row-status">Sending…</span>',
-      done:    '<span class="up-row-status ok">✓ Order Placed</span>',
+      done:    `<span class="up-row-status ok">✓ Order Placed</span>${r.result && r.result.orderId ? `<button type="button" class="up-api-unlink" style="margin-left:6px;" onclick="cancelPlacedFromModal(${UP_ORDER_ROWS.indexOf(r)})">Cancel</button>` : ''}`,
+      cancelled: '<span class="up-row-status">Order cancelled</span>',
       error:   '<span class="up-row-status bad">Not sent</span>',
       skip:    '<span class="up-row-status bad">Skipped</span>'
     }[r.state];
@@ -22116,10 +22117,12 @@ async function confirmUpscaleOrders(){
         quantity: r.qty, leverage: r.lev, idempotencyKey: r.idem
       });
       r.state = 'done';
-      // Kapareho ng Trade This Setup: naitatala rin bilang Pending setup, para
-      // tuloy-tuloy ang journal pagkasara ng trade.
-      await tradeThisSetup(r.acc.id, { silent: true,
-        extra: { status: 'Order Placed', upscale_order_id: r.result.orderId || null } });
+      /* HINDI ito sine-save bilang setup — "Trade This Setup" lang ang
+         nagdadagdag sa Pending Setups, at hiwalay na pagpapasya iyon. Ang
+         order ay tinatandaan lamang, para kapag pinindot niya ang Trade This
+         Setup sa parehong account at parehong presyo, makilala ito ng setup
+         (Order Placed + Cancel Order). */
+      _rememberPlacedOrder(r.acc.id, entry, sl, r.result.orderId);
     }catch(e){
       r.state = 'error'; r.note = e.message;
     }
@@ -22132,6 +22135,56 @@ async function confirmUpscaleOrders(){
   placeBtn.disabled = !failed;
   document.getElementById('upOrderCancelBtn').textContent = 'Close';
   if(done) showToast(`${done} order${done === 1 ? '' : 's'} placed on Upscale${failed ? ` · ${failed} failed` : ''}`);
+}
+
+// Ang huling order kada account+presyo, para sa Trade This Setup pagkatapos.
+// Nasa localStorage dahil maaaring mag-reload muna siya bago i-save ang setup;
+// isang araw lang ang buhay nito.
+const _UP_PLACED_KEY = 'tanaydana-upscale-placed';
+function _placedKey(accId, entry, sl){ return `${accId}|${Number(entry)}|${Number(sl)}`; }
+function _rememberPlacedOrder(accId, entry, sl, orderId){
+  if(!orderId) return;
+  try{
+    const m = JSON.parse(localStorage.getItem(_UP_PLACED_KEY) || '{}');
+    const now = Date.now();
+    Object.keys(m).forEach(k => { if(now - m[k].at > 86400000) delete m[k]; });
+    m[_placedKey(accId, entry, sl)] = { orderId, at: now };
+    localStorage.setItem(_UP_PLACED_KEY, JSON.stringify(m));
+  }catch(e){}
+}
+function _takePlacedOrder(accId, entry, sl){
+  try{
+    const m = JSON.parse(localStorage.getItem(_UP_PLACED_KEY) || '{}');
+    const k = _placedKey(accId, entry, sl);
+    const hit = m[k];
+    if(!hit || Date.now() - hit.at > 86400000) return null;
+    delete m[k];
+    localStorage.setItem(_UP_PLACED_KEY, JSON.stringify(m));
+    return hit.orderId;
+  }catch(e){ return null; }
+}
+function _forgetPlacedOrder(orderId){
+  try{
+    const m = JSON.parse(localStorage.getItem(_UP_PLACED_KEY) || '{}');
+    Object.keys(m).forEach(k => { if(m[k].orderId === orderId) delete m[k]; });
+    localStorage.setItem(_UP_PLACED_KEY, JSON.stringify(m));
+  }catch(e){}
+}
+
+// Cancel mula mismo sa kumpirmasyon, pagkatapos mailagay.
+async function cancelPlacedFromModal(idx){
+  const r = UP_ORDER_ROWS[idx];
+  if(!r || !r.result || !r.result.orderId) return;
+  r.state = 'sending'; r.note = ''; _renderUpscaleOrderRows();
+  try{
+    await _upscaleCall('cancel', { tradingAccountId: r.acc.id, orderId: r.result.orderId });
+    _forgetPlacedOrder(r.result.orderId);
+    r.state = 'cancelled';
+    showToast('Order cancelled on Upscale');
+  }catch(e){
+    r.state = 'done'; r.note = e.message;
+  }
+  _renderUpscaleOrderRows();
 }
 
 function closeUpscaleOrderModal(){
@@ -22194,7 +22247,10 @@ async function tradeThisSetup(accountId, opts){
      Kung wala ito, iisang listahan ng Pending Setups ang dalawang pahina —
      ang mismong "may connection" na napansin niya. */
   if(_isPaperMode()) payload.is_paper = true;
-  // Galing sa Place Order: "Order Placed" at ang order id para sa Cancel.
+  // Kung nai-Place Order na ito sa parehong account at parehong Entry/SL, ang
+  // setup ay "Order Placed" at dala ang order id — para sa Cancel Order.
+  const placed = payload.is_paper ? null : _takePlacedOrder(account.id, entry, sl);
+  if(placed){ payload.status = 'Order Placed'; payload.upscale_order_id = placed; }
   if(opts && opts.extra) Object.assign(payload, opts.extra);
 
   try{
@@ -23696,6 +23752,7 @@ async function cancelUpscaleOrder(setupId, btn){
   if(btn){ btn.disabled = true; btn.textContent = 'Cancelling…'; }
   try{
     await _upscaleCall('cancel', { tradingAccountId: s.account_id, orderId: s.upscale_order_id });
+    _forgetPlacedOrder(s.upscale_order_id);
     await setSetupStatus(setupId, 'Cancelled');
     showToast('Order cancelled on Upscale');
   }catch(e){
