@@ -18,6 +18,8 @@ export default {
     const url = new URL(request.url);
     if (url.pathname === '/api/transcribe') return handleTranscribe(request, env);
     if (url.pathname === '/api/economic-events') return handleEconomicEvents(request);
+    const up = url.pathname.match(/^\/api\/upscale\/(check|link|unlink|quote|order)$/);
+    if (up) return handleUpscale(request, env, up[1]);
     // Everything else is the site itself.
     return serveAsset(request, env);
   }
@@ -115,6 +117,268 @@ async function handleEconomicEvents(request) {
   });
   await cache.put(cacheKey, out.clone());
   return out;
+}
+
+/* ANG ORDER SA UPSCALE.
+
+   Bawat account sa journal ay may sariling Upscale API key. Ang key ay
+   hinding-hindi itinatago nang hubad: ine-encrypt ito rito (AES-GCM) gamit ang
+   UPSCALE_ENC_KEY, isang Cloudflare secret, bago isulat sa trading_accounts —
+   at hindi na ito ibinabalik sa browser kailanman. Ang browser ay nagpapadala
+   lang ng "aling account" at ng mga presyo; ang Worker ang bumabasa ng key,
+   at sa pamamagitan lang ng login ng user (RLS), kaya ang account ng iba ay
+   hindi maaabot.
+
+   Set once in Cloudflare → Workers → ppp-crypto-journal → Settings →
+   Variables and Secrets:   UPSCALE_ENC_KEY  (32 random bytes, base64)
+
+   Lahat ng numero sa Upscale API ay "fp9": integer string na ×10⁹. */
+const SB_URL = 'https://ofohjebtyppsxgjuqxme.supabase.co';
+// The public anon key — the same one js/supabase.js ships to every browser.
+// RLS is the real boundary; every call below carries the user's own token.
+const SB_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9mb2hqZWJ0eXBwc3hnanVxeG1lIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI4MTEyODUsImV4cCI6MjA5ODM4NzI4NX0.koW1I7dFrBToH9azx3TPZwyFrY1HIr2XAgFS72DRI34';
+const UPSCALE_API = 'https://api.upscale.trade';
+
+class UpscaleError extends Error {
+  constructor(status, code, message) { super(message); this.status = status; this.code = code; }
+}
+
+const toFp9 = (n) => {
+  const s = Number(n).toFixed(9);
+  const neg = s.startsWith('-');
+  const [w, f] = (neg ? s.slice(1) : s).split('.');
+  const v = BigInt(w) * 1000000000n + BigInt(f);
+  return (neg ? -v : v).toString();
+};
+const fromFp9 = (raw) => (raw == null || raw === '') ? null : Number(BigInt(String(raw))) / 1e9;
+
+const b64 = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf)));
+const unb64 = (s) => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+
+async function encKey(env) {
+  const raw = unb64(env.UPSCALE_ENC_KEY);
+  if (raw.length !== 32) throw new UpscaleError(500, 'bad_enc_key', 'UPSCALE_ENC_KEY must be 32 bytes, base64.');
+  return crypto.subtle.importKey('raw', raw, 'AES-GCM', false, ['encrypt', 'decrypt']);
+}
+async function encrypt(env, text) {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, await encKey(env), new TextEncoder().encode(text));
+  return `v1:${b64(iv)}:${b64(ct)}`;
+}
+async function decrypt(env, stored) {
+  const [v, iv, ct] = String(stored || '').split(':');
+  if (v !== 'v1' || !iv || !ct) throw new UpscaleError(400, 'no_key', 'This account has no Upscale API key.');
+  const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: unb64(iv) }, await encKey(env), unb64(ct));
+  return new TextDecoder().decode(pt);
+}
+
+async function sbUser(token) {
+  const res = await fetch(`${SB_URL}/auth/v1/user`, { headers: { apikey: SB_ANON, Authorization: `Bearer ${token}` } });
+  if (!res.ok) return null;
+  const u = await res.json().catch(() => null);
+  return u && u.id ? u : null;
+}
+async function sbAccount(token, id) {
+  const res = await fetch(`${SB_URL}/rest/v1/trading_accounts?id=eq.${encodeURIComponent(id)}`
+    + '&select=id,account_name,upscale_api_key_enc,upscale_account_id', {
+    headers: { apikey: SB_ANON, Authorization: `Bearer ${token}` }
+  });
+  if (!res.ok) {
+    const t = await res.text();
+    if (t.includes('upscale_')) throw new UpscaleError(500, 'no_columns', 'Run supabase_trading_accounts_upscale_api.sql in Supabase first.');
+    throw new UpscaleError(502, 'db', 'Could not read the account.');
+  }
+  const rows = await res.json();
+  if (!rows.length) throw new UpscaleError(404, 'not_found', 'Account not found.');
+  return rows[0];
+}
+async function sbPatchAccount(token, id, patch) {
+  const res = await fetch(`${SB_URL}/rest/v1/trading_accounts?id=eq.${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    headers: { apikey: SB_ANON, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+    body: JSON.stringify(patch)
+  });
+  if (!res.ok) {
+    const t = await res.text();
+    if (t.includes('upscale_')) throw new UpscaleError(500, 'no_columns', 'Run supabase_trading_accounts_upscale_api.sql in Supabase first.');
+    throw new UpscaleError(502, 'db', 'Could not save the account.');
+  }
+}
+
+// Plain-language versions of Upscale's error codes — the part he will read.
+const UPSCALE_MESSAGES = {
+  session_expired: 'The Upscale API key was rejected — it may be expired or deleted. Add a new one in Edit account.',
+  api_trading_not_enabled: 'API trading is not switched on for this Upscale account.',
+  account_access_denied: 'This API key cannot trade that Upscale account.',
+  insufficient_balance: 'Not enough available balance on Upscale for this order.',
+  market_paused: 'This market is paused on Upscale right now.',
+  market_close_only: 'This market is close-only on Upscale right now.',
+  market_price_stale: 'Upscale had no fresh price for this market — try again in a moment.',
+  api_key_rate_limit_exceeded: 'Upscale rate limit reached — wait a few seconds and try again.',
+  idempotency_key_in_flight: 'This order is already being sent.',
+  account_not_found: 'Upscale could not find that account.',
+  market_not_found: 'Upscale has no such market.',
+};
+
+async function upscale(key, method, path, body, idem) {
+  const res = await fetch(`${UPSCALE_API}${path}`, {
+    method,
+    headers: {
+      Authorization: `Bearer ${key}`,
+      ...(body ? { 'Content-Type': 'application/json' } : {}),
+      ...(idem ? { 'x-idempotency-key': idem } : {})
+    },
+    body: body ? JSON.stringify(body) : undefined
+  });
+  const payload = res.status === 204 ? null : await res.json().catch(() => null);
+  if (!res.ok) {
+    const code = payload && payload.error;
+    const detail = payload && payload.message;
+    throw new UpscaleError(res.status, code || 'upscale',
+      UPSCALE_MESSAGES[code] || `Upscale said: ${Array.isArray(detail) ? detail.join('; ') : (detail || res.status)}`);
+  }
+  return payload;
+}
+
+const PHASE_LABEL = {
+  active_evaluation: 'Evaluation', active_verification: 'Verification',
+  funded: 'Funded', funded_success: 'Funded'
+};
+function summarizeAccount(a) {
+  const size = fromFp9(a.initialAccountBalance);
+  const bal = fromFp9(a.riskStatus && a.riskStatus.currentBalance) ?? fromFp9(a.accountBalance);
+  const r = a.riskStatus || {};
+  return {
+    accountId: a.accountId,
+    phase: PHASE_LABEL[a.currentPhase] || a.currentPhase || '',
+    status: a.status, apiTrading: !!a.apiTrading,
+    size, balance: bal,
+    label: `${size != null ? '$' + size.toLocaleString('en-US') : '?'} · ${PHASE_LABEL[a.currentPhase] || a.currentPhase || ''}`,
+    consistency: r.consistencyRuleApplies ? {
+      met: !!r.consistencyRuleMet,
+      ratio: fromFp9(r.consistencyRuleRatio),
+      limit: fromFp9(r.consistencyRuleLimit),
+      bestDay: fromFp9(r.maxPeriodDailyEquityDelta)
+    } : null
+  };
+}
+
+// "BTC", "btc/usd", "BTCUSDT", "BTC-PERP" -> "BTC"
+function baseAssetOf(symbol) {
+  const s = String(symbol || '').toUpperCase().trim();
+  if (!s) return '';
+  const head = s.split(/[\/\-_: ]/)[0];
+  return head.replace(/(USDT|USDC|USD|PERP)$/, '') || head;
+}
+
+async function findMarket(key, accountId, symbol) {
+  const asset = baseAssetOf(symbol);
+  if (!asset) throw new UpscaleError(400, 'no_symbol', 'Put the Symbol in the calculator first (e.g. BTC).');
+  const markets = await upscale(key, 'GET', `/v2/markets?accountId=${encodeURIComponent(accountId)}`);
+  const m = (markets || []).find(x => x.config && String(x.config.baseAsset).toUpperCase() === asset);
+  if (!m) throw new UpscaleError(404, 'market_not_found', `Upscale has no ${asset} market for this account.`);
+  return {
+    id: m.id, asset, ticker: m.config.ticker || `${asset}/USD`,
+    price: fromFp9(m.state && m.state.indexPrice),
+    paused: !!(m.settings && m.settings.isPaused) || !!(m.schedule && m.schedule.inPause),
+    closeOnly: !!(m.settings && m.settings.isCloseOnly)
+  };
+}
+
+// Long: an entry below the market waits for price to come down (limit);
+// above it waits for price to break up (stop). Short is the mirror.
+function pickOrderType(direction, entry, price) {
+  if (!(price > 0)) return null;
+  const better = direction === 'long' ? entry < price : entry > price;
+  return better ? 'limit' : 'stop_market';
+}
+
+async function handleUpscale(request, env, action) {
+  if (request.method !== 'POST') return json({ error: 'POST only.' }, 405);
+  try {
+    if (!env.UPSCALE_ENC_KEY) throw new UpscaleError(500, 'not_configured',
+      'Upscale trading is not set up on the server yet — add the UPSCALE_ENC_KEY secret in Cloudflare.');
+    const token = (request.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '');
+    if (!token || !(await sbUser(token))) throw new UpscaleError(401, 'auth', 'Your session expired — sign in again.');
+    const body = await request.json().catch(() => null);
+    if (!body || typeof body !== 'object') throw new UpscaleError(400, 'bad_request', 'Bad request.');
+    const accId = String(body.tradingAccountId ?? '');
+    if (!/^[\w-]{1,64}$/.test(accId)) throw new UpscaleError(400, 'bad_request', 'Which account?');
+
+    // Make sure the journal account is the caller's before touching anything.
+    const row = await sbAccount(token, accId);
+
+    if (action === 'check' || action === 'link') {
+      const apiKey = String(body.apiKey || '').trim();
+      if (!/^usk_[\w-]{8,256}$/.test(apiKey)) throw new UpscaleError(400, 'bad_key', 'That does not look like an Upscale API key (it starts with usk_).');
+      const accounts = (await upscale(apiKey, 'GET', '/accounts/with-risk-status') || []).map(summarizeAccount);
+      if (action === 'check') return json({ accounts });
+
+      const pick = accounts.find(a => a.accountId === body.upscaleAccountId);
+      if (!pick) throw new UpscaleError(400, 'bad_account', 'That Upscale account is not under this key.');
+      if (!pick.apiTrading) throw new UpscaleError(400, 'api_trading_not_enabled', UPSCALE_MESSAGES.api_trading_not_enabled);
+      await sbPatchAccount(token, accId, {
+        upscale_api_key_enc: await encrypt(env, apiKey),
+        upscale_account_id: pick.accountId,
+        upscale_account_label: pick.label
+      });
+      return json({ ok: true, label: pick.label, accountId: pick.accountId });
+    }
+
+    if (action === 'unlink') {
+      await sbPatchAccount(token, accId, { upscale_api_key_enc: null, upscale_account_id: null, upscale_account_label: null });
+      return json({ ok: true });
+    }
+
+    // quote / order need a linked account.
+    if (!row.upscale_api_key_enc || !row.upscale_account_id)
+      throw new UpscaleError(400, 'not_linked', `${row.account_name} has no Upscale API key yet.`);
+    const key = await decrypt(env, row.upscale_api_key_enc);
+    const upId = row.upscale_account_id;
+    const market = await findMarket(key, upId, body.symbol);
+
+    if (action === 'quote') {
+      const all = (await upscale(key, 'GET', '/accounts/with-risk-status') || []).map(summarizeAccount);
+      const acct = all.find(a => a.accountId === upId) || null;
+      return json({ market, account: acct });
+    }
+
+    // ---- order ----
+    const entry = Number(body.entry), sl = Number(body.sl), tp = body.tp == null || body.tp === '' ? null : Number(body.tp);
+    const qty = Number(body.quantity), lev = Math.round(Number(body.leverage));
+    if (!(entry > 0) || !(sl > 0) || entry === sl) throw new UpscaleError(400, 'bad_prices', 'Entry and SL are needed, and must differ.');
+    if (!(qty > 0)) throw new UpscaleError(400, 'bad_qty', 'Quantity must be above zero.');
+    if (!(lev >= 1 && lev <= 200)) throw new UpscaleError(400, 'bad_lev', 'Leverage is missing.');
+    const direction = entry > sl ? 'long' : 'short';
+    if (tp != null && (!(tp > 0) || (direction === 'long' ? tp <= entry : tp >= entry)))
+      throw new UpscaleError(400, 'bad_tp', 'TP is on the wrong side of Entry.');
+    if (market.paused) throw new UpscaleError(403, 'market_paused', UPSCALE_MESSAGES.market_paused);
+    if (market.closeOnly) throw new UpscaleError(403, 'market_close_only', UPSCALE_MESSAGES.market_close_only);
+    const type = pickOrderType(direction, entry, market.price);
+    if (!type) throw new UpscaleError(409, 'market_price_stale', UPSCALE_MESSAGES.market_price_stale);
+
+    // Sized by quantity (sizeMode base), so the loss at SL is exactly the
+    // risk amount. `amount` carries the collateral the position needs.
+    const order = {
+      accountId: upId, marketId: market.id, type, direction,
+      sizeMode: 'base', baseSize: toFp9(qty),
+      amount: toFp9(qty * entry / lev), leverage: toFp9(lev),
+      triggerPrice: toFp9(entry), stopTriggerPrice: toFp9(sl)
+    };
+    if (tp != null) order.takeTriggerPrice = toFp9(tp);
+    const idem = /^[\w-]{8,80}$/.test(String(body.idempotencyKey || '')) ? body.idempotencyKey : crypto.randomUUID();
+    const res = await upscale(key, 'POST', '/orders', order, idem);
+    if (res && res.status === 'canceled_by_error') {
+      throw new UpscaleError(400, 'canceled_by_error',
+        `Upscale cancelled the order: ${(res.errorCode || []).join(', ') || res.reason || 'unknown reason'}.`);
+    }
+    return json({ ok: true, orderId: res && res.id, status: res && res.status, type, direction,
+      price: market.price, ticker: market.ticker });
+  } catch (e) {
+    if (e instanceof UpscaleError) return json({ error: e.message, code: e.code }, e.status >= 400 && e.status < 600 ? e.status : 500);
+    console.error('upscale handler failed', e && e.message);
+    return json({ error: 'Something went wrong talking to Upscale.' }, 502);
+  }
 }
 
 async function handleTranscribe(request, env) {

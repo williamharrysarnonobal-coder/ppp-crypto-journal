@@ -17,7 +17,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<link rel="stylesheet" href="css/style.css?v=321">
+<link rel="stylesheet" href="css/style.css?v=322">
 </head>
 <body>
 
@@ -663,6 +663,11 @@
           </div>
         </div>
 
+        <!-- Lumalabas lang kapag may account na may Upscale API key. -->
+        <div class="up-order-all" id="psOrderAllRow" style="display:none;">
+          <button type="button" class="up-order-btn" onclick="placeUpscaleOrders()">Place Order — all API accounts</button>
+          <span class="up-order-all-sub" id="psOrderAllSub"></span>
+        </div>
         <div style="overflow-x:auto;">
           <table class="breakdown poscalc-table ps-account-table">
             <thead><tr><th>Account</th><th>Risk Amount ($)</th><th>Quantity</th><th>Min Leverage</th><th>Margin</th><th></th></tr></thead>
@@ -1958,6 +1963,26 @@
       <input id="accRiskPerTrade" type="number" step="0.01" placeholder="e.g. 0.3">
     </div>
 
+    <!-- Upscale API: ang key ay ipinapadala sa Worker, ine-encrypt doon, at
+         hindi na ipinapakita ulit. Lumalabas lang kapag nag-e-edit (kailangan
+         ng account id). -->
+    <div class="up-api" id="accUpscaleApi" style="display:none;">
+      <div class="up-api-head">Upscale API <span class="up-api-sub">— place orders from the calculator</span></div>
+      <div id="accUpscaleLinked" class="up-api-linked" style="display:none;">
+        <span class="up-api-dot"></span>
+        <span>Linked to <b id="accUpscaleLabel"></b></span>
+        <button type="button" class="up-api-unlink" onclick="unlinkUpscaleApi()">Remove key</button>
+      </div>
+      <div id="accUpscaleForm">
+        <div class="up-api-row">
+          <input id="accUpscaleKey" type="password" autocomplete="off" spellcheck="false" placeholder="usk_…  (Upscale terminal → Account settings → API keys)">
+          <button type="button" class="acct-recalc-btn" id="accUpscaleCheckBtn" onclick="checkUpscaleApiKey()">Connect</button>
+        </div>
+        <div id="accUpscalePick" class="up-api-pick"></div>
+      </div>
+      <div id="accUpscaleNote" class="up-api-note"></div>
+    </div>
+
     <div style="margin:2px 0 14px;">
       <a href="#" onclick="event.preventDefault(); toggleAccFullDetails();" id="accFullDetailsToggle" style="font-size:11.5px;color:var(--accent);">Edit full account details</a>
     </div>
@@ -2077,6 +2102,21 @@
     <div style="display:flex;gap:10px;">
       <button class="ai-btn" id="accountSaveBtn" style="flex:1;" onclick="saveAccount()">Save Account</button>
       <button class="drawer-danger-btn" id="accountDeleteBtn" style="display:none;" onclick="deleteAccount()">Delete</button>
+    </div>
+  </div>
+</div>
+
+<!-- Kumpirmasyon bago magpadala sa Upscale. Ang bawat hilera ay isang account. -->
+<div class="modal-overlay" id="upOrderModal" onclick="if(event.target===this) closeUpscaleOrderModal()">
+  <div class="modal-box" style="max-width:640px;position:relative;">
+    <button class="modal-close" onclick="closeUpscaleOrderModal()">✕</button>
+    <h3 style="margin:0 0 4px;">Place order on Upscale</h3>
+    <div class="sub" id="upOrderSummary" style="margin:0 0 14px;"></div>
+    <div id="upOrderRows" class="up-order-rows"></div>
+    <div id="upOrderError" class="auth-error"></div>
+    <div style="display:flex;gap:10px;margin-top:6px;">
+      <button class="ai-btn" id="upOrderPlaceBtn" style="flex:1;" onclick="confirmUpscaleOrders()" disabled>Place Order</button>
+      <button class="drawer-secondary-btn" id="upOrderCancelBtn" onclick="closeUpscaleOrderModal()">Cancel</button>
     </div>
   </div>
 </div>
@@ -2395,6 +2435,6 @@
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=2"></script>
-<script src="js/dashboard.js?v=545"></script>
+<script src="js/dashboard.js?v=546"></script>
 </body>
 </html>

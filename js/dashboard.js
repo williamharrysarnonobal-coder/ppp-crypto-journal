@@ -8345,9 +8345,18 @@ function renderPosSizeCalculator(){
       <td style="white-space:nowrap;">
         <button type="button" class="poscalc-accent-btn" onclick="copyCellValue(this)" ${c.qty == null ? 'disabled' : ''}>Copy</button>
         <button type="button" class="poscalc-accent-btn" onclick="tradeThisSetup('${acc.id}')" ${c.minLev == null ? 'disabled' : ''}>Trade This Setup</button>
+        ${acc.upscale_account_id ? `<button type="button" class="up-order-btn up-order-btn-sm" onclick="placeUpscaleOrders(['${acc.id}'])" ${c.minLev == null ? 'disabled' : ''} title="Send this order to Upscale — ${escapeHtml(acc.upscale_account_label || '')}">Place Order</button>` : ''}
       </td>
     </tr>`;
   }).join('');
+
+  const apiAccs = accounts.filter(a => a.upscale_account_id);
+  const allRow = document.getElementById('psOrderAllRow');
+  if(allRow){
+    allRow.style.display = apiAccs.length ? '' : 'none';
+    const sub = document.getElementById('psOrderAllSub');
+    if(sub) sub.textContent = apiAccs.map(a => a.account_name).join(' · ');
+  }
 }
 
 // Copies the Quantity cell in the same row as the button that was clicked —
@@ -20012,6 +20021,9 @@ async function loadAccounts(){
     });
     if(!res.ok) throw new Error(await res.text());
     TRADING_ACCOUNTS = await res.json();
+    // Naka-encrypt ito at walang silbi rito kung wala ang susi ng Worker —
+    // pero walang dahilan para manatili ito sa browser, kaya itinatapon agad.
+    TRADING_ACCOUNTS.forEach(a => { delete a.upscale_api_key_enc; });
   }catch(e){
     console.error("Couldn't load trading accounts:", e);
     TRADING_ACCOUNTS = [];
@@ -21603,11 +21615,30 @@ function accountCardHTML(a){
         >Remaining Trades: <span>${left}</span> <em>${left === 1 ? 'loss' : 'losses'} left</em></div>`;
     })();
 
-    const riskHTML = (riskBase != null || tradeCount > 0 || remainHTML)
+    /* ANG 30% RULE NG UPSCALE API. Kapag naka-on ang API sa isang challenge,
+       ang pinakamalaking araw ay dapat mas mababa sa 30% ng kabuuang kita.
+       Ang palugit na ipinapakita ay 25% ng target — may puwang pa para sa
+       isang talong araw. Sa challenge lang ito; walang API ang Funded. */
+    const capHTML = (() => {
+      if(!a.upscale_account_id || isExchange) return '';
+      const target = Number(a.profit_target_pct);
+      const size = Number(a.account_size);
+      if(!(target > 0) || !(size > 0) || !cardStats) return '';
+      const cap = size * target / 100 * 0.25;
+      const hard = size * target / 100 * 0.30;
+      const today = cardStats.todaysPL || 0;
+      const cls = today >= hard ? 'out' : today >= cap ? 'low' : 'ok';
+      const word = today >= hard ? 'over the 30% line' : today >= cap ? 'cap reached — done for today' : 'today';
+      return `<div class="acc-remain ${cls}" title="Upscale API accounts must keep their best day under 30% of total profit. The cap is 25% of the profit target, leaving room for a losing day. Hard line: $${_upPx(hard)}.">
+        Daily cap: <span>$${_upPx(Math.max(0, today))}</span> <em>of $${_upPx(cap)} ${word}</em></div>`;
+    })();
+
+    const riskHTML = (riskBase != null || tradeCount > 0 || remainHTML || capHTML)
       ? `<div class="account-card-risk">
           <div>Total Trades: <span>${tradeCount}</span></div>
           ${riskBase != null ? `<div>Risk Per Trade: <span>$${(riskBase * riskPct/100).toLocaleString(undefined,{maximumFractionDigits:2})}</span> <span class="account-risk-pct">(${riskPct}%)</span></div>` : ''}
           ${remainHTML}
+          ${capHTML}
         </div>`
       : '';
 
@@ -21952,14 +21983,170 @@ async function copyTradeSummaryToClipboard(btn){
   setTimeout(() => { btn.classList.remove('copied'); btn.innerHTML = original; }, 1200);
 }
 
-async function tradeThisSetup(accountId){
+/* ---------------- Place Order (Upscale API) ----------------
+
+   Isang click, isang kumpirmasyon, tapos ang order. Ang bawat account ay
+   gumagamit ng SARILING Risk Amount nito: Quantity = Risk ÷ |Entry − SL|,
+   kaya ang talo sa SL ay eksaktong ang risk. Ang leverage ay ang Min Leverage
+   sa calculator. Ang Limit o Stop ay pinipili ng Worker mula sa presyo NGAYON:
+   Long na entry sa ilalim ng presyo → Limit, sa itaas → Stop (kabaligtaran sa
+   Short).
+
+   Ang bawat hilera ay may sariling idempotency key na ginawa pagbukas ng
+   modal — kaya ang dobleng pindot, o ang muling pagsubok pagkatapos ng isang
+   network error, ay hindi gagawa ng dalawang order. */
+let UP_ORDER_ROWS = [];
+
+function _psFloorQty(q){ return Math.floor(q * 10000) / 10000; }
+
+async function placeUpscaleOrders(accountIds){
+  const entry = parseFloat(document.getElementById('psEntry').value);
+  const tp = parseFloat(document.getElementById('psTP').value);
+  const sl = parseFloat(document.getElementById('psSL').value);
+  const symbol = (document.getElementById('psSymbol').value || '').trim();
+  if(!Number.isFinite(entry) || !Number.isFinite(sl) || entry === sl){
+    await customAlert('Enter Entry and SL prices first.'); return;
+  }
+  if(!symbol){ await customAlert('Enter the Symbol first (e.g. BTC/USD).'); return; }
+
+  const accs = TRADING_ACCOUNTS.filter(a => a.upscale_account_id && a.account_type !== 'Exchange'
+    && (!accountIds || accountIds.map(String).includes(String(a.id))));
+  if(!accs.length){ await customAlert('No account here has an Upscale API key yet — add one in My Accounts → Edit.'); return; }
+
+  const riskPerUnit = Math.abs(entry - sl);
+  const saved = _psRiskAmounts();
+  const direction = entry > sl ? 'Long' : 'Short';
+  UP_ORDER_ROWS = accs.map(acc => {
+    const riskRaw = saved[acc.id] != null ? saved[acc.id] : _psSeedRisk(acc);
+    const c = _psComputeRow(acc, parseFloat(riskRaw) || 0, entry, riskPerUnit);
+    const qty = c.qty != null ? _psFloorQty(c.qty) : null;
+    return {
+      acc, qty, lev: c.minLev, risk: qty != null ? qty * riskPerUnit : null,
+      idem: (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(16).slice(2)),
+      state: (qty > 0 && c.minLev != null) ? 'loading' : 'skip',
+      note: (qty > 0 && c.minLev != null) ? '' : "Won't fit in this account's balance.",
+      quote: null, result: null
+    };
+  });
+
+  const rr = Number.isFinite(tp) ? ` · 1:${(Math.abs(tp - entry) / riskPerUnit).toFixed(2)}` : '';
+  document.getElementById('upOrderSummary').innerHTML =
+    `<b>${escapeHtml(symbol)}</b> · <b class="${direction === 'Long' ? 'up-long' : 'up-short'}">${direction}</b>`
+    + ` · Entry ${_upPx(entry)} · TP ${Number.isFinite(tp) ? _upPx(tp) : '—'} · SL ${_upPx(sl)}${rr}`;
+  document.getElementById('upOrderError').textContent = '';
+  const placeBtn = document.getElementById('upOrderPlaceBtn');
+  placeBtn.disabled = true; placeBtn.textContent = 'Place Order';
+  document.getElementById('upOrderCancelBtn').textContent = 'Cancel';
+  document.getElementById('upOrderModal').classList.add('open');
+  _renderUpscaleOrderRows();
+
+  // Ang presyo at ang 30% rule ng bawat account, bago ka pumindot.
+  await Promise.all(UP_ORDER_ROWS.filter(r => r.state === 'loading').map(async r => {
+    try{
+      r.quote = await _upscaleCall('quote', { tradingAccountId: r.acc.id, symbol });
+      r.state = 'ready';
+    }catch(e){ r.state = 'error'; r.note = e.message; }
+  }));
+  _renderUpscaleOrderRows();
+  placeBtn.disabled = !UP_ORDER_ROWS.some(r => r.state === 'ready');
+}
+
+const _upPx = v => Number(v).toLocaleString(undefined, { maximumFractionDigits: 2 });
+
+function _upOrderTypeFor(direction, entry, price){
+  if(!(price > 0)) return '—';
+  const better = direction === 'Long' ? entry < price : entry > price;
+  return better ? 'Limit' : 'Stop';
+}
+
+function _renderUpscaleOrderRows(){
+  const entry = parseFloat(document.getElementById('psEntry').value);
+  const sl = parseFloat(document.getElementById('psSL').value);
+  const direction = entry > sl ? 'Long' : 'Short';
+  document.getElementById('upOrderRows').innerHTML = UP_ORDER_ROWS.map(r => {
+    const q = r.quote, m = q && q.market, ua = q && q.account;
+    const type = m ? _upOrderTypeFor(direction, entry, m.price) : '';
+    const cons = ua && ua.consistency;
+    const consLine = cons
+      ? `<div class="up-row-cons ${cons.met ? '' : 'warn'}">30% rule: best day $${_upPx(cons.bestDay || 0)}${cons.ratio != null ? ` · ${(cons.ratio * 100).toFixed(0)}% of profit` : ''}${cons.met ? '' : ' — not met yet'}</div>`
+      : '';
+    const status = {
+      loading: '<span class="up-row-status">Checking…</span>',
+      ready:   `<span class="up-row-status ok">${type} at ${_upPx(entry)}</span>`,
+      sending: '<span class="up-row-status">Sending…</span>',
+      done:    `<span class="up-row-status ok">✓ Placed${r.result && r.result.status ? ' · ' + escapeHtml(r.result.status) : ''}</span>`,
+      error:   '<span class="up-row-status bad">Not sent</span>',
+      skip:    '<span class="up-row-status bad">Skipped</span>'
+    }[r.state];
+    return `<div class="up-row up-row-${r.state}">
+      <div class="up-row-top">
+        <b>${escapeHtml(r.acc.account_name)}</b>
+        <span class="up-row-acct">${escapeHtml(r.acc.upscale_account_label || '')}</span>
+        ${status}
+      </div>
+      <div class="up-row-nums">
+        <span>Qty <b>${r.qty != null ? r.qty.toFixed(4) : '—'}</b></span>
+        <span>Risk <b>$${r.risk != null ? _upPx(r.risk) : '—'}</b></span>
+        <span>Leverage <b>${r.lev != null ? r.lev + 'x' : '—'}</b></span>
+        ${m ? `<span>${escapeHtml(m.ticker)} now <b>${_upPx(m.price)}</b></span>` : ''}
+      </div>
+      ${consLine}
+      ${r.note ? `<div class="up-row-note">${escapeHtml(r.note)}</div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+async function confirmUpscaleOrders(){
+  const entry = parseFloat(document.getElementById('psEntry').value);
+  const tp = parseFloat(document.getElementById('psTP').value);
+  const sl = parseFloat(document.getElementById('psSL').value);
+  const symbol = (document.getElementById('psSymbol').value || '').trim();
+  const placeBtn = document.getElementById('upOrderPlaceBtn');
+  placeBtn.disabled = true; placeBtn.textContent = 'Sending…';
+
+  const todo = UP_ORDER_ROWS.filter(r => r.state === 'ready' || (r.state === 'error' && r.quote));
+  // Isa-isa, hindi sabay-sabay: may rate limit ang bawat key, at mas madaling
+  // basahin ang resulta kapag sunod-sunod.
+  for(const r of todo){
+    r.state = 'sending'; r.note = ''; _renderUpscaleOrderRows();
+    try{
+      r.result = await _upscaleCall('order', {
+        tradingAccountId: r.acc.id, symbol, entry, sl,
+        tp: Number.isFinite(tp) ? tp : null,
+        quantity: r.qty, leverage: r.lev, idempotencyKey: r.idem
+      });
+      r.state = 'done';
+      // Kapareho ng Trade This Setup: naitatala rin bilang Pending setup, para
+      // tuloy-tuloy ang journal pagkasara ng trade.
+      await tradeThisSetup(r.acc.id, { silent: true });
+    }catch(e){
+      r.state = 'error'; r.note = e.message;
+    }
+    _renderUpscaleOrderRows();
+  }
+
+  const done = UP_ORDER_ROWS.filter(r => r.state === 'done').length;
+  const failed = UP_ORDER_ROWS.filter(r => r.state === 'error').length;
+  placeBtn.textContent = failed ? 'Retry failed' : 'Place Order';
+  placeBtn.disabled = !failed;
+  document.getElementById('upOrderCancelBtn').textContent = 'Close';
+  if(done) showToast(`${done} order${done === 1 ? '' : 's'} placed on Upscale${failed ? ` · ${failed} failed` : ''}`);
+}
+
+function closeUpscaleOrderModal(){
+  document.getElementById('upOrderModal').classList.remove('open');
+  UP_ORDER_ROWS = [];
+}
+
+async function tradeThisSetup(accountId, opts){
+  const silent = !!(opts && opts.silent);
   const entry = parseFloat(document.getElementById('psEntry').value);
   const tp = parseFloat(document.getElementById('psTP').value);
   const sl = parseFloat(document.getElementById('psSL').value);
   const account = TRADING_ACCOUNTS.find(a => String(a.id) === String(accountId));
 
   if(!account || !Number.isFinite(entry) || !Number.isFinite(sl) || entry === sl){
-    await customAlert('Enter Entry and SL prices first.');
+    if(!silent) await customAlert('Enter Entry and SL prices first.');
     return;
   }
 
@@ -21970,7 +22157,7 @@ async function tradeThisSetup(accountId){
   const c = _psComputeRow(account, riskAmount, entry, riskPerUnit);
 
   if(c.minLev == null){
-    await customAlert("This position won't fit in that account's balance, even at max leverage.");
+    if(!silent) await customAlert("This position won't fit in that account's balance, even at max leverage.");
     return;
   }
 
@@ -22021,7 +22208,7 @@ async function tradeThisSetup(accountId){
     loadSavedSetups();
   }catch(e){
     console.error("Couldn't save setup:", e);
-    await customAlert("Couldn't save this setup — please try again.");
+    if(!silent) await customAlert("Couldn't save this setup — please try again.");
   }
 }
 
@@ -24017,6 +24204,118 @@ function imageIconSVG(){
   return `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>`;
 }
 
+/* ---------------- Upscale API ----------------
+
+   Ang key ay HINDI dumadaan sa Supabase mula sa browser. Ipinapadala ito sa
+   Worker (/api/upscale/*), na nag-e-encrypt dito gamit ang isang Cloudflare
+   secret bago isulat. Pagkatapos noon ay hindi na ito bumabalik dito: ang
+   alam lang ng page ay ang label ("$10,000 · Evaluation") at ang account id.
+   Ang kahon ng key ay nililinis pagkatapos ng bawat subok. */
+async function _upscaleCall(action, body){
+  const res = await fetch(`/api/upscale/${action}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${USER_ACCESS_TOKEN}` },
+    body: JSON.stringify(body)
+  });
+  const data = await res.json().catch(() => ({}));
+  if(!res.ok) throw new Error(data.error || `Request failed (${res.status}).`);
+  return data;
+}
+
+function _renderUpscaleApiSection(a){
+  const box = document.getElementById('accUpscaleApi');
+  if(!box) return;
+  // Kailangan ng naka-save na account; at walang API ang isang exchange.
+  const show = !!(a && a.id && a.account_type !== 'Exchange');
+  box.style.display = show ? '' : 'none';
+  document.getElementById('accUpscaleKey').value = '';
+  document.getElementById('accUpscalePick').innerHTML = '';
+  document.getElementById('accUpscaleNote').textContent = '';
+  if(!show) return;
+  const linked = !!a.upscale_account_id;
+  document.getElementById('accUpscaleLinked').style.display = linked ? '' : 'none';
+  document.getElementById('accUpscaleForm').style.display = linked ? 'none' : '';
+  document.getElementById('accUpscaleLabel').textContent = a.upscale_account_label || 'an Upscale account';
+}
+
+async function checkUpscaleApiKey(){
+  const input = document.getElementById('accUpscaleKey');
+  const note = document.getElementById('accUpscaleNote');
+  const pick = document.getElementById('accUpscalePick');
+  const btn = document.getElementById('accUpscaleCheckBtn');
+  const apiKey = input.value.trim();
+  pick.innerHTML = ''; note.textContent = ''; note.className = 'up-api-note';
+  if(!apiKey){ note.textContent = 'Paste the API key first.'; return; }
+  btn.disabled = true; btn.textContent = 'Checking…';
+  try{
+    const { accounts } = await _upscaleCall('check', { tradingAccountId: editingAccountId, apiKey });
+    const usable = (accounts || []).filter(x => x.apiTrading && x.status === 'active');
+    if(!usable.length){
+      input.value = '';
+      note.className = 'up-api-note bad';
+      note.textContent = accounts && accounts.length
+        ? 'The key works, but none of its Upscale accounts has API trading switched on. Turn it on in the Upscale terminal first.'
+        : 'The key works, but it has no Upscale accounts.';
+      return;
+    }
+    if(usable.length === 1){
+      await _linkUpscale(apiKey, usable[0].accountId);
+      return;
+    }
+    // Higit sa isa: ikaw ang pipili. Ang key ay nananatili sa kahon hanggang
+    // pumili ka, at nililinis pagkatapos.
+    pick.innerHTML = '<div class="up-api-pick-q">This key has several accounts — which one is this?</div>'
+      + usable.map(x => `<button type="button" class="up-api-choice" onclick="_linkUpscaleFromPick('${x.accountId}')">
+          <b>${escapeHtml(x.label)}</b>
+          <span>Balance $${x.balance != null ? x.balance.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</span>
+        </button>`).join('');
+  }catch(e){
+    input.value = '';
+    note.className = 'up-api-note bad';
+    note.textContent = e.message;
+  }finally{
+    btn.disabled = false; btn.textContent = 'Connect';
+  }
+}
+function _linkUpscaleFromPick(upId){
+  const apiKey = document.getElementById('accUpscaleKey').value.trim();
+  if(apiKey) _linkUpscale(apiKey, upId);
+}
+async function _linkUpscale(apiKey, upscaleAccountId){
+  const note = document.getElementById('accUpscaleNote');
+  try{
+    const r = await _upscaleCall('link', { tradingAccountId: editingAccountId, apiKey, upscaleAccountId });
+    const acc = TRADING_ACCOUNTS.find(x => x.id === editingAccountId);
+    if(acc){ acc.upscale_account_id = r.accountId; acc.upscale_account_label = r.label; }
+    _renderUpscaleApiSection(acc);
+    note.className = 'up-api-note good';
+    note.textContent = 'Connected. The key is stored encrypted and will not be shown again.';
+    if(typeof renderPosSizeCalculator === 'function') renderPosSizeCalculator();
+  }catch(e){
+    note.className = 'up-api-note bad';
+    note.textContent = e.message;
+  }finally{
+    document.getElementById('accUpscaleKey').value = '';
+    document.getElementById('accUpscalePick').innerHTML = '';
+  }
+}
+async function unlinkUpscaleApi(){
+  if(!(await customConfirm('Remove the Upscale API key from this account? Orders from the calculator will stop for it.'))) return;
+  const note = document.getElementById('accUpscaleNote');
+  try{
+    await _upscaleCall('unlink', { tradingAccountId: editingAccountId });
+    const acc = TRADING_ACCOUNTS.find(x => x.id === editingAccountId);
+    if(acc){ acc.upscale_account_id = null; acc.upscale_account_label = null; acc.upscale_api_key_enc = null; }
+    _renderUpscaleApiSection(acc);
+    note.className = 'up-api-note';
+    note.textContent = 'Key removed.';
+    if(typeof renderPosSizeCalculator === 'function') renderPosSizeCalculator();
+  }catch(e){
+    note.className = 'up-api-note bad';
+    note.textContent = e.message;
+  }
+}
+
 function openAccountModal(id){
   editingAccountId = id || null;
   accPresetManualOverride = false;
@@ -24036,6 +24335,7 @@ function openAccountModal(id){
   document.getElementById('accSize').value = a && a.account_size != null ? a.account_size : '';
   document.getElementById('accBalance').value = a && a.current_balance != null ? a.current_balance : '';
   document.getElementById('accRiskPerTrade').value = a && a.risk_per_trade_pct != null ? a.risk_per_trade_pct : '';
+  _renderUpscaleApiSection(a);
   // Hidden — not user-editable, just tells the rule summary below which
   // phase's target % to show. Phase itself only ever changes via auto-advance.
   document.getElementById('accPhase').value = a ? (a.phase || 'Evaluation Phase 1') : 'Evaluation Phase 1';
