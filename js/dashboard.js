@@ -866,7 +866,7 @@ function showRulesTooltip(event){
     tip.append(h, b);
   };
   section('Unfollowed Rules', cell.dataset.broke, 'broke');
-  section('Others', cell.dataset.notes, 'notes');
+  section('Notes', cell.dataset.notes, 'notes');
   const rect = cell.getBoundingClientRect();
   tip.style.left = `${rect.left}px`;
   tip.style.top = `${rect.bottom + 8}px`;
@@ -7563,12 +7563,24 @@ const _TAG_ADVERSE_SET = new Set(TAG_ADVERSE.map(s => s.toLowerCase()));
 
 const _TAG_OBSERVATION_SET = new Set(TAG_OBSERVATIONS.map(s => s.toLowerCase()));
 const _TAG_SENTINEL_SET = new Set(TAG_SENTINELS.map(s => s.toLowerCase()));
-// Anything not named above is a breach, so an option added later in the Options
-// editor lands on the breach side — which is where all but these belong.
+/* ANG RULE AY ANG NASA LISTAHAN; ANG IDINAGDAG MO AY NOTE.
+
+   Paglabag noon ang lahat ng hindi nakapangalan sa itaas — kaya ang tag na
+   idinagdag niya sa Options editor para sa sariling tala o eksperimento
+   ("TP area was just right") ay lumalabas sa ilalim ng "Unfollowed Rules",
+   ginagawang "No" ang Rules Followed, at nagpapababa ng discipline score.
+   Ang mga dagdag niya ay pawang tala, hindi patakaran. Kaya baligtad na:
+   ang mga rule ay ang mga nakapangalan dito (pati ang mga retiradong rule,
+   na totoong paglabag noong isinulat), at ang iba pa ay note. */
+const _TAG_RULE_SET = new Set([
+  ...UNFOLLOWED_RULES_OPTIONS.map(s => s.toLowerCase())
+    .filter(k => !_TAG_OBSERVATION_SET.has(k) && !_TAG_SENTINEL_SET.has(k)),
+  ...Object.keys(TAG_RETIRED),
+]);
 const _tagKind = t => {
   const k = String(t).trim().toLowerCase();
   return _TAG_SENTINEL_SET.has(k) ? 'sentinel'
-       : _TAG_OBSERVATION_SET.has(k) ? 'observation' : 'breach';
+       : _TAG_RULE_SET.has(k) ? 'breach' : 'observation';
 };
 
 /* The five rules the seventeen breach tags actually describe. Six different
@@ -13778,16 +13790,10 @@ function _journalColoredCell(key, row, plainVal){
        tama iyon noong isa lang ang ibig sabihin ng asul, pero ngayong may
        sariling kulay na ang hindi-umubra, ang pagtatago noon sa likod ng
        berde ang tanging bagay na masasabing mali. */
-    const tags = _canonicalTags(row.unfollowed_rules);
-    const adverse = tags.some(t => _TAG_ADVERSE_SET.has(String(t).toLowerCase()));
-    const declaredClean = tags.some(t => _tagKind(t) === 'sentinel');
-    if(lower === 'yes'){
-      return _box(adverse ? 'box-solid-warn'
-                : declaredClean ? 'box-solid-win'
-                : 'box-solid-info', v);
-    }
+    // Simple na lang, gaya ng hiningi niya: Yes = berde, No = pula. Ang
+    // orange/asul ay nagsasabi ng mga note — sa Trade Tags na iyon nakikita.
+    if(lower === 'yes') return _box('box-solid-win', v);
     if(lower === 'no') return _box('box-solid-loss', v);
-    if(v && v !== '—') return _box('box-solid-info', v);
   }
   if(key === 'win_loss'){
     const c = _winLossBoxClass(raw);
