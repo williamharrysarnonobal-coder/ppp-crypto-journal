@@ -4582,29 +4582,6 @@ table.journal td.paper-why-col{line-height:1.5;}
   .ea-grid{grid-template-columns:1fr;}
 }
 
-/* ---------- Dashboard: Today strip ---------- */
-.today-strip{margin:0 0 16px;}
-.today-strip[hidden]{display:none;}
-.ts-title{font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:0 0 8px;}
-.ts-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px;}
-.ts-card{
-  text-align:left;cursor:pointer;background:var(--surface);border:1px solid var(--rule);border-radius:10px;
-  padding:12px 14px;color:var(--ink);font:inherit;display:flex;flex-direction:column;gap:10px;
-}
-.ts-card:hover{border-color:var(--accent);}
-.ts-card:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
-.ts-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px;}
-.ts-head b{font-size:13px;}
-.ts-head span{font-size:11px;color:var(--muted);white-space:nowrap;}
-.ts-metrics{display:flex;flex-wrap:wrap;gap:8px 16px;}
-.ts-m{display:flex;flex-direction:column;gap:2px;min-width:0;}
-.ts-m span{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;}
-.ts-m b{font-size:15px;font-variant-numeric:tabular-nums;}
-.ts-m b i{font-style:normal;font-weight:500;font-size:11px;color:var(--muted);margin-left:2px;}
-.ts-m.pos b, .ts-m.ok b{color:var(--win);}
-.ts-m.neg b, .ts-m.bad b{color:var(--loss);}
-.ts-m.warn b{color:var(--warn);}
-
 /* ---------- Dashboard: Trade Quality ---------- */
 .tq-body{flex:1;min-height:0;display:flex;flex-direction:column;justify-content:center;gap:10px;}
 .tq-grid{display:grid;grid-template-columns:auto 1fr 1fr;gap:6px;align-items:stretch;}

@@ -1964,7 +1964,11 @@ function applyFilters(){
      nagbago ang Real money only, na nagbabago naman ng kasagutan. */
   renderDashGreeting();
 
-  renderTodayStrip();
+  // Kailangan ng R ang mga setup; kunin minsan kung hindi pa.
+  if(!SAVED_SETUPS_LOADED && !_dashSetupsRequested && typeof loadSavedSetups === 'function'){
+    _dashSetupsRequested = true;
+    loadSavedSetups();
+  }
   renderKPIs();
   // Nabubuhay lang ito kapag may paper trade; kung wala, nagtatago ang panel.
   renderTriggerPanel();
@@ -2206,10 +2210,37 @@ function renderKPIs(){
      trade mismo (|entry − SL| × quantity), kaya pantay ang lahat ng account.
      Ang trade na walang SL o quantity, o kahina-hinala ang numero, ay hindi
      isinasama — at sinasabi kung ilan ang nabilang. */
+  /* Ang unang bersyon ay nagtiwala sa |entry − SL| × quantity, at sumabog sa
+     totoong datos (+142R / −3,667R): ang Qty ng The5ers ay LOTS (0.42 sa
+     halip na 42 oz, kaya 100× na mas maliit ang risk), at ang SL na inilipat
+     malapit sa entry ay halos zero ang risk. Iilang trade lang, pero sila ang
+     nagdidikta ng average. Kaya, sunod-sunod:
+       1. ang binalak na Risk Amount ng setup na pinagmulan — ang pinakatapat;
+       2. kung wala, ang kinuwentang risk, pero kung makatwiran lamang:
+          0.05%–5% ng laki ng account;
+       3. ang R na lampas sa ±15 ay hindi isinasama — hindi iyon totoong R. */
+  const setupRisk = x => {
+    if(x.linked_setup_id == null || !Array.isArray(SAVED_SETUPS)) return null;
+    const s = SAVED_SETUPS.find(z => String(z.id) === String(x.linked_setup_id));
+    const v = s ? Number(s.risk_amount) : NaN;
+    return v > 0 ? v : null;
+  };
+  const accSize = x => {
+    const a = (TRADING_ACCOUNTS || []).find(z => z.account_name === x.account);
+    const v = a ? Number(a.account_size) : NaN;
+    return v > 0 ? v : null;
+  };
   const tradeR = x => {
-    const r = _beAvoidedLoss(x);
-    if(!r || r.suspect || !(r.value > 0)) return null;
-    return netPnl(x) / r.value;
+    let risk = setupRisk(x);
+    if(!risk){
+      const r = _beAvoidedLoss(x);
+      if(!r || r.suspect || !(r.value > 0)) return null;
+      const size = accSize(x);
+      if(size && (r.value < size * 0.0005 || r.value > size * 0.05)) return null;
+      risk = r.value;
+    }
+    const R = netPnl(x) / risk;
+    return Math.abs(R) <= 15 ? R : null;
   };
   const winR = wins.map(tradeR).filter(v => v !== null);
   const lossR = losses.map(tradeR).filter(v => v !== null);
@@ -2219,7 +2250,7 @@ function renderKPIs(){
   const pfR = sumLossR > 0 ? sumWinR / sumLossR : (sumWinR > 0 ? Infinity : null);
   const rCount = winR.length + lossR.length, decidedCount = wins.length + losses.length;
   const rNote = rCount < decidedCount
-    ? `<div style="margin-top:6px;font-size:10.5px;color:var(--muted);">from ${rCount} of ${decidedCount} trades with SL & quantity</div>` : '';
+    ? `<div style="margin-top:6px;font-size:10.5px;color:var(--muted);" title="Trades with no planned risk, no SL or quantity, or a risk that does not fit the account size are left out.">from ${rCount} of ${decidedCount} trades with a usable risk</div>` : '';
   const fmtR = v => v === null ? '—' : `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(2)}R`;
   const pfRDisplay = pfR === null ? 0 : pfR === Infinity ? 100 : Math.min(pfR/3*100, 100);
   const winBarPctR = (avgWinR !== null && avgLossR !== null && (Math.abs(avgWinR) + Math.abs(avgLossR)) > 0)
@@ -20658,10 +20689,7 @@ async function loadAccounts(){
     // pero walang dahilan para manatili ito sa browser, kaya itinatapon agad.
     TRADING_ACCOUNTS.forEach(a => { delete a.upscale_api_key_enc; });
     // Bagong Risk Per Trade % → ang calculator ay sumusunod agad.
-    PS_RISK_OVERRIDES = {};
-    // Ang "Today" strip ay galing sa mga account — iguhit ulit pagdating nila.
-    try{ renderTodayStrip(); }catch(e){}
-  }catch(e){
+    PS_RISK_OVERRIDES = {};  }catch(e){
     console.error("Couldn't load trading accounts:", e);
     TRADING_ACCOUNTS = [];
   }
@@ -21655,50 +21683,7 @@ function _syncPostExitField(field, exitMatch, exitTypeValue){
   if(row) row.classList.toggle('needs-input', sel.value.trim() === '');
 }
 
-/* ANG "TODAY" STRIP sa itaas ng Dashboard.
 
-   Ang tinitingnan mo bago ka mag-trade, kada account na aktibo pa (hindi
-   Failed o Passed): ang kita ngayong araw, ang natitirang daily loss, ilang
-   talo pa bago ang drawdown floor, at — sa mga account na may Upscale API —
-   ang daily cap ng 30% rule. Galing sa parehong computeAccountStats ng My
-   Accounts, kaya iisa ang sagot ng dalawang lugar. Hindi ito sumusunod sa
-   filter ng Dashboard: ang "ngayon" ay laging ngayon. */
-function renderTodayStrip(){
-  const el = document.getElementById('todayStrip');
-  if(!el) return;
-  const accs = (TRADING_ACCOUNTS || []).filter(a => a.account_type !== 'Exchange'
-    && Number(a.account_size) > 0 && !['failed','passed'].includes(String(a.status || '').toLowerCase()));
-  if(!accs.length){ el.hidden = true; el.innerHTML = ''; return; }
-  const money = v => `${v < 0 ? '−' : ''}$${Math.abs(v).toLocaleString(undefined,{maximumFractionDigits:0})}`;
-  const cards = accs.map(a => {
-    let s;
-    try{ s = computeAccountStats(a); }catch(e){ return ''; }
-    const today = s.todaysPL || 0;
-    const loss = _accountLossSize(a).size;
-    const lossLeft = s.dailyLossLimit > 0 ? Math.max(0, s.dailyLossLimit - s.dailyLossUsed) : null;
-    const lossesToday = (lossLeft !== null && loss > 0) ? Math.floor(lossLeft / loss) : null;
-    const room = s.currentBalance - s.drawdownFloor;
-    const remaining = (s.drawdownFloor > 0 && loss > 0) ? Math.max(0, Math.floor(room / loss)) : null;
-    const tone = n => n === null ? '' : n <= 1 ? 'bad' : n <= 3 ? 'warn' : 'ok';
-    let cap = '';
-    const target = Number(a.profit_target_pct), size = Number(a.account_size);
-    if(a.upscale_account_id && target > 0){
-      const c = size * target / 100 * 0.25;
-      cap = `<div class="ts-m ${today >= c ? 'warn' : ''}"><span>30% cap</span><b>${money(Math.max(0, today))} / ${money(c)}</b></div>`;
-    }
-    return `<button type="button" class="ts-card" onclick="switchView('accounts')" title="Open My Accounts">
-      <div class="ts-head"><b>${escapeHtml(a.account_name)}</b><span>${escapeHtml(a.phase || a.status || '')}</span></div>
-      <div class="ts-metrics">
-        <div class="ts-m ${today > 0 ? 'pos' : today < 0 ? 'neg' : ''}"><span>Today</span><b>${today === 0 ? '$0' : (today > 0 ? '+' : '') + money(today)}</b></div>
-        ${lossLeft !== null ? `<div class="ts-m ${tone(lossesToday)}"><span>Daily loss left</span><b>${money(lossLeft)}${lossesToday !== null ? ` <i>${lossesToday} loss${lossesToday === 1 ? '' : 'es'}</i>` : ''}</b></div>` : ''}
-        ${remaining !== null ? `<div class="ts-m ${tone(remaining)}"><span>To drawdown</span><b>${remaining} loss${remaining === 1 ? '' : 'es'}</b></div>` : ''}
-        ${cap}
-      </div>
-    </button>`;
-  }).join('');
-  el.innerHTML = `<div class="ts-title">Today</div><div class="ts-cards">${cards}</div>`;
-  el.hidden = false;
-}
 
 // Derives all the compliance/progress numbers for one account from the real
 // trades tagged to it (ALL_TRADES where account === account_name) — no extra
@@ -23221,6 +23206,7 @@ async function tradeThisSetup(accountId, opts){
 }
 
 let SAVED_SETUPS = [];
+let _dashSetupsRequested = false;
 // Distinguishes "fetched, and there are none" from "never fetched" — the
 // Setup Follow-Through challenge counted an unfetched list as zero setups,
 // which is why it never moved unless you'd opened the Calculator first.
@@ -23235,6 +23221,8 @@ async function loadSavedSetups(){
     if(!res.ok) throw new Error(await res.text());
     SAVED_SETUPS = await res.json();
     SAVED_SETUPS_LOADED = true;
+    // Ang R sa Dashboard ay gumagamit ng binalak na risk ng setup — iguhit ulit.
+    if(typeof currentView !== 'undefined' && currentView === 'dashboard') { try{ renderKPIs(); }catch(e){} }
     // May order sa Upscale na nakabitin? Tingnan agad, huwag nang maghintay
     // ng 30 segundo.
     if(SAVED_SETUPS.some(s => s.upscale_order_id && _UP_SETUP_LIVE.has(s.status))) refreshUpscaleOrderStates(true);
