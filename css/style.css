@@ -4604,10 +4604,17 @@ table.journal td.paper-why-col{line-height:1.5;}
   color:var(--muted);font-size:12px;cursor:pointer;
 }
 .jb-tag:hover{color:var(--ink);border-color:var(--muted);}
-.jb-tag.add{border-color:var(--win);color:var(--win);background:color-mix(in srgb, var(--win) 14%, transparent);}
+/* Ang kasalukuyan: nasa lahat (puno), nasa ilan (putol-putol). */
+.jb-tag.has-all{border-color:color-mix(in srgb, var(--win) 60%, var(--rule));color:var(--ink);background:color-mix(in srgb, var(--win) 10%, transparent);}
+.jb-tag.has-some{border-style:dashed;border-color:color-mix(in srgb, var(--win) 55%, var(--rule));color:var(--ink);}
+.jb-tag-n{font-size:10.5px;color:var(--muted);margin-left:2px;}
+/* Ang babaguhin: idadagdag sa lahat / aalisin sa lahat. */
+.jb-tag.add{border-style:solid;border-color:var(--win);color:var(--win);background:color-mix(in srgb, var(--win) 18%, transparent);font-weight:700;}
 .jb-tag.add::before{content:'+ ';}
-.jb-tag.remove{border-color:var(--loss);color:var(--loss);background:color-mix(in srgb, var(--loss) 12%, transparent);text-decoration:line-through;}
+.jb-tag.remove{border-style:solid;border-color:var(--loss);color:var(--loss);background:color-mix(in srgb, var(--loss) 12%, transparent);text-decoration:line-through;}
 .jb-tag.remove::before{content:'− ';}
+.jb-field.is-mixed select, .jb-field.is-mixed input{border-style:dashed;}
+.jb-mixed{font-style:normal;color:var(--warn);font-size:10.5px;margin-left:4px;}
 
 /* ---------- Actions menu (Pending / Journaled Setups) ---------- */
 .row-actions-cell{white-space:nowrap;text-align:right;}

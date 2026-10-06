@@ -14683,36 +14683,68 @@ function openJournalBulkEdit(){
     }
     return opts;
   };
+  /* ANG KASALUKUYANG VALUE. Kung pareho sa lahat ng napili, iyon ang nasa
+     kahon at diretso mong mae-edit. Kung magkakaiba, "Mixed — keep each" at
+     hindi gagalawin hangga't hindi mo pinapalitan. Ang naisusulat lang ay ang
+     naiba sa nakita mo noong bumukas ito (data-initial). */
+  const current = k => {
+    const vals = rows.map(r => (r[k] === null || r[k] === undefined) ? '' : String(r[k]).trim());
+    const uniq = [...new Set(vals)];
+    return uniq.length === 1 ? { same: true, v: uniq[0] } : { same: false, n: uniq.length };
+  };
   const control = k => {
     const f = fieldOf(k);
     if(!f) return '';
     const id = `jb-${k}`;
+    const cur = current(k);
+    const mixedNote = cur.same ? '' : `<em class="jb-mixed">${cur.n} different values</em>`;
     if(f.widget === 'select'){
-      return `<label class="jb-field" for="${id}"><span>${escapeHtml(f.label)}</span>
-        <select id="${id}" data-bulk="${k}"><option value="__keep">No change</option><option value="__clear">— Clear —</option>
-        ${optionsFor(k).map(o => `<option value="${escapeHtml(o)}">${escapeHtml(o)}</option>`).join('')}</select></label>`;
+      let opts = optionsFor(k);
+      if(cur.same && cur.v && !opts.includes(cur.v)) opts = [cur.v, ...opts];
+      const keepLabel = cur.same ? (cur.v ? null : '— empty —') : 'Mixed — keep each';
+      const initial = cur.same && cur.v ? cur.v : '__keep';
+      return `<label class="jb-field ${cur.same ? '' : 'is-mixed'}" for="${id}"><span>${escapeHtml(f.label)} ${mixedNote}</span>
+        <select id="${id}" data-bulk="${k}" data-initial="${escapeHtml(initial)}">
+          ${keepLabel ? `<option value="__keep" selected>${keepLabel}</option>` : ''}
+          ${opts.map(o => `<option value="${escapeHtml(o)}" ${initial === o ? 'selected' : ''}>${escapeHtml(o)}</option>`).join('')}
+          <option value="__clear">— Clear on all —</option>
+        </select></label>`;
     }
     const type = f.widget === 'number' ? 'number' : 'text';
-    return `<label class="jb-field" for="${id}"><span>${escapeHtml(f.label)}</span>
-      <input id="${id}" data-bulk="${k}" type="${type}" ${type === 'number' ? 'step="any"' : ''} placeholder="No change"></label>`;
+    const initial = cur.same ? cur.v : '';
+    return `<label class="jb-field ${cur.same ? '' : 'is-mixed'}" for="${id}"><span>${escapeHtml(f.label)} ${mixedNote}</span>
+      <input id="${id}" data-bulk="${k}" data-initial="${escapeHtml(initial)}" data-mixed="${cur.same ? '' : '1'}"
+        type="${type}" ${type === 'number' ? 'step="any"' : ''} value="${escapeHtml(initial)}"
+        placeholder="${cur.same ? 'Empty' : 'Mixed — keep each'}"></label>`;
   };
   const tags = UNFOLLOWED_RULES_OPTIONS.filter(t => _tagKind(t) !== 'sentinel');
+  // Ilan sa napili ang may bawat tag ngayon.
+  const tagCount = t => rows.filter(r => _ruleTags(r.unfollowed_rules).some(x => x.trim().toLowerCase() === t.toLowerCase())).length;
   document.getElementById('journalBulkBody').innerHTML =
     BULK_GROUPS.map(g => `<div class="jb-group"><div class="jb-group-t">${g.t}</div><div class="jb-grid">${g.keys.map(control).join('')}</div></div>`).join('')
-    + `<div class="jb-group"><div class="jb-group-t">Trade Tags <span class="jb-sub">click once to add, twice to remove, again for no change</span></div>
-        <div class="jb-tags">${tags.map((t, i) => `<button type="button" class="jb-tag" data-tag-i="${i}" onclick="cycleBulkTag(this)">${escapeHtml(t)}</button>`).join('')}</div></div>`
+    + `<div class="jb-group"><div class="jb-group-t">Trade Tags <span class="jb-sub">green = on all · dashed = on some · click to add to all or remove from all, again to undo</span></div>
+        <div class="jb-tags">${tags.map((t, i) => {
+          const c = tagCount(t);
+          const have = c === rows.length ? 'all' : c > 0 ? 'some' : 'none';
+          return `<button type="button" class="jb-tag has-${have}" data-tag-i="${i}" data-have="${have}" title="${c} of ${rows.length} selected trades" onclick="cycleBulkTag(this)">${escapeHtml(t)}${have === 'some' ? ` <span class="jb-tag-n">${c}/${rows.length}</span>` : ''}</button>`;
+        }).join('')}</div></div>`
     + `<div class="jb-group"><div class="jb-group-t">Add a note <span class="jb-sub">added to every selected trade's notes</span></div>
         <textarea id="jb-note" rows="3" placeholder="Leave empty for no note"></textarea></div>`;
   document.getElementById('journalBulkModal').classList.add('open');
 }
+// Nasa lahat → pindot = alisin sa lahat. Nasa ilan o wala → pindot = idagdag
+// sa lahat. Pindot ulit = ibalik sa dati (walang pagbabago).
 function cycleBulkTag(btn){
   const tag = UNFOLLOWED_RULES_OPTIONS.filter(t => _tagKind(t) !== 'sentinel')[Number(btn.dataset.tagI)];
+  const have = btn.dataset.have;
   const cur = _bulkTagState[tag];
-  const next = !cur ? 'add' : cur === 'add' ? 'remove' : null;
+  let next;
+  if(cur) next = null;
+  else next = have === 'all' ? 'remove' : 'add';
   if(next) _bulkTagState[tag] = next; else delete _bulkTagState[tag];
   btn.classList.toggle('add', next === 'add');
   btn.classList.toggle('remove', next === 'remove');
-  btn.setAttribute('aria-label', `${tag}: ${next || 'no change'}`);
+  btn.setAttribute('aria-label', `${tag}: ${next ? (next === 'add' ? 'add to all' : 'remove from all') : 'no change'}`);
 }
 function closeJournalBulkEdit(){
   document.getElementById('journalBulkModal').classList.remove('open');
@@ -14735,14 +14767,19 @@ async function saveJournalBulkEdit(){
   errEl.textContent = '';
   // Ang mga binago lang.
   const set = {};
+  // Ang naiba lang sa nakita noong bumukas.
   document.querySelectorAll('#journalBulkBody [data-bulk]').forEach(el => {
     const k = el.dataset.bulk;
+    const initial = el.dataset.initial ?? '';
     if(el.tagName === 'SELECT'){
-      if(el.value === '__keep') return;
+      if(el.value === '__keep' || el.value === initial) return;
       set[k] = el.value === '__clear' ? null : el.value;
     }else{
       const v = el.value.trim();
-      if(v === '') return;
+      if(v === initial) return;
+      // Magkakaiba at iniwang blangko = huwag galawin.
+      if(v === '' && el.dataset.mixed === '1') return;
+      if(v === ''){ set[k] = null; return; }   // binura mo ang value sa lahat
       set[k] = el.type === 'number' ? parseFloat(v) : v;
     }
   });
