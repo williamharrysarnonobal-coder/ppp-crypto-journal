@@ -2261,14 +2261,37 @@ function _periodStats(trades){
   // Ang "best" na walang panalo ay hindi best.
   const bestS = sessRows.filter(x => x.wins > 0).sort((a, b) => b.rate - a.rate || b.settled - a.settled)[0] || null;
   const worstS = sessRows.slice().sort((a, b) => a.rate - b.rate || b.settled - a.settled)[0] || null;
+  /* DISIPLINA, hindi lang pera. Ang Rules Followed? ng bawat trade ang sukat —
+     ang parehong sagot na bumubuo sa Trade Quality — kaya ang Discipline % at
+     ang apat na kahon ay iisang bilang na nakikita sa dalawang paraan. */
+  const q = {};
+  let rated = 0;
+  // Kapag walang sagot ang Rules Followed?, ang tags ang sagot: may tag at
+  // walang nilabag = sinunod; may nilabag = hindi.
+  const qualityOf = t => {
+    const k = _tradeQuality(t);
+    if(k || !_ruleTags(t.unfollowed_rules).length) return k;
+    return _tradeQuality({ ...t, rules_followed: _isCleanRules(t.unfollowed_rules) ? 'Yes' : 'No' });
+  };
+  trades.forEach(t => { const k = qualityOf(t); if(k){ q[k] = (q[k] || 0) + 1; rated++; } });
+  const followed = (q['Good Win'] || 0) + (q['Good Loss'] || 0) + (q['Good BE'] || 0);
+  const discipline = rated ? followed / rated * 100 : null;
+  const costlyRule = _tagLeaderboard(trades).filter(r => r.kind === 'breach' && r.n > 0)
+    .sort((a, b) => b.losses - a.losses || b.n - a.n)[0] || null;
   return { ...s, net, R: rs.length ? rs.reduce((a, b) => a + b, 0) : null, rN: rs.length,
-           kept, costly, bestS, worstS: worstS && (!bestS || worstS.k !== bestS.k) ? worstS : null };
+           kept, costly, costlyRule, q, rated, followed, discipline, bestS,
+           worstS: worstS && (!bestS || worstS.k !== bestS.k) ? worstS : null };
 }
 
 function _reviewFix(p){
   if(!p.n) return '';
-  if(p.costly && p.costly.kind === 'breach' && p.costly.losses >= 2)
-    return `Cut out <b>${escapeHtml(p.costly.tag)}</b>. It was on ${p.costly.losses} of your losing trades.`;
+  // Ang Bad Win ang pinakamapanganib: tinuturuan kang lumabag dahil nanalo.
+  if((p.q['Bad Win'] || 0) >= 2)
+    return `${p.q['Bad Win']} wins came from breaking a rule. Those teach the wrong lesson. Don't count on them.`;
+  if(p.costlyRule && p.costlyRule.n >= 2)
+    return `Cut out <b>${escapeHtml(p.costlyRule.tag)}</b>. You broke it on ${p.costlyRule.n} trade${p.costlyRule.n === 1 ? '' : 's'}, ${p.costlyRule.losses} of them lost.`;
+  if(p.discipline !== null && p.discipline < 80)
+    return `Rules followed on ${Math.round(p.discipline)}% of trades. Aim for every one.`;
   if(p.worstS && p.rate !== null && p.worstS.settled >= 3 && p.worstS.rate < p.rate - EM_MIN_GAP)
     return `Go easy on <b>${escapeHtml(p.worstS.k)}</b>: ${p.worstS.wins} of ${p.worstS.settled} won there.`;
   if(p.kept !== null && p.kept < 80)
@@ -2310,17 +2333,37 @@ function renderReviewPanel(kind){
     el.innerHTML = head + `<div class="empty-state">No trades closed in this ${kind}.</div>`;
     return;
   }
+  // Ang R ay may sariling delta (sa R, hindi sa puntos).
+  const rDelta = (p.R === null || q.R === null || !q.n) ? ''
+    : (() => { const d = p.R - q.R; return Math.abs(d) < 0.05 ? '' :
+        `<span class="rv-d ${d > 0 ? 'pos' : 'neg'}" title="Compared with ${prevWord}">${d > 0 ? '▲' : '▼'} ${Math.abs(d).toFixed(1)}R</span>`; })();
+  const qc = (name, cls, hint) => `<div class="rv-q ${cls}" title="${hint}">
+      <span class="rv-q-n">${p.q[name] || 0}</span><span class="rv-q-k">${name}</span></div>`;
+  const beN = (p.q['Good BE'] || 0) + (p.q['Bad BE'] || 0);
+
   el.innerHTML = head
-    + row('Trades', `<b>${p.n}</b> <span class="rv-sub">${p.wins}W · ${p.losses}L${p.bes ? ` · ${p.bes}BE` : ''}</span>`)
+    + `<div class="rv-hero">
+        <div class="rv-h ${p.discipline === null ? '' : p.discipline >= 80 ? 'good' : p.discipline >= 60 ? 'warn' : 'bad'}">
+          <span class="rv-h-k">Discipline</span>
+          <span class="rv-h-v">${p.discipline === null ? '—' : Math.round(p.discipline) + '%'}${delta(p.discipline, q.discipline, '')}</span>
+          <span class="rv-h-s">${p.rated ? `${p.followed} of ${p.rated} trades` : 'fill in Rules Followed?'}</span>
+        </div>
+        <div class="rv-h ${p.R === null ? (p.net >= 0 ? 'good' : 'bad') : p.R >= 0 ? 'good' : 'bad'}">
+          <span class="rv-h-k">Result</span>
+          <span class="rv-h-v">${p.R === null ? '—' : `${p.R >= 0 ? '+' : '−'}${Math.abs(p.R).toFixed(1)}R`}${rDelta}</span>
+          <span class="rv-h-s" title="${p.wins} won, ${p.losses} lost${p.bes ? `, ${p.bes} breakeven` : ''}${p.rN < p.n && p.R !== null ? `. R counts ${p.rN} of ${p.n} trades; the rest have no usable risk.` : ''}">${money(p.net)} · ${p.wins}W ${p.losses}L</span>
+        </div>
+      </div>`
+    + (p.rated ? `<div class="rv-qgrid">
+        <span></span><span class="rv-qh">Won</span><span class="rv-qh">Lost</span>
+        <span class="rv-qr">Followed</span>${qc('Good Win', 'good-win', 'Followed your rules and won')}${qc('Good Loss', 'good-loss', 'Followed your rules and lost. Part of the game.')}
+        <span class="rv-qr">Broke</span>${qc('Bad Win', 'bad-win', 'Broke a rule and won anyway. The dangerous one.')}${qc('Bad Loss', 'bad-loss', 'Broke a rule and lost')}
+      </div>${beN ? `<div class="rv-sub rv-befoot">Breakeven: ${p.q['Good BE'] || 0} followed · ${p.q['Bad BE'] || 0} broke</div>` : ''}` : '')
+    + row('Costliest rule', p.costlyRule
+        ? `<a class="rv-tag" data-tag="${escapeHtml(p.costlyRule.tag)}" onclick="openTagInJournal(this.dataset.tag)" title="Open these trades">${escapeHtml(p.costlyRule.tag)}</a> <span class="rv-sub">${p.costlyRule.n}× · ${p.costlyRule.losses}L</span>`
+        : '<span class="rv-sub">none broken</span>')
     + row('Win rate', `<b>${p.rate === null ? '—' : Math.round(p.rate) + '%'}</b>`, delta(p.rate, q.rate, ' pts'))
-    + row('Net P&amp;L', `<b class="${p.net >= 0 ? 'pos' : 'neg'}">${money(p.net)}</b>`)
-    + row('Total R', p.R === null ? '—' : `<b class="${p.R >= 0 ? 'pos' : 'neg'}">${p.R >= 0 ? '+' : '−'}${Math.abs(p.R).toFixed(1)}R</b>${p.rN < p.n ? ` <span class="rv-sub" title="Trades with no usable risk are left out">${p.rN} of ${p.n}</span>` : ''}`)
-    + row('Rules kept', p.kept === null ? '<span class="rv-sub">nothing tagged</span>' : `<b>${Math.round(p.kept)}%</b>`, delta(p.kept, q.kept, ' pts'))
-    + row('Costliest tag', p.costly
-        ? `<a class="rv-tag" data-tag="${escapeHtml(p.costly.tag)}" onclick="openTagInJournal(this.dataset.tag)" title="Open these trades">${escapeHtml(p.costly.tag)}</a> <span class="rv-sub">${p.costly.losses}L</span>`
-        : '<span class="rv-sub">none</span>')
-    + row('Best session', p.bestS ? `${escapeHtml(p.bestS.k)} <span class="rv-sub">${p.bestS.wins}/${p.bestS.settled}</span>` : '<span class="rv-sub">—</span>')
-    + row('Worst session', p.worstS ? `${escapeHtml(p.worstS.k)} <span class="rv-sub">${p.worstS.wins}/${p.worstS.settled}</span>` : '<span class="rv-sub">—</span>')
+    + row('Best / worst session', `${p.bestS ? `${escapeHtml(DX_SESSION_SHORT[p.bestS.k] || p.bestS.k)} <span class="rv-sub">${p.bestS.wins}/${p.bestS.settled}</span>` : '—'} · ${p.worstS ? `${escapeHtml(DX_SESSION_SHORT[p.worstS.k] || p.worstS.k)} <span class="rv-sub">${p.worstS.wins}/${p.worstS.settled}</span>` : '—'}`)
     + `<div class="rv-fix">${_reviewFix(p)}</div>`;
 }
 
