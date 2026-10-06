@@ -17,7 +17,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<link rel="stylesheet" href="css/style.css?v=329">
+<link rel="stylesheet" href="css/style.css?v=330">
 </head>
 <body>
 
@@ -297,6 +297,13 @@
       <button class="poscalc-accent-btn" id="journalCsvBtn" style="padding:8px 14px;" onclick="downloadJournalCsv()" title="Download the trades in this view as a CSV file, with every column">Download CSV</button>
     </div>
     <div class="jf-chips" id="journalFilterChips"></div>
+    <!-- Lumalabas kapag may napiling trade (checkbox sa unang column). -->
+    <div class="jbulk-bar" id="journalBulkBar" hidden>
+      <span id="journalBulkCount">0 selected</span>
+      <button type="button" class="up-order-btn up-order-btn-sm" onclick="openJournalBulkEdit()">Bulk Edit</button>
+      <button type="button" class="poscalc-accent-btn" style="padding:7px 12px;" onclick="openJournalBulkConfluence()">Confluence</button>
+      <button type="button" class="jbulk-clear" onclick="clearJournalSelection()">Clear selection</button>
+    </div>
     <div class="journal-wrap">
       <table class="journal" id="journalTable"></table>
     </div>
@@ -2109,6 +2116,22 @@
   </div>
 </div>
 
+<!-- Bulk Edit ng mga trade. Ang bawat field ay "No change" hangga't hindi mo
+     binabago; ang Trade Tags ay Idagdag / Alisin; ang Note ay idinudugtong. -->
+<div class="modal-overlay" id="journalBulkModal" onclick="if(event.target===this) closeJournalBulkEdit()">
+  <div class="modal-box jbulk-modal" style="position:relative;">
+    <button class="modal-close" onclick="closeJournalBulkEdit()">✕</button>
+    <h3 style="margin:0 0 4px;" id="journalBulkTitle">Edit trades</h3>
+    <div class="sub" style="margin:0 0 14px;">Only what you change is written. Everything left on "No change" stays as it is on each trade.</div>
+    <div id="journalBulkBody"></div>
+    <div id="journalBulkError" class="auth-error"></div>
+    <div style="display:flex;gap:10px;margin-top:6px;">
+      <button class="ai-btn" id="journalBulkSaveBtn" style="flex:1;" onclick="saveJournalBulkEdit()">Apply to trades</button>
+      <button class="drawer-secondary-btn" onclick="closeJournalBulkEdit()">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <!-- Kumpirmasyon bago magpadala sa Upscale. Ang bawat hilera ay isang account. -->
 <div class="modal-overlay" id="upOrderModal" onclick="if(event.target===this) closeUpscaleOrderModal()">
   <div class="modal-box" style="max-width:640px;position:relative;">
@@ -2439,6 +2462,6 @@
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=2"></script>
-<script src="js/dashboard.js?v=560"></script>
+<script src="js/dashboard.js?v=561"></script>
 </body>
 </html>

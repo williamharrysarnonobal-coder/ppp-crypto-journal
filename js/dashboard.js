@@ -14544,9 +14544,13 @@ function renderJournalTable(){
     return;
   }
 
-  const thead = `<thead><tr><th style="width:26px;"></th>${JOURNAL_COLUMNS.map(c => `<th>${c.label}</th>`).join('')}</tr></thead>`;
+  // Para sa bulk edit: ang "piliin lahat" ay ang mga nakikita ngayon.
+  _journalVisibleIds = rows.map(r => String(r.position_id));
+  const allSel = _journalVisibleIds.length > 0 && _journalVisibleIds.every(id => JOURNAL_SELECTED.has(id));
+  const thead = `<thead><tr><th class="jsel"><input type="checkbox" aria-label="Select all trades in this view" ${allSel ? 'checked' : ''} onclick="event.stopPropagation(); toggleJournalSelectAll(this.checked)"></th><th style="width:26px;"></th>${JOURNAL_COLUMNS.map(c => `<th>${c.label}</th>`).join('')}</tr></thead>`;
   const tbody = `<tbody>${rows.map(r => `
-    <tr onclick='openTradeViewModal(${JSON.stringify(r.position_id)})' style="cursor:pointer;">
+    <tr onclick='openTradeViewModal(${JSON.stringify(r.position_id)})' style="cursor:pointer;" class="${JOURNAL_SELECTED.has(String(r.position_id)) ? 'jsel-on' : ''}">
+      <td class="jsel" onclick="event.stopPropagation();"><input type="checkbox" aria-label="Select trade" ${JOURNAL_SELECTED.has(String(r.position_id)) ? 'checked' : ''} data-pid="${escapeHtml(String(r.position_id))}" onclick="toggleJournalSelect(this.dataset.pid, this.checked)"></td>
       ${(() => {
         const missing = _journalMissingFields(r);
         const invalid = _journalInvalidFields(r);
@@ -14607,6 +14611,214 @@ function renderJournalTable(){
   `).join('')}</tbody>`;
 
   table.innerHTML = thead + tbody;
+  renderJournalBulkBar();
+}
+
+/* ---------------- BULK EDIT (Trade Journals) ----------------
+
+   Pumili ng mga trade sa checkbox, tapos isang beses lang baguhin. Ang bawat
+   field ay "No change" hangga't hindi mo binabago, kaya walang nabubura nang
+   hindi sinasadya. Ang Trade Tags ay Idagdag / Alisin (hindi pinapalitan ang
+   buong listahan); ang Note ay idinudugtong sa notes ng bawat trade; ang
+   Confluence ay sariling modal, at nagbababala bago palitan ang may sagot na.
+
+   Rules Followed?: kapag binago mo ang tags pero hindi mo itinakda ang Rules
+   Followed?, kinukuwenta ito ulit kada trade — gaya ng sa drawer, kung saan
+   ang pag-tick ng tag ang nagpapasya nito. */
+let JOURNAL_SELECTED = new Set();
+let _journalVisibleIds = [];
+
+function toggleJournalSelect(pid, on){
+  if(on) JOURNAL_SELECTED.add(String(pid)); else JOURNAL_SELECTED.delete(String(pid));
+  const cb = document.querySelector(`#journalTable input[data-pid="${CSS.escape(String(pid))}"]`);
+  if(cb) cb.closest('tr').classList.toggle('jsel-on', on);
+  renderJournalBulkBar();
+}
+function toggleJournalSelectAll(on){
+  _journalVisibleIds.forEach(id => { if(on) JOURNAL_SELECTED.add(id); else JOURNAL_SELECTED.delete(id); });
+  renderJournalTable();
+}
+function clearJournalSelection(){
+  JOURNAL_SELECTED.clear();
+  renderJournalTable();
+}
+function renderJournalBulkBar(){
+  const bar = document.getElementById('journalBulkBar');
+  if(!bar) return;
+  // Ang napili na wala na sa data (nabura) ay inaalis.
+  const known = new Set((RAW_TRADES || []).map(r => String(r.position_id)));
+  [...JOURNAL_SELECTED].forEach(id => { if(!known.has(id)) JOURNAL_SELECTED.delete(id); });
+  const n = JOURNAL_SELECTED.size;
+  bar.hidden = n === 0;
+  const c = document.getElementById('journalBulkCount');
+  if(c) c.textContent = `${n} trade${n === 1 ? '' : 's'} selected`;
+}
+const _bulkRows = () => (RAW_TRADES || []).filter(r => JOURNAL_SELECTED.has(String(r.position_id)));
+
+// Ang mga field na puwedeng baguhin nang sabay-sabay. Hindi kasama ang mga
+// kinukuwenta (session, duration…), ang mga petsa, at ang mga pang-paper lang.
+const BULK_GROUPS = [
+  { t: 'Setup & strategy', keys: ['trade_type','trade_setup','pattern_type','execution_tf','aof_phase'] },
+  { t: 'Discipline', keys: ['rules_followed','exit_type','post_be_result','post_cutloss_result','post_stop_profit_result'] },
+  { t: 'Result', keys: ['win_loss'] },
+  { t: 'Account', keys: ['account','account_type'] },
+  { t: 'Prices & size', keys: ['symbol','entry_price','close_price','tp_price','sl_price','position_size','leverage','profit_loss','pnl_percent','fee'] },
+  { t: 'Other', keys: ['link'] },
+];
+let _bulkTagState = {};   // tag -> 'add' | 'remove'
+
+function openJournalBulkEdit(){
+  const rows = _bulkRows();
+  if(!rows.length) return;
+  _bulkTagState = {};
+  document.getElementById('journalBulkTitle').textContent = `Edit ${rows.length} trade${rows.length === 1 ? '' : 's'}`;
+  document.getElementById('journalBulkError').textContent = '';
+  const fieldOf = k => ALL_DRAWER_FIELDS.find(f => f.key === k);
+  const optionsFor = k => {
+    const f = fieldOf(k);
+    let opts = (f && f.options) ? f.options.map(String) : [];
+    if(k === 'account'){
+      opts = [...new Set([...(TRADING_ACCOUNTS || []).map(a => a.account_name), ...opts,
+        ...(RAW_TRADES || []).map(r => r.account).filter(Boolean)])];
+    }
+    return opts;
+  };
+  const control = k => {
+    const f = fieldOf(k);
+    if(!f) return '';
+    const id = `jb-${k}`;
+    if(f.widget === 'select'){
+      return `<label class="jb-field" for="${id}"><span>${escapeHtml(f.label)}</span>
+        <select id="${id}" data-bulk="${k}"><option value="__keep">No change</option><option value="__clear">— Clear —</option>
+        ${optionsFor(k).map(o => `<option value="${escapeHtml(o)}">${escapeHtml(o)}</option>`).join('')}</select></label>`;
+    }
+    const type = f.widget === 'number' ? 'number' : 'text';
+    return `<label class="jb-field" for="${id}"><span>${escapeHtml(f.label)}</span>
+      <input id="${id}" data-bulk="${k}" type="${type}" ${type === 'number' ? 'step="any"' : ''} placeholder="No change"></label>`;
+  };
+  const tags = UNFOLLOWED_RULES_OPTIONS.filter(t => _tagKind(t) !== 'sentinel');
+  document.getElementById('journalBulkBody').innerHTML =
+    BULK_GROUPS.map(g => `<div class="jb-group"><div class="jb-group-t">${g.t}</div><div class="jb-grid">${g.keys.map(control).join('')}</div></div>`).join('')
+    + `<div class="jb-group"><div class="jb-group-t">Trade Tags <span class="jb-sub">click once to add, twice to remove, again for no change</span></div>
+        <div class="jb-tags">${tags.map((t, i) => `<button type="button" class="jb-tag" data-tag-i="${i}" onclick="cycleBulkTag(this)">${escapeHtml(t)}</button>`).join('')}</div></div>`
+    + `<div class="jb-group"><div class="jb-group-t">Add a note <span class="jb-sub">added to every selected trade's notes</span></div>
+        <textarea id="jb-note" rows="3" placeholder="Leave empty for no note"></textarea></div>`;
+  document.getElementById('journalBulkModal').classList.add('open');
+}
+function cycleBulkTag(btn){
+  const tag = UNFOLLOWED_RULES_OPTIONS.filter(t => _tagKind(t) !== 'sentinel')[Number(btn.dataset.tagI)];
+  const cur = _bulkTagState[tag];
+  const next = !cur ? 'add' : cur === 'add' ? 'remove' : null;
+  if(next) _bulkTagState[tag] = next; else delete _bulkTagState[tag];
+  btn.classList.toggle('add', next === 'add');
+  btn.classList.toggle('remove', next === 'remove');
+  btn.setAttribute('aria-label', `${tag}: ${next || 'no change'}`);
+}
+function closeJournalBulkEdit(){
+  document.getElementById('journalBulkModal').classList.remove('open');
+}
+
+// Ang tags ng isang trade pagkatapos ng Idagdag / Alisin.
+function _applyBulkTags(current, state){
+  const norm = s => s.trim().toLowerCase();
+  let tags = _ruleTags(current);
+  Object.entries(state).forEach(([tag, op]) => {
+    if(op === 'add' && !tags.some(t => norm(t) === norm(tag))) tags.push(tag);
+    if(op === 'remove') tags = tags.filter(t => norm(t) !== norm(tag));
+  });
+  return tags.join(', ');
+}
+
+async function saveJournalBulkEdit(){
+  const rows = _bulkRows();
+  const errEl = document.getElementById('journalBulkError');
+  errEl.textContent = '';
+  // Ang mga binago lang.
+  const set = {};
+  document.querySelectorAll('#journalBulkBody [data-bulk]').forEach(el => {
+    const k = el.dataset.bulk;
+    if(el.tagName === 'SELECT'){
+      if(el.value === '__keep') return;
+      set[k] = el.value === '__clear' ? null : el.value;
+    }else{
+      const v = el.value.trim();
+      if(v === '') return;
+      set[k] = el.type === 'number' ? parseFloat(v) : v;
+    }
+  });
+  const note = (document.getElementById('jb-note')?.value || '').trim();
+  const tagOps = { ..._bulkTagState };
+  if(!Object.keys(set).length && !Object.keys(tagOps).length && !note){
+    errEl.textContent = 'Nothing changed yet — pick at least one field, tag or note.';
+    return;
+  }
+  const btn = document.getElementById('journalBulkSaveBtn');
+  btn.disabled = true;
+  let ok = 0, failed = 0;
+  for(const r of rows){
+    btn.textContent = `Saving ${ok + failed + 1} of ${rows.length}…`;
+    const patch = { ...set };
+    if(Object.keys(tagOps).length){
+      patch.unfollowed_rules = _applyBulkTags(r.unfollowed_rules, tagOps);
+      if(!('rules_followed' in set)){
+        const rf = _deriveRulesFollowed({ ...r, ...patch });
+        if(rf) patch.rules_followed = rf;
+      }
+    }
+    if(note){
+      const log = Array.isArray(r.notes_log) ? [...r.notes_log] : [];
+      log.push({ ts: new Date().toISOString(), text: note });
+      patch.notes_log = log;
+    }
+    // Gaya ng iisang save: ang exit na hindi Cut Loss / Stop Profit ay N/A.
+    if(patch.exit_type){
+      const ex = String(patch.exit_type).trim().toLowerCase();
+      const na = {};
+      if(!('post_cutloss_result' in set) && ex !== 'cut loss') na.post_cutloss_result = 'N/A';
+      if(!('post_stop_profit_result' in set) && ex !== 'stop profit') na.post_stop_profit_result = 'N/A';
+      Object.assign(patch, na);
+    }
+    try{
+      const res = await _journalSend(`${SUPABASE_URL}/rest/v1/${TABLE_NAME}?position_id=eq.${encodeURIComponent(r.position_id)}`, 'PATCH', patch);
+      if(!res.ok) throw new Error(await res.text());
+      const updated = await res.json().catch(() => null);
+      const idx = RAW_TRADES.findIndex(x => x.position_id === r.position_id);
+      if(idx !== -1) RAW_TRADES[idx] = (updated && updated[0]) ? updated[0] : { ...RAW_TRADES[idx], ...patch };
+      ok++;
+    }catch(e){
+      console.error('Bulk edit failed for', r.position_id, e);
+      failed++;
+    }
+  }
+  btn.disabled = false; btn.textContent = 'Apply to trades';
+  _rebuildTradeArrays();
+  _rebuildTradeNumbers();
+  if(typeof applyFilters === 'function') applyFilters(); else renderJournalTable();
+  if(failed){
+    errEl.textContent = `${ok} saved, ${failed} failed — try those again.`;
+  }else{
+    closeJournalBulkEdit();
+    JOURNAL_SELECTED.clear();
+    renderJournalTable();
+    showToast(`Updated ${ok} trade${ok === 1 ? '' : 's'}`);
+  }
+}
+
+/* Confluence nang sabay-sabay. Ang Confluence modal mismo, pero ang target ay
+   ang mga napiling trade. Ang binhi ay ang unang may sagot na. */
+async function openJournalBulkConfluence(){
+  const rows = _bulkRows();
+  if(!rows.length) return;
+  confluenceTarget = { type:'trade-bulk', ids: rows.map(r => r.position_id) };
+  const seed = rows.find(r => r.confluence_answers && Object.keys(r.confluence_answers).length) || rows[0];
+  _openConfluenceModalWith(seed);
+  const noteEl = document.getElementById('confluenceBulkNote');
+  if(noteEl){
+    const withAns = rows.filter(r => r.confluence_answers && Object.keys(r.confluence_answers).length).length;
+    noteEl.style.display = '';
+    noteEl.textContent = `Applying to ${rows.length} trades` +
+      (withAns ? ` — ${withAns} already ${withAns === 1 ? 'has' : 'have'} answers that will be replaced.` : '.');
+  }
 }
 
 /* ---------------- Finance Challenges (same pattern as the Trading Journal's
@@ -23752,6 +23964,41 @@ async function saveConfluenceModal(){
   }
 
   try{
+    if(confluenceTarget.type === 'trade-bulk'){
+      const rows = RAW_TRADES.filter(r => confluenceTarget.ids.includes(r.position_id));
+      const withAns = rows.filter(r => r.confluence_answers && Object.keys(r.confluence_answers).length).length;
+      if(withAns && !(await customConfirm(`${withAns} of ${rows.length} trades already have confluence answers. Replace them with these?`))) return;
+      let ok = 0, failed = 0;
+      for(const r of rows){
+        const p = { ...payload };
+        // Gaya ng iisang trade: ang checklist ay nagdadagdag ng mga rule na
+        // nalabag (hindi kailanman nagbubura), maliban sa paper trade.
+        const isPaper = r.is_paper === true || r.is_paper === 'true';
+        const cfg = tradeType && patternType ? CONFLUENCE_SETUPS[`${tradeType}|${patternType}`] : null;
+        if(cfg && !isPaper){
+          const autoReasons = _autoUnfollowedRules(cfg, confluenceAnswers, !!confluenceChartPattern);
+          if(autoReasons.size){
+            const existing = (r.unfollowed_rules || '').split(/[,;]/).map(s => s.trim()).filter(Boolean);
+            p.rules_followed = 'No';
+            p.unfollowed_rules = [...new Set([...existing, ...autoReasons])].join(', ');
+          }
+        }
+        try{
+          const res = await _journalSend(`${SUPABASE_URL}/rest/v1/${TABLE_NAME}?position_id=eq.${encodeURIComponent(r.position_id)}`, 'PATCH', p);
+          if(!res.ok) throw new Error(await res.text());
+          const updated = await res.json().catch(() => null);
+          const idx = RAW_TRADES.findIndex(x => x.position_id === r.position_id);
+          if(idx !== -1) RAW_TRADES[idx] = (updated && updated[0]) ? updated[0] : { ...RAW_TRADES[idx], ...p };
+          ok++;
+        }catch(e){ console.error('Bulk confluence failed for', r.position_id, e); failed++; }
+      }
+      _rebuildTradeArrays();
+      _rebuildTradeNumbers();
+      if(typeof applyFilters === 'function') applyFilters(); else renderJournalTable();
+      closeConfluenceModal();
+      showToast(failed ? `Confluence saved to ${ok} · ${failed} failed` : `Confluence saved to ${ok} trade${ok === 1 ? '' : 's'}`);
+      return;
+    }
     if(confluenceTarget.type === 'setup-bulk'){
       // PostgREST in.() so all the ticked setups are written in one request —
       // no partial state if the connection drops halfway through.
