@@ -4599,6 +4599,9 @@ table.journal td.paper-why-col{line-height:1.5;}
 }
 #jb-note{resize:vertical;font-family:inherit;}
 .jb-tags{display:flex;flex-wrap:wrap;gap:6px;}
+.jb-tag-group{margin:10px 0 0;}
+.jb-tag-group + .jb-tag-group{padding:10px 0 0;border-top:1px solid var(--rule);}
+.jb-tag-group-t{font-size:12px;font-weight:700;color:var(--ink);margin:0 0 7px;}
 .jb-tag{
   padding:5px 10px;border-radius:999px;border:1px solid var(--rule);background:var(--surface-2);
   color:var(--muted);font-size:12px;cursor:pointer;

@@ -14717,17 +14717,28 @@ function openJournalBulkEdit(){
         type="${type}" ${type === 'number' ? 'step="any"' : ''} value="${escapeHtml(initial)}"
         placeholder="${cur.same ? 'Empty' : 'Mixed — keep each'}"></label>`;
   };
-  const tags = UNFOLLOWED_RULES_OPTIONS.filter(t => _tagKind(t) !== 'sentinel');
+  // Kasama ang "Rules Followed" (ang marka ng malinis), at nakagrupo ayon sa
+  // uri: Rules at Notes — ang parehong hati ng Options at ng drawer.
+  const tags = UNFOLLOWED_RULES_OPTIONS;
   // Ilan sa napili ang may bawat tag ngayon.
   const tagCount = t => rows.filter(r => _ruleTags(r.unfollowed_rules).some(x => x.trim().toLowerCase() === t.toLowerCase())).length;
+  const chip = t => {
+    const i = tags.indexOf(t);
+    const c = tagCount(t);
+    const have = c === rows.length ? 'all' : c > 0 ? 'some' : 'none';
+    return `<button type="button" class="jb-tag has-${have}" data-tag-i="${i}" data-have="${have}" title="${c} of ${rows.length} selected trades" onclick="cycleBulkTag(this)">${escapeHtml(t)}${have === 'some' ? ` <span class="jb-tag-n">${c}/${rows.length}</span>` : ''}</button>`;
+  };
+  const byKind = kind => tags.filter(t => _tagKind(t) === kind);
+  const tagRow = (label, sub, list) => list.length ? `<div class="jb-tag-group">
+      <div class="jb-tag-group-t">${label}${sub ? ` <span class="jb-sub">${sub}</span>` : ''}</div>
+      <div class="jb-tags">${list.map(chip).join('')}</div></div>` : '';
   document.getElementById('journalBulkBody').innerHTML =
     BULK_GROUPS.map(g => `<div class="jb-group"><div class="jb-group-t">${g.t}</div><div class="jb-grid">${g.keys.map(control).join('')}</div></div>`).join('')
     + `<div class="jb-group"><div class="jb-group-t">Trade Tags <span class="jb-sub">green = on all · dashed = on some · click to add to all or remove from all, again to undo</span></div>
-        <div class="jb-tags">${tags.map((t, i) => {
-          const c = tagCount(t);
-          const have = c === rows.length ? 'all' : c > 0 ? 'some' : 'none';
-          return `<button type="button" class="jb-tag has-${have}" data-tag-i="${i}" data-have="${have}" title="${c} of ${rows.length} selected trades" onclick="cycleBulkTag(this)">${escapeHtml(t)}${have === 'some' ? ` <span class="jb-tag-n">${c}/${rows.length}</span>` : ''}</button>`;
-        }).join('')}</div></div>`
+        ${tagRow('Clean', 'nothing went wrong', byKind('sentinel'))}
+        ${tagRow('Rules', 'a rule broken — turns Rules Followed? to No', byKind('breach'))}
+        ${tagRow('Notes', 'to remember or measure — counts against nothing', byKind('observation'))}
+      </div>`
     + `<div class="jb-group"><div class="jb-group-t">Add a note <span class="jb-sub">added to every selected trade's notes</span></div>
         <textarea id="jb-note" rows="3" placeholder="Leave empty for no note"></textarea></div>`;
   document.getElementById('journalBulkModal').classList.add('open');
@@ -14735,7 +14746,7 @@ function openJournalBulkEdit(){
 // Nasa lahat → pindot = alisin sa lahat. Nasa ilan o wala → pindot = idagdag
 // sa lahat. Pindot ulit = ibalik sa dati (walang pagbabago).
 function cycleBulkTag(btn){
-  const tag = UNFOLLOWED_RULES_OPTIONS.filter(t => _tagKind(t) !== 'sentinel')[Number(btn.dataset.tagI)];
+  const tag = UNFOLLOWED_RULES_OPTIONS[Number(btn.dataset.tagI)];
   const have = btn.dataset.have;
   const cur = _bulkTagState[tag];
   let next;
