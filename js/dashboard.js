@@ -3509,6 +3509,32 @@ function renderCalendar(){
 }
 
 /* ---------------- Equity curve ---------------- */
+/* ANG KULAY AY HINAHATI SA ZERO, HINDI KADA GUHIT.
+
+   Pula ang buong guhit dati kapag ang ISA sa dalawang dulo nito ay nasa ilalim
+   ng zero. Ang trade na tumalon mula −$500 hanggang +$2,800 ay iisang guhit —
+   kaya pula ito hanggang sa itaas, at mukhang hindi ka pa nakakabawi. Ngayon
+   ay isang gradient na may matigas na hati sa mismong zero line: ang bahagi
+   ng guhit na nasa itaas ay berde, ang nasa ilalim ay pula, kahit iisang
+   guhit pa. Kapareho ito ng fill sa ilalim. */
+function _zeroSplitStroke(fallback){
+  return (context) => {
+    const { chart } = context;
+    const { ctx: c, chartArea, scales } = chart;
+    if(!chartArea || !(chartArea.bottom > chartArea.top)) return fallback;
+    const yZero = scales?.y?.getPixelForValue ? scales.y.getPixelForValue(0) : NaN;
+    if(!Number.isFinite(yZero)) return fallback;
+    const r = Math.min(1, Math.max(0, (yZero - chartArea.top) / (chartArea.bottom - chartArea.top)));
+    const win = cssVar('--win'), loss = cssVar('--loss');
+    const g = c.createLinearGradient(0, chartArea.top, 0, chartArea.bottom);
+    g.addColorStop(0, win);
+    g.addColorStop(r, win);
+    g.addColorStop(r, loss);
+    g.addColorStop(1, loss);
+    return g;
+  };
+}
+
 function renderEquityCurve(){
   const sorted = [...FILTERED].filter(t=>t.close_date).sort((a,b)=> a.close_date - b.close_date);
   let cum = 0;
@@ -3529,7 +3555,6 @@ function renderEquityCurve(){
 
   const finalVal = values[values.length-1];
   const lineColor = finalVal >= 0 ? cssVar('--win') : cssVar('--loss');
-  const segColor = (ctx) => (ctx.p0.parsed.y < 0 || ctx.p1.parsed.y < 0) ? cssVar('--loss') : cssVar('--win');
 
   // Fades win color from the top down to the zero line, then loss color
   // fading back out from zero down to the bottom — matches the "green above
@@ -3557,9 +3582,8 @@ function renderEquityCurve(){
       datasets: [
         {
           data: values,
-          borderColor: lineColor,
+          borderColor: _zeroSplitStroke(lineColor),
           backgroundColor: zeroFadeGradient,
-          segment: { borderColor: segColor },
           fill: 'origin',
           tension: 0.25,
           pointRadius: 0,
@@ -21378,7 +21402,6 @@ function renderAccountEarnChart(s){
   const values = s.series.map(p => p.cum);
   const finalVal = values[values.length - 1];
   const lineColor = finalVal >= 0 ? cssVar('--win') : cssVar('--loss');
-  const segColor = (c) => (c.p0.parsed.y < 0 || c.p1.parsed.y < 0) ? cssVar('--loss') : cssVar('--win');
 
   // Same "green above zero, red below" fade used by the main Equity Curve.
   const zeroFadeGradient = (context) => {
@@ -21401,8 +21424,7 @@ function renderAccountEarnChart(s){
     type: 'line',
     data: { labels, datasets: [
       {
-        data: values, borderColor: lineColor, backgroundColor: zeroFadeGradient,
-        segment: { borderColor: segColor },
+        data: values, borderColor: _zeroSplitStroke(lineColor), backgroundColor: zeroFadeGradient,
         fill: 'origin', tension: 0.25, pointRadius: 0, borderWidth: 2, order: 1
       },
       {
