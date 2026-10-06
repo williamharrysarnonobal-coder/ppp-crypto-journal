@@ -20185,8 +20185,13 @@ const PROP_FIRM_PRESETS = {
     'High Stakes': {
       stages: ['Evaluation Phase 1','Evaluation Phase 2','Funded'],
       maxDailyLossPct: 5, maxTotalDrawdownPct: 10,
+      /* 1 ang nakalagay dito noon — iyon ang sa crypto — kaya ang gold trade
+         niya na $1,500 ang risk ay pinaliit sa $217. Ang High Stakes ay 1:100
+         sa forex, at 1:25 sa metals at indices mula Marso 2026. Isa lang ang
+         Max Leverage kada account sa calculator, kaya ang metals ang
+         nakalagay: iyon ang tini-trade niya rito. */
       phase1TargetPct: 8, phase2TargetPct: 5,
-      minTradingDays: 3, minDailyProfitPct: null, maxLeverage: 1,
+      minTradingDays: 3, minDailyProfitPct: null, maxLeverage: 25,
       sizes: [5000,10000,20000,60000,100000], unverified: true
     }
   },
