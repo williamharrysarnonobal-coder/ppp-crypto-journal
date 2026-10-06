@@ -1751,7 +1751,7 @@ function computeTradeSummary(row){
     `<hr>`,
     `<b>Result:</b> ${val(row.win_loss)}`,
     `<b>Profit/Loss:</b> ${money(row.profit_loss)}`,
-    `<b>PNL Percent:</b> ${pct(row.pnl_percent)}`,
+    `<b>Price Move:</b> ${(() => { const m = typeof _priceMovePct === 'function' ? _priceMovePct(row) : null; return m === null ? pct(row.pnl_percent) : pct(m); })()}`,
     `<b>Fee:</b> ${money(row.fee)}`,
     `<b>Trade Duration:</b> ${computeDuration(row) || '—'}`,
     ``,
@@ -2178,6 +2178,25 @@ function _winRateOf(trades){
     else if(wl === 'loss' || wl === 'liquidated') decided++;
   });
   return decided ? (wins / decided * 100) : null;
+}
+
+/* DALAWANG MAGKAIBANG PORSYENTO, at dati ay iisang "PNL Percent" ang tawag:
+   - Price move: gaano gumalaw ang presyo mula entry hanggang exit, positibo
+     kapag pabor sa direksyon mo. Ito ang laman ng lumang column.
+   - Account %: ang net P&L bilang bahagi ng laki ng account — ang mahalaga sa
+     prop firm (hal. −$81.91 sa 5K = −1.64%). */
+function _priceMovePct(row){
+  const e = parseFloat(row && row.entry_price), x = parseFloat(row && row.close_price);
+  const dir = String(row && row.trade_type || '').trim().toLowerCase();
+  if(!(e > 0) || !(x > 0) || (dir !== 'long' && dir !== 'short')) return null;
+  return (x - e) / e * 100 * (dir === 'short' ? -1 : 1);
+}
+function _accountPct(row){
+  const a = (TRADING_ACCOUNTS || []).find(z => z.account_name === (row && row.account));
+  const size = a ? Number(a.account_size) : NaN;
+  if(!(size > 0)) return null;
+  const n = normalizeTrade({ ...row });
+  return netPnl(n) / size * 100;
 }
 
 /* ANG R NG ISANG TRADE — nasa labas na ng renderKPIs para magamit din ng
@@ -8412,7 +8431,7 @@ const ALL_DRAWER_FIELDS = [
   {key:'duration', label:'Duration', widget:'text', editable:false, realOnly:true},
   {key:'objective', label:'Objective', widget:'text', editable:false, realOnly:true},
   {key:'profit_loss', label:'Profit/Loss', widget:'number', editable:true, realOnly:true},
-  {key:'pnl_percent', label:'PNL Percent', widget:'number', editable:true, realOnly:true},
+  {key:'pnl_percent', label:'Price Move %', widget:'number', editable:true, realOnly:true},
   {key:'fee', label:'Fee', widget:'number', editable:false, realOnly:true},
   /* Ang RR ng isang trade na NANGYARI. Sa paper trade ay walang ganito at
      laging blangko ito — at ang blangkong "RR" sa tabi ng isang "Planned RR"
@@ -8565,7 +8584,7 @@ const ALL_JOURNAL_COLUMNS = [
   {key:'execution_tf', label:'Execution TF'},
   {key:'aof_phase', label:'AOF Phase'},
   {key:'profit_loss', label:'Profit/Loss'},
-  {key:'pnl_percent', label:'PNL Percent'},
+  {key:'pnl_percent', label:'Price Move %'},
   {key:'rr', label:'RR'},
   {key:'entry_price', label:'Entry Price'},
   {key:'close_price', label:'Close Price'},
@@ -14408,6 +14427,12 @@ function _journalCellValue(row, key){
     const num = parseFloat(v);
     return isNaN(num) ? v : '$' + Math.abs(num).toFixed(2);
   }
+  if(key === 'pnl_percent'){
+    // Kinukuwenta mula sa entry/exit at direksyon — ang naka-save ay maaaring
+    // mali ang sign (nakadepende sa kung alam na ang Long/Short noong idinikit).
+    const pm = _priceMovePct(row);
+    if(pm !== null) return pm.toFixed(2) + '%';
+  }
   if(['pnl_percent','rr','entry_price','close_price','tp_price','sl_price'].includes(key)){
     const num = parseFloat(v);
     if(isNaN(num)) return v;
@@ -16856,7 +16881,6 @@ function renderTradeViewModal(){
   _renderTradePageHead(row);
   document.getElementById('tradeViewSetupNotesBtn').style.display = row.linked_setup_id ? '' : 'none';
   try{ _renderTradeDetails(row); }catch(e){ console.error('Trade details failed:', e); }
-  try{ _renderTradeReview(row); }catch(e){ console.error('Trade review failed:', e); }
   try{ _renderTradeCharts(row); }catch(e){ console.error('Trade charts failed:', e); }
 
   /* DALAWANG DIREKSYON NG PAGSALA.
@@ -16875,16 +16899,50 @@ function renderTradeViewModal(){
   DRAWER_FIELDS.filter(f => _drawerIsPaper(row) ? !f.realOnly : !f.paperOnly)
     .forEach(f => { fieldByKey[f.key] = f; });
 
+  /* Bawat grupo ay isang maliit na table (label | halaga), at ang mga table ay
+     magkakatabi sa mga column — iisang page, kaunting scroll. Ang mga blangko
+     ay itinatago para hindi humaba; nasa Edit pa rin sila. */
+  const pctCell = (v, cls) => v === null ? null
+    : `<span class="${cls || (v >= 0 ? 'pos' : 'neg')}">${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(2)}%</span>`;
+  const rowHtml = (label, html) => `<div class="field-row"><label>${label}</label><div class="field-static">${html}</div></div>`;
+  const tagsHtml = () => {
+    const tags = _canonicalTags(row.unfollowed_rules);
+    if(!tags.length) return null;
+    return `<div class="tp-tags">${tags.map(t => {
+      const k = _tagKind(t);
+      return `<button type="button" class="tp-tag ${k === 'breach' ? 'rule' : k === 'sentinel' ? 'clean' : 'note'}" data-tag="${escapeHtml(t)}"
+        onclick="openTagInJournal(this.dataset.tag)" title="${k === 'breach' ? 'A rule you broke' : k === 'sentinel' ? 'No rule broken' : 'A note (not a rule)'} · click to see every trade with it">${escapeHtml(t)}</button>`;
+    }).join('')}</div>`;
+  };
+  const isBlank = (f) => {
+    if(['objective','duration','trade_summary','planned_rr','risk_amount','trade_quality'].includes(f.key)) return false;
+    if(f.key === 'notes' && Array.isArray(row.notes_log) && row.notes_log.length) return false;
+    const v = row[f.key];
+    return v === null || v === undefined || String(v).trim() === '' || v === 'Unspecified';
+  };
   const renderGroup = g => {
     const fields = g.keys.map(k => fieldByKey[k]).filter(Boolean);
-    if(!fields.length) return '';
-    return `<div class="field-row span-2 field-group-title">${g.title}</div>` +
-      fields.map(f => _renderTradeViewFieldRow(f, row)).join('');
+    const body = fields.map(f => {
+      if(f.key === 'pnl_percent'){
+        return [pctCell(_accountPct(row)) && rowHtml('Account %', pctCell(_accountPct(row))),
+                pctCell(_priceMovePct(row)) && rowHtml('Price move', pctCell(_priceMovePct(row)))].filter(Boolean).join('');
+      }
+      if(f.key === 'unfollowed_rules'){ const h = tagsHtml(); return h ? rowHtml('Trade Tags', h) : ''; }
+      // Ang Trade Summary ay inuulit lang ang lahat ng nasa page — kopya na
+      // lang (button sa itaas ng Notes & Links).
+      if(f.key === 'symbol' || f.key === 'trade_summary' || isBlank(f)) return '';
+      return _renderTradeViewFieldRow(f, row);
+    }).join('');
+    const copy = g === NOTES_LINKS_GROUP
+      ? `<button class="poscalc-copy-btn" title="Copy the trade summary" onclick="copyTradeSummaryToClipboard(this)" data-summary="${escapeHtml(computeTradeSummaryPlain(row))}">${copyIconSVG()}</button>` : '';
+    return body || copy ? `<div class="tp-card"><div class="tp-card-t">${g.title}${copy}</div>${body}</div>` : '';
   };
-  const preHtml = JOURNAL_FIELD_GROUPS.slice(0, JOURNAL_FIELD_GROUPS_PRE_CONFLUENCE_COUNT).map(renderGroup).join('');
-  const postHtml = JOURNAL_FIELD_GROUPS.slice(JOURNAL_FIELD_GROUPS_PRE_CONFLUENCE_COUNT).map(renderGroup).join('');
-
-  document.getElementById('tradeViewBody').innerHTML = preHtml + _renderTradeViewConfluenceGroup(row) + postHtml + renderGroup(NOTES_LINKS_GROUP);
+  const conf = _renderTradeViewConfluenceGroup(row)
+    .replace('<div class="field-row span-2 field-group-title">', '<div class="tp-card-t">');
+  document.getElementById('tradeViewBody').innerHTML =
+    JOURNAL_FIELD_GROUPS.map(renderGroup).join('')
+    + `<div class="tp-card">${conf}</div>`
+    + renderGroup(NOTES_LINKS_GROUP);
 
   document.getElementById('tradeViewPrevBtn').disabled = tradeViewIndex <= 0;
   document.getElementById('tradeViewNextBtn').disabled = tradeViewIndex < 0 || tradeViewIndex >= tradeViewList.length - 1;
@@ -16943,91 +17001,35 @@ function _renderTradePageHead(row){
 }
 
 function _renderTradeDetails(row){
+  // Maikling buod lang — ang lahat ng detalye ay nasa mga table sa ilalim.
   const el = document.getElementById('tpDetails');
   const n = normalizeTrade({ ...row });
   const net = netPnl(n);
   const R = _tradeR(n);
-  const risk = _beAvoidedLoss(row);
+  const acc = _accountPct(row), move = _priceMovePct(row);
   const fmtTime = v => v ? new Date(v).toLocaleTimeString(undefined, { hour:'numeric', minute:'2-digit' }) : '';
+  const sgn = (v, unit, dp) => `<b class="${v >= 0 ? 'pos' : 'neg'}">${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(dp)}${unit}</b>`;
   const line = (k, v) => `<div class="tp-line"><span>${k}</span><b>${v}</b></div>`;
-  const sec = (title, lines) => { const body = lines.filter(Boolean).join(''); return body ? `<div class="tp-sec"><div class="tp-sec-t">${title}</div>${body}</div>` : ''; };
-  const val = (v) => (v === null || v === undefined || String(v).trim() === '' || v === 'Unspecified') ? null : escapeHtml(String(v));
-  const opt = (k, v) => v ? line(k, v) : '';
   const dur = computeDuration(row);
   const sess = computeSession(row) || row.session;
   el.innerHTML = `
-    <h2 class="tp-h2">Trade details</h2>
     <div class="tp-pnl ${net >= 0 ? 'pos' : 'neg'}">${_tpMoney(net)}</div>
-    <div class="tp-pnl-k">Net P&amp;L${R !== null ? ` · <b class="${R >= 0 ? 'pos' : 'neg'}">${R >= 0 ? '+' : '−'}${Math.abs(R).toFixed(2)}R</b>` : ''}</div>
+    <div class="tp-pnl-k">Net P&amp;L</div>
+    <div class="tp-kpis">
+      <div>${R !== null ? sgn(R, 'R', 2) : '<b>—</b>'}<span>Return</span></div>
+      <div>${acc !== null ? sgn(acc, '%', 2) : '<b>—</b>'}<span title="Net P&L as a share of the account size">Account</span></div>
+      <div>${move !== null ? sgn(move, '%', 2) : '<b>—</b>'}<span title="How far price moved from entry to exit, positive when it went your way">Price move</span></div>
+    </div>
     <div class="tp-trio">
       <div><b>${escapeHtml(row.symbol || '—')}</b><span>Instrument</span></div>
       <div><b class="${/^long$/i.test(row.trade_type || '') ? 'pos' : /^short$/i.test(row.trade_type || '') ? 'neg' : ''}">${escapeHtml(row.trade_type || '—')}</b><span>Direction</span></div>
       <div><b>${_tpNum(row.position_size)}</b><span>Quantity</span></div>
     </div>
-    ${sec('Context', [
-      opt('Account', val(row.account)),
-      opt('Date', row.open_date ? escapeHtml(new Date(row.open_date).toLocaleDateString(undefined, { weekday:'short', month:'short', day:'numeric', year:'numeric' })) : null),
-      opt('Session', val(sess)),
-      dur ? line('Duration', `${escapeHtml(dur)}${row.open_date && row.close_date ? `<small>${fmtTime(row.open_date)} – ${fmtTime(row.close_date)}</small>` : ''}`) : '',
-      opt('Trade setup', val(row.trade_setup)),
-      opt('Pattern', val(row.pattern_type)),
-      opt('Execution TF', val(row.execution_tf)),
-      opt('AOF phase', val(row.aof_phase))
-    ])}
-    ${sec('Execution', [
-      line('Entry / Exit', `${_tpNum(row.entry_price)} / ${_tpNum(row.close_price)}`),
-      opt('Stop loss', row.sl_price != null && row.sl_price !== '' ? _tpNum(row.sl_price) : null),
-      opt('Take profit', row.tp_price != null && row.tp_price !== '' ? _tpNum(row.tp_price) : null),
-      opt('Leverage', row.leverage != null && row.leverage !== '' ? _tpNum(row.leverage) + 'x' : null),
-      opt('Exit', val(row.exit_type))
-    ])}
-    ${sec('Performance', [
-      opt('Risk', risk && !risk.suspect ? escapeHtml(fmtMoney(risk.value).replace('+', '')) : null),
-      opt('Planned RR', (() => { const p = _plannedRR(row); return p === null ? null : '1:' + fmtNum(p, 2); })()),
-      opt('RR', row.rr != null && row.rr !== '' ? _tpNum(row.rr) : null),
-      opt('Return (R)', R !== null ? `<span class="${R >= 0 ? 'pos' : 'neg'}">${R >= 0 ? '+' : '−'}${Math.abs(R).toFixed(2)}R</span>` : null),
-      opt('P&amp;L %', row.pnl_percent != null && row.pnl_percent !== '' ? `${Number(row.pnl_percent).toFixed(2)}%` : null)
-    ])}
-    ${sec('Costs', [
-      line('Fees', row.fee != null && row.fee !== '' ? escapeHtml(fmtMoney(-Math.abs(Number(row.fee)))) : '$0.00')
-    ])}`;
-}
-
-function _renderTradeReview(row){
-  const el = document.getElementById('tpReview');
-  const rf = String(row.rules_followed || '').trim();
-  const tags = _canonicalTags(row.unfollowed_rules);
-  const broke = tags.filter(t => _tagKind(t) === 'breach');
-  const notes = tags.filter(t => _tagKind(t) === 'observation');
-  const chips = (arr, cls) => arr.map(t => `<button type="button" class="tp-tag ${cls}" data-tag="${escapeHtml(t)}" onclick="openTagInJournal(this.dataset.tag)" title="Open every trade with this tag">${escapeHtml(t)}</button>`).join('');
-  const cd = _confluenceCellData(row);
-  const post = ['post_be_result', 'post_cutloss_result', 'post_stop_profit_result']
-    .map(k => row[k] && row[k] !== 'N/A' ? `<span class="tp-tag">${escapeHtml(row[k])}</span>` : '').join('');
-  const notesTxt = String(row.notes || '').trim();
-  const log = Array.isArray(row.notes_log) ? row.notes_log : [];
-  el.innerHTML = `
-    <div class="tp-rv-grid">
-      <div class="tp-rv">
-        <div class="tp-rv-k">Rules followed?</div>
-        <div>${rf ? `<span class="tp-chip ${/^yes$/i.test(rf) ? 'win' : 'loss'}">${escapeHtml(rf)}</span>` : '<span class="tp-muted">Not answered</span>'}</div>
-      </div>
-      <div class="tp-rv">
-        <div class="tp-rv-k">Confluence</div>
-        <div>${cd ? `<b class="${cd.state === 'pass' ? 'pos' : cd.state === 'near' ? 'tp-acc' : 'neg'}">${cd.pct}%</b> <span class="tp-muted">${Number(cd.done.toFixed(1))} of ${cd.total} · bar ${cd.bar}%</span>` : '<span class="tp-muted">Not filled in</span>'}</div>
-      </div>
-      <div class="tp-rv tp-rv-wide">
-        <div class="tp-rv-k">Rules broken</div>
-        <div class="tp-tags">${broke.length ? chips(broke, 'rule') : `<span class="tp-muted">${/^yes$/i.test(rf) || tags.some(t => _tagKind(t) === 'sentinel') ? 'None' : '—'}</span>`}</div>
-      </div>
-      <div class="tp-rv tp-rv-wide">
-        <div class="tp-rv-k">Notes tags</div>
-        <div class="tp-tags">${notes.length ? chips(notes, 'note') : '<span class="tp-muted">—</span>'}</div>
-      </div>
-      ${post ? `<div class="tp-rv tp-rv-wide"><div class="tp-rv-k">After the exit</div><div class="tp-tags">${post}</div></div>` : ''}
-      <div class="tp-rv tp-rv-wide">
-        <div class="tp-rv-k">Notes</div>
-        <div class="tp-notes">${notesTxt ? `<p>${escapeHtml(notesTxt)}</p>` : ''}${log.map(e => `<div class="tp-note"><small>${escapeHtml(new Date(e.ts).toLocaleString(undefined, { dateStyle:'medium', timeStyle:'short' }))}</small>${escapeHtml(String(e.text || '').trim())}</div>`).join('')}${!notesTxt && !log.length ? '<span class="tp-muted">No notes yet. Use Add note above.</span>' : ''}</div>
-      </div>
+    <div class="tp-sec">
+      ${row.account ? line('Account', escapeHtml(row.account)) : ''}
+      ${sess ? line('Session', escapeHtml(sess)) : ''}
+      ${dur ? line('Duration', `${escapeHtml(dur)}${row.open_date && row.close_date ? `<small>${fmtTime(row.open_date)} – ${fmtTime(row.close_date)}</small>` : ''}`) : ''}
+      ${line('Entry / Exit', `${_tpNum(row.entry_price)} / ${_tpNum(row.close_price)}`)}
     </div>`;
 }
 
@@ -27733,8 +27735,15 @@ function _renderPsychFields(){
     }
     return `<div class="dp-q${f.type === 'pick' ? ' wide' : ''}"><label title="${escapeHtml(f.hint || '')}">${f.label}</label>${ctl}</div>`;
   };
-  document.getElementById('dpPsychPre').innerHTML = PSYCH_FIELDS.filter(f => f.g === 'pre').map(row).join('');
-  document.getElementById('dpPsychPost').innerHTML = PSYCH_FIELDS.filter(f => f.g === 'post').map(row).join('');
+  // Naka-grupo: Katawan, Isip, Damdamin (bago) at ang session (pagkatapos).
+  const SUB = { sleep_h:'body', sleep:'body', energy:'body', ate:'body', exercise:'body',
+                stress:'mind', focus:'mind', confidence:'mind', patience:'mind', life:'mind', money:'mind',
+                emotion:'feel' };
+  const into = (id, pred) => { const el = document.getElementById(id); if(el) el.innerHTML = PSYCH_FIELDS.filter(pred).map(row).join(''); };
+  into('dpPsychBody', f => f.g === 'pre' && SUB[f.k] === 'body');
+  into('dpPsychMind', f => f.g === 'pre' && SUB[f.k] === 'mind');
+  into('dpPsychFeel', f => f.g === 'pre' && SUB[f.k] === 'feel');
+  into('dpPsychPost', f => f.g === 'post');
   const r = _psychReadiness(_dpPsych);
   const el = document.getElementById('dpReady');
   el.className = 'dp-ready ' + _readyTone(r);

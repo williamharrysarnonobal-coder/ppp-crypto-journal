@@ -4634,6 +4634,25 @@ table.journal td.paper-why-col{line-height:1.5;}
 .dp-seg button.on.none{background:var(--surface);border-color:var(--muted);}
 .dp-seg button.on.partly{background:color-mix(in srgb,var(--accent) 18%,transparent);border-color:var(--accent);color:var(--accent);}
 .dp-trades{font-size:13px;}
+/* Ang popup, naka-grupo: bawat grupo ay isang card na may kulay na header. */
+.dp-head{display:flex;align-items:center;gap:12px;padding-right:34px;margin-bottom:6px;}
+.dp-head h3{margin:0;}
+.dp-head .dp-ready{margin-left:auto;font-size:13px;font-weight:700;}
+.dp-phase{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:16px 0 8px;display:flex;align-items:center;gap:10px;}
+.dp-phase::after{content:'';flex:1;height:1px;background:var(--rule);}
+.dp-grid-2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px;margin-bottom:12px;}
+.dp-grid-2.inner{margin:0;gap:4px 20px;}
+@media(max-width:760px){.dp-grid-2{grid-template-columns:minmax(0,1fr);}}
+.dp-card{border:1px solid var(--rule);border-radius:12px;background:var(--surface);overflow:hidden;margin-bottom:12px;}
+.dp-grid-2 > .dp-card{margin-bottom:0;}
+.dp-card > :not(.dp-card-h){margin-left:14px;margin-right:14px;}
+.dp-card > :last-child{margin-bottom:14px;}
+.dp-card-h{display:flex;align-items:center;gap:8px;padding:9px 14px;margin-bottom:12px;font-size:13px;font-weight:700;color:var(--ink);
+  background:color-mix(in srgb,var(--accent) 14%,var(--surface));border-bottom:1px solid color-mix(in srgb,var(--accent) 30%,transparent);}
+.dp-ico{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:6px;background:color-mix(in srgb,var(--accent) 28%,transparent);color:var(--accent);font-size:12px;}
+.dp-card .dp-psych-grid{grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px 18px;}
+.dp-card .dp-psych-grid.one{grid-template-columns:minmax(0,1fr);margin:0 14px 14px;}
+.dp-card .field-row{margin-bottom:12px;}
 .dp-mind{margin:4px 0 18px;}
 .dp-mind .dp-col-t{display:flex;align-items:baseline;gap:6px;}
 .dp-ready{margin-left:auto;font-size:12px;padding:3px 10px;border-radius:999px;border:1px solid var(--rule);background:var(--surface-2);font-variant-numeric:tabular-nums;}
@@ -4752,6 +4771,31 @@ body.mobile-mode .tp-grid{grid-template-columns:minmax(0,1fr) !important;}
 .tp-notes p{margin:0 0 10px;white-space:pre-wrap;}
 .tp-note{margin-bottom:10px;white-space:pre-wrap;}
 .tp-note small{display:block;font-size:11px;color:var(--muted);font-family:'IBM Plex Mono',monospace;}
+/* Iisang page: buod + charts sa itaas, ang lahat ng field bilang mga table sa
+   ilalim, magkakatabi sa mga column (masonry) para kaunti ang scroll. */
+.tp-grid{grid-template-columns:minmax(0,300px) minmax(0,1fr) !important;margin-bottom:16px;}
+@media(max-width:1000px){.tp-grid{grid-template-columns:minmax(0,1fr) !important;}}
+.tp-details .tp-pnl{margin-top:0;font-size:34px;}
+.tp-kpis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:14px;}
+.tp-kpis div{display:flex;flex-direction:column;gap:2px;padding:8px 9px;border-radius:9px;background:var(--surface-2);border:1px solid var(--rule);min-width:0;}
+.tp-kpis b{font-size:15px;font-variant-numeric:tabular-nums;white-space:nowrap;}
+.tp-kpis span{font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);}
+.tp-details .tp-trio{margin:14px 0 2px;}
+.tp-details .tp-sec{margin-top:10px;padding-top:6px;}
+.tp-details .tp-line{padding:4px 0;}
+.tp-charts-head{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:10px;}
+.tp-charts-head .tp-sub{margin:0;}
+.tp-main .tp-slot-body .tp-shot.main,.tp-main .tp-empty{aspect-ratio:16/8;}
+.tp-tables{columns:4 260px;column-gap:16px;}
+.tp-card{break-inside:avoid;display:inline-block;width:100%;margin:0 0 16px;padding:12px 14px;border-radius:12px;border:1px solid var(--rule);background:var(--surface);}
+.tp-card-t{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-bottom:6px;display:flex;align-items:center;justify-content:space-between;gap:8px;}
+.tp-card .field-row{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin:0;padding:6px 0;border-bottom:1px solid var(--rule);}
+.tp-card .field-row:last-child{border-bottom:0;}
+.tp-card .field-row label{font-size:12px;color:var(--muted);margin:0;flex-shrink:0;max-width:55%;text-transform:none;letter-spacing:0;font-weight:500;}
+.tp-card .field-row .field-static{padding:0;text-align:right;font-size:12.5px;word-break:break-word;min-width:0;}
+.tp-card .field-row:has(.tp-tags),.tp-card .field-row.span-2{flex-direction:column;align-items:stretch;gap:6px;}
+.tp-card .field-row:has(.tp-tags) .field-static,.tp-card .field-row.span-2 .field-static{text-align:left;}
+.tp-tag.clean{border-color:color-mix(in srgb,var(--win) 45%,transparent);color:var(--win);}
 .tp-all{margin-top:22px;border-top:1px solid var(--rule);padding-top:12px;}
 .tp-all summary{cursor:pointer;font-size:13px;color:var(--muted);font-weight:600;}
 .tp-all[open] summary{margin-bottom:10px;}

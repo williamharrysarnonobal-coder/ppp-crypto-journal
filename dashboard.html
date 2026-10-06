@@ -17,7 +17,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<link rel="stylesheet" href="css/style.css?v=342">
+<link rel="stylesheet" href="css/style.css?v=343">
 </head>
 <body>
 
@@ -403,18 +403,14 @@
     <div class="tp-grid">
       <aside class="panel tp-details" id="tpDetails"></aside>
       <section class="panel tp-main">
-        <h2 class="tp-h2">Charts</h2>
-        <div class="tp-sub">Add or paste (Ctrl+V) a screenshot for each timeframe. Click a slot first, then paste.</div>
+        <div class="tp-charts-head"><h2 class="tp-h2">Charts</h2>
+          <span class="tp-sub">Click a slot, then paste (Ctrl+V), drop an image, or use + Add.</span></div>
         <div id="tpCharts" class="tp-charts"></div>
         <input type="file" id="tpChartFile" accept="image/*" multiple style="display:none;" onchange="onTradeChartFiles(this)">
-        <h2 class="tp-h2" style="margin-top:26px;">Review</h2>
-        <div id="tpReview"></div>
-        <details class="tp-all">
-          <summary>All fields</summary>
-          <div id="tradeViewBody" class="trade-view-grid"></div>
-        </details>
       </section>
     </div>
+    <!-- Lahat ng field, naka-table bawat grupo, magkakatabi — walang dropdown. -->
+    <div id="tradeViewBody" class="tp-tables"></div>
   </div>
 
   <!-- DAILY PLAN: plano bago ang session, review pagkatapos — sa calendar,
@@ -2427,38 +2423,61 @@
 <div class="modal-overlay" id="dpModal" onclick="if(event.target===this) closeDailyPlan()">
   <div class="modal-box dp-modal" style="position:relative;">
     <button class="modal-close" onclick="closeDailyPlan()">✕</button>
-    <h3 id="dpTitle" style="padding-right:24px;">—</h3>
-    <section class="dp-mind">
-      <div class="dp-col-t">Mindset <span>before the session · tap 1–5</span><b id="dpReady" class="dp-ready"></b></div>
-      <div id="dpPsychPre" class="dp-psych-grid"></div>
+    <div class="dp-head">
+      <h3 id="dpTitle">—</h3>
+      <b id="dpReady" class="dp-ready"></b>
+    </div>
+
+    <div class="dp-phase">Before the session</div>
+    <div class="dp-grid-2">
+      <section class="dp-card">
+        <div class="dp-card-h"><span class="dp-ico">☾</span>Body</div>
+        <div id="dpPsychBody" class="dp-psych-grid"></div>
+      </section>
+      <section class="dp-card">
+        <div class="dp-card-h"><span class="dp-ico">◎</span>Mind</div>
+        <div id="dpPsychMind" class="dp-psych-grid"></div>
+      </section>
+    </div>
+    <section class="dp-card">
+      <div class="dp-card-h"><span class="dp-ico">♡</span>Feeling right now</div>
+      <div id="dpPsychFeel" class="dp-psych-grid"></div>
     </section>
-    <div class="dp-cols">
-      <section class="dp-col">
-        <div class="dp-col-t">Plan <span>before the session</span></div>
-        <div class="field-row">
-          <label>Bias</label>
-          <div class="dp-seg" id="dpBias" role="radiogroup" aria-label="Bias">
-            <button type="button" data-v="Bullish" class="bull">Bullish</button>
-            <button type="button" data-v="Bearish" class="bear">Bearish</button>
-            <button type="button" data-v="Neutral" class="neutral">Neutral</button>
-            <button type="button" data-v="No trade" class="none">No trade</button>
+    <section class="dp-card">
+      <div class="dp-card-h"><span class="dp-ico">◇</span>Plan</div>
+      <div class="dp-grid-2 inner">
+        <div>
+          <div class="field-row">
+            <label>Bias</label>
+            <div class="dp-seg" id="dpBias" role="radiogroup" aria-label="Bias">
+              <button type="button" data-v="Bullish" class="bull">Bullish</button>
+              <button type="button" data-v="Bearish" class="bear">Bearish</button>
+              <button type="button" data-v="Neutral" class="neutral">Neutral</button>
+              <button type="button" data-v="No trade" class="none">No trade</button>
+            </div>
+          </div>
+          <div class="field-row">
+            <label for="dpMax">Max trades today</label>
+            <input type="number" id="dpMax" min="0" max="20" step="1" placeholder="e.g. 2" style="max-width:120px;">
           </div>
         </div>
-        <div class="field-row">
-          <label for="dpMax">Max trades today</label>
-          <input type="number" id="dpMax" min="0" max="20" step="1" placeholder="e.g. 2" style="max-width:120px;">
+        <div>
+          <div class="field-row">
+            <label for="dpLevels">Key levels</label>
+            <textarea id="dpLevels" rows="2" placeholder="Prev high 64,250 · Asia low 62,900 · 4H FVG 63,400–63,600"></textarea>
+          </div>
+          <div class="field-row">
+            <label for="dpPlan">What I'm waiting for</label>
+            <textarea id="dpPlan" rows="2" placeholder="Sweep of Asia low into the 4H FVG, then a 15m bounce play. Nothing before London open."></textarea>
+          </div>
         </div>
-        <div class="field-row">
-          <label for="dpLevels">Key levels</label>
-          <textarea id="dpLevels" rows="3" placeholder="Prev high 64,250 · Asia low 62,900 · 4H FVG 63,400–63,600"></textarea>
-        </div>
-        <div class="field-row">
-          <label for="dpPlan">What I'm waiting for</label>
-          <textarea id="dpPlan" rows="3" placeholder="Sweep of Asia low into the 4H FVG, then a 15m bounce play. Nothing before London open."></textarea>
-        </div>
-      </section>
-      <section class="dp-col">
-        <div class="dp-col-t">Review <span>after the session</span></div>
+      </div>
+    </section>
+
+    <div class="dp-phase">After the session</div>
+    <div class="dp-grid-2">
+      <section class="dp-card">
+        <div class="dp-card-h"><span class="dp-ico">✓</span>Review</div>
         <div class="field-row">
           <label>Trades that day</label>
           <div id="dpTrades" class="dp-trades"></div>
@@ -2471,7 +2490,6 @@
             <button type="button" data-v="No" class="no">No</button>
           </div>
         </div>
-        <div id="dpPsychPost" class="dp-psych-grid one"></div>
         <div class="field-row">
           <label for="dpWell">What went well</label>
           <textarea id="dpWell" rows="2"></textarea>
@@ -2481,7 +2499,12 @@
           <textarea id="dpImprove" rows="2"></textarea>
         </div>
       </section>
+      <section class="dp-card">
+        <div class="dp-card-h"><span class="dp-ico">⚡</span>Emotions in the session</div>
+        <div id="dpPsychPost" class="dp-psych-grid one"></div>
+      </section>
     </div>
+
     <div class="sub" id="dpError" style="color:var(--loss);margin-top:6px;"></div>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-top:14px;gap:8px;">
       <button class="drawer-danger-btn" id="dpDeleteBtn" style="margin-left:0;" onclick="deleteDailyPlan()">Delete</button>
@@ -2610,6 +2633,6 @@
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=2"></script>
-<script src="js/dashboard.js?v=574"></script>
+<script src="js/dashboard.js?v=575"></script>
 </body>
 </html>
