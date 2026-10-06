@@ -1964,6 +1964,7 @@ function applyFilters(){
      nagbago ang Real money only, na nagbabago naman ng kasagutan. */
   renderDashGreeting();
 
+  renderTodayStrip();
   renderKPIs();
   // Nabubuhay lang ito kapag may paper trade; kung wala, nagtatago ang panel.
   renderTriggerPanel();
@@ -2200,6 +2201,30 @@ function renderKPIs(){
     else break;
   }
 
+  /* SA R, HINDI SA DOLYAR. Ang $ na average ay pinaghahalo ang 10K at 50K —
+     ang 50K ang laging nangingibabaw. Ang R ay ang P&L na hinati sa risk ng
+     trade mismo (|entry − SL| × quantity), kaya pantay ang lahat ng account.
+     Ang trade na walang SL o quantity, o kahina-hinala ang numero, ay hindi
+     isinasama — at sinasabi kung ilan ang nabilang. */
+  const tradeR = x => {
+    const r = _beAvoidedLoss(x);
+    if(!r || r.suspect || !(r.value > 0)) return null;
+    return netPnl(x) / r.value;
+  };
+  const winR = wins.map(tradeR).filter(v => v !== null);
+  const lossR = losses.map(tradeR).filter(v => v !== null);
+  const avgWinR = winR.length ? winR.reduce((a,b)=>a+b,0) / winR.length : null;
+  const avgLossR = lossR.length ? lossR.reduce((a,b)=>a+b,0) / lossR.length : null;
+  const sumWinR = winR.reduce((a,b)=>a+b,0), sumLossR = Math.abs(lossR.reduce((a,b)=>a+b,0));
+  const pfR = sumLossR > 0 ? sumWinR / sumLossR : (sumWinR > 0 ? Infinity : null);
+  const rCount = winR.length + lossR.length, decidedCount = wins.length + losses.length;
+  const rNote = rCount < decidedCount
+    ? `<div style="margin-top:6px;font-size:10.5px;color:var(--muted);">from ${rCount} of ${decidedCount} trades with SL & quantity</div>` : '';
+  const fmtR = v => v === null ? '—' : `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(2)}R`;
+  const pfRDisplay = pfR === null ? 0 : pfR === Infinity ? 100 : Math.min(pfR/3*100, 100);
+  const winBarPctR = (avgWinR !== null && avgLossR !== null && (Math.abs(avgWinR) + Math.abs(avgLossR)) > 0)
+    ? Math.abs(avgWinR) / (Math.abs(avgWinR) + Math.abs(avgLossR)) * 100 : 50;
+
   const pfDisplay = profitFactor===Infinity ? 100 : Math.min(profitFactor/3*100, 100);
   const rrDisplay = avgRR === null ? 0 : Math.min(Math.max(avgRR,0)/3*100, 100);
   const winBarPct = (Math.abs(avgWin)+Math.abs(avgLoss)) > 0 ? Math.abs(avgWin)/(Math.abs(avgWin)+Math.abs(avgLoss))*100 : 50;
@@ -2219,21 +2244,26 @@ function renderKPIs(){
       bar: pnlTrend.length > 1 ? sparklineSVG(pnlTrend, totalPnl>=0?cssVar('--win'):cssVar('--loss')) : ''},
     {label:"Win rate", value: fmtNum(winRate,1)+"%", cls:'',
       bar: `<div class="kpi-dual-bar"><div style="width:${winRate}%;background:${cssVar('--win')};"></div><div style="width:${100-winRate}%;background:${cssVar('--loss')};"></div></div>`},
-    {label:"Profit factor", value: profitFactor===Infinity?"∞":fmtNum(profitFactor,2), cls:'',
-      bar: `<div class="kpi-dual-bar"><div style="width:${pfDisplay}%;background:${cssVar('--win')};"></div><div style="width:${100-pfDisplay}%;background:${cssVar('--loss')};"></div></div>`},
+    {label:"Profit factor (R)", value: pfR === null ? "—" : pfR===Infinity?"∞":fmtNum(pfR,2), cls:'',
+      bar: `<div class="kpi-dual-bar"><div style="width:${pfRDisplay}%;background:${cssVar('--win')};"></div><div style="width:${100-pfRDisplay}%;background:${cssVar('--loss')};"></div></div>`},
     {label:"Avg RR", value: avgRR===null?"—":fmtNum(avgRR,2), cls:'',
       bar: `<div class="kpi-dual-bar"><div style="width:${rrDisplay}%;background:${cssVar('--win')};"></div><div style="width:${100-rrDisplay}%;background:${cssVar('--loss')};"></div></div>`},
-    {label:"Avg win / loss", value: fmtMoney(avgWin).replace('+','')+" / "+fmtMoney(avgLoss), cls:'',
-      bar: `<div class="kpi-dual-bar"><div style="width:${winBarPct}%;background:${cssVar('--win')};"></div><div style="width:${100-winBarPct}%;background:${cssVar('--loss')};"></div></div>`},
+    {label:"Avg win / loss", value: fmtR(avgWinR) + " / " + fmtR(avgLossR), cls:'',
+      bar: `<div class="kpi-dual-bar"><div style="width:${winBarPctR}%;background:${cssVar('--win')};"></div><div style="width:${100-winBarPctR}%;background:${cssVar('--loss')};"></div></div>${rNote}`},
     // "loss" + "s" ay nagbibigay ng "3 losss". Ang "es" ang tama, gaya ng
     // ginagawa na ng Total trades sa ibaba nito.
     {label:"Current streak", value: streakType ? `${streak} ${streakType}${streak>1?(streakType==='loss'?'es':'s'):''}` : "—", cls: streakType==='win'?'pos':(streakType==='loss'?'neg':''),
       bar: streakIcons},
     {label:"Total trades", value: t.length, cls:'',
-      bar: t.length ? `<div style="margin-top:8px;font-size:11px;color:var(--muted);">${wins.length} win${wins.length!==1?'s':''} · ${losses.length} loss${losses.length!==1?'es':''}</div>` : ''},
-    {label:"Fees paid", value: "$"+fmtNum(feesTotal,2), cls:'',
-      bar: `<div class="kpi-bar"><div class="kpi-bar-fill" style="width:${feesShare}%;background:${cssVar('--warn')};"></div></div><div style="margin-top:6px;font-size:10.5px;color:var(--muted);">${fmtNum(feesShare,1)}% of gross win</div>`}
+      bar: t.length ? `<div style="margin-top:8px;font-size:11px;color:var(--muted);">${wins.length} win${wins.length!==1?'s':''} · ${losses.length} loss${losses.length!==1?'es':''}</div>` : ''}
   ];
+  // Ang Fees ay nasa "More stats" na — hindi ito nagbabago ng desisyon araw-araw.
+  const feesEl = document.getElementById('feesBody');
+  if(feesEl){
+    feesEl.innerHTML = `<div class="fees-row"><span class="fees-big">$${fmtNum(feesTotal,2)}</span>
+      <span class="fees-sub">${fmtNum(feesShare,1)}% of gross win · ${t.length} trade${t.length===1?'':'s'} in view</span></div>
+      <div class="kpi-bar" style="max-width:420px;"><div class="kpi-bar-fill" style="width:${feesShare}%;background:${cssVar('--warn')};"></div></div>`;
+  }
 
   document.getElementById('kpiGrid').innerHTML = kpis.map(k =>
     `<div class="kpi"><div class="label">${k.label}</div><div class="value ${k.cls}">${k.value}</div>${k.bar||''}</div>`
@@ -3629,8 +3659,53 @@ function renderEquityCurve(){
 }
 
 /* ---------------- Win / Loss donut ---------------- */
+/* TRADE QUALITY sa Dashboard — pumalit sa Win/Loss donut, na kapareho lang ng
+   Win rate at Total trades sa itaas. Ito ay Rules Followed? × Win/Loss, sa
+   bilang ng trade (hindi pera). Ang pinakamahalagang kahon ay Bad Win: ang
+   panalong nagtuturo na sumuway. Pindutin ang isang kahon para makita ang mga
+   trade na iyon sa Trade Journals. Pareho ang pangalan ng function para hindi
+   magalaw ang limang lugar na tumatawag dito. */
 function renderWinLossChart(){
-  const ctx = document.getElementById('winLossChart').getContext('2d');
+  const body = document.getElementById('tradeQualityBody');
+  if(!body){ return _renderWinLossDonut(); }
+  if(winLossChartRef){ winLossChartRef.destroy(); winLossChartRef = null; }
+  const counts = {};
+  let rated = 0;
+  FILTERED.forEach(t => {
+    const q = _tradeQuality(t);
+    if(!q) return;
+    counts[q] = (counts[q] || 0) + 1;
+    rated++;
+  });
+  if(!FILTERED.length){ body.innerHTML = '<div class="empty-state">No trades in view.</div>'; return; }
+  if(!rated){ body.innerHTML = '<div class="empty-state">Fill in Rules Followed? on your trades to see this.</div>'; return; }
+  const pct = n => rated ? Math.round(n / rated * 100) : 0;
+  const cell = (q, cls, hint) => {
+    const n = counts[q] || 0;
+    return `<button type="button" class="tq-cell ${cls}" onclick="openTradeQualityInJournal('${q}')" title="${hint} — click to see them">
+      <span class="tq-name">${q}</span><span class="tq-n">${n}</span><span class="tq-pct">${pct(n)}%</span></button>`;
+  };
+  const be = (counts['Good BE'] || 0) + (counts['Bad BE'] || 0);
+  const unrated = FILTERED.length - rated;
+  body.innerHTML = `
+    <div class="tq-grid">
+      <span></span><span class="tq-col">Win</span><span class="tq-col">Loss</span>
+      <span class="tq-row">Rules followed</span>${cell('Good Win', 'good-win', 'Followed your rules and won')}${cell('Good Loss', 'good-loss', 'Followed your rules and lost — part of the game')}
+      <span class="tq-row">Rules broken</span>${cell('Bad Win', 'bad-win', 'Broke a rule and won anyway — the dangerous one')}${cell('Bad Loss', 'bad-loss', 'Broke a rule and lost')}
+    </div>
+    <div class="tq-foot">${be ? `Breakeven: ${counts['Good BE'] || 0} good · ${counts['Bad BE'] || 0} bad · ` : ''}${rated} rated${unrated ? ` · ${unrated} without Rules Followed?` : ''}</div>`;
+}
+// Mula sa Trade Quality: buksan ang Trade Journals na naka-filter sa kahong iyon.
+function openTradeQualityInJournal(q){
+  JOURNAL_ACTIVE_FILTERS = [{ key: 'trade_quality', value: q }];
+  switchView('journal');
+  if(typeof renderJournalTable === 'function') renderJournalTable();
+}
+
+function _renderWinLossDonut(){
+  const canvasEl = document.getElementById('winLossChart');
+  if(!canvasEl) return;
+  const ctx = canvasEl.getContext('2d');
   if(winLossChartRef) winLossChartRef.destroy();
 
   if(FILTERED.length === 0){
@@ -3678,6 +3753,18 @@ function renderWinLossChart(){
       <span class="num">${dataVals[i]} (${fmtNum(dataVals[i]/total*100,1)}%)</span>
     </div>
   `).join('');
+}
+
+// Iisang Discipline panel na may dalawang tab: Score (radar) at Rules & Notes.
+function setDisciplineTab(tab){
+  document.querySelectorAll('[data-disc-tab]').forEach(b => {
+    const on = b.dataset.discTab === tab;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-selected', on ? 'true' : 'false');
+  });
+  document.querySelectorAll('[data-disc-pane]').forEach(p => { p.hidden = p.dataset.discPane !== tab; });
+  // Ang chart na ginuhit habang nakatago ay walang sukat — iguhit ulit.
+  if(tab === 'score' && typeof renderDisciplineRadar === 'function') renderDisciplineRadar();
 }
 
 /* ---------------- Discipline radar ---------------- */
@@ -3978,6 +4065,11 @@ const PANEL_INFO = {
     `Running total of <b>net P&amp;L</b> (profit minus fee), trades ordered by
      <b>close date</b>. It starts at zero — it's the change over the selected
      range, not your account balance.`],
+  quality: ['Trade Quality',
+    `Each trade by <b>Rules Followed?</b> and <b>Win/Loss</b>: Good Win and Good Loss
+     followed your rules, Bad Win and Bad Loss broke one. Counted in <b>trades</b>,
+     not money. <b>Bad Win</b> is the one to watch — it rewards breaking a rule.
+     Trades without Rules Followed? are left out. Click a box to see those trades.`],
   winloss: ['Win / Loss split',
     `Counts the <b>Win/Loss</b> field. Breakeven trades are shown separately and
      are left out of the win rate: a trade that neither won nor lost would drag
@@ -20567,6 +20659,8 @@ async function loadAccounts(){
     TRADING_ACCOUNTS.forEach(a => { delete a.upscale_api_key_enc; });
     // Bagong Risk Per Trade % → ang calculator ay sumusunod agad.
     PS_RISK_OVERRIDES = {};
+    // Ang "Today" strip ay galing sa mga account — iguhit ulit pagdating nila.
+    try{ renderTodayStrip(); }catch(e){}
   }catch(e){
     console.error("Couldn't load trading accounts:", e);
     TRADING_ACCOUNTS = [];
@@ -21559,6 +21653,51 @@ function _syncPostExitField(field, exitMatch, exitTypeValue){
   if(sel.value === 'N/A') sel.value = '';
   const row = sel.closest('.field-row');
   if(row) row.classList.toggle('needs-input', sel.value.trim() === '');
+}
+
+/* ANG "TODAY" STRIP sa itaas ng Dashboard.
+
+   Ang tinitingnan mo bago ka mag-trade, kada account na aktibo pa (hindi
+   Failed o Passed): ang kita ngayong araw, ang natitirang daily loss, ilang
+   talo pa bago ang drawdown floor, at — sa mga account na may Upscale API —
+   ang daily cap ng 30% rule. Galing sa parehong computeAccountStats ng My
+   Accounts, kaya iisa ang sagot ng dalawang lugar. Hindi ito sumusunod sa
+   filter ng Dashboard: ang "ngayon" ay laging ngayon. */
+function renderTodayStrip(){
+  const el = document.getElementById('todayStrip');
+  if(!el) return;
+  const accs = (TRADING_ACCOUNTS || []).filter(a => a.account_type !== 'Exchange'
+    && Number(a.account_size) > 0 && !['failed','passed'].includes(String(a.status || '').toLowerCase()));
+  if(!accs.length){ el.hidden = true; el.innerHTML = ''; return; }
+  const money = v => `${v < 0 ? '−' : ''}$${Math.abs(v).toLocaleString(undefined,{maximumFractionDigits:0})}`;
+  const cards = accs.map(a => {
+    let s;
+    try{ s = computeAccountStats(a); }catch(e){ return ''; }
+    const today = s.todaysPL || 0;
+    const loss = _accountLossSize(a).size;
+    const lossLeft = s.dailyLossLimit > 0 ? Math.max(0, s.dailyLossLimit - s.dailyLossUsed) : null;
+    const lossesToday = (lossLeft !== null && loss > 0) ? Math.floor(lossLeft / loss) : null;
+    const room = s.currentBalance - s.drawdownFloor;
+    const remaining = (s.drawdownFloor > 0 && loss > 0) ? Math.max(0, Math.floor(room / loss)) : null;
+    const tone = n => n === null ? '' : n <= 1 ? 'bad' : n <= 3 ? 'warn' : 'ok';
+    let cap = '';
+    const target = Number(a.profit_target_pct), size = Number(a.account_size);
+    if(a.upscale_account_id && target > 0){
+      const c = size * target / 100 * 0.25;
+      cap = `<div class="ts-m ${today >= c ? 'warn' : ''}"><span>30% cap</span><b>${money(Math.max(0, today))} / ${money(c)}</b></div>`;
+    }
+    return `<button type="button" class="ts-card" onclick="switchView('accounts')" title="Open My Accounts">
+      <div class="ts-head"><b>${escapeHtml(a.account_name)}</b><span>${escapeHtml(a.phase || a.status || '')}</span></div>
+      <div class="ts-metrics">
+        <div class="ts-m ${today > 0 ? 'pos' : today < 0 ? 'neg' : ''}"><span>Today</span><b>${today === 0 ? '$0' : (today > 0 ? '+' : '') + money(today)}</b></div>
+        ${lossLeft !== null ? `<div class="ts-m ${tone(lossesToday)}"><span>Daily loss left</span><b>${money(lossLeft)}${lossesToday !== null ? ` <i>${lossesToday} loss${lossesToday === 1 ? '' : 'es'}</i>` : ''}</b></div>` : ''}
+        ${remaining !== null ? `<div class="ts-m ${tone(remaining)}"><span>To drawdown</span><b>${remaining} loss${remaining === 1 ? '' : 'es'}</b></div>` : ''}
+        ${cap}
+      </div>
+    </button>`;
+  }).join('');
+  el.innerHTML = `<div class="ts-title">Today</div><div class="ts-cards">${cards}</div>`;
+  el.hidden = false;
 }
 
 // Derives all the compliance/progress numbers for one account from the real

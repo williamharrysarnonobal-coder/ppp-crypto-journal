@@ -702,6 +702,12 @@
   .kpi-dual-bar{display:flex;height:5px;border-radius:3px;overflow:hidden;margin-top:10px;background:var(--rule);}
   @media(max-width:1200px){.kpi-grid{grid-template-columns:repeat(4,1fr);}}
   @media(max-width:640px){.kpi-grid{grid-template-columns:repeat(2,1fr);}}
+  /* Pito ang KPI ng Dashboard: pitong column, at sa 4 at 2 na column ang huli
+     ang pumupuno sa natitirang puwang para walang bakanteng kahon. Sa
+     #kpiGrid lang — may sariling bilang ang mga kpi-grid ng Reports. */
+  #kpiGrid{grid-template-columns:repeat(7,1fr);}
+  @media(max-width:1200px){#kpiGrid{grid-template-columns:repeat(4,1fr);} #kpiGrid > .kpi:last-child{grid-column:span 2;}}
+  @media(max-width:640px){#kpiGrid{grid-template-columns:repeat(2,1fr);}}
 
   /* ---------- Reports ---------- */
   .report-period-row{display:flex;align-items:center;gap:14px;flex-wrap:wrap;}
@@ -3534,6 +3540,7 @@ table.breakdown tbody tr{cursor:pointer;}
     max-width:640px;margin:0 auto;padding:76px 14px 24px;
   }
   body.mobile-mode .kpi-grid{grid-template-columns:repeat(2,1fr) !important;}
+  body.mobile-mode #kpiGrid > .kpi:last-child{grid-column:span 2;}
   body.mobile-mode .row,
   body.mobile-mode .row-2,
   body.mobile-mode .row-3,
@@ -4574,6 +4581,67 @@ table.journal td.paper-why-col{line-height:1.5;}
 @media (max-width: 640px){
   .ea-grid{grid-template-columns:1fr;}
 }
+
+/* ---------- Dashboard: Today strip ---------- */
+.today-strip{margin:0 0 16px;}
+.today-strip[hidden]{display:none;}
+.ts-title{font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:0 0 8px;}
+.ts-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px;}
+.ts-card{
+  text-align:left;cursor:pointer;background:var(--surface);border:1px solid var(--rule);border-radius:10px;
+  padding:12px 14px;color:var(--ink);font:inherit;display:flex;flex-direction:column;gap:10px;
+}
+.ts-card:hover{border-color:var(--accent);}
+.ts-card:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+.ts-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px;}
+.ts-head b{font-size:13px;}
+.ts-head span{font-size:11px;color:var(--muted);white-space:nowrap;}
+.ts-metrics{display:flex;flex-wrap:wrap;gap:8px 16px;}
+.ts-m{display:flex;flex-direction:column;gap:2px;min-width:0;}
+.ts-m span{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;}
+.ts-m b{font-size:15px;font-variant-numeric:tabular-nums;}
+.ts-m b i{font-style:normal;font-weight:500;font-size:11px;color:var(--muted);margin-left:2px;}
+.ts-m.pos b, .ts-m.ok b{color:var(--win);}
+.ts-m.neg b, .ts-m.bad b{color:var(--loss);}
+.ts-m.warn b{color:var(--warn);}
+
+/* ---------- Dashboard: Trade Quality ---------- */
+.tq-body{flex:1;min-height:0;display:flex;flex-direction:column;justify-content:center;gap:10px;}
+.tq-grid{display:grid;grid-template-columns:auto 1fr 1fr;gap:6px;align-items:stretch;}
+.tq-col{font-size:10.5px;font-weight:700;color:var(--muted);text-align:center;text-transform:uppercase;letter-spacing:.05em;}
+.tq-row{font-size:11px;color:var(--muted);align-self:center;padding-right:4px;white-space:nowrap;}
+.tq-cell{
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;padding:8px 6px;
+  border-radius:8px;border:1px solid var(--rule);background:var(--surface-2);cursor:pointer;color:var(--ink);font:inherit;
+}
+.tq-cell:hover{border-color:var(--accent);}
+.tq-cell:focus-visible{outline:2px solid var(--accent);outline-offset:1px;}
+.tq-name{font-size:10.5px;font-weight:700;}
+.tq-n{font-size:20px;font-weight:800;font-variant-numeric:tabular-nums;line-height:1.1;}
+.tq-pct{font-size:10.5px;color:var(--muted);}
+.tq-cell.good-win{border-color:color-mix(in srgb, var(--win) 50%, var(--rule));}
+.tq-cell.good-win .tq-n{color:var(--win);}
+.tq-cell.good-loss .tq-n{color:var(--info);}
+.tq-cell.bad-win{border-color:color-mix(in srgb, var(--warn) 55%, var(--rule));background:color-mix(in srgb, var(--warn) 8%, var(--surface-2));}
+.tq-cell.bad-win .tq-n{color:var(--warn);}
+.tq-cell.bad-loss .tq-n{color:var(--loss);}
+.tq-foot{font-size:10.5px;color:var(--muted);text-align:center;}
+
+/* ---------- Dashboard: Discipline tabs & More stats ---------- */
+.disc-tabs{margin:0 0 12px;}
+.disc-tabs .tab{background:none;border:none;font:inherit;cursor:pointer;}
+[data-disc-pane][hidden]{display:none;}
+.more-stats > summary{cursor:pointer;font-size:14px;font-weight:700;color:var(--ink);list-style:none;display:flex;align-items:baseline;gap:10px;}
+.more-stats > summary::-webkit-details-marker{display:none;}
+.more-stats > summary::before{content:'▸';color:var(--muted);transition:transform .15s;}
+.more-stats[open] > summary::before{transform:rotate(90deg);}
+.more-stats-sub{font-size:11.5px;font-weight:400;color:var(--muted);}
+.more-stats-body{margin-top:16px;}
+.more-stats-h{font-size:13px;margin:0 0 6px;display:flex;align-items:center;gap:6px;}
+.fees-row{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin:0 0 8px;}
+.fees-big{font-size:22px;font-weight:800;font-variant-numeric:tabular-nums;}
+.fees-sub{font-size:12px;color:var(--muted);}
+@media (prefers-reduced-motion: reduce){ .more-stats > summary::before{transition:none;} }
 
 /* ---------- Bulk edit (Trade Journals) ---------- */
 .journal th.jsel, .journal td.jsel{width:30px;text-align:center;padding-left:8px;padding-right:2px;}

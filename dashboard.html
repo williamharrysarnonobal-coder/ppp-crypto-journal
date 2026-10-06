@@ -17,7 +17,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<link rel="stylesheet" href="css/style.css?v=333">
+<link rel="stylesheet" href="css/style.css?v=334">
 </head>
 <body>
 
@@ -134,6 +134,10 @@
     </div>
   </header>
 
+  <!-- TODAY: ang tinitingnan bago mag-trade, kada account na nasa challenge.
+       Nakatago kapag walang prop account. -->
+  <div class="today-strip" id="todayStrip" hidden></div>
+
   <div class="kpi-grid" id="kpiGrid"></div>
 
   <!-- Ang Calendar ay buong lapad na: marami itong detalye na mahalaga, at ang
@@ -155,26 +159,18 @@
     </div>
   </div>
 
-  <div class="row-4 dash-chart-row">
+  <div class="row dash-chart-row" style="grid-template-columns:minmax(0,2fr) minmax(0,1fr);align-items:stretch;">
     <div class="panel panel-fixed-h-sm">
       <h2>Equity curve<button type="button" class="panel-info-btn" title="How this is worked out" onclick="event.stopPropagation(); openPanelInfo('equity')"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button></h2>
       <div class="chart-fill"><canvas id="equityChart"></canvas></div>
     </div>
 
+    <!-- Trade Quality ang pumalit sa Win/Loss donut (kapareho lang iyon ng Win
+         rate at Total trades sa itaas). Ang Best days at Session ay nasa
+         Breakdown na — may tab doon ang Day of week at Session. -->
     <div class="panel panel-fixed-h-sm">
-      <h2>Win / Loss split<button type="button" class="panel-info-btn" title="How this is worked out" onclick="event.stopPropagation(); openPanelInfo('winloss')"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button></h2>
-      <div class="chart-fill"><canvas id="winLossChart"></canvas></div>
-      <div id="winLossLegend" style="font-size:11px;color:var(--muted);flex-shrink:0;"></div>
-    </div>
-
-    <div class="panel panel-fixed-h-sm">
-      <h2>Best days to trade<button type="button" class="panel-info-btn" title="How this is worked out" onclick="event.stopPropagation(); openPanelInfo('bestdays')"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button></h2>
-      <div class="chart-fill"><canvas id="dayOfWeekChart"></canvas></div>
-    </div>
-
-    <div class="panel panel-fixed-h-sm">
-      <h2>Session<button type="button" class="panel-info-btn" title="How this is worked out" onclick="event.stopPropagation(); openPanelInfo('session')"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button></h2>
-      <div class="chart-fill"><canvas id="sessionFrequencyChart"></canvas></div>
+      <h2>Trade Quality<button type="button" class="panel-info-btn" title="Rules Followed? × Win/Loss" onclick="event.stopPropagation(); openPanelInfo('quality')"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button></h2>
+      <div id="tradeQualityBody" class="tq-body"></div>
     </div>
   </div>
 
@@ -205,8 +201,15 @@
     <div id="accountCompareBody"></div>
   </div>
 
+<!-- Iisang Discipline panel: ang score at radar, at ang Rules / Notes —
+     dating dalawang magkahiwalay na panel tungkol sa iisang paksa. -->
 <div class="panel discipline-panel" style="margin-bottom:20px;">
-    <h2>Discipline radar<button type="button" class="panel-info-btn" title="How this is worked out" onclick="event.stopPropagation(); openPanelInfo('radar')"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button></h2>
+    <h2>Discipline<button type="button" class="panel-info-btn" title="How this is worked out" onclick="event.stopPropagation(); openPanelInfo('radar')"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button></h2>
+    <div class="tabs disc-tabs" role="tablist">
+      <button type="button" class="tab active" role="tab" aria-selected="true" data-disc-tab="score" onclick="setDisciplineTab('score')">Score</button>
+      <button type="button" class="tab" role="tab" aria-selected="false" data-disc-tab="tags" onclick="setDisciplineTab('tags')">Rules &amp; Notes</button>
+    </div>
+    <div data-disc-pane="score">
     <div class="chart-fill" style="height:300px;"><canvas id="disciplineRadar"></canvas></div>
     <div class="discipline-score-row">
       <div>
@@ -216,12 +219,11 @@
       <div class="discipline-score-value" id="disciplineScoreValue">—</div>
     </div>
     <div class="discipline-score-bar"><div class="discipline-score-marker" id="disciplineScoreMarker"></div></div>
-  </div>
-
-<div class="panel" style="margin-bottom:20px;">
-    <h2>Discipline &amp; Experiments<button type="button" class="panel-info-btn" title="How this is worked out" onclick="event.stopPropagation(); openPanelInfo('discipline')"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button></h2>
-    <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:14px;">Your Trade Tags, read as the two different things they are: faults to drive to zero, and open questions to answer.</div>
-    <div id="disciplineBody"></div>
+    </div>
+    <div data-disc-pane="tags" hidden>
+      <div class="sub" style="font-size:11.5px;color:var(--muted);margin-bottom:14px;">Your Trade Tags, read as the two different things they are: rules to drive to zero, and notes — open questions to answer.</div>
+      <div id="disciplineBody"></div>
+    </div>
   </div>
 
   <!-- Ang kabaligtaran ng Discipline: hindi kung ano ang ginawa mo sa isang
@@ -239,11 +241,6 @@
     <div id="setupEdgeBody"></div>
   </div>
 
-<div class="panel" style="margin-bottom:20px;">
-    <h2>How long you hold<button type="button" class="panel-info-btn" title="How this is worked out" onclick="event.stopPropagation(); openPanelInfo('holdtime')"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button></h2>
-    <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:14px;">How long winners are held against losers — cutting winners early and sitting in losers are opposite mistakes with the same cause.</div>
-    <div id="holdTimeBody"></div>
-  </div>
 
 <div class="panel" style="margin-bottom:20px;">
     <h2>Breakdown — where you're actually effective<button type="button" class="panel-info-btn" title="How this is worked out" onclick="event.stopPropagation(); openPanelInfo('breakdown')"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button></h2>
@@ -253,6 +250,19 @@
       <div id="breakdownBody"></div>
     </div>
   </div>
+
+  <!-- Mga bihirang tingnan: nakatiklop, pero sumusunod pa rin sa parehong
+       filter ng Dashboard. -->
+  <details class="panel more-stats" id="moreStats" style="margin-bottom:20px;">
+    <summary>More stats <span class="more-stats-sub">How long you hold · Fees</span></summary>
+    <div class="more-stats-body">
+      <h3 class="more-stats-h">How long you hold<button type="button" class="panel-info-btn" title="How this is worked out" onclick="event.stopPropagation(); openPanelInfo('holdtime')"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button></h3>
+      <div class="sub" style="font-size:11.5px;color:var(--muted);margin-bottom:14px;">How long winners are held against losers — cutting winners early and sitting in losers are opposite mistakes with the same cause.</div>
+      <div id="holdTimeBody"></div>
+      <h3 class="more-stats-h" style="margin-top:22px;">Fees</h3>
+      <div id="feesBody"></div>
+    </div>
+  </details>
 
   <div class="ai-panel">
     <h2>✦ AI Insights<button type="button" class="panel-info-btn" title="How this is worked out" onclick="event.stopPropagation(); openPanelInfo('ai')"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button></h2>
@@ -2462,6 +2472,6 @@
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=2"></script>
-<script src="js/dashboard.js?v=565"></script>
+<script src="js/dashboard.js?v=566"></script>
 </body>
 </html>
