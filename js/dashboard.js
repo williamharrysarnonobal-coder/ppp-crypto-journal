@@ -13784,20 +13784,63 @@ function _csvValue(row, key){
   if(key === 'notes') { const t = _allNotesText(row).replace(/<br>/g, '\n'); return t === '—' ? '' : t; }
   if(key === 'trade_summary') return computeTradeSummaryPlain(row);
   if(key === 'risk_amount'){ const r = _beAvoidedLoss(row); return r ? r.value.toFixed(2) : ''; }
-  if(key === 'confluence_answers') return '';
+  if(key === 'confluence_answers') return _csvConfluenceAnswers(row);
+  if(key === 'confluence_checklist'){
+    return CONFLUENCE_SETUPS[`${row.trade_type}|${row.pattern_type}`] ? `${row.trade_type} · ${row.pattern_type}` : '';
+  }
+  if(key === 'chart_pattern' || key === 'emotion' || key === 'unfollowed_rules') return row[key] ? String(row[key]) : '';
+  // Mula sa setup na pinagmulan (position_setups) — ibang table sa database.
+  if(key.startsWith('setup:')){
+    const s = row.linked_setup_id != null ? (SAVED_SETUPS || []).find(x => String(x.id) === String(row.linked_setup_id)) : null;
+    if(!s) return '';
+    const f = key.slice(6);
+    if(f === 'created_at') return s.created_at ? String(s.created_at).slice(0, 16).replace('T', ' ') : '';
+    if(f === 'confluence') return _csvConfluenceAnswers(s);
+    if(f === 'notes') return Array.isArray(s.notes_log) ? s.notes_log.map(n => n.text).join(' | ') : (s.notes || '');
+    const v = s[f];
+    return v == null ? '' : String(v);
+  }
   if(key === 'link' || key === 'screenshot_before' || key === 'screenshot_after') return row[key] ? String(row[key]) : '';
   const v = _journalCellValue(row, key);
   return v === '—' || v == null ? '' : String(v);
 }
-function downloadJournalCsv(){
+// Ang bawat sagot sa checklist bilang isang teksto: "MACD · 1H: Yes; …".
+// Iba-iba ang mga tanong kada pattern, kaya hindi sila magkakasya sa iisang
+// hanay ng column — isang column ito, na mababasa at mahahati sa Sheets.
+function _csvConfluenceAnswers(row){
+  const cfg = CONFLUENCE_SETUPS[`${row.trade_type}|${row.pattern_type}`];
+  const ans = row.confluence_answers;
+  if(!cfg || !ans || typeof ans !== 'object') return '';
+  const label = a => typeof a === 'string' && a.startsWith('other:') ? 'Other: ' + a.slice(6)
+    : ({ yes:'Yes', no:'No', almost:'Almost', retest:'Retest' }[a] || String(a));
+  return cfg.items.map((it, i) => ans[i] === undefined ? null : `${it.tag || it.text}: ${label(ans[i])}`)
+    .filter(Boolean).join('; ');
+}
+async function downloadJournalCsv(){
   const rows = getFilteredJournalRows();
   if(!rows.length){ showToast('No trades to download in this view'); return; }
+  // Ang mga setup ay nasa ibang table; kunin muna kung hindi pa.
+  if(!SAVED_SETUPS_LOADED && typeof loadSavedSetups === 'function'){ try{ await loadSavedSetups(); }catch(e){} }
   const cols = ALL_JOURNAL_COLUMNS.filter(c => c.key !== 'link').map(c => ({ key: c.key, label: c.label }));
   const have = new Set(cols.map(c => c.key));
+  const add = (key, label) => { if(!have.has(key)){ cols.push({ key, label }); have.add(key); } };
   ALL_DRAWER_FIELDS.forEach(f => {
-    if(f.paperOnly || have.has(f.key) || f.key === 'confluence_answers') return;
-    cols.push({ key: f.key, label: f.label }); have.add(f.key);
+    if(f.paperOnly || f.key === 'confluence_answers') return;
+    add(f.key, f.label);
   });
+  // Ang hindi nakikita sa table o sa drawer bilang field, pero naka-imbak.
+  add('chart_pattern', 'Chart Pattern');
+  add('emotion', 'Emotion');
+  add('confluence_checklist', 'Confluence Checklist');
+  add('confluence_answers', 'Confluence Answers');
+  add('position_id', 'Position ID');
+  // Ang setup na pinagmulan (Pending Setups).
+  [['setup:created_at','Setup Created'], ['setup:account_name','Setup Account'],
+   ['setup:entry_price','Setup Entry'], ['setup:tp_price','Setup TP'], ['setup:sl_price','Setup SL'],
+   ['setup:risk_amount','Setup Risk Amount'], ['setup:quantity','Setup Quantity'],
+   ['setup:leverage','Setup Leverage'], ['setup:margin','Setup Margin'],
+   ['setup:status','Setup Status'], ['setup:upscale_order_id','Upscale Order ID'],
+   ['setup:notes','Setup Notes']].forEach(([k, l]) => add(k, l));
   const esc = s => {
     const t = String(s ?? '');
     return /[",\n\r]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
@@ -24286,24 +24329,65 @@ function setupRowHTML(s, selectable){
          pattern at mga sagot din ang setup. -->
     <td onclick="event.stopPropagation();">${_journalColoredCell('confluence_score', s, '') || '<span style="color:var(--muted);">—</span>'}</td>
     <td><span class="pill ${statusPillClass}">${escapeHtml(status)}</span></td>
-    <td style="white-space:nowrap;">
-      <!-- Sagot ang tinitingnan, hindi Pattern Type — tingnan ang
-           _setupHasConfluence. Ang "Edit" ay nangangahulugang may laman na. -->
-      <button class="poscalc-accent-btn" onclick="event.stopPropagation(); openConfluenceModal(${s.id})">${_setupHasConfluence(s) ? 'Edit Confluence' : 'Confluence'}</button>
-      ${status !== 'Journaled'
-        ? `<button class="poscalc-accent-btn" ${!_setupHasConfluence(s) ? 'disabled title="Fill in Confluence first"' : ''} onclick="event.stopPropagation(); journalFromSetup(${s.id})">Journal</button>`
-        : `<button class="poscalc-accent-btn" onclick="event.stopPropagation(); setSetupStatus(${s.id}, 'Pending')">Revert to Pending</button>`}
-      ${status === 'Order Placed' && s.upscale_order_id
-        ? `<button class="drawer-danger-btn" onclick="event.stopPropagation(); cancelUpscaleOrder(${s.id}, this)">Cancel Order</button>`
-        : ''}
-      ${status === 'In Position' && s.upscale_order_id && !s._atBE
-        ? `<button class="poscalc-accent-btn" onclick="event.stopPropagation(); moveSlToBE('${s.account_id}', '${s.upscale_order_id}', this)">Move SL to BE</button>`
-        : ''}
-      <button class="drawer-danger-btn" onclick="event.stopPropagation(); deleteSavedSetup(${s.id})">Delete</button>
+    <!-- Isang "Actions" menu sa halip na hanay ng mga button. Sagot ang
+         tinitingnan para sa Confluence, hindi Pattern Type — tingnan ang
+         _setupHasConfluence. -->
+    <td class="row-actions-cell" onclick="event.stopPropagation();">
+      <div class="row-actions">
+        <button type="button" class="poscalc-accent-btn row-actions-btn" aria-haspopup="menu" aria-expanded="false"
+          onclick="toggleRowActions(this, event)">Actions ▾</button>
+        <div class="row-actions-menu" role="menu" hidden>
+          <button type="button" role="menuitem" onclick="closeRowActions(); openConfluenceModal(${s.id})">${_setupHasConfluence(s) ? 'Edit Confluence' : 'Confluence'}</button>
+          ${status !== 'Journaled'
+            ? `<button type="button" role="menuitem" ${!_setupHasConfluence(s) ? 'disabled title="Fill in Confluence first"' : ''} onclick="closeRowActions(); journalFromSetup(${s.id})">Journal${!_setupHasConfluence(s) ? ' <span class="ra-hint">— fill in Confluence first</span>' : ''}</button>`
+            : `<button type="button" role="menuitem" onclick="closeRowActions(); setSetupStatus(${s.id}, 'Pending')">Revert to Pending</button>`}
+          ${status === 'In Position' && s.upscale_order_id && !s._atBE
+            ? `<button type="button" role="menuitem" onclick="closeRowActions(); moveSlToBE('${s.account_id}', '${s.upscale_order_id}', null)">Move SL to BE</button>`
+            : ''}
+          ${status === 'Order Placed' && s.upscale_order_id
+            ? `<button type="button" role="menuitem" class="ra-danger" onclick="closeRowActions(); cancelUpscaleOrder(${s.id}, null)">Cancel Order</button>`
+            : ''}
+          <button type="button" role="menuitem" class="ra-danger" onclick="closeRowActions(); deleteSavedSetup(${s.id})">Delete</button>
+        </div>
+      </div>
     </td>
   </tr>
 `;
 }
+
+/* ANG ACTIONS MENU. Nakalutang (position: fixed) para hindi maputol ng
+   table na may sariling scroll. Isa lang ang bukas; nagsasara sa pindot sa
+   labas, sa Escape, at kapag nag-scroll. */
+let _openRowActions = null;
+function toggleRowActions(btn, ev){
+  if(ev) ev.stopPropagation();
+  const menu = btn.parentElement.querySelector('.row-actions-menu');
+  if(_openRowActions === menu){ closeRowActions(); return; }
+  closeRowActions();
+  menu.hidden = false;
+  const r = btn.getBoundingClientRect();
+  const mw = menu.offsetWidth, mh = menu.offsetHeight;
+  const left = Math.max(8, Math.min(window.innerWidth - mw - 8, r.right - mw));
+  const top = (r.bottom + mh + 8 > window.innerHeight) ? Math.max(8, r.top - mh - 4) : r.bottom + 4;
+  menu.style.left = left + 'px';
+  menu.style.top = top + 'px';
+  btn.setAttribute('aria-expanded', 'true');
+  _openRowActions = menu;
+  const first = menu.querySelector('button:not([disabled])');
+  if(first) first.focus();
+}
+function closeRowActions(){
+  if(!_openRowActions) return;
+  _openRowActions.hidden = true;
+  const btn = _openRowActions.parentElement.querySelector('.row-actions-btn');
+  if(btn) btn.setAttribute('aria-expanded', 'false');
+  _openRowActions = null;
+}
+document.addEventListener('click', e => {
+  if(_openRowActions && !_openRowActions.contains(e.target)) closeRowActions();
+});
+document.addEventListener('keydown', e => { if(e.key === 'Escape') closeRowActions(); });
+window.addEventListener('scroll', () => closeRowActions(), true);
 
 /* Kinakansela ang order sa Upscale mismo, hindi lang dito. Kapag na-fill na
    ito, hindi na ito "order" kundi posisyon — sinasabi iyon ng Worker, at ang
