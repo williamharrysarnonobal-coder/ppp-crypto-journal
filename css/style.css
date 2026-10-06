@@ -4582,6 +4582,19 @@ table.journal td.paper-why-col{line-height:1.5;}
   .ea-grid{grid-template-columns:1fr;}
 }
 
+/* ---------- Discipline: clickable rows, Where each tag bites, After a loss ---------- */
+.dx-tbl tr.dx-click{cursor:pointer;}
+.dx-tbl tr.dx-click:hover td:first-child{text-decoration:underline;text-underline-offset:3px;}
+.wh-wrap{overflow-x:auto;}
+.wh-tbl th.n{text-align:right;}
+.wh-tbl td.wh-cell{font-variant-numeric:tabular-nums;}
+.wh-tbl td.wh-cell.bad{color:var(--loss);font-weight:700;}
+.wh-tbl td.wh-cell.good{color:var(--win);font-weight:700;}
+.wh-tbl td.wh-empty{color:var(--muted);opacity:.5;}
+.wh-tbl td.wh-worst{padding-left:14px;font-size:12px;color:var(--muted);white-space:nowrap;}
+.wh-tbl td.wh-worst span{color:var(--loss);font-family:'IBM Plex Mono',monospace;margin-left:4px;}
+.al-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px 28px;}
+
 /* ---------- Dashboard: Streaks ---------- */
 .streaks-body{flex:1;min-height:0;display:flex;flex-direction:column;justify-content:center;}
 .sk-row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:11px 2px;border-bottom:1px solid var(--rule);font-size:13px;color:var(--muted);}

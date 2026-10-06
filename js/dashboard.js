@@ -5720,6 +5720,110 @@ function _disciplineSummary(trades, rules){
   return { rate, state, worst, best, tagged: tagged.length, breached: breached.length };
 }
 
+/* GUMAGANDA BA AKO? Ang huling 20 trade laban sa lahat ng nauna, sa dalawang
+   bilang: gaano kadalas mong sinunod ang rules (sa mga trade na may tag) at
+   gaano kadalas kang nanalo. Null kapag kulang pa — 10 man lang sa nauna. */
+const DX_RECENT_N = 20;
+function _disciplineTrend(trades){
+  const s = [...trades].filter(t => t.close_date).sort((a, b) => a.close_date - b.close_date);
+  if(s.length < DX_RECENT_N + 10) return null;
+  const recent = s.slice(-DX_RECENT_N), before = s.slice(0, -DX_RECENT_N);
+  const kept = arr => {
+    const tagged = arr.filter(t => _ruleTags(t.unfollowed_rules).length);
+    return tagged.length ? tagged.filter(t => _isCleanRules(t.unfollowed_rules)).length / tagged.length * 100 : null;
+  };
+  const won = arr => _tagArmStats(arr).rate;
+  return { rulesNow: kept(recent), rulesBefore: kept(before),
+           winNow: won(recent), winBefore: won(before), before: before.length };
+}
+
+/* PAGKATAPOS NG TALO. Dalawang tanong tungkol sa tilt, sa mga trade na
+   naka-ayos ayon sa close date:
+   - ano ang nangyayari sa susunod na trade pagkatapos ng 1, 2, 3+ na sunod na
+     talo (ang Breakeven ay hindi pumuputol, gaya ng Streaks);
+   - ilang trade na ang nagawa sa araw na iyon — ang sagot sa "kailan dapat
+     huminto", na siyang batayan ng Daily Trade Limit. */
+function _afterLossStats(trades){
+  const s = [...trades].filter(t => t.close_date).sort((a, b) => a.close_date - b.close_date);
+  const byRun = { w:[], l1:[], l2:[], l3:[] };
+  const byNth = { 1:[], 2:[], 3:[], 4:[] };
+  let lossRun = 0, prev = null, dayKey = null, nth = 0;
+  s.forEach(t => {
+    if(prev !== null){
+      const k = lossRun === 0 ? 'w' : lossRun === 1 ? 'l1' : lossRun === 2 ? 'l2' : 'l3';
+      byRun[k].push(t);
+    }
+    const d = new Date(t.close_date);
+    const k = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+    nth = k === dayKey ? nth + 1 : 1; dayKey = k;
+    byNth[Math.min(nth, 4)].push(t);
+    if(_isLoss(t)){ lossRun++; prev = 'loss'; }
+    else if(_isWin(t)){ lossRun = 0; prev = 'win'; }
+  });
+  return { byRun, byNth };
+}
+
+// Ang hilera ng isang grupo: Trades · Won% · hatol laban sa average mo.
+function _dxRateRow(label, arr, base, badWord){
+  const s = _tagArmStats(arr);
+  const d = s.rate === null || base === null ? null : s.rate - base;
+  const thin = s.settled < EM_MIN_N;
+  const tone = thin ? '' : (d !== null && d < -EM_MIN_GAP) ? 'bad' : (d !== null && d > EM_MIN_GAP) ? 'good' : '';
+  const verdict = thin ? 'too few' : tone === 'bad' ? badWord : tone === 'good' ? 'works for you' : 'no effect';
+  const tip = `${label} — ${s.wins} won, ${s.losses} lost${s.bes ? `, ${s.bes} breakeven` : ''} of ${s.n}.`
+    + (s.rate === null || base === null ? '' : ` Wins ${Math.round(s.rate)}% against your ${Math.round(base)}% average.`);
+  return `<tr class="${tone}" title="${escapeHtml(tip)}">
+    <td>${escapeHtml(label)}</td><td class="n">${s.n}</td>
+    <td class="n lost">${s.losses || '—'}</td>
+    <td class="n rate">${s.rate === null ? '—' : Math.round(s.rate) + '%'}</td>
+    <td class="v">${verdict}</td></tr>`;
+}
+
+/* KUNG SAAN TUMATAMA ANG BAWAT TAG. Ang isang tag na "no effect" sa kabuuan
+   ay maaaring malakas na talo sa iisang session lang — nalulunod iyon sa
+   average. Bawat tag (rule at note) na may sapat na trade, hinati sa session,
+   at ang pattern kung saan ito pinakamasama. */
+const DX_SESSION_ORDER = ['Asia', 'London', 'London + NY Overlap', 'New York', 'Low Liquidity'];
+const DX_SESSION_SHORT = { 'London + NY Overlap':'Overlap', 'Low Liquidity':'Low Liq.' };
+function _tagWhereHtml(trades, board, base){
+  const tags = board.filter(r => r.n >= EM_MIN_N);
+  if(!tags.length) return '';
+  const sessions = DX_SESSION_ORDER.filter(s => trades.some(t => t.session === s));
+  const cell = arr => {
+    const s = _tagArmStats(arr);
+    if(!s.settled) return `<td class="n wh-empty">—</td>`;
+    const tone = s.settled < 3 || base === null ? ''
+      : s.rate < base - EM_MIN_GAP ? 'bad' : s.rate > base + EM_MIN_GAP ? 'good' : '';
+    return `<td class="n wh-cell ${tone}" title="${s.wins} won, ${s.losses} lost${s.bes ? `, ${s.bes} breakeven` : ''}">${s.wins}/${s.settled}</td>`;
+  };
+  const rows = tags.map(r => {
+    const mine = trades.filter(t => _canonicalTags(t.unfollowed_rules).includes(r.tag));
+    const pats = {};
+    mine.forEach(t => _patternList(t.pattern_type).forEach(p => { (pats[p] = pats[p] || []).push(t); }));
+    const worst = Object.entries(pats).map(([p, arr]) => ({ p, ...(_tagArmStats(arr)) }))
+      // Pinakamasama lang kung talagang masama: mas mababa sa average mo.
+      .filter(x => x.settled >= 3 && x.rate !== null && x.losses > 0 && (base === null || x.rate < base))
+      .sort((a, b) => a.rate - b.rate || b.losses - a.losses)[0];
+    return `<tr class="dx-click" data-tag="${escapeHtml(r.tag)}" onclick="openTagInJournal(this.dataset.tag)">
+      <td>${escapeHtml(r.tag)}${r.kind === 'breach' ? '<i class="dx-breach">rule</i>' : ''}</td>
+      ${sessions.map(s => cell(mine.filter(t => t.session === s))).join('')}
+      <td class="wh-worst">${worst ? `${escapeHtml(worst.p)} <span>${worst.wins}/${worst.settled}</span>` : '—'}</td></tr>`;
+  }).join('');
+  return `<div class="wh-wrap"><table class="dx-tbl wh-tbl">
+    <thead><tr><th>Tag</th>${sessions.map(s => `<th class="n">${escapeHtml(DX_SESSION_SHORT[s] || s)}</th>`).join('')}<th>Worst pattern</th></tr></thead>
+    <tbody>${rows}</tbody></table></div>`;
+}
+
+// Mula sa Discipline panel: buksan ang Trade Journals na naka-filter sa tag.
+function openTagInJournal(tag){
+  if(!tag) return;
+  JOURNAL_ACTIVE_FILTERS = [{ key: 'unfollowed_rules', value: tag }];
+  JOURNAL_BLANK_FILTER = null;
+  JOURNAL_INCOMPLETE_ONLY = false;
+  switchView('journal');
+  if(typeof renderJournalTable === 'function') renderJournalTable();
+}
+
 function renderDisciplinePanel(){
   const body = document.getElementById('disciplineBody');
   if(!body) return;
@@ -5761,7 +5865,7 @@ function renderDisciplinePanel(){
       const tip = `${r.tag} — ${r.wins} won, ${r.losses} lost${r.bes ? `, ${r.bes} breakeven` : ''}`
         + ` of ${r.n}. ${r.rate === null ? '' : `Wins ${Math.round(r.rate)}% against your ${baseTxt}% average.`}`
         + (thin ? ` Under ${EM_MIN_N} settled trades, so this is not yet a reading.` : '');
-      return `<tr class="${tone}" title="${escapeHtml(tip)}">
+      return `<tr class="${tone} dx-click" title="${escapeHtml(tip + ' Click to open these trades.')}" data-tag="${escapeHtml(r.tag)}" onclick="openTagInJournal(this.dataset.tag)">
         <td>${escapeHtml(r.tag)}${r.kind === 'breach' ? '<i class="dx-breach" title="Breaks one of your rules">rule</i>' : ''}</td>
         <td class="n">${r.n}</td>
         <td class="n lost">${r.losses || '—'}</td>
@@ -5797,7 +5901,7 @@ function renderDisciplinePanel(){
     const tip = `${r.tag} — ${r.wins} won, ${r.losses} lost${r.bes ? `, ${r.bes} breakeven` : ''}`
       + ` of ${r.n}. ${r.rate === null ? '' : `Wins ${Math.round(r.rate)}% against your ${baseTxt}% average.`}`
       + (thin ? ` Under ${EM_MIN_N} settled trades, so this is not yet a reading.` : '');
-    return `<tr class="${tone}" title="${escapeHtml(tip)}">
+    return `<tr class="${tone} dx-click" title="${escapeHtml(tip + ' Click to open these trades.')}" data-tag="${escapeHtml(r.tag)}" onclick="openTagInJournal(this.dataset.tag)">
       <td>${escapeHtml(r.tag)}</td>
       <td class="n">${r.n}</td>
       <td class="n lost">${r.losses || '—'}</td>
@@ -5837,8 +5941,42 @@ function renderDisciplinePanel(){
                `${s.best.wins} of ${s.best.settled} won · ${Math.round(s.best.delta)} points above your average`)
         : card('wait', 'Working best for you', 'Nothing yet',
                `No tag is clearly beating your average on ${EM_MIN_N}+ trades`)}
+      ${(() => {
+        const tr = _disciplineTrend(FILTERED);
+        if(!tr) return card('wait', `Last ${DX_RECENT_N} trades`, 'Not enough yet',
+          `Needs ${DX_RECENT_N + 10}+ trades in view to compare against`);
+        const arrow = (now, before) => {
+          if(now === null || before === null) return '';
+          const d = Math.round(now - before);
+          return d > 0 ? ` <b class="pos">▲ ${d}</b>` : d < 0 ? ` <b class="neg">▼ ${-d}</b>` : ' <b>= 0</b>';
+        };
+        const pct = v => v === null ? '—' : Math.round(v) + '%';
+        const dr = tr.rulesNow === null || tr.rulesBefore === null ? 0 : tr.rulesNow - tr.rulesBefore;
+        const tone = dr > EM_MIN_GAP / 2 ? 'good' : dr < -EM_MIN_GAP / 2 ? 'bad' : 'wait';
+        const word = tone === 'good' ? 'Getting better' : tone === 'bad' ? 'Slipping' : 'Holding steady';
+        return card(tone, `Last ${DX_RECENT_N} trades vs the ${tr.before} before`, word,
+          `Rules kept ${pct(tr.rulesNow)}${arrow(tr.rulesNow, tr.rulesBefore)} · Won ${pct(tr.winNow)}${arrow(tr.winNow, tr.winBefore)}`);
+      })()}
     </div>
   </div>`;
+
+  const al = _afterLossStats(FILTERED);
+  const baseRate = _tagArmStats(FILTERED).rate;
+  const alHead = `<thead><tr><th>Next trade</th><th class="n">Trades</th><th class="n">Lost</th><th class="n">Won</th><th></th></tr></thead>`;
+  const afterHtml = `<div class="al-grid">
+    <table class="dx-tbl">${alHead}<tbody>
+      ${_dxRateRow('After a win', al.byRun.w, baseRate, 'costs you')}
+      ${_dxRateRow('After 1 loss', al.byRun.l1, baseRate, 'costs you')}
+      ${_dxRateRow('After 2 losses in a row', al.byRun.l2, baseRate, 'stop here')}
+      ${_dxRateRow('After 3+ losses in a row', al.byRun.l3, baseRate, 'stop here')}
+    </tbody></table>
+    <table class="dx-tbl">${alHead.replace('Next trade', 'Trade of the day')}<tbody>
+      ${_dxRateRow('1st trade', al.byNth[1], baseRate, 'costs you')}
+      ${_dxRateRow('2nd trade', al.byNth[2], baseRate, 'stop here')}
+      ${_dxRateRow('3rd trade', al.byNth[3], baseRate, 'stop here')}
+      ${_dxRateRow('4th trade or later', al.byNth[4], baseRate, 'stop here')}
+    </tbody></table></div>`;
+  const whereHtml = _tagWhereHtml(FILTERED, all, baseRate);
 
   /* Four reports, in the order the decisions arrive in a trade: you are in it
      and price reaches the previous high (1), the setup then breaks (2), you
@@ -5864,7 +6002,7 @@ function renderDisciplinePanel(){
     <p class="dx-lead">Ranked by how many trades you lost while breaking each one. <b>Won</b> is
       measured against your own ${baseTxt === null ? 'average' : `<b>${baseTxt}% average</b>`} —
       a tag is not bad for winning 45%, it is bad for winning 45% when you normally win more.
-      Hover any row for the breakdown.</p>
+      Hover any row for the breakdown, click it to open those trades.</p>
     ${boardHtml || `<div class="empty-state">Nothing tagged yet — tick the Trade Tags as you journal and this fills itself in.</div>`}
   </div>
   <div class="dx-half">
@@ -5877,6 +6015,25 @@ function renderDisciplinePanel(){
       so a tag that turns up on a lot of losses is telling you something even though
       nothing about it broke a rule.</p>
     ${notesHtml || `<div class="empty-state">No observation tags ticked yet.</div>`}
+  </div>
+  <div class="dx-half">
+    <div class="grp-head">
+      <span class="grp-n">4</span>
+      <h3 class="grp-t">Where each tag bites</h3>
+      <span class="grp-s">won / settled, by session</span></div>
+    <p class="dx-lead">A tag that shows "no effect" overall can still be costly in a single session,
+      because the other sessions average it out. Red cells win at least ${EM_MIN_GAP} points below your average, green cells at least ${EM_MIN_GAP} above.
+      Only cells with 3 or more settled trades are coloured. <b>Worst pattern</b> is the pattern where the tag wins least, shown only when that is below your average. Click a row to open its trades.</p>
+    ${whereHtml || `<div class="empty-state">No tag has ${EM_MIN_N}+ trades yet.</div>`}
+  </div>
+  <div class="dx-half">
+    <div class="grp-head">
+      <span class="grp-n">5</span>
+      <h3 class="grp-t">After a loss</h3>
+      <span class="grp-s">is there tilt, and when to stop for the day</span></div>
+    <p class="dx-lead">The left table groups trades by how many losses came right before them; breakevens do not reset the count.
+      The right table groups them by their place in the trading day. If the 2nd or 3rd trade turns red, that is your Daily Trade Limit.</p>
+    ${afterHtml}
   </div>`;
 }
 
@@ -14322,7 +14479,10 @@ function getFilteredJournalRows(exceptKey){
   JOURNAL_ACTIVE_FILTERS.forEach(f => {
     if(!f.value || f.value === 'all' || f.key === exceptKey) return;
     rows = JOURNAL_MULTI_KEYS.has(f.key)
-      ? rows.filter(r => (r[f.key] || '').split(/[,;]/).map(s => s.trim()).includes(f.value))
+      // Ang tags ay binabasa nang canonical, para ang isang lumang alias ay
+      // tumama sa pangalang ipinapakita ng Dashboard.
+      ? rows.filter(r => (f.key === 'unfollowed_rules' ? _canonicalTags(r[f.key])
+          : (r[f.key] || '').split(/[,;]/).map(s => s.trim())).includes(f.value))
       : rows.filter(r => String(_rowVal(r, f.key) ?? '') === f.value);
   });
 
