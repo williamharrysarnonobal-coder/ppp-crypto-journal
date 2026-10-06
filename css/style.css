@@ -3471,6 +3471,18 @@ table.breakdown tbody tr{cursor:pointer;}
   .config-option-row{display:flex;align-items:center;justify-content:space-between;padding:7px 10px;background:var(--surface-2);border:1px solid var(--rule);border-radius:6px;margin-bottom:6px;font-size:12.5px;}
   .config-option-row button{background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;}
   .config-option-row button:hover{color:var(--loss);}
+  /* Rule / Note sa bawat Trade Tag. */
+  .config-option-row > span:first-child{flex:1;min-width:0;}
+  .config-option-row .tag-kind-toggle{
+    display:inline-flex;margin:0 10px;border:1px solid var(--rule);border-radius:999px;overflow:hidden;flex-shrink:0;
+  }
+  .config-option-row .tag-kind-toggle button{
+    padding:3px 10px;font-size:11.5px;font-weight:600;color:var(--muted);border-radius:0;
+  }
+  .config-option-row .tag-kind-toggle button:hover{color:var(--ink);}
+  .config-option-row .tag-kind-toggle button.on.rule{background:color-mix(in srgb, var(--loss) 22%, transparent);color:var(--loss);}
+  .config-option-row .tag-kind-toggle button.on.note{background:color-mix(in srgb, var(--info) 22%, transparent);color:var(--info);}
+  .config-option-row .tag-kind-toggle button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px;}
   .config-add-row{display:flex;gap:8px;margin-top:10px;}
   .config-add-row input{flex:1;}
 

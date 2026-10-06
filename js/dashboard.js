@@ -402,7 +402,9 @@ const UI_PREF_LS_KEYS = {
   // Isinasara ba ang Demo at Evaluation na P&L. Isang pagpili tungkol sa kung
   // ANO ang binibilang mong pera, hindi tungkol sa aparatong ginagamit mo,
   // kaya sumusunod ito sa account.
-  real_money_only: 'ledger-real-money-only'
+  real_money_only: 'ledger-real-money-only',
+  // Kung Rule o Note ang bawat Trade Tag — siya ang nagpapasya, sa Options.
+  tag_kinds: 'ledger-tag-kinds'
 };
 
 let _uiPrefsSyncTimer = null;
@@ -483,6 +485,7 @@ function applyUIPrefsFromProfile(){
     // Dumating mula sa ibang aparato: itakda ang mga kahon at muling salain,
     // dahil ang bawat numero sa pahina ay nakadepende rito.
     if(changedKeys.includes('real_money_only')){ _syncRealMoneyBoxes(); applyFilters(); }
+    if(changedKeys.includes('tag_kinds')){ _loadTagKinds(); applyFilters(); }
     if(currentView === 'settings') renderSettingsPage();
     if(currentView === 'config'){ renderColumnConfigUI(); renderOptionsEditor(); renderFormFieldConfigUI(); }
   }finally{
@@ -7329,6 +7332,9 @@ const UNFOLLOWED_RULES_OPTIONS = [
   'FOMO Entry','No BE at Prev High/Low','Ignored No-Trade Decision',
   'Non-BnB Setup','Moved Take Profit','Lack of Confluence','BTC Only',
   'Changing Plan',
+  // Idinagdag niya ito sa Options editor; rule ito, hindi tala — kaya nandito
+  // sa listahan ng mga rule, para hindi ito maging note sa _tagKind.
+  'Daily Trade Limit Reached',
 ];
 
 /* This column holds two different kinds of thing, and treating them as one was
@@ -7407,6 +7413,8 @@ const TAG_HELP = {
     'Taken against the higher timeframe direction.',
   'BTC Only':
     'You traded something other than BTC.',
+  'Daily Trade Limit Reached':
+    'You took this trade after already reaching your trade limit for the day.',
   'Stopped Out Then Hit TP':
     'Your stop was hit and price went on to your target anyway — sometimes days later. '
     + 'The direction was right; the stop was too tight or too early. Not a rule broken.',
@@ -7577,10 +7585,34 @@ const _TAG_RULE_SET = new Set([
     .filter(k => !_TAG_OBSERVATION_SET.has(k) && !_TAG_SENTINEL_SET.has(k)),
   ...Object.keys(TAG_RETIRED),
 ]);
+/* ANG PAGPILI NIYA ANG NANANAIG.
+
+   Sa Options → Trade Tags, may Rule / Note sa bawat tag. Ang napili niya ay
+   nasa itaas ng lahat ng nasa code — maging ang built-in na rule ay puwede
+   niyang gawing note, at ang idinagdag niya ay puwedeng gawing rule. Ang
+   "Rules Followed" lang ang hindi: iyon ang marka ng malinis, hindi tag. */
+let TAG_KIND_OVERRIDES = {};
+function _loadTagKinds(){
+  try{
+    const v = JSON.parse(localStorage.getItem('ledger-tag-kinds') || '{}');
+    TAG_KIND_OVERRIDES = (v && typeof v === 'object') ? v : {};
+  }catch(e){ TAG_KIND_OVERRIDES = {}; }
+}
+_loadTagKinds();
+function setTagKind(tag, kind){
+  const k = String(tag).trim().toLowerCase();
+  if(kind === 'rule' || kind === 'note') TAG_KIND_OVERRIDES[k] = kind;
+  else delete TAG_KIND_OVERRIDES[k];
+  try{ localStorage.setItem('ledger-tag-kinds', JSON.stringify(TAG_KIND_OVERRIDES)); }catch(e){}
+  syncUIPrefsToProfile();
+}
 const _tagKind = t => {
   const k = String(t).trim().toLowerCase();
-  return _TAG_SENTINEL_SET.has(k) ? 'sentinel'
-       : _TAG_RULE_SET.has(k) ? 'breach' : 'observation';
+  if(_TAG_SENTINEL_SET.has(k)) return 'sentinel';
+  const o = TAG_KIND_OVERRIDES[k];
+  if(o === 'rule') return 'breach';
+  if(o === 'note') return 'observation';
+  return _TAG_RULE_SET.has(k) ? 'breach' : 'observation';
 };
 
 /* The five rules the seventeen breach tags actually describe. Six different
@@ -7594,7 +7626,7 @@ const RULE_GROUPS = [
   { name:'Do not touch an open trade',
     tags:['Moved Stop Loss','Removed Stop Loss','Moved Take Profit','Changing Plan'] },
   { name:'Do not trade on emotion',
-    tags:['Revenge Trade','FOMO Entry','Ignored No-Trade Decision'] },
+    tags:['Revenge Trade','FOMO Entry','Ignored No-Trade Decision','Daily Trade Limit Reached'] },
   { name:'Respect size and instrument',
     tags:['Overleveraged','BTC Only'] },
 ];
@@ -7797,12 +7829,34 @@ function renderOptionsListFor(key){
   const arr = getOptionsArray(key) || [];
   const list = document.getElementById('optionsList');
   if(!list) return;
-  list.innerHTML = arr.map((opt, i) => `
+  // Trade Tags lang: may Rule / Note sa bawat isa. Ang Rule ay binibilang na
+  // paglabag (ginagawang No ang Rules Followed?); ang Note ay tala lang.
+  const isTags = key === 'unfollowed_rules';
+  const kindToggle = (opt, i) => {
+    if(!isTags || _tagKind(opt) === 'sentinel') return '';
+    const isRule = _tagKind(opt) === 'breach';
+    return `<span class="tag-kind-toggle" role="group" aria-label="Rule or note">
+      <button type="button" class="${isRule ? 'on rule' : ''}" aria-pressed="${isRule}" onclick="onTagKindToggle(${i}, 'rule')">Rule</button>
+      <button type="button" class="${!isRule ? 'on note' : ''}" aria-pressed="${!isRule}" onclick="onTagKindToggle(${i}, 'note')">Note</button>
+    </span>`;
+  };
+  list.innerHTML = (isTags ? `<div class="sub" style="font-size:11.5px;color:var(--muted);margin:0 0 8px;">
+      <b>Rule</b> = a rule you broke (turns Rules Followed? to No). <b>Note</b> = something to remember or measure — it counts against nothing.</div>` : '')
+    + arr.map((opt, i) => `
     <div class="config-option-row">
-      <span>${opt}</span>
+      <span>${escapeHtml(String(opt))}</span>
+      ${kindToggle(opt, i)}
       <button onclick="removeOption('${key}', ${i})" title="Remove">✕</button>
     </div>
   `).join('') || `<div class="empty-state" style="padding:12px 0;">No options yet.</div>`;
+}
+function onTagKindToggle(i, kind){
+  const opt = UNFOLLOWED_RULES_OPTIONS[i];
+  if(opt == null) return;
+  setTagKind(opt, kind);
+  renderOptionsListFor('unfollowed_rules');
+  // Ang bawat Rules Followed?, Trade Tags at bilang ay nakadepende rito.
+  if(typeof applyFilters === 'function') applyFilters();
 }
 
 function addOption(){
@@ -7870,6 +7924,8 @@ const ALL_DRAWER_FIELDS = [
   // Filled in for you as the tags are ticked, but still yours to change — the
   // journal suggests, it does not decide.
   {key:'rules_followed', label:'Rules Followed?', widget:'select', editable:true, options:FIELD_OPTIONS.rules_followed, realOnly:true},
+  // Kinukuwenta mula sa Rules Followed? × Win/Loss — tingnan ang _tradeQuality.
+  {key:'trade_quality', label:'Trade Quality', widget:'text', editable:false, realOnly:true},
   {key:'unfollowed_rules', label:'Trade Tags', widget:'checklist', editable:true, options:UNFOLLOWED_RULES_OPTIONS, realOnly:true},
   {key:'exit_type', label:'Exit Type', widget:'select', editable:true, options:FIELD_OPTIONS.exit_type, realOnly:true},
   {key:'post_be_result', label:'Post-BE Result', widget:'select', editable:true, options:FIELD_OPTIONS.post_be_result, realOnly:true},
@@ -7984,6 +8040,7 @@ const ALL_JOURNAL_COLUMNS = [
   {key:'no', label:'No.'},
   {key:'symbol', label:'Symbol'},
   {key:'win_loss', label:'Win/Loss'},
+  {key:'trade_quality', label:'Trade Quality'},
   {key:'trade_type', label:'Trade Type'},
   {key:'trade_setup', label:'Trade Setup'},
   {key:'pattern_type', label:'Pattern Type'},
@@ -8021,7 +8078,7 @@ const ALL_JOURNAL_COLUMNS = [
 ];
 
 const DEFAULT_JOURNAL_COLUMN_ORDER = [
-  'rules_followed','symbol','win_loss','profit_loss','exit_type','post_stop_profit_result','objective',
+  'rules_followed','symbol','win_loss','trade_quality','profit_loss','exit_type','post_stop_profit_result','objective',
   'trade_type','pattern_type','aof_phase','execution_tf','account','account_type',
   'session','day_of_week','duration','unfollowed_rules',
   'entry_price','close_price','position_size'
@@ -8042,14 +8099,19 @@ function loadColumnConfig(){
        nakatagong idinadagdag sa dulo gaya ng ibang bago — lumalabas ito sa
        tabi ng Exit Type nang isang beses. Kapag itinago niya ito pagkatapos,
        nasa saved config na ang key at hindi na ito dadaan dito. */
-    if(!savedKeys.has('post_stop_profit_result')){
-      const i = COLUMN_CONFIG.findIndex(c => c.key === 'post_stop_profit_result');
+    // Mga column na hiningi niya mismo: lumalabas nang isang beses sa tabi ng
+    // kaugnay na column; kapag itinago niya, nasa saved config na at iginagalang.
+    [['post_stop_profit_result', ['post_cutloss_result','post_be_result','exit_type']],
+     ['trade_quality', ['win_loss','rules_followed']]].forEach(([key, anchors]) => {
+      if(savedKeys.has(key)) return;
+      const i = COLUMN_CONFIG.findIndex(c => c.key === key);
+      if(i === -1) return;
       const [col] = COLUMN_CONFIG.splice(i, 1);
       col.visible = true;
-      const anchor = ['post_cutloss_result','post_be_result','exit_type']
+      const anchor = anchors
         .map(k => COLUMN_CONFIG.findIndex(c => c.key === k && c.visible)).find(x => x !== -1);
       COLUMN_CONFIG.splice(anchor != null ? anchor + 1 : COLUMN_CONFIG.length, 0, col);
-    }
+    });
   }else{
     COLUMN_CONFIG = ALL_JOURNAL_COLUMNS
       .map(c => ({key:c.key, visible: DEFAULT_JOURNAL_COLUMN_ORDER.includes(c.key)}))
@@ -13108,7 +13170,7 @@ function _journalFilterValues(key){
       .forEach(s => set.add(s)));
     return [...set].sort();
   }
-  return [...new Set(_realRawTrades().map(r => r[key]).filter(v => v !== null && v !== undefined && String(v).trim() !== ''))]
+  return [...new Set(_realRawTrades().map(r => _rowVal(r, key)).filter(v => v !== null && v !== undefined && String(v).trim() !== ''))]
     .map(String).sort();
 }
 
@@ -13226,7 +13288,7 @@ function _journalValueCounts(key){
       .forEach(v => { counts[v] = (counts[v] || 0) + 1; }));
   }else{
     rows.forEach(r => {
-      const v = String(r[key] ?? '');
+      const v = String(_rowVal(r, key) ?? '');
       if(v.trim()) counts[v] = (counts[v] || 0) + 1;
     });
   }
@@ -13655,8 +13717,38 @@ function _confluenceTooltipRows(row){
   return out;
 }
 
+/* TRADE QUALITY — Rules Followed? × Win/Loss.
+
+     Yes + Win  = Good Win     sinunod mo, at nanalo
+     Yes + Loss = Good Loss    sinunod mo, natalo — bahagi ng laro
+     No  + Win  = Bad Win      hindi sinunod, sinuwerte — ang pinakamapanganib
+     No  + Loss = Bad Loss     hindi sinunod, at natalo
+     ... + Breakeven = Good BE / Bad BE
+
+   Kinukuwenta, hindi naka-imbak: sumusunod ito sa Rules Followed? at Win/Loss
+   tuwing magbabago ang dalawa. Ang Rules Followed? ay kasama na ang
+   confluence bar at ang mga rule tag, kaya iyon lang ang batayan. Blangko
+   kapag blangko ang alinman — hindi hinuhulaan. */
+function _tradeQuality(row){
+  const rf = String(row && row.rules_followed || '').trim().toLowerCase();
+  const wl = String(row && row.win_loss || '').trim().toLowerCase();
+  if(rf !== 'yes' && rf !== 'no') return '';
+  const outcome = wl === 'win' ? 'Win'
+    : (wl === 'loss' || wl === 'liquidated') ? 'Loss'
+    : wl === 'breakeven' ? 'BE' : null;
+  if(!outcome) return '';
+  return `${rf === 'yes' ? 'Good' : 'Bad'} ${outcome}`;
+}
+const TRADE_QUALITY_BOX = {
+  'good win': 'box-solid-win', 'good loss': 'box-solid-info', 'good be': 'box-be',
+  'bad win': 'box-solid-warn', 'bad loss': 'box-solid-loss', 'bad be': 'box-solid-warn'
+};
+// Ang mga column na kinukuwenta mula sa ibang column — para sa +Filter.
+const _rowVal = (r, key) => key === 'trade_quality' ? _tradeQuality(r) : r[key];
+
 function _journalCellValue(row, key){
   if(key === 'no') return _tradeNo(row);
+  if(key === 'trade_quality') return _tradeQuality(row) || '—';
   if(key === 'objective') return computeObjective(row) || '—';
   if(key === 'duration') return computeDuration(row) || '—';
   // Computed, not stored — the answers live in confluence_answers and the
@@ -13763,6 +13855,13 @@ function _journalColoredCell(key, row, plainVal){
        hilera — nagbabago ang likod kapag naka-hover, at ang disc ay mag-iiwan
        ng butas na maling kulay doon. */
     return `<span class="cfl-score-box ${cls}" style="--box-tone:${tone};" data-cfl-head="${escapeHtml(head)}" data-cfl="${escapeHtml(payload)}" onmouseenter="showConfluenceTooltip(event)" onmouseleave="hideConfluenceTooltip()"><span class="cfl-ring" style="--cfl-deg:${(d.pct * 3.6).toFixed(1)}deg;"></span><span class="cfl-score-num">${d.pct}%</span></span>`;
+  }
+
+  // Kinukuwenta rin, kaya bago ang guard: walang row.trade_quality na mababasa.
+  if(key === 'trade_quality'){
+    const q = _tradeQuality(row);
+    const cls = TRADE_QUALITY_BOX[q.toLowerCase()];
+    return cls ? _box(cls, escapeHtml(q)) : null;
   }
 
   const raw = row[key];
@@ -13940,7 +14039,7 @@ function getFilteredJournalRows(exceptKey){
     if(!f.value || f.value === 'all' || f.key === exceptKey) return;
     rows = JOURNAL_MULTI_KEYS.has(f.key)
       ? rows.filter(r => (r[f.key] || '').split(/[,;]/).map(s => s.trim()).includes(f.value))
-      : rows.filter(r => String(r[f.key] ?? '') === f.value);
+      : rows.filter(r => String(_rowVal(r, f.key) ?? '') === f.value);
   });
 
   if(JOURNAL_BLANK_FILTER){
@@ -15706,6 +15805,9 @@ function _renderTradeViewFieldRow(f, row){
     const computed = f.key === 'objective' ? computeObjective(row) : computeDuration(row);
     return `<div class="field-row${spanCls}"><label>${f.label}</label><div class="field-static">${computed || '—'}</div></div>`;
   }
+  if(f.key === 'trade_quality'){
+    return `<div class="field-row${spanCls}"><label>${f.label}</label><div class="field-static">${escapeHtml(_tradeQuality(row)) || '— needs Rules Followed? and Win/Loss'}</div></div>`;
+  }
   if(f.key === 'planned_rr'){
     // Kinukuwenta mula sa entry, TP at SL — walang column para dito, dahil ang
     // pag-iimbak nito ay isang pangalawang kopya na maaaring humiwalay sa
@@ -15960,6 +16062,9 @@ function _renderDrawerFieldRow(f, mode, row){
   if(f.key === 'objective' || f.key === 'duration'){
     const computed = f.key === 'objective' ? computeObjective(row) : computeDuration(row);
     return `<div class="field-row"><label>${f.label}</label><div class="field-static">${computed || '—'}</div></div>`;
+  }
+  if(f.key === 'trade_quality'){
+    return `<div class="field-row"><label>${f.label}</label><div class="field-static">${escapeHtml(_tradeQuality(row)) || '— needs Rules Followed? and Win/Loss'}</div></div>`;
   }
   if(f.key === 'planned_rr'){
     // Kinukuwenta, hindi naka-imbak. Tingnan ang _plannedRR.
@@ -23584,7 +23689,7 @@ let journalBulkPastes = [];
 // the setup prefill as well as the form, so they have to be stripped on
 // purpose: PostgREST rejects the WHOLE batch over one unknown column, not just
 // that field, so a stray key here means nothing gets journaled at all.
-const JOURNAL_COMPUTED_KEYS = new Set(['objective', 'duration', 'risk_amount', 'trade_summary']);
+const JOURNAL_COMPUTED_KEYS = new Set(['objective', 'duration', 'risk_amount', 'trade_summary', 'trade_quality']);
 
 const BULK_HIDDEN_KEYS = new Set([
   'account','account_type','position_size','risk_amount','quantity',
