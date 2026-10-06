@@ -277,6 +277,7 @@
   }
   .rules-tip-head.broke{color:var(--loss);}
   .rules-tip-head.notes{color:var(--info);}
+  .rules-tip-head.clean{color:var(--win);}
   .rules-tip-body{color:var(--ink);margin-bottom:9px;}
   .rules-tip-body:last-child{margin-bottom:0;}
 

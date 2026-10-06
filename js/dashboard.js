@@ -868,6 +868,7 @@ function showRulesTooltip(event){
     b.textContent = text;
     tip.append(h, b);
   };
+  section('Clean', cell.dataset.clean, 'clean');
   section('Unfollowed Rules', cell.dataset.broke, 'broke');
   section('Notes', cell.dataset.notes, 'notes');
   const rect = cell.getBoundingClientRect();
@@ -14595,8 +14596,11 @@ function renderJournalTable(){
           if(c.key === 'rules_followed' && _ruleTags(r.unfollowed_rules).length){
             const tags = _canonicalTags(r.unfollowed_rules);
             const broke = tags.filter(t => _tagKind(t) === 'breach');
-            const notes = tags.filter(t => _tagKind(t) !== 'breach');
-            return `<td data-broke="${escapeHtml(broke.join(', '))}" data-notes="${escapeHtml(notes.join(', '))}" onmouseenter="showRulesTooltip(event)" onmouseleave="hideRulesTooltip()">${colored}</td>`;
+            const notes = tags.filter(t => _tagKind(t) === 'observation');
+            // Ang "Rules Followed" ay hindi tala — ito ang marka ng malinis,
+            // kaya sariling seksyon, hindi kasama ng Notes.
+            const clean = tags.filter(t => _tagKind(t) === 'sentinel');
+            return `<td data-clean="${escapeHtml(clean.join(', '))}" data-broke="${escapeHtml(broke.join(', '))}" data-notes="${escapeHtml(notes.join(', '))}" onmouseenter="showRulesTooltip(event)" onmouseleave="hideRulesTooltip()">${colored}</td>`;
           }
           return `<td title="${String(r[c.key]||'').replace(/"/g,'&quot;')}">${colored}</td>`;
         }
