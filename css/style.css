@@ -804,6 +804,17 @@
   .cfl-yn-btn.cfl-retest.active{border-color:var(--info);background:var(--info);color:#0A1A2E;}
   .cfl-yn-btn.cfl-almost.active{border-color:var(--accent);background:var(--accent);color:#1A1200;}
   .cfl-yn-btn.cfl-no.active{border-color:var(--loss);background:var(--loss);color:#2A0A08;}
+  /* Other: kalahating puntos gaya ng Almost, kaya kapareho ang kulay; ang
+     kahon ng sagot ay bumababa sa sariling linya sa ilalim ng tanong. */
+  .cfl-yn-btn.cfl-other.active{border-color:var(--accent);background:color-mix(in srgb, var(--accent) 22%, transparent);color:var(--ink);}
+  .cfl-yn-item{flex-wrap:wrap;}
+  .cfl-other-wrap{flex-basis:100%;display:block;}
+  .cfl-other-input{
+    width:100%;box-sizing:border-box;padding:8px 11px;border-radius:7px;font-size:12.5px;
+    border:1px solid var(--accent);background:var(--surface-2);color:var(--ink);
+  }
+  .cfl-other-input:focus{outline:2px solid color-mix(in srgb, var(--accent) 45%, transparent);outline-offset:1px;}
+  @media (max-width:640px){ .cfl-yn-buttons{flex-wrap:wrap;} }
   .cfl-select-item{flex-direction:column;align-items:flex-start;gap:9px;}
   .cfl-select-chips{display:flex;flex-wrap:wrap;gap:6px;}
   .cfl-pattern-picker{border:1px solid var(--rule);border-radius:11px;background:var(--bg2);padding:14px 16px;margin-top:14px;}
@@ -1164,6 +1175,10 @@
      room over, and the curve gets the same lift for free. */
   .panel-fixed-h{height:560px;display:flex;flex-direction:column;}
   .panel-fixed-h-sm{height:230px;display:flex;flex-direction:column;}
+  /* Buong lapad na ang Calendar, kaya mas mataas din para may lugar ang
+     bawat detalye sa loob ng araw. Ang apat na chart sa ilalim ay pantay. */
+  .cal-panel-wide.panel-fixed-h{height:680px;}
+  .dash-chart-row .panel-fixed-h-sm{height:260px;}
   .chart-fill{flex:1;min-height:0;position:relative;}
 
   /* ---------- Discipline radar + composite score bar ---------- */

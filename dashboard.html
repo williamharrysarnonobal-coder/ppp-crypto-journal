@@ -17,7 +17,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<link rel="stylesheet" href="css/style.css?v=327">
+<link rel="stylesheet" href="css/style.css?v=328">
 </head>
 <body>
 
@@ -136,8 +136,10 @@
 
   <div class="kpi-grid" id="kpiGrid"></div>
 
-  <div class="row chart-row-eq" style="grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);align-items:stretch;">
-    <div class="panel panel-fixed-h">
+  <!-- Ang Calendar ay buong lapad na: marami itong detalye na mahalaga, at ang
+       equity curve ay sumama sa apat na maliliit na chart sa ibaba. -->
+  <div class="row chart-row-eq" style="grid-template-columns:minmax(0,1fr);align-items:stretch;">
+    <div class="panel panel-fixed-h cal-panel-wide">
       <h2 class="cal-h2">Calendar<button type="button" class="panel-info-btn" title="How this is worked out" onclick="event.stopPropagation(); openPanelInfo('calendar')"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button><span id="calGoalBar"></span>
         <span class="cal-head-actions">
           <button class="poscalc-accent-btn" id="monthReviewBtn" onclick="openMonthReview()">Review trades</button>
@@ -151,14 +153,14 @@
       <div class="cal-total-summary" id="calTotalSummary"></div>
       <div class="cal-grid" id="calGrid"></div>
     </div>
+  </div>
 
-    <div class="panel panel-fixed-h">
+  <div class="row-4 dash-chart-row">
+    <div class="panel panel-fixed-h-sm">
       <h2>Equity curve<button type="button" class="panel-info-btn" title="How this is worked out" onclick="event.stopPropagation(); openPanelInfo('equity')"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button></h2>
       <div class="chart-fill"><canvas id="equityChart"></canvas></div>
     </div>
-  </div>
 
-  <div class="row-3">
     <div class="panel panel-fixed-h-sm">
       <h2>Win / Loss split<button type="button" class="panel-info-btn" title="How this is worked out" onclick="event.stopPropagation(); openPanelInfo('winloss')"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button></h2>
       <div class="chart-fill"><canvas id="winLossChart"></canvas></div>
@@ -292,6 +294,7 @@
       </div>
       <span id="journalBlankChip" class="fin-drill-chip" style="display:none;" onclick="clearJournalFilters()"></span>
       <button class="poscalc-accent-btn" id="journalClearBtn" style="padding:8px 14px;margin-left:auto;display:none;" onclick="clearJournalFilters()">Clear filters</button>
+      <button class="poscalc-accent-btn" id="journalCsvBtn" style="padding:8px 14px;" onclick="downloadJournalCsv()" title="Download the trades in this view as a CSV file, with every column">Download CSV</button>
     </div>
     <div class="jf-chips" id="journalFilterChips"></div>
     <div class="journal-wrap">
@@ -691,7 +694,7 @@
       </div>
       <div style="overflow-x:auto;">
         <table class="breakdown poscalc-table" id="pendingSetupsTable" style="display:none;">
-          <thead><tr><th style="width:34px;"><input type="checkbox" id="setupSelectAll" onclick="toggleAllSetupSelection(this.checked)"></th><th>Symbol</th><th>Date</th><th>Account</th><th>Leverage</th><th>Risk Amount ($)</th><th>Quantity</th><th>Entry Price</th><th>TP Price</th><th>SL Price</th><th>Status</th><th></th></tr></thead>
+          <thead><tr><th style="width:34px;"><input type="checkbox" id="setupSelectAll" onclick="toggleAllSetupSelection(this.checked)"></th><th>Symbol</th><th>Date</th><th>Account</th><th>Leverage</th><th>Risk Amount ($)</th><th>Quantity</th><th>Entry Price</th><th>TP Price</th><th>SL Price</th><th>Confluence</th><th>Status</th><th></th></tr></thead>
           <tbody id="pendingSetupsBody"></tbody>
         </table>
       </div>
@@ -706,7 +709,7 @@
         <div class="empty-state" id="journaledSetupsEmptyState" style="display:none;">No journaled setups yet — click "Journal" on a pending setup once its trade is logged.</div>
         <div style="overflow-x:auto;">
           <table class="breakdown poscalc-table" id="journaledSetupsTable" style="display:none;">
-            <thead><tr><th>Symbol</th><th>Date</th><th>Account</th><th>Leverage</th><th>Risk Amount ($)</th><th>Quantity</th><th>Entry Price</th><th>TP Price</th><th>SL Price</th><th>Status</th><th></th></tr></thead>
+            <thead><tr><th>Symbol</th><th>Date</th><th>Account</th><th>Leverage</th><th>Risk Amount ($)</th><th>Quantity</th><th>Entry Price</th><th>TP Price</th><th>SL Price</th><th>Confluence</th><th>Status</th><th></th></tr></thead>
             <tbody id="journaledSetupsBody"></tbody>
           </table>
         </div>
@@ -2436,6 +2439,6 @@
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=2"></script>
-<script src="js/dashboard.js?v=558"></script>
+<script src="js/dashboard.js?v=559"></script>
 </body>
 </html>

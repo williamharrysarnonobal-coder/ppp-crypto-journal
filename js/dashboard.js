@@ -4292,12 +4292,14 @@ const WR_MIN_HIST = 5;
 // sequence is progressively worse (matching _sequenceTint's 1st/2nd green,
 // 3rd orange, 4th/5th red).
 function _wrAnswerMet(it, ans){
+  const _ansKey = a => (typeof a === 'string' && a.startsWith('other:')) ? 'almost' : a;
   if(ans === undefined || ans === null) return null;
   if(it.select){
     const idx = it.select.indexOf(ans);
     if(idx < 0) return null;
     return idx <= 1 ? 'met' : (idx === 2 ? 'partial' : 'missed');
   }
+  ans = _ansKey(ans);
   if(it.invert) return ans === 'no' ? 'met' : (ans === 'almost' ? 'partial' : 'missed');
   return (ans === 'yes' || ans === 'retest') ? 'met' : (ans === 'almost' ? 'partial' : 'missed');
 }
@@ -5760,11 +5762,12 @@ function _setupStats(trades, keyOf, order, many){
    Without that normalisation an inverted question — "Left Hand Present?", where
    No is the good answer — would rank upside down beside a plain one. */
 function _confluenceItemAnswer(t, pick){
+  const _ansKey = a => (typeof a === 'string' && a.startsWith('other:')) ? 'almost' : a;
   const cfg = CONFLUENCE_SETUPS[`${t.trade_type}|${t.pattern_type}`];
   if(!cfg || !cfg.items || !t.confluence_answers) return null;
   const i = cfg.items.findIndex(pick);
   if(i === -1) return null;
-  const it = cfg.items[i], ans = t.confluence_answers[i];
+  const it = cfg.items[i], ans = _ansKey(t.confluence_answers[i]);
   if(!ans || it.select) return null;
   const credit = it.invert
     ? (ans === 'no' ? 1 : ans === 'almost' ? 0.5 : 0)
@@ -8078,7 +8081,7 @@ const ALL_JOURNAL_COLUMNS = [
 ];
 
 const DEFAULT_JOURNAL_COLUMN_ORDER = [
-  'rules_followed','symbol','win_loss','trade_quality','profit_loss','exit_type','post_stop_profit_result','objective',
+  'rules_followed','symbol','win_loss','profit_loss','exit_type','post_stop_profit_result','objective',
   'trade_type','pattern_type','aof_phase','execution_tf','account','account_type',
   'session','day_of_week','duration','unfollowed_rules',
   'entry_price','close_price','position_size'
@@ -8101,8 +8104,22 @@ function loadColumnConfig(){
        nasa saved config na ang key at hindi na ito dadaan dito. */
     // Mga column na hiningi niya mismo: lumalabas nang isang beses sa tabi ng
     // kaugnay na column; kapag itinago niya, nasa saved config na at iginagalang.
-    [['post_stop_profit_result', ['post_cutloss_result','post_be_result','exit_type']],
-     ['trade_quality', ['win_loss','rules_followed']]].forEach(([key, anchors]) => {
+    /* Trade Quality: itinago muna niya — "masyadong marami na details". Isang
+       beses lang itong pinapatay; kapag ibinalik niya sa Column settings,
+       iginagalang na iyon. */
+    try{
+      if(!localStorage.getItem('ledger-tq-hidden-once')){
+        const tq = COLUMN_CONFIG.find(c => c.key === 'trade_quality');
+        if(tq && tq.visible){
+          tq.visible = false;
+          // Isinusulat agad, kung hindi ay babalik ito sa susunod na pagbukas.
+          localStorage.setItem('ledger-column-config', JSON.stringify(COLUMN_CONFIG));
+          setTimeout(() => { try{ syncUIPrefsToProfile(); }catch(e){} }, 0);
+        }
+        localStorage.setItem('ledger-tq-hidden-once', '1');
+      }
+    }catch(e){}
+    [['post_stop_profit_result', ['post_cutloss_result','post_be_result','exit_type']]].forEach(([key, anchors]) => {
       if(savedKeys.has(key)) return;
       const i = COLUMN_CONFIG.findIndex(c => c.key === key);
       if(i === -1) return;
@@ -13697,18 +13714,21 @@ function _confluenceCellData(row){
      blank    0             — never answered at all, which is not the same
                               thing as answered badly and should not look it */
 function _confluenceTooltipRows(row){
+  const _ansKey = a => (typeof a === 'string' && a.startsWith('other:')) ? 'almost' : a;
+  const _fmtAns = a => (typeof a === 'string' && a.startsWith('other:')) ? ('Other: ' + (a.slice(6) || '…')) : a;
   const cfg = CONFLUENCE_SETUPS[`${row.trade_type}|${row.pattern_type}`];
   const ans = row.confluence_answers;
   if(!cfg || !ans || typeof ans !== 'object' || !Object.keys(ans).length) return null;
   const out = cfg.items.map((it, i) => {
-    const a = ans[i];
+    const raw = ans[i];
     const label = it.tag || it.text || `Q${i+1}`;
-    if(a === undefined) return { label, state:'blank', answer:'—' };
+    if(raw === undefined) return { label, state:'blank', answer:'—' };
+    const a = it.select ? raw : _ansKey(raw);
     let credit;
     if(it.select) credit = _selectCredit(it, a);
     else if(it.invert) credit = a === 'no' ? 1 : (a === 'almost' ? 0.5 : 0);
     else credit = (a === 'yes' || a === 'retest') ? 1 : (a === 'almost' ? 0.5 : 0);
-    return { label, answer: a,
+    return { label, answer: _fmtAns(raw),
              state: credit >= 1 ? 'met' : (credit > 0 ? 'half' : 'missed') };
   });
   // Counted in the score as one more item, so it belongs in the list too.
@@ -13745,6 +13765,54 @@ const TRADE_QUALITY_BOX = {
 };
 // Ang mga column na kinukuwenta mula sa ibang column — para sa +Filter.
 const _rowVal = (r, key) => key === 'trade_quality' ? _tradeQuality(r) : r[key];
+
+/* DOWNLOAD CSV — ang mga trade na nakikita ngayon (sumusunod sa search,
+   panahon at +Filter), at LAHAT ng column: ang nasa table, nakatago man o
+   hindi, pati ang mga field na nasa drawer lang. Ang mga numero ay hubad
+   (walang $ o kuwit) para magamit sa Excel o Sheets; ang Notes at Summary ay
+   buo, hindi pinutol gaya sa table. May BOM para tama ang ₱/é sa Excel. */
+function _csvValue(row, key){
+  const num = v => { const n = parseFloat(v); return Number.isFinite(n) ? String(n) : ''; };
+  if(['profit_loss','fee','pnl_percent','rr','entry_price','close_price','tp_price','sl_price',
+      'position_size','leverage'].includes(key)) return num(row[key]);
+  if(key === 'open_date' || key === 'close_date'){
+    const d = row[key] ? new Date(row[key]) : null;
+    if(!d || isNaN(d)) return '';
+    const p = n => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+  }
+  if(key === 'notes') { const t = _allNotesText(row).replace(/<br>/g, '\n'); return t === '—' ? '' : t; }
+  if(key === 'trade_summary') return computeTradeSummaryPlain(row);
+  if(key === 'risk_amount'){ const r = _beAvoidedLoss(row); return r ? r.value.toFixed(2) : ''; }
+  if(key === 'confluence_answers') return '';
+  if(key === 'link' || key === 'screenshot_before' || key === 'screenshot_after') return row[key] ? String(row[key]) : '';
+  const v = _journalCellValue(row, key);
+  return v === '—' || v == null ? '' : String(v);
+}
+function downloadJournalCsv(){
+  const rows = getFilteredJournalRows();
+  if(!rows.length){ showToast('No trades to download in this view'); return; }
+  const cols = ALL_JOURNAL_COLUMNS.filter(c => c.key !== 'link').map(c => ({ key: c.key, label: c.label }));
+  const have = new Set(cols.map(c => c.key));
+  ALL_DRAWER_FIELDS.forEach(f => {
+    if(f.paperOnly || have.has(f.key) || f.key === 'confluence_answers') return;
+    cols.push({ key: f.key, label: f.label }); have.add(f.key);
+  });
+  const esc = s => {
+    const t = String(s ?? '');
+    return /[",\n\r]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
+  };
+  const lines = [cols.map(c => esc(c.label)).join(',')];
+  rows.forEach(r => lines.push(cols.map(c => esc(_csvValue(r, c.key))).join(',')));
+  const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  const d = new Date(), p = n => String(n).padStart(2, '0');
+  a.href = URL.createObjectURL(blob);
+  a.download = `tanaydana-trades-${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}.csv`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  showToast(`Downloaded ${rows.length} trade${rows.length === 1 ? '' : 's'}`);
+}
 
 function _journalCellValue(row, key){
   if(key === 'no') return _tradeNo(row);
@@ -15876,6 +15944,9 @@ function _renderTradeViewFieldRow(f, row){
 // question TEXT lives in CONFLUENCE_SETUPS, keyed the same way the modal
 // looked it up, so it has to be re-looked-up here rather than stored twice.
 function _renderTradeViewConfluenceGroup(row){
+  const _ansKey = a => (typeof a === 'string' && a.startsWith('other:')) ? 'almost' : a;
+  const _isOtherAns = a => typeof a === 'string' && a.startsWith('other:');
+  const _fmtAns = a => (typeof a === 'string' && a.startsWith('other:')) ? ('Other: ' + (a.slice(6) || '…')) : a;
   const hasAnswers = row.confluence_answers && typeof row.confluence_answers === 'object' && Object.keys(row.confluence_answers).length;
   // Nothing saved yet: still show the heading with a prompt rather than
   // silently dropping the whole section — an absent section reads as a bug,
@@ -15904,13 +15975,14 @@ function _renderTradeViewConfluenceGroup(row){
     }
     // "Sequence"-style items (select) store the literal chosen option
     // (e.g. "3rd") as the answer, not a yes/retest/almost/no value.
-    const display = item.select ? escapeHtml(ans) : (answerLabel[ans] || ans);
+    const display = item.select ? escapeHtml(ans)
+      : _isOtherAns(ans) ? escapeHtml(_fmtAns(ans)) : (answerLabel[ans] || ans);
     // Left/Right Hand Present are inverted on purpose (No is the good
     // outcome there) — flip which color "yes"/"no" map to for those items.
     const invertedColor = { yes:'var(--loss)', no:'var(--win)', retest:answerColor.retest, almost:answerColor.almost };
     // Sequence picks (1st..5th) get the same tiered tint as the live chip
     // picker instead of plain white — position in the list drives the color.
-    const color = item.select ? _sequenceTint(item.select.indexOf(ans)) : ((item.invert ? invertedColor : answerColor)[ans] || 'var(--ink)');
+    const color = item.select ? _sequenceTint(item.select.indexOf(ans)) : ((item.invert ? invertedColor : answerColor)[_ansKey(ans)] || 'var(--ink)');
     return `<div class="field-row"><label>${escapeHtml(item.text)}</label><div class="field-static" style="color:${color};">${display}</div></div>`;
   }).join('') : '';
 
@@ -23176,15 +23248,32 @@ function _renderConfluenceItemRow(it, i, ans, setAnswerFn){
       </div>
     `;
   }
+  /* Almost sa LAHAT ng Yes/No na tanong — hindi lang sa may `almost` — at
+     isang Other na may sariling sagot. Kapag Other, may kahon na nagmumungkahi
+     ng mga dati mong Other para sa tanong na ito (native datalist: lumalabas
+     habang nagta-type, gaya ng search). */
+  const isOther = _isOtherAns(ans);
+  const otherText = isOther ? ans.slice(6) : '';
+  const listId = `cflOtherList-${setAnswerFn}-${i}`;
+  const history = isOther ? _otherHistoryFor(it.text) : [];
   return `
     <div class="cfl-yn-item ${it.exec?'cfl-execution':''} ${!ans?'cfl-unanswered':''}">
       <span class="cfl-yn-label"><span class="cfl-yn-tag">${it.tag}</span>${it.text}</span>
       <span class="cfl-yn-buttons">
         <button type="button" class="cfl-yn-btn ${it.invert?'cfl-no':'cfl-yes'} ${ans==='yes'?'active':''}" onclick="${setAnswerFn}(${i},'yes')">Yes</button>
         ${it.retest ? `<button type="button" class="cfl-yn-btn cfl-retest ${ans==='retest'?'active':''}" onclick="${setAnswerFn}(${i},'retest')">Retest</button>` : ''}
-        ${(it.exec || it.almost) ? `<button type="button" class="cfl-yn-btn cfl-almost ${ans==='almost'?'active':''}" onclick="${setAnswerFn}(${i},'almost')">Almost</button>` : ''}
+        <button type="button" class="cfl-yn-btn cfl-almost ${ans==='almost'?'active':''}" onclick="${setAnswerFn}(${i},'almost')">Almost</button>
         <button type="button" class="cfl-yn-btn ${it.invert?'cfl-yes':'cfl-no'} ${ans==='no'?'active':''}" onclick="${setAnswerFn}(${i},'no')">No</button>
+        <button type="button" class="cfl-yn-btn cfl-other ${isOther?'active':''}" title="Your own answer — counts as half, like Almost"
+          onclick="${isOther ? `clearCflAnswer('${setAnswerFn}', ${i})` : `setCflOther('${setAnswerFn}', ${i}, '')`}">Other</button>
       </span>
+      ${isOther ? `<span class="cfl-other-wrap">
+        <input type="text" class="cfl-other-input" list="${listId}" value="${escapeHtml(otherText)}"
+          placeholder="Type your answer…" aria-label="Other answer for: ${escapeHtml(it.text)}"
+          onchange="setCflOther('${setAnswerFn}', ${i}, this.value)"
+          onkeydown="if(event.key==='Enter'){ event.preventDefault(); this.blur(); }">
+        <datalist id="${listId}">${history.map(h => `<option value="${escapeHtml(h)}"></option>`).join('')}</datalist>
+      </span>` : ''}
     </div>
   `;
 }
@@ -23238,6 +23327,49 @@ function _applyConfluenceImplications(items, answers, changedIdx){
    isang tamang sagot, at ang tanong ay SAAN at hindi GAANO KABUTI. Kung wala
    ito, ang FVG ay ikalimang pagpipilian at makakakuha ng zero — isang tamang
    sagot na binibilang na parang hindi mo sinagot. */
+/* ANG "OTHER" NA SAGOT.
+
+   Nakaimbak bilang "other:<isinulat mo>". Kalahati ang puntos nito, gaya ng
+   Almost — hindi buo, pero hindi rin wala — kaya saanman kinukuwenta ang
+   puntos, ang Other ay binabasa bilang 'almost' (_ansKey). Ang mungkahi
+   habang nagta-type ay galing sa lahat ng naunang Other para sa PAREHONG
+   tanong, para pare-pareho ang mga sagot mo. */
+function _isOtherAns(a){ return typeof a === 'string' && a.startsWith('other:'); }
+function _ansKey(a){ return _isOtherAns(a) ? 'almost' : a; }
+function _fmtAns(a){ return _isOtherAns(a) ? ('Other: ' + (a.slice(6) || '…')) : a; }
+function _otherHistoryFor(itemText){
+  const counts = new Map();
+  const scan = rows => (rows || []).forEach(r => {
+    const cfg = CONFLUENCE_SETUPS[`${r.trade_type}|${r.pattern_type}`];
+    const ans = r.confluence_answers;
+    if(!cfg || !ans || typeof ans !== 'object') return;
+    cfg.items.forEach((it, i) => {
+      if(it.text !== itemText || !_isOtherAns(ans[i])) return;
+      const t = ans[i].slice(6).trim();
+      if(t) counts.set(t, (counts.get(t) || 0) + 1);
+    });
+  });
+  scan(typeof SAVED_SETUPS !== 'undefined' ? SAVED_SETUPS : []);
+  scan(typeof RAW_TRADES !== 'undefined' ? RAW_TRADES : []);
+  return [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([t]) => t);
+}
+// Ang pag-type ay hindi dapat mag-toggle off gaya ng pagpindot ng button,
+// kaya direktang isinusulat sa tamang mapa ng sagot.
+function setCflOther(fnName, i, text){
+  const val = 'other:' + String(text || '').trim();
+  if(fnName === 'setBbAnswer'){ bbAnswers[i] = val; renderBbChecklist(); }
+  else { confluenceAnswers[i] = val; renderConfluenceChecklist(); }
+  // Bagong bukas na Other: diretso sa kahon.
+  if(!String(text || '').trim()){
+    const el = document.querySelector(`input[list="cflOtherList-${fnName}-${i}"]`);
+    if(el) el.focus();
+  }
+}
+function clearCflAnswer(fnName, i){
+  if(fnName === 'setBbAnswer'){ delete bbAnswers[i]; renderBbChecklist(); }
+  else { delete confluenceAnswers[i]; renderConfluenceChecklist(); }
+}
+
 function _selectCredit(it, ans){
   const idx = it.select.indexOf(ans);
   if(idx < 0) return 0;
@@ -23246,10 +23378,11 @@ function _selectCredit(it, ans){
 }
 
 function _confluenceProgress(items, answers, chartPatternPresent){
+  const _ansKey = a => (typeof a === 'string' && a.startsWith('other:')) ? 'almost' : a;
   const answeredValues = Object.values(answers);
   let done = chartPatternPresent ? 1 : 0;
   items.forEach((it, i) => {
-    const ans = answers[i];
+    const ans = it.select ? answers[i] : _ansKey(answers[i]);
     if(ans === undefined) return;
     if(it.select){ done += _selectCredit(it, ans); return; }
     if(it.invert){
@@ -24149,6 +24282,9 @@ function setupRowHTML(s, selectable){
     <td style="white-space:nowrap;">${priceCell(s.entry_price, 'var(--accent)')}</td>
     <td style="white-space:nowrap;">${priceCell(s.tp_price, 'var(--win)')}</td>
     <td style="white-space:nowrap;">${priceCell(s.sl_price, 'var(--loss)')}</td>
+    <!-- Kaparehong singsing at hover ng Trade Journals: may trade type,
+         pattern at mga sagot din ang setup. -->
+    <td onclick="event.stopPropagation();">${_journalColoredCell('confluence_score', s, '') || '<span style="color:var(--muted);">—</span>'}</td>
     <td><span class="pill ${statusPillClass}">${escapeHtml(status)}</span></td>
     <td style="white-space:nowrap;">
       <!-- Sagot ang tinitingnan, hindi Pattern Type — tingnan ang
