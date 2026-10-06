@@ -22048,8 +22048,10 @@ async function placeUpscaleOrders(accountIds){
     `<b>${escapeHtml(symbol)}</b> · <b class="${direction === 'Long' ? 'up-long' : 'up-short'}">${direction}</b>`
     + ` · Entry ${_upPx(entry)} · TP ${Number.isFinite(tp) ? _upPx(tp) : '—'} · SL ${_upPx(sl)}${rr}`;
   document.getElementById('upOrderError').textContent = '';
+  document.getElementById('upOrderNews').innerHTML = '';
   const placeBtn = document.getElementById('upOrderPlaceBtn');
   placeBtn.disabled = true; placeBtn.textContent = 'Place Order';
+  _renderUpscaleNewsWarning();
   document.getElementById('upOrderCancelBtn').textContent = 'Cancel';
   document.getElementById('upOrderModal').classList.add('open');
   _renderUpscaleOrderRows();
@@ -22066,6 +22068,36 @@ async function placeUpscaleOrders(accountIds){
 }
 
 const _upPx = v => Number(v).toLocaleString(undefined, { maximumFractionDigits: 2 });
+
+/* BABALA SA HIGH-IMPACT NA BALITA. US lang — iyon ang gumagalaw sa BTC; ang
+   High-impact ng ibang bansa ay bihirang tumama rito at magiging ingay lang.
+   Mula 10 minuto bago ngayon hanggang 30 minuto pasulong: ang kakalabas pa
+   lang ay gumagalaw pa rin. Babala lang, hindi pagbabawal — ikaw ang
+   magpapasya. */
+const UP_NEWS_AHEAD_MIN = 30, UP_NEWS_BEHIND_MIN = 10;
+async function _renderUpscaleNewsWarning(){
+  const box = document.getElementById('upOrderNews');
+  if(!box) return;
+  try{
+    if(!ECON_EVENTS || !ECON_EVENTS.length) await loadMarketNewsWidget();
+  }catch(e){}
+  const now = Date.now();
+  const soon = (ECON_EVENTS || []).filter(e => {
+    if(String(e.impact || '').toLowerCase() !== 'high') return false;
+    if(String(e.country || '').toUpperCase() !== 'US') return false;
+    const t = new Date(e.event_date).getTime();
+    return t >= now - UP_NEWS_BEHIND_MIN * 60000 && t <= now + UP_NEWS_AHEAD_MIN * 60000;
+  }).sort((a, b) => new Date(a.event_date) - new Date(b.event_date));
+  if(!soon.length){ box.innerHTML = ''; return; }
+  box.innerHTML = `<div class="up-news-warn"><b>⚠ High-impact US news ${soon.some(e => new Date(e.event_date) > now) ? 'coming up' : 'just released'}</b>
+    <ul>${soon.map(e => {
+      const t = new Date(e.event_date);
+      const mins = Math.round((t - now) / 60000);
+      const when = mins > 0 ? `in ${mins} min` : mins === 0 ? 'now' : `${-mins} min ago`;
+      return `<li>${escapeHtml(e.title)} — ${when} (${t.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'})})</li>`;
+    }).join('')}</ul>
+    Spreads widen and stops can slip around these releases.</div>`;
+}
 
 function _upOrderTypeFor(direction, entry, price){
   if(!(price > 0)) return '—';
@@ -22120,6 +22152,7 @@ async function confirmUpscaleOrders(){
   const symbol = (document.getElementById('psSymbol').value || '').trim();
   const placeBtn = document.getElementById('upOrderPlaceBtn');
   placeBtn.disabled = true; placeBtn.textContent = 'Sending…';
+  _upAskNotifyPermission();
 
   const todo = UP_ORDER_ROWS.filter(r => r.state === 'ready' || (r.state === 'error' && r.quote));
   // Isa-isa, hindi sabay-sabay: may rate limit ang bawat key, at mas madaling
@@ -22233,17 +22266,27 @@ async function refreshUpscaleOrderStates(force){
 
       Object.entries(states || {}).forEach(([orderId, st]) => {
         if(!st || st.state === 'Unknown') return;
+        // Ang dating kalagayan, para malaman kung may NAGBAGO na dapat ipaalam.
+        const prevRec = Object.values(m).find(v => v.orderId === orderId);
+        const prevSetup = (SAVED_SETUPS || []).find(s => s.upscale_order_id === orderId);
+        const prev = (prevRec && (prevRec.state || 'Order Placed')) || (prevSetup && prevSetup.status) || null;
+        if(prev && prev !== st.state) _upNotifyTransition(acc, st, prevSetup);
+
         // Ang tala sa calculator.
         Object.keys(m).forEach(k => {
           if(m[k].orderId !== orderId) return;
           if(st.state === 'Cancelled'){ delete m[k]; changed = true; return; }
-          if(m[k].state !== st.state || m[k].how !== st.how){
-            m[k].state = st.state; m[k].how = st.how || null; changed = true;
+          const next = { state: st.state, how: st.how || null, atBE: !!st.atBE, entry: st.entry || null };
+          if(['state','how','atBE','entry'].some(f => (m[k][f] ?? null) !== (next[f] ?? null))){
+            Object.assign(m[k], next); changed = true;
           }
         });
         // Ang setup.
         (SAVED_SETUPS || []).filter(s => s.upscale_order_id === orderId && _UP_SETUP_LIVE.has(s.status))
-          .forEach(s => { if(s.status !== st.state){ setSetupStatus(s.id, st.state); changed = true; } });
+          .forEach(s => {
+            s._atBE = !!st.atBE;
+            if(s.status !== st.state){ setSetupStatus(s.id, st.state); changed = true; }
+          });
       });
     }
     if(changed){
@@ -22254,20 +22297,112 @@ async function refreshUpscaleOrderStates(force){
     _upStatusBusy = false;
   }
 }
+/* Kahit wala ka sa Calculator: tuwing 30 segundo, basta may order na
+   naghihintay o posisyong bukas. Walang order = walang tawag sa Upscale. */
+function _upHasLiveOrders(){
+  try{
+    const m = JSON.parse(localStorage.getItem(_UP_PLACED_KEY) || '{}');
+    if(Object.values(m).some(v => v && Date.now() - v.at < 86400000
+      && v.state !== 'Closed' && v.state !== 'Cancelled')) return true;
+  }catch(e){}
+  return (SAVED_SETUPS || []).some(s => s.upscale_order_id && _UP_SETUP_LIVE.has(s.status));
+}
 setInterval(() => {
-  if(typeof currentView !== 'undefined' && currentView === 'calculator'
-     && document.visibilityState === 'visible') refreshUpscaleOrderStates();
+  if(typeof USER_ACCESS_TOKEN === 'undefined' || !USER_ACCESS_TOKEN) return;
+  if(_upHasLiveOrders()) refreshUpscaleOrderStates();
 }, 30000);
+
+/* ANG ABISO. Isang banner sa loob ng app (nananatili hanggang isara), at
+   isang system notification ng browser kapag pinayagan mo — para makita mo
+   kahit nasa ibang tab o ibang app ka. */
+function _upNotifyTransition(acc, st, setup){
+  const name = acc.account_name;
+  const sym = (setup && setup.symbol) || (document.getElementById('psSymbol')?.value || '').trim() || 'Order';
+  let title, body, tone;
+  if(st.state === 'In Position'){
+    title = `${name}: order filled`;
+    body = `${sym} is now an open position${st.entry ? ` at ${_upPx(st.entry)}` : ''}.`;
+    tone = 'info';
+  }else if(st.state === 'Closed'){
+    title = `${name}: ${st.how || 'position closed'}`;
+    body = `${sym} closed${st.pnl != null ? ` · ${st.pnl >= 0 ? '+' : '−'}$${_upPx(Math.abs(st.pnl))}` : ''}. Ready to journal.`;
+    tone = st.how === 'TP Hit' ? 'good' : st.how === 'SL Hit' ? 'bad' : 'info';
+  }else if(st.state === 'Cancelled'){
+    title = `${name}: order cancelled`;
+    body = `${sym} order was cancelled on Upscale.`;
+    tone = 'info';
+  }else return;
+  _upBanner(title, body, tone);
+  try{
+    if('Notification' in window && Notification.permission === 'granted'){
+      new Notification(title, { body, tag: `upscale-${st.state}-${name}` });
+    }
+  }catch(e){}
+}
+function _upBanner(title, body, tone){
+  let wrap = document.getElementById('upBannerWrap');
+  if(!wrap){
+    wrap = document.createElement('div');
+    wrap.id = 'upBannerWrap';
+    wrap.className = 'up-banner-wrap';
+    wrap.setAttribute('role', 'status');
+    wrap.setAttribute('aria-live', 'polite');
+    document.body.appendChild(wrap);
+  }
+  const el = document.createElement('div');
+  el.className = `up-banner ${tone || ''}`;
+  el.innerHTML = `<div class="up-banner-text"><b>${escapeHtml(title)}</b><span>${escapeHtml(body)}</span></div>
+    <button type="button" class="up-banner-go" onclick="switchView('calculator'); this.closest('.up-banner').remove();">View</button>
+    <button type="button" class="up-banner-x" aria-label="Dismiss" onclick="this.closest('.up-banner').remove();">✕</button>`;
+  wrap.appendChild(el);
+}
+// Hinihingi ang pahintulot sa system notification sa unang Place Order —
+// sa isang pindot ng tao, gaya ng hinihingi ng browser.
+function _upAskNotifyPermission(){
+  try{
+    if('Notification' in window && Notification.permission === 'default') Notification.requestPermission();
+  }catch(e){}
+}
 
 // Ang hilera pagkatapos mag-order, ayon sa kalagayan nito sa Upscale.
 function _placedRowHTML(acc, rec){
   const st = rec.state || 'Order Placed';
-  if(st === 'In Position') return '<span class="up-placed-pill live">● In Position</span>';
+  if(st === 'In Position'){
+    return rec.atBE
+      ? '<span class="up-placed-pill live">● In Position · SL at BE</span>'
+      : `<span class="up-placed-pill live">● In Position</span><button type="button" class="up-chip-cancel up-chip-be" title="Move the stop loss to your entry price on Upscale" onclick="moveSlToBE('${acc.id}', '${rec.orderId}', this)">SL → BE</button>`;
+  }
   if(st === 'Closed'){
     const cls = rec.how === 'TP Hit' ? 'tp' : rec.how === 'SL Hit' ? 'sl' : 'closed';
     return `<span class="up-placed-pill ${cls}">Closed${rec.how ? ' · ' + escapeHtml(rec.how) : ''}</span>`;
   }
   return `<span class="up-placed-pill">✓ Order Placed</span><button type="button" class="up-chip-cancel" title="Cancel this order on Upscale" onclick="cancelPlacedFromRow('${acc.id}', this)">Cancel</button>`;
+}
+
+/* Move SL to BE — para lang sa na-fill na (In Position). Ang Worker ang
+   tumitingin kung lampas na ang presyo sa entry; kung hindi pa, tatamaan agad
+   ang stop sa entry, kaya tumatanggi ito at sinasabi kung bakit. */
+async function moveSlToBE(accId, orderId, btn){
+  const acc = TRADING_ACCOUNTS.find(a => String(a.id) === String(accId));
+  if(!acc || !orderId) return;
+  if(!(await customConfirm(`Move the stop loss to breakeven on Upscale for ${acc.account_name}?`))) return;
+  if(btn){ btn.disabled = true; btn.textContent = 'Moving…'; }
+  const setup = (SAVED_SETUPS || []).find(s => s.upscale_order_id === orderId);
+  const symbol = (setup && setup.symbol) || (document.getElementById('psSymbol')?.value || '').trim() || 'BTC';
+  try{
+    const r = await _upscaleCall('move_be', { tradingAccountId: acc.id, orderId, symbol });
+    showToast(r.already ? 'Stop loss is already at breakeven' : `Stop loss moved to ${_upPx(r.stop)} (breakeven)`);
+    try{
+      const m = JSON.parse(localStorage.getItem(_UP_PLACED_KEY) || '{}');
+      Object.values(m).forEach(v => { if(v.orderId === orderId) v.atBE = true; });
+      localStorage.setItem(_UP_PLACED_KEY, JSON.stringify(m));
+    }catch(e){}
+    if(setup) setup._atBE = true;
+  }catch(e){
+    await customAlert(e.message);
+  }
+  renderPosSizeCalculator();
+  if(typeof renderSavedSetups === 'function' && currentView === 'calculator') renderSavedSetups();
 }
 
 // Cancel mula sa hilera ng calculator.
@@ -23868,6 +24003,9 @@ function setupRowHTML(s, selectable){
         : `<button class="poscalc-accent-btn" onclick="event.stopPropagation(); setSetupStatus(${s.id}, 'Pending')">Revert to Pending</button>`}
       ${status === 'Order Placed' && s.upscale_order_id
         ? `<button class="drawer-danger-btn" onclick="event.stopPropagation(); cancelUpscaleOrder(${s.id}, this)">Cancel Order</button>`
+        : ''}
+      ${status === 'In Position' && s.upscale_order_id && !s._atBE
+        ? `<button class="poscalc-accent-btn" onclick="event.stopPropagation(); moveSlToBE('${s.account_id}', '${s.upscale_order_id}', this)">Move SL to BE</button>`
         : ''}
       <button class="drawer-danger-btn" onclick="event.stopPropagation(); deleteSavedSetup(${s.id})">Delete</button>
     </td>

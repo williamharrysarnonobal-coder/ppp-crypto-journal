@@ -18,7 +18,7 @@ export default {
     const url = new URL(request.url);
     if (url.pathname === '/api/transcribe') return handleTranscribe(request, env);
     if (url.pathname === '/api/economic-events') return handleEconomicEvents(request);
-    const up = url.pathname.match(/^\/api\/upscale\/(check|link|unlink|quote|order|cancel|status)$/);
+    const up = url.pathname.match(/^\/api\/upscale\/(check|link|unlink|quote|order|cancel|status|move_be)$/);
     if (up) return handleUpscale(request, env, up[1]);
     // Everything else is the site itself.
     return serveAsset(request, env);
@@ -285,6 +285,15 @@ async function findMarket(key, accountId, symbol) {
   };
 }
 
+const STOP_TYPES = new Set(['stop', 'stop_market', 'trailing_stop']);
+// The executed order's own records: `parentOrderId` on the TP/SL it spawned.
+const isChildOf = (o, id) => [].concat(o.parentOrderId || []).includes(id);
+// Fill price of an executed entry order: indexPrice is the execution price,
+// triggerPrice the requested level (crypto fills at the trigger).
+const entryOf = (o) => fromFp9(o.indexPrice) || fromFp9(o.triggerPrice);
+// Two prices the same level, within 0.02% (a tick or the spread).
+const sameLevel = (a, b) => a > 0 && b > 0 && Math.abs(a - b) / b < 0.0002;
+
 // Long: an entry below the market waits for price to come down (limit);
 // above it waits for price to break up (stop). Short is the mirror.
 function pickOrderType(direction, entry, price) {
@@ -353,7 +362,6 @@ async function handleUpscale(request, env, action) {
       const active = asArr(await upscale(key, 'GET', `/orders/${encodeURIComponent(upId)}/active`));
       const history = asArr(await upscale(key, 'GET',
         `/orders/${encodeURIComponent(upId)}/${encodeURIComponent(asset)}/history?limit=100`));
-      const childOf = (o, id) => [].concat(o.parentOrderId || []).includes(id);
       const states = {};
       for (const id of ids) {
         if (active.some(o => o.id === id)) { states[id] = { state: 'Order Placed' }; continue; }
@@ -362,12 +370,50 @@ async function handleUpscale(request, env, action) {
         if (String(h.status).startsWith('canceled')) { states[id] = { state: 'Cancelled' }; continue; }
         if (h.status === 'active') { states[id] = { state: 'Order Placed' }; continue; }
         if (h.status !== 'executed') { states[id] = { state: 'Unknown' }; continue; }
-        if (active.some(o => childOf(o, id))) { states[id] = { state: 'In Position' }; continue; }
-        const closer = history.find(o => childOf(o, id) && o.status === 'executed');
-        const how = closer ? (closer.type === 'take' ? 'TP Hit' : (closer.type === 'stop' || closer.type === 'trailing_stop') ? 'SL Hit' : null) : null;
+        const entry = entryOf(h);
+        const liveStop = active.find(o => isChildOf(o, id) && STOP_TYPES.has(o.type));
+        if (active.some(o => isChildOf(o, id))) {
+          states[id] = { state: 'In Position', entry,
+            stop: liveStop ? fromFp9(liveStop.triggerPrice) : null,
+            atBE: !!(liveStop && sameLevel(fromFp9(liveStop.triggerPrice), entry)) };
+          continue;
+        }
+        const closer = history.find(o => isChildOf(o, id) && o.status === 'executed');
+        let how = null;
+        if (closer) {
+          if (closer.type === 'take') how = 'TP Hit';
+          else if (STOP_TYPES.has(closer.type)) how = sameLevel(fromFp9(closer.triggerPrice), entry) ? 'BE Hit' : 'SL Hit';
+        }
         states[id] = { state: 'Closed', how, pnl: closer ? fromFp9(closer.realizedPnl) : null };
       }
       return json({ states });
+    }
+
+    /* MOVE SL TO BE. Ang SL na nakakabit sa posisyon ay isang "stop" order na
+       anak ng entry order; inililipat ito sa presyong pinasukan. Hindi ito
+       ginagawa kung lampas na ang presyo sa entry sa maling panig — ang stop
+       sa entry ay tatamaan agad at isasara ang posisyon. */
+    if (action === 'move_be') {
+      const id = String(body.orderId || '');
+      if (!/^[0-9a-f-]{36}$/i.test(id)) throw new UpscaleError(400, 'bad_order', 'Which order?');
+      const asset = baseAssetOf(body.symbol) || 'BTC';
+      const asArr = x => Array.isArray(x) ? x : ((x && (x.data || x.items)) || []);
+      const active = asArr(await upscale(key, 'GET', `/orders/${encodeURIComponent(upId)}/active`));
+      const stop = active.find(o => isChildOf(o, id) && STOP_TYPES.has(o.type));
+      if (!stop) throw new UpscaleError(409, 'no_stop', 'No open stop loss found for this order — it may not be filled yet, or it is already closed.');
+      const history = asArr(await upscale(key, 'GET',
+        `/orders/${encodeURIComponent(upId)}/${encodeURIComponent(asset)}/history?limit=100`));
+      const h = history.find(o => o.id === id);
+      const entry = h ? entryOf(h) : null;
+      if (!(entry > 0)) throw new UpscaleError(409, 'no_entry', 'Could not read the fill price from Upscale.');
+      if (sameLevel(fromFp9(stop.triggerPrice), entry)) return json({ ok: true, stop: entry, already: true });
+      const market = await findMarket(key, upId, asset);
+      const dir = h.direction || stop.direction;
+      const ahead = dir === 'long' ? market.price > entry : market.price < entry;
+      if (!ahead) throw new UpscaleError(409, 'not_in_profit',
+        `Price (${market.price}) is not past your entry (${entry}) yet — a stop at breakeven would close the trade straight away.`);
+      const res = await upscale(key, 'PATCH', `/orders/${encodeURIComponent(stop.id)}`, { triggerPrice: toFp9(entry) });
+      return json({ ok: true, stop: entry, stopOrderId: res && res.id });
     }
 
     if (action === 'cancel') {
