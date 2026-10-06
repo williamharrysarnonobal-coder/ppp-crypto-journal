@@ -8150,6 +8150,8 @@ function onPsRiskInput(accountId, value, inputEl){
   row.querySelectorAll('td:last-child button').forEach((btn, i) => {
     btn.disabled = i === 0 ? cells.qty == null : cells.minLev == null;
   });
+  const placeBtn = row.querySelector('.ps-up-col .up-order-btn');
+  if(placeBtn) placeBtn.disabled = cells.minLev == null;
 
   // Keep the note and highlight in step while typing. The field itself is
   // NOT rewritten mid-keystroke — replacing the value under the caret would
@@ -8325,6 +8327,10 @@ function renderPosSizeCalculator(){
     body.innerHTML = `<tr><td colspan="6" style="color:var(--muted);">No prop firm accounts yet — add one in My Accounts first.</td></tr>`;
     return;
   }
+  // Ang Upscale column ay lumalabas lang kapag may account na may API key.
+  const hasUpscale = accounts.some(a => a.upscale_account_id);
+  const upHead = document.getElementById('psUpscaleHead');
+  if(upHead) upHead.style.display = hasUpscale ? '' : 'none';
 
   body.innerHTML = accounts.map(acc => {
     const riskRaw = saved[acc.id] != null ? saved[acc.id] : _psSeedRisk(acc);
@@ -8341,13 +8347,14 @@ function renderPosSizeCalculator(){
       <td class="ps-qty-cell" data-qty="${c.qtyData}">${c.qtyText}</td>
       <td>${c.levHtml}</td>
       <td>${c.marginText}</td>
+      ${hasUpscale ? `<td class="ps-up-col">${!acc.upscale_account_id
+          ? '<span class="ps-up-none">—</span>'
+          : _placedRecord(acc.id, entry, sl)
+            ? _placedRowHTML(acc, _placedRecord(acc.id, entry, sl))
+            : `<button type="button" class="up-order-btn up-order-btn-sm" onclick="placeUpscaleOrders(['${acc.id}'])" ${c.minLev == null ? 'disabled' : ''} title="Send this order to Upscale — ${escapeHtml(acc.upscale_account_label || '')}">Place Order</button>`}</td>` : ''}
       <td style="white-space:nowrap;">
         <button type="button" class="poscalc-accent-btn" onclick="copyCellValue(this)" ${c.qty == null ? 'disabled' : ''}>Copy</button>
         <button type="button" class="poscalc-accent-btn" onclick="tradeThisSetup('${acc.id}')" ${c.minLev == null ? 'disabled' : ''}>Trade This Setup</button>
-        ${!acc.upscale_account_id ? ''
-          : _placedRecord(acc.id, entry, sl)
-            ? _placedRowHTML(acc, _placedRecord(acc.id, entry, sl))
-            : `<button type="button" class="up-order-btn up-order-btn-sm" onclick="placeUpscaleOrders(['${acc.id}'])" ${c.minLev == null ? 'disabled' : ''} title="Send this order to Upscale — ${escapeHtml(acc.upscale_account_label || '')}">Place Order</button>`}
       </td>
     </tr>`;
   }).join('');
@@ -22260,7 +22267,7 @@ function _placedRowHTML(acc, rec){
     const cls = rec.how === 'TP Hit' ? 'tp' : rec.how === 'SL Hit' ? 'sl' : 'closed';
     return `<span class="up-placed-pill ${cls}">Closed${rec.how ? ' · ' + escapeHtml(rec.how) : ''}</span>`;
   }
-  return `<span class="up-placed-pill">✓ Order Placed</span><button type="button" class="drawer-danger-btn up-cancel-btn" onclick="cancelPlacedFromRow('${acc.id}', this)">Cancel</button>`;
+  return `<span class="up-placed-pill">✓ Order Placed</span><button type="button" class="up-chip-cancel" title="Cancel this order on Upscale" onclick="cancelPlacedFromRow('${acc.id}', this)">Cancel</button>`;
 }
 
 // Cancel mula sa hilera ng calculator.
