@@ -23525,7 +23525,24 @@ function _upHabitWarnings(direction, accs){
       After ${run >= 3 ? '3 or more losses' : run === 1 ? 'a loss' : '2 losses'} in a row you win ${pct(s)}.`);
   }
 
-  // 3. Ang session ngayon, at ang direksyong ito roon.
+  // 3. Ang Readiness mo ngayong araw, mula sa Daily Plan check-in.
+  const todayPlan = (DAILY_PLANS || []).find(p => p.plan_date === _dpIso(new Date()));
+  const ready = todayPlan ? _psychReadiness(todayPlan.psych) : null;
+  if(ready !== null && ready < 50){
+    const lowDays = DAILY_PLANS.filter(p => { const r = _psychReadiness(p.psych); return r !== null && r < 50 && p.plan_date !== todayPlan.plan_date; });
+    const s = _tagArmStats(lowDays.flatMap(p => _dpTradesOn(p.plan_date)));
+    out.push(`Your readiness today is <b>${ready}/100</b>.${s.settled >= 3 ? ` On days under 50 you won ${pct(s)}.` : ''} Consider a smaller size or sitting this one out.`);
+  }
+  if(todayPlan && todayPlan.psych && todayPlan.psych.money === 'Yes')
+    out.push('You said you <b>need to make money today</b>. That pressure is when rules get bent.');
+  if(todayPlan && todayPlan.max_trades != null){
+    const taken = base.filter(t => t.close_date >= today).length;
+    if(todayPlan.max_trades === 0) out.push('Your plan today was to take <b>no trades</b>.');
+    else if(taken >= todayPlan.max_trades) out.push(`Your plan today was <b>${todayPlan.max_trades} trade${todayPlan.max_trades === 1 ? '' : 's'}</b>, and ${taken} already closed.`);
+  }
+  if(todayPlan && todayPlan.bias === 'No trade') out.push('Your plan today was <b>No trade</b>.');
+
+  // 4. Ang session ngayon, at ang direksyong ito roon.
   const sess = computeSession({ open_date: new Date().toISOString() });
   if(sess){
     const inSess = base.filter(t => t.session === sess);
@@ -23539,9 +23556,11 @@ function _upHabitWarnings(direction, accs){
   return out;
 }
 
-function _renderUpscaleHabitWarning(direction, accs){
+async function _renderUpscaleHabitWarning(direction, accs){
   const news = document.getElementById('upOrderNews');
   if(!news) return;
+  // Ang check-in ngayong araw ay nasa Daily Plan; kunin kung hindi pa.
+  if(!_dpLoaded){ try{ await loadDailyPlans(); }catch(e){} }
   let box = document.getElementById('upOrderHabits');
   if(!box){
     box = document.createElement('div');
@@ -27611,6 +27630,7 @@ function renderPlanCalendar(){
     html += `<div class="cal-cell dp-cell${iso === today ? ' today' : ''}${p ? ' has-plan' : ''}" onclick="openDailyPlan('${iso}')" tabindex="0"
         onkeydown="if(event.key==='Enter') openDailyPlan('${iso}')">
       <div class="d">${d}${f ? `<b class="dp-f ${f[1]}" title="Followed the plan: ${p.followed}">${f[0]}</b>` : ''}</div>
+      ${(() => { const r = p ? _psychReadiness(p.psych) : null; return r === null ? '' : `<div class="dp-rd ${_readyTone(r)}" title="Readiness ${r}/100">◉ ${r}</div>`; })()}
       ${p && p.bias ? `<div class="dp-bias"><i class="dp-dot ${DP_BIAS_CLS[p.bias] || ''}"></i>${escapeHtml(p.bias)}</div>` : ''}
       ${tr.length ? `<div class="dp-tr ${over || noTradeBreak ? 'over' : ''}" title="${tr.length} trade${tr.length === 1 ? '' : 's'}${p && p.max_trades != null ? ` of ${p.max_trades} planned` : ''}">
           ${tr.length}${p && p.max_trades != null ? `/${p.max_trades}` : ''}T <span class="${net >= 0 ? 'pos' : 'neg'}">${net >= 0 ? '+' : '−'}$${Math.abs(net).toFixed(0)}</span></div>` : ''}
@@ -27620,6 +27640,7 @@ function renderPlanCalendar(){
   if(rem) for(let i = 0; i < 7 - rem; i++) html += '<div class="cal-cell empty"></div>';
   grid.innerHTML = html;
   renderPlanSummary();
+  try{ renderPsychInsights(); }catch(e){ console.error('Psych insights failed:', e); }
 }
 
 /* Ang buod ng buwan — disiplina at resulta magkasama: ilang araw ang may
@@ -27648,6 +27669,163 @@ function renderPlanSummary(){
     + card('Win rate · followed days', pct(fol), `${fol.wins}W ${fol.losses}L on days you stuck to it`, 'good')
     + card('Win rate · other days', pct(not), `${not.wins}W ${not.losses}L when you didn't`, not.settled ? 'bad' : '')
     + card('Over max trades', overDays, overDays ? 'days you took more than planned' : 'never went over the plan', overDays ? 'bad' : 'good');
+}
+
+/* PSYCHOLOGY CHECK-IN. Naka-imbak sa daily_plans.psych (jsonb). Ang "rate"
+   ay 1–5; ang invert:true ay kung saan ang MATAAS ang masama (stress, tilt).
+   Ang Readiness ay ang average ng mga pre-session na sagot, ginawang 0–100
+   (ang inverted ay binabaligtad muna), at bumababa kapag may presyur sa pera. */
+const PSYCH_FIELDS = [
+  { k:'sleep_h',    g:'pre',  type:'hours', label:'Sleep (hours)' },
+  { k:'sleep',      g:'pre',  type:'rate',  label:'Sleep quality',      lo:'Poor', hi:'Great' },
+  { k:'energy',     g:'pre',  type:'rate',  label:'Energy',             lo:'Drained', hi:'Sharp' },
+  { k:'stress',     g:'pre',  type:'rate',  label:'Stress',             lo:'Calm', hi:'Very high', invert:true },
+  { k:'focus',      g:'pre',  type:'rate',  label:'Focus',              lo:'Scattered', hi:'Locked in' },
+  { k:'confidence', g:'pre',  type:'rate',  label:'Confidence',         lo:'Shaky', hi:'Steady' },
+  { k:'patience',   g:'pre',  type:'rate',  label:'Patience',           lo:'Itchy', hi:'Can wait all day' },
+  { k:'life',       g:'pre',  type:'rate',  label:'Pressure outside trading', lo:'None', hi:'Heavy', invert:true, hint:'Work, family, health' },
+  { k:'money',      g:'pre',  type:'yn',    label:'Need to make money today?', bad:'Yes' },
+  { k:'ate',        g:'pre',  type:'yn',    label:'Ate properly?', bad:'No' },
+  { k:'exercise',   g:'pre',  type:'yn',    label:'Exercised?' },
+  { k:'emotion',    g:'pre',  type:'pick',  label:'Strongest feeling right now',
+    options:['Calm','Focused','Excited','Anxious','Frustrated','Bored','Overconfident','Tired'],
+    good:['Calm','Focused'] },
+  { k:'tilt',       g:'post', type:'rate',  label:'Tilt during the session', lo:'None', hi:'Lost it', invert:true },
+  { k:'fomo',       g:'post', type:'yn',    label:'Felt FOMO?', bad:'Yes' },
+  { k:'revenge',    g:'post', type:'yn',    label:'Wanted to win it back (revenge)?', bad:'Yes' },
+  { k:'emo_drove',  g:'post', type:'tri',   label:'Did feelings drive a decision?', options:['No','Partly','Yes'], bad:'Yes' }
+];
+let _dpPsych = {};   // ang sagot na binabago sa modal
+
+function _psychReadiness(ps){
+  if(!ps) return null;
+  const vals = [];
+  PSYCH_FIELDS.filter(f => f.g === 'pre' && f.type === 'rate').forEach(f => {
+    const v = Number(ps[f.k]);
+    if(v >= 1 && v <= 5) vals.push(f.invert ? 6 - v : v);
+  });
+  if(ps.sleep_h != null && ps.sleep_h !== ''){
+    const h = Number(ps.sleep_h);
+    if(Number.isFinite(h)) vals.push(h >= 7 ? 5 : h >= 6 ? 4 : h >= 5 ? 3 : h >= 4 ? 2 : 1);
+  }
+  if(vals.length < 3) return null;
+  let score = (vals.reduce((a, b) => a + b, 0) / vals.length - 1) / 4 * 100;
+  if(ps.money === 'Yes') score -= 10;
+  if(ps.emotion && !['Calm','Focused'].includes(ps.emotion)) score -= 5;
+  return Math.max(0, Math.min(100, Math.round(score)));
+}
+const _readyTone = r => r === null ? '' : r >= 70 ? 'good' : r >= 50 ? 'warn' : 'bad';
+
+function _renderPsychFields(){
+  const row = f => {
+    const v = _dpPsych[f.k];
+    let ctl;
+    if(f.type === 'rate'){
+      ctl = `<div class="dp-rate${f.invert ? ' inv' : ''}" data-k="${f.k}">${[1,2,3,4,5].map(n =>
+        `<button type="button" data-v="${n}" class="${Number(v) === n ? 'on' : ''}" aria-pressed="${Number(v) === n}">${n}</button>`).join('')}</div>
+        <div class="dp-rate-ends"><span>${f.lo}</span><span>${f.hi}</span></div>`;
+    }else if(f.type === 'hours'){
+      ctl = `<input type="number" class="dp-hours" data-k="${f.k}" min="0" max="14" step="0.5" value="${v ?? ''}" placeholder="7">`;
+    }else{
+      const opts = f.type === 'yn' ? ['Yes','No'] : f.options;
+      ctl = `<div class="dp-pick" data-k="${f.k}">${opts.map(o =>
+        `<button type="button" data-v="${escapeHtml(o)}" class="${v === o ? 'on' : ''}${(f.bad && f.bad === o) || (f.good && !f.good.includes(o) && f.type === 'pick') ? ' bad' : ''}" aria-pressed="${v === o}">${escapeHtml(o)}</button>`).join('')}</div>`;
+    }
+    return `<div class="dp-q${f.type === 'pick' ? ' wide' : ''}"><label title="${escapeHtml(f.hint || '')}">${f.label}</label>${ctl}</div>`;
+  };
+  document.getElementById('dpPsychPre').innerHTML = PSYCH_FIELDS.filter(f => f.g === 'pre').map(row).join('');
+  document.getElementById('dpPsychPost').innerHTML = PSYCH_FIELDS.filter(f => f.g === 'post').map(row).join('');
+  const r = _psychReadiness(_dpPsych);
+  const el = document.getElementById('dpReady');
+  el.className = 'dp-ready ' + _readyTone(r);
+  el.textContent = r === null ? 'Readiness —' : `Readiness ${r}`;
+  el.title = 'Average of the before-session answers, 0–100. Money pressure and a strong feeling other than calm or focused take it down.';
+}
+
+document.addEventListener('click', e => {
+  const b = e.target.closest && e.target.closest('.dp-rate button, .dp-pick button');
+  if(!b) return;
+  const k = b.parentElement.dataset.k;
+  const v = b.parentElement.classList.contains('dp-rate') ? Number(b.dataset.v) : b.dataset.v;
+  _dpPsych[k] = _dpPsych[k] === v ? null : v;   // pindot ulit = alisin
+  _renderPsychFields();
+});
+document.addEventListener('input', e => {
+  if(!e.target.classList || !e.target.classList.contains('dp-hours')) return;
+  const n = parseFloat(e.target.value);
+  _dpPsych[e.target.dataset.k] = Number.isFinite(n) ? n : null;
+  const r = _psychReadiness(_dpPsych);
+  const el = document.getElementById('dpReady');
+  el.className = 'dp-ready ' + _readyTone(r);
+  el.textContent = r === null ? 'Readiness —' : `Readiness ${r}`;
+});
+
+/* MIND VS RESULTS. Para sa bawat tanong, ang mga araw ay hinahati sa
+   "masama" at "maganda" (1–2 laban sa 4–5, o ang Yes/No), at ikinukumpara ang
+   mga trade ng mga araw na iyon: win rate at Rules kept. Bilang ng trade, hindi
+   pera. Ang hilera ay may kulay lang kapag may EM_MIN_N na trade sa bawat panig
+   at ang agwat ay EM_MIN_GAP o higit pa. */
+function _psychDayTrades(p){ return _dpTradesOn(p.plan_date); }
+function _rulesKeptRate(trades){
+  let rated = 0, kept = 0;
+  trades.forEach(t => {
+    const rf = String(t.rules_followed || '').trim().toLowerCase();
+    let ok = rf === 'yes' ? true : rf === 'no' ? false : null;
+    if(ok === null && _ruleTags(t.unfollowed_rules).length) ok = _isCleanRules(t.unfollowed_rules);
+    if(ok === null) return;
+    rated++; if(ok) kept++;
+  });
+  return rated ? kept / rated * 100 : null;
+}
+function renderPsychInsights(){
+  const el = document.getElementById('dpInsights');
+  if(!el) return;
+  const days = DAILY_PLANS.filter(p => p.psych && Object.keys(p.psych).length);
+  if(!days.length){ el.innerHTML = '<div class="empty-state">No check-ins yet. Open a day and fill in Mindset. After a couple of weeks this shows what your state does to your trading.</div>'; return; }
+  const ps = p => p.psych || {};
+  const groups = [];
+  const add = (label, badLbl, goodLbl, isBad, isGood) => {
+    const bad = days.filter(p => isBad(ps(p))), good = days.filter(p => isGood(ps(p)));
+    const bt = bad.flatMap(_psychDayTrades), gt = good.flatMap(_psychDayTrades);
+    if(!bt.length && !gt.length) return;
+    groups.push({ label, badLbl, goodLbl, b: _tagArmStats(bt), g: _tagArmStats(gt), bk: _rulesKeptRate(bt), gk: _rulesKeptRate(gt), bd: bad.length, gd: good.length });
+  };
+  add('Readiness', 'under 50', '70 or more', s => { const r = _psychReadiness(s); return r !== null && r < 50; }, s => { const r = _psychReadiness(s); return r !== null && r >= 70; });
+  add('Sleep', 'under 6 h', '7 h or more', s => s.sleep_h != null && s.sleep_h !== '' && Number(s.sleep_h) < 6, s => Number(s.sleep_h) >= 7);
+  PSYCH_FIELDS.filter(f => f.type === 'rate').forEach(f => {
+    const lowBad = !f.invert;
+    add(f.label, lowBad ? '1–2' : '4–5', lowBad ? '4–5' : '1–2',
+      s => lowBad ? (s[f.k] >= 1 && s[f.k] <= 2) : s[f.k] >= 4,
+      s => lowBad ? s[f.k] >= 4 : (s[f.k] >= 1 && s[f.k] <= 2));
+  });
+  PSYCH_FIELDS.filter(f => f.type === 'yn' && f.bad).forEach(f => {
+    const good = f.bad === 'Yes' ? 'No' : 'Yes';
+    add(f.label.replace(/\?$/, ''), f.bad, good, s => s[f.k] === f.bad, s => s[f.k] === good);
+  });
+  add('Exercised', 'No', 'Yes', s => s.exercise === 'No', s => s.exercise === 'Yes');
+  add('Feeling', 'other', 'Calm / Focused', s => s.emotion && !['Calm','Focused'].includes(s.emotion), s => ['Calm','Focused'].includes(s.emotion));
+  add('Feelings drove a decision', 'Yes / Partly', 'No', s => s.emo_drove === 'Yes' || s.emo_drove === 'Partly', s => s.emo_drove === 'No');
+
+  const pct = v => v === null ? '—' : Math.round(v) + '%';
+  const cell = (s, k, d, side) => `<td class="n psy-dt">${d}d · ${s.n}T</td><td class="n psy-r ${side}">${pct(s.rate)}</td><td class="n psy-r ${side}">${pct(k)}</td>`;
+  const rows = groups.map(x => {
+    const enough = x.b.settled >= EM_MIN_N && x.g.settled >= EM_MIN_N;
+    const gap = x.b.rate !== null && x.g.rate !== null ? x.g.rate - x.b.rate : null;
+    const kgap = x.bk !== null && x.gk !== null ? x.gk - x.bk : null;
+    const matters = enough && ((gap !== null && Math.abs(gap) >= EM_MIN_GAP) || (kgap !== null && Math.abs(kgap) >= EM_MIN_GAP));
+    const verdict = !enough ? 'too few' : !matters ? 'no clear effect'
+      : (gap !== null && gap >= EM_MIN_GAP) || (kgap !== null && kgap >= EM_MIN_GAP) ? 'matters' : 'reversed';
+    return `<tr class="${matters && verdict === 'matters' ? 'psy-hit' : ''}">
+      <td>${escapeHtml(x.label)}</td>
+      <td class="psy-side">${escapeHtml(x.badLbl)}</td>${cell(x.b, x.bk, x.bd, 'off')}
+      <td class="psy-side">${escapeHtml(x.goodLbl)}</td>${cell(x.g, x.gk, x.gd, 'on')}
+      <td class="v">${verdict}</td></tr>`;
+  }).join('');
+  el.innerHTML = `<div class="wh-wrap"><table class="dx-tbl psy-tbl">
+    <thead><tr><th>Check-in</th><th>Off days</th><th class="n">Days · trades</th><th class="n">Won</th><th class="n">Rules kept</th>
+      <th>Good days</th><th class="n">Days · trades</th><th class="n">Won</th><th class="n">Rules kept</th><th></th></tr></thead>
+    <tbody>${rows}</tbody></table></div>
+    <p class="dx-lead" style="margin-top:10px;">Highlighted rows ("matters") are the ones where your state clearly changes how you trade: at least ${EM_MIN_GAP} points apart, on ${EM_MIN_N}+ settled trades each side. Those are the days to trade smaller or sit out.</p>`;
 }
 
 function _dpSeg(id, value){
@@ -27680,6 +27858,8 @@ function openDailyPlan(iso){
   document.getElementById('dpPlan').value = p.plan_notes || '';
   document.getElementById('dpWell').value = p.went_well || '';
   document.getElementById('dpImprove').value = p.improve || '';
+  _dpPsych = { ...(p.psych || {}) };
+  _renderPsychFields();
   document.getElementById('dpError').textContent = '';
   document.getElementById('dpDeleteBtn').style.visibility = p.id ? 'visible' : 'hidden';
   const tr = _dpTradesOn(iso);
@@ -27711,9 +27891,11 @@ async function saveDailyPlan(){
     max_trades: maxRaw === '' ? null : Math.max(0, parseInt(maxRaw, 10) || 0),
     key_levels: txt('dpLevels'), plan_notes: txt('dpPlan'),
     followed: _dpSegValue('dpFollowed'), went_well: txt('dpWell'), improve: txt('dpImprove'),
+    psych: Object.fromEntries(Object.entries(_dpPsych).filter(([, v]) => v !== null && v !== undefined && v !== '')),
     updated_at: new Date().toISOString()
   };
-  if(!row.bias && row.max_trades == null && !row.key_levels && !row.plan_notes && !row.followed && !row.went_well && !row.improve){
+  if(!row.bias && row.max_trades == null && !row.key_levels && !row.plan_notes && !row.followed && !row.went_well && !row.improve
+     && !Object.keys(row.psych).length){
     err.textContent = 'Nothing to save yet. Pick a bias or write something first.';
     return;
   }
@@ -27728,8 +27910,8 @@ async function saveDailyPlan(){
     });
     if(!res.ok){
       const t = await res.text();
-      throw new Error(/daily_plans/.test(t) && /does not exist|not find/i.test(t)
-        ? 'The Daily Plan table is not in the database yet. Run supabase_daily_plans.sql in Supabase.' : t);
+      throw new Error((/daily_plans/.test(t) && /does not exist|not find/i.test(t)) || /psych/.test(t)
+        ? 'The Daily Plan table is not up to date in the database. Run supabase_daily_plans.sql in Supabase (safe to run again).' : t);
     }
     const rows = await res.json();
     const saved = rows[0] || row;

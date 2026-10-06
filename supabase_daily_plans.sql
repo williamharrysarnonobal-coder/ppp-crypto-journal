@@ -14,10 +14,15 @@ create table if not exists daily_plans (
   followed text,
   went_well text,
   improve text,
+  psych jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique(user_id, plan_date)
 );
+
+-- Psychology check-in (sleep, energy, stress, focus, emotion, tilt, …).
+-- Safe to run again if the table already exists from an earlier version.
+alter table daily_plans add column if not exists psych jsonb not null default '{}'::jsonb;
 
 alter table daily_plans enable row level security;
 

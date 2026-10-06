@@ -17,7 +17,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<link rel="stylesheet" href="css/style.css?v=341">
+<link rel="stylesheet" href="css/style.css?v=342">
 </head>
 <body>
 
@@ -445,6 +445,11 @@
         <span><b class="pos">✓</b> Followed</span><span><b class="tp-acc">~</b> Partly</span><span><b class="neg">✗</b> Not followed</span>
       </div>
       <div class="cal-grid dp-cal-grid" id="dpCalGrid"></div>
+    </div>
+    <div class="panel" style="margin-top:20px;">
+      <h2>Mind vs results</h2>
+      <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">How your trades go on days you felt each way. All your check-ins, not just this month. Trades and rules, not money.</div>
+      <div id="dpInsights"></div>
     </div>
   </div>
 
@@ -2423,6 +2428,10 @@
   <div class="modal-box dp-modal" style="position:relative;">
     <button class="modal-close" onclick="closeDailyPlan()">✕</button>
     <h3 id="dpTitle" style="padding-right:24px;">—</h3>
+    <section class="dp-mind">
+      <div class="dp-col-t">Mindset <span>before the session · tap 1–5</span><b id="dpReady" class="dp-ready"></b></div>
+      <div id="dpPsychPre" class="dp-psych-grid"></div>
+    </section>
     <div class="dp-cols">
       <section class="dp-col">
         <div class="dp-col-t">Plan <span>before the session</span></div>
@@ -2462,6 +2471,7 @@
             <button type="button" data-v="No" class="no">No</button>
           </div>
         </div>
+        <div id="dpPsychPost" class="dp-psych-grid one"></div>
         <div class="field-row">
           <label for="dpWell">What went well</label>
           <textarea id="dpWell" rows="2"></textarea>
@@ -2600,6 +2610,6 @@
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=2"></script>
-<script src="js/dashboard.js?v=573"></script>
+<script src="js/dashboard.js?v=574"></script>
 </body>
 </html>
