@@ -868,7 +868,7 @@ function showRulesTooltip(event){
     b.textContent = text;
     tip.append(h, b);
   };
-  section('Clean', cell.dataset.clean, 'clean');
+  section('Discipline', cell.dataset.clean, 'clean');
   section('Unfollowed Rules', cell.dataset.broke, 'broke');
   section('Notes', cell.dataset.notes, 'notes');
   const rect = cell.getBoundingClientRect();
@@ -14739,7 +14739,7 @@ function openJournalBulkEdit(){
   document.getElementById('journalBulkBody').innerHTML =
     BULK_GROUPS.map(g => `<div class="jb-group"><div class="jb-group-t">${g.t}</div><div class="jb-grid">${g.keys.map(control).join('')}</div></div>`).join('')
     + `<div class="jb-group"><div class="jb-group-t">Trade Tags <span class="jb-sub">green = on all · dashed = on some · click to add to all or remove from all, again to undo</span></div>
-        ${tagRow('Clean', 'nothing went wrong', byKind('sentinel'))}
+        ${tagRow('Discipline', 'nothing went wrong', byKind('sentinel'))}
         ${tagRow('Rules', 'a rule broken — turns Rules Followed? to No', byKind('breach'))}
         ${tagRow('Notes', 'to remember or measure — counts against nothing', byKind('observation'))}
       </div>`
