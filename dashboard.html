@@ -17,7 +17,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<link rel="stylesheet" href="css/style.css?v=339">
+<link rel="stylesheet" href="css/style.css?v=340">
 </head>
 <body>
 
@@ -373,6 +373,46 @@
           <div id="bbChecklistBody"></div>
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- Ang buong pahina ng isang trade (dating popup). Binubuksan mula sa
+       Trade Journals; ang ‹ Previous / Next › ay sumusunod sa listahang iyon. -->
+  <div class="view" id="view-trade">
+    <div class="tp-top">
+      <button type="button" class="tp-back" onclick="closeTradeViewModal()">← <span id="tpBackLabel">Trade Journals</span></button>
+    </div>
+    <header class="tp-head">
+      <div class="tp-title-wrap">
+        <h1 id="tradeViewTitle" class="tp-title">—</h1>
+        <div id="tpChips" class="tp-chips"></div>
+      </div>
+      <div class="tp-actions">
+        <button type="button" class="tp-btn" onclick="openTradeNoteModalFromTradeView()">Add note</button>
+        <button type="button" class="tp-btn" onclick="openConfluenceModalFromTradeView()">Confluence</button>
+        <button type="button" class="tp-btn" id="tradeViewSetupNotesBtn" onclick="openLinkedSetupNotesFromTradeView()" style="display:none;">Setup notes</button>
+        <button type="button" class="tp-btn tp-btn-primary" onclick="editFromTradeView()">Edit</button>
+        <button type="button" class="tp-btn tp-btn-icon" onclick="deleteFromTradeView()" title="Delete trade" aria-label="Delete trade"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button>
+        <div class="tp-nav">
+          <button type="button" class="tp-btn" id="tradeViewPrevBtn" onclick="navigateTradeView(-1)">‹ Previous</button>
+          <button type="button" class="tp-btn" id="tradeViewNextBtn" onclick="navigateTradeView(1)">Next trade ›</button>
+        </div>
+      </div>
+    </header>
+    <div class="tp-grid">
+      <aside class="panel tp-details" id="tpDetails"></aside>
+      <section class="panel tp-main">
+        <h2 class="tp-h2">Charts</h2>
+        <div class="tp-sub">Add or paste (Ctrl+V) a screenshot for each timeframe. Click a slot first, then paste.</div>
+        <div id="tpCharts" class="tp-charts"></div>
+        <input type="file" id="tpChartFile" accept="image/*" multiple style="display:none;" onchange="onTradeChartFiles(this)">
+        <h2 class="tp-h2" style="margin-top:26px;">Review</h2>
+        <div id="tpReview"></div>
+        <details class="tp-all">
+          <summary>All fields</summary>
+          <div id="tradeViewBody" class="trade-view-grid"></div>
+        </details>
+      </section>
     </div>
   </div>
 
@@ -1534,28 +1574,6 @@
   </div>
 </div>
 
-<div class="modal-overlay" id="tradeViewModal" onclick="if(event.target===this) closeTradeViewModal()">
-  <div class="modal-box" style="position:relative;max-width:min(90vw,640px);max-height:85vh;display:flex;flex-direction:column;">
-    <button class="modal-close" onclick="closeTradeViewModal()">✕</button>
-    <h3 id="tradeViewTitle" style="margin:0 36px 12px 0;flex-shrink:0;">—</h3>
-    <div id="tradeViewBody" class="trade-view-grid" style="overflow-y:auto;flex:1;min-height:0;padding-right:4px;"></div>
-
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:14px;padding-top:14px;border-top:1px solid var(--rule);flex-shrink:0;">
-      <div style="display:flex;gap:8px;">
-        <button class="drawer-secondary-btn" id="tradeViewPrevBtn" onclick="navigateTradeView(-1)">‹ Previous</button>
-        <button class="drawer-secondary-btn" id="tradeViewNextBtn" onclick="navigateTradeView(1)">Next ›</button>
-      </div>
-      <div style="display:flex;gap:4px;">
-        <button class="modal-icon-btn" onclick="openTradeNoteModalFromTradeView()" title="Add Note"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><line x1="12" y1="7" x2="12" y2="13"/><line x1="9" y1="10" x2="15" y2="10"/></svg></button>
-        <button class="modal-icon-btn" id="tradeViewSetupNotesBtn" onclick="openLinkedSetupNotesFromTradeView()" title="Setup Notes" style="display:none;"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V4a1 1 0 0 0-1-1H6.5A2.5 2.5 0 0 0 4 5.5v14z"/><path d="M4 19.5A2.5 2.5 0 0 0 6.5 22H20"/></svg></button>
-        <button class="modal-icon-btn" onclick="openConfluenceModalFromTradeView()" title="Confluence"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></button>
-        <button class="modal-icon-btn" onclick="deleteFromTradeView()" title="Delete trade"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg></button>
-        <button class="modal-icon-btn" onclick="editFromTradeView()" title="Edit trade"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>
-      </div>
-    </div>
-  </div>
-</div>                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                
-
 <div class="modal-overlay" id="easyAddModal" onclick="if(event.target===this) closeEasyAddModal()">
   <div class="modal-box" style="position:relative;">
     <button class="modal-close" onclick="closeEasyAddModal()">✕</button>
@@ -1884,20 +1902,29 @@
     </div>
     <div class="field-row" style="flex-shrink:0;">
       <label>Screenshots</label>
-      <div class="setup-notes-shots" style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px;">
+      <!-- Higher TF · Setup TF · Entry TF — pareho sa pahina ng trade, kung
+           saan lumalabas din sila kapag na-journal na. -->
+      <div class="setup-notes-shots" style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;">
         <div>
-          <div style="font-size:10px;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:.05em;">Before</div>
-          <div id="setupNotesBeforeDropzone" class="poscalc-image-dropzone" tabindex="0" onclick="setActiveScreenshotSlot('before')">
-            Paste (Ctrl+V) or <span class="fin-subacct-add" style="display:inline;" onclick="event.stopPropagation(); triggerScreenshotFilePicker('before')">choose a photo</span>
+          <div style="font-size:10px;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:.05em;">Higher TF</div>
+          <div id="setupNotes_htf_Dropzone" class="poscalc-image-dropzone" tabindex="0" onclick="setActiveScreenshotSlot('htf')">
+            Paste (Ctrl+V) or <span class="fin-subacct-add" style="display:inline;" onclick="event.stopPropagation(); triggerScreenshotFilePicker('htf')">choose a photo</span>
           </div>
-          <input type="file" id="setupNotesBeforeFileInput" accept="image/*" style="display:none;" onchange="handleScreenshotFileSelect('before', this)">
+          <input type="file" id="setupNotes_htf_File" accept="image/*" style="display:none;" onchange="handleScreenshotFileSelect('htf', this)">
         </div>
         <div>
-          <div style="font-size:10px;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:.05em;">After</div>
-          <div id="setupNotesAfterDropzone" class="poscalc-image-dropzone" tabindex="0" onclick="setActiveScreenshotSlot('after')">
-            Paste (Ctrl+V) or <span class="fin-subacct-add" style="display:inline;" onclick="event.stopPropagation(); triggerScreenshotFilePicker('after')">choose a photo</span>
+          <div style="font-size:10px;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:.05em;">Setup TF</div>
+          <div id="setupNotes_setup_Dropzone" class="poscalc-image-dropzone" tabindex="0" onclick="setActiveScreenshotSlot('setup')">
+            Paste (Ctrl+V) or <span class="fin-subacct-add" style="display:inline;" onclick="event.stopPropagation(); triggerScreenshotFilePicker('setup')">choose a photo</span>
           </div>
-          <input type="file" id="setupNotesAfterFileInput" accept="image/*" style="display:none;" onchange="handleScreenshotFileSelect('after', this)">
+          <input type="file" id="setupNotes_setup_File" accept="image/*" style="display:none;" onchange="handleScreenshotFileSelect('setup', this)">
+        </div>
+        <div>
+          <div style="font-size:10px;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:.05em;">Entry TF</div>
+          <div id="setupNotes_entry_Dropzone" class="poscalc-image-dropzone" tabindex="0" onclick="setActiveScreenshotSlot('entry')">
+            Paste (Ctrl+V) or <span class="fin-subacct-add" style="display:inline;" onclick="event.stopPropagation(); triggerScreenshotFilePicker('entry')">choose a photo</span>
+          </div>
+          <input type="file" id="setupNotes_entry_File" accept="image/*" style="display:none;" onchange="handleScreenshotFileSelect('entry', this)">
         </div>
       </div>
     </div>
@@ -2480,6 +2507,6 @@
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=2"></script>
-<script src="js/dashboard.js?v=571"></script>
+<script src="js/dashboard.js?v=572"></script>
 </body>
 </html>

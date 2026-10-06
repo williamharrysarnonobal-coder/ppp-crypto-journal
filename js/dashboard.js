@@ -760,11 +760,14 @@ function switchView(view){
   if(document.body.classList.contains('mobile-mode')) closeMobileMenu();
   currentView = view;
   // Per-device, like Mobile Mode — remembered so a refresh reopens on the
-  // same tab instead of always bouncing back to Profile.
-  localStorage.setItem('ledger-last-view', view);
+  // same tab instead of always bouncing back to Profile. Ang pahina ng isang
+  // trade ay hindi: walang trade na mabubuksan pagkatapos ng refresh, kaya ang
+  // Trade Journals ang naaalala.
+  localStorage.setItem('ledger-last-view', view === 'trade' ? 'journal' : view);
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
   document.getElementById('view-' + view).classList.add('active');
-  document.querySelectorAll('.nav-item').forEach(n => n.classList.toggle('active', n.dataset.view === view));
+  const navView = view === 'trade' ? (_tradePageFrom === 'paper' ? 'paper' : 'journal') : view;
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.toggle('active', n.dataset.view === navView));
 
   /* Ang calculator ay isang DOM node na may dalawang tahanan. Ang paglipat ay
      ginagawa BAWAT paglipat ng pahina, hindi lang papasok sa Paper Journal —
@@ -16653,11 +16656,25 @@ function _mergeSetupFieldsIntoPrefill(prefill, setupId){
 let tradeViewList = [];
 let tradeViewIndex = -1;
 
+/* ANG BUONG PAHINA NG ISANG TRADE. Dati itong popup; ngayon ay isang page
+   (view-trade) na may Trade details sa kaliwa at Charts + Review sa kanan.
+   Ang ‹ Previous / Next › ay sumusunod sa listahan ng Trade Journals gaya ng
+   dati, at ang "← Trade Journals" ay bumabalik sa pinanggalingan. */
+let _tradePageFrom = 'journal';
 function openTradeViewModal(positionId){
   tradeViewList = getFilteredJournalRows();
   tradeViewIndex = tradeViewList.findIndex(r => r.position_id === positionId);
+  if(tradeViewIndex < 0){
+    // Wala sa naka-filter na listahan (hal. galing sa notification): ang
+    // trade lang mismo.
+    const one = RAW_TRADES.find(r => r.position_id === positionId);
+    if(!one) return;
+    tradeViewList = [one]; tradeViewIndex = 0;
+  }
+  if(currentView !== 'trade') _tradePageFrom = currentView || 'journal';
+  switchView('trade');
   renderTradeViewModal();
-  document.getElementById('tradeViewModal').classList.add('open');
+  window.scrollTo(0, 0);
 }
 
 // Grouped instead of one flat list — same DRAWER_FIELDS (still respects
@@ -16828,11 +16845,18 @@ function _renderTradeViewConfluenceGroup(row){
 }
 
 function renderTradeViewModal(){
-  const row = tradeViewList[tradeViewIndex];
-  if(!row) return;
+  const cur = tradeViewList[tradeViewIndex];
+  if(!cur) return;
+  // Ang pinakabagong kopya — maaaring na-edit o may bagong chart mula nang
+  // mabuo ang listahan.
+  const row = RAW_TRADES.find(r => r.position_id === cur.position_id) || cur;
+  tradeViewList[tradeViewIndex] = row;
 
-  document.getElementById('tradeViewTitle').textContent = (row.symbol || 'Trade') + (_tradeNo(row) ? ` · #${_tradeNo(row)}` : '');
-  document.getElementById('tradeViewSetupNotesBtn').style.display = row.linked_setup_id ? 'flex' : 'none';
+  _renderTradePageHead(row);
+  document.getElementById('tradeViewSetupNotesBtn').style.display = row.linked_setup_id ? '' : 'none';
+  try{ _renderTradeDetails(row); }catch(e){ console.error('Trade details failed:', e); }
+  try{ _renderTradeReview(row); }catch(e){ console.error('Trade review failed:', e); }
+  try{ _renderTradeCharts(row); }catch(e){ console.error('Trade charts failed:', e); }
 
   /* DALAWANG DIREKSYON NG PAGSALA.
 
@@ -16873,15 +16897,136 @@ function navigateTradeView(dir){
 }
 
 function closeTradeViewModal(){
-  document.getElementById('tradeViewModal').classList.remove('open');
+  if(currentView !== 'trade') return;
+  const back = _tradePageFrom && _tradePageFrom !== 'trade' && document.getElementById('view-' + _tradePageFrom)
+    ? _tradePageFrom : 'journal';
+  switchView(back);
 }
 
+// Ang Edit ay ang kasalukuyang drawer, nakapatong sa pahina. Pagsara nito,
+// iginuguhit ulit ang pahina (tingnan ang closeDrawer).
 function editFromTradeView(){
   const row = tradeViewList[tradeViewIndex];
   if(!row) return;
-  closeTradeViewModal();
   openDrawer('view', row.position_id);
   enterEditMode();
+}
+
+/* ---------- Trade page: ulo, details, review ---------- */
+const _tpMoney = v => `${v >= 0 ? '+' : '−'}$${Math.abs(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const _tpNum = v => (v === null || v === undefined || v === '' || !Number.isFinite(Number(v))) ? '—'
+  : Number(v).toLocaleString(undefined, { maximumFractionDigits: 6 });
+
+function _renderTradePageHead(row){
+  const dir = String(row.trade_type || '').trim();
+  const arrow = /^long$/i.test(dir) ? '↑' : /^short$/i.test(dir) ? '↓' : '';
+  const d = row.close_date || row.open_date;
+  const when = d ? new Date(d).toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric', year:'numeric' }) : '';
+  document.getElementById('tradeViewTitle').innerHTML =
+    `${escapeHtml(row.symbol || 'Trade')}`
+    + (dir ? ` <span class="tp-dot">·</span> <span class="${/^long$/i.test(dir) ? 'pos' : 'neg'}">${arrow} ${escapeHtml(dir)}</span>` : '')
+    + (when ? ` <span class="tp-dot">·</span> <span class="tp-when">${escapeHtml(when)}</span>` : '');
+  const wl = String(row.win_loss || '').trim();
+  const q = _tradeQuality(row);
+  const qCls = TRADE_QUALITY_BOX[q.toLowerCase()] || '';
+  document.getElementById('tpChips').innerHTML =
+    (_tradeNo(row) ? `<span class="tp-chip">#${_tradeNo(row)}</span>` : '')
+    + (wl ? `<span class="tp-chip ${/^win$/i.test(wl) ? 'win' : /^(loss|liquidated)$/i.test(wl) ? 'loss' : 'be'}">${escapeHtml(wl)}</span>` : '')
+    + (q ? `<span class="tp-chip ${qCls}">${escapeHtml(q)}</span>` : '')
+    + (row.account ? `<span class="tp-chip muted">${escapeHtml(row.account)}</span>` : '');
+  document.getElementById('tpBackLabel').textContent =
+    _tradePageFrom === 'paper' ? 'Paper Journal' : _tradePageFrom === 'dashboard' ? 'Dashboard' : 'Trade Journals';
+  document.getElementById('tradeViewPrevBtn').disabled = tradeViewIndex <= 0;
+  document.getElementById('tradeViewNextBtn').disabled = tradeViewIndex < 0 || tradeViewIndex >= tradeViewList.length - 1;
+}
+
+function _renderTradeDetails(row){
+  const el = document.getElementById('tpDetails');
+  const n = normalizeTrade({ ...row });
+  const net = netPnl(n);
+  const R = _tradeR(n);
+  const risk = _beAvoidedLoss(row);
+  const fmtTime = v => v ? new Date(v).toLocaleTimeString(undefined, { hour:'numeric', minute:'2-digit' }) : '';
+  const line = (k, v) => `<div class="tp-line"><span>${k}</span><b>${v}</b></div>`;
+  const sec = (title, lines) => { const body = lines.filter(Boolean).join(''); return body ? `<div class="tp-sec"><div class="tp-sec-t">${title}</div>${body}</div>` : ''; };
+  const val = (v) => (v === null || v === undefined || String(v).trim() === '' || v === 'Unspecified') ? null : escapeHtml(String(v));
+  const opt = (k, v) => v ? line(k, v) : '';
+  const dur = computeDuration(row);
+  const sess = computeSession(row) || row.session;
+  el.innerHTML = `
+    <h2 class="tp-h2">Trade details</h2>
+    <div class="tp-pnl ${net >= 0 ? 'pos' : 'neg'}">${_tpMoney(net)}</div>
+    <div class="tp-pnl-k">Net P&amp;L${R !== null ? ` · <b class="${R >= 0 ? 'pos' : 'neg'}">${R >= 0 ? '+' : '−'}${Math.abs(R).toFixed(2)}R</b>` : ''}</div>
+    <div class="tp-trio">
+      <div><b>${escapeHtml(row.symbol || '—')}</b><span>Instrument</span></div>
+      <div><b class="${/^long$/i.test(row.trade_type || '') ? 'pos' : /^short$/i.test(row.trade_type || '') ? 'neg' : ''}">${escapeHtml(row.trade_type || '—')}</b><span>Direction</span></div>
+      <div><b>${_tpNum(row.position_size)}</b><span>Quantity</span></div>
+    </div>
+    ${sec('Context', [
+      opt('Account', val(row.account)),
+      opt('Date', row.open_date ? escapeHtml(new Date(row.open_date).toLocaleDateString(undefined, { weekday:'short', month:'short', day:'numeric', year:'numeric' })) : null),
+      opt('Session', val(sess)),
+      dur ? line('Duration', `${escapeHtml(dur)}${row.open_date && row.close_date ? `<small>${fmtTime(row.open_date)} – ${fmtTime(row.close_date)}</small>` : ''}`) : '',
+      opt('Trade setup', val(row.trade_setup)),
+      opt('Pattern', val(row.pattern_type)),
+      opt('Execution TF', val(row.execution_tf)),
+      opt('AOF phase', val(row.aof_phase))
+    ])}
+    ${sec('Execution', [
+      line('Entry / Exit', `${_tpNum(row.entry_price)} / ${_tpNum(row.close_price)}`),
+      opt('Stop loss', row.sl_price != null && row.sl_price !== '' ? _tpNum(row.sl_price) : null),
+      opt('Take profit', row.tp_price != null && row.tp_price !== '' ? _tpNum(row.tp_price) : null),
+      opt('Leverage', row.leverage != null && row.leverage !== '' ? _tpNum(row.leverage) + 'x' : null),
+      opt('Exit', val(row.exit_type))
+    ])}
+    ${sec('Performance', [
+      opt('Risk', risk && !risk.suspect ? escapeHtml(fmtMoney(risk.value).replace('+', '')) : null),
+      opt('Planned RR', (() => { const p = _plannedRR(row); return p === null ? null : '1:' + fmtNum(p, 2); })()),
+      opt('RR', row.rr != null && row.rr !== '' ? _tpNum(row.rr) : null),
+      opt('Return (R)', R !== null ? `<span class="${R >= 0 ? 'pos' : 'neg'}">${R >= 0 ? '+' : '−'}${Math.abs(R).toFixed(2)}R</span>` : null),
+      opt('P&amp;L %', row.pnl_percent != null && row.pnl_percent !== '' ? `${Number(row.pnl_percent).toFixed(2)}%` : null)
+    ])}
+    ${sec('Costs', [
+      line('Fees', row.fee != null && row.fee !== '' ? escapeHtml(fmtMoney(-Math.abs(Number(row.fee)))) : '$0.00')
+    ])}`;
+}
+
+function _renderTradeReview(row){
+  const el = document.getElementById('tpReview');
+  const rf = String(row.rules_followed || '').trim();
+  const tags = _canonicalTags(row.unfollowed_rules);
+  const broke = tags.filter(t => _tagKind(t) === 'breach');
+  const notes = tags.filter(t => _tagKind(t) === 'observation');
+  const chips = (arr, cls) => arr.map(t => `<button type="button" class="tp-tag ${cls}" data-tag="${escapeHtml(t)}" onclick="openTagInJournal(this.dataset.tag)" title="Open every trade with this tag">${escapeHtml(t)}</button>`).join('');
+  const cd = _confluenceCellData(row);
+  const post = ['post_be_result', 'post_cutloss_result', 'post_stop_profit_result']
+    .map(k => row[k] && row[k] !== 'N/A' ? `<span class="tp-tag">${escapeHtml(row[k])}</span>` : '').join('');
+  const notesTxt = String(row.notes || '').trim();
+  const log = Array.isArray(row.notes_log) ? row.notes_log : [];
+  el.innerHTML = `
+    <div class="tp-rv-grid">
+      <div class="tp-rv">
+        <div class="tp-rv-k">Rules followed?</div>
+        <div>${rf ? `<span class="tp-chip ${/^yes$/i.test(rf) ? 'win' : 'loss'}">${escapeHtml(rf)}</span>` : '<span class="tp-muted">Not answered</span>'}</div>
+      </div>
+      <div class="tp-rv">
+        <div class="tp-rv-k">Confluence</div>
+        <div>${cd ? `<b class="${cd.state === 'pass' ? 'pos' : cd.state === 'near' ? 'tp-acc' : 'neg'}">${cd.pct}%</b> <span class="tp-muted">${Number(cd.done.toFixed(1))} of ${cd.total} · bar ${cd.bar}%</span>` : '<span class="tp-muted">Not filled in</span>'}</div>
+      </div>
+      <div class="tp-rv tp-rv-wide">
+        <div class="tp-rv-k">Rules broken</div>
+        <div class="tp-tags">${broke.length ? chips(broke, 'rule') : `<span class="tp-muted">${/^yes$/i.test(rf) || tags.some(t => _tagKind(t) === 'sentinel') ? 'None' : '—'}</span>`}</div>
+      </div>
+      <div class="tp-rv tp-rv-wide">
+        <div class="tp-rv-k">Notes tags</div>
+        <div class="tp-tags">${notes.length ? chips(notes, 'note') : '<span class="tp-muted">—</span>'}</div>
+      </div>
+      ${post ? `<div class="tp-rv tp-rv-wide"><div class="tp-rv-k">After the exit</div><div class="tp-tags">${post}</div></div>` : ''}
+      <div class="tp-rv tp-rv-wide">
+        <div class="tp-rv-k">Notes</div>
+        <div class="tp-notes">${notesTxt ? `<p>${escapeHtml(notesTxt)}</p>` : ''}${log.map(e => `<div class="tp-note"><small>${escapeHtml(new Date(e.ts).toLocaleString(undefined, { dateStyle:'medium', timeStyle:'short' }))}</small>${escapeHtml(String(e.text || '').trim())}</div>`).join('')}${!notesTxt && !log.length ? '<span class="tp-muted">No notes yet. Use Add note above.</span>' : ''}</div>
+      </div>
+    </div>`;
 }
 
 // Reuses deleteDrawer()'s confirm+delete+balance-adjust logic without
@@ -16896,6 +17041,186 @@ async function deleteFromTradeView(){
   if(!RAW_TRADES.some(r => r.position_id === row.position_id)){
     closeTradeViewModal();
   }
+}
+
+/* ---------- Trade page: CHARTS ----------
+   Tatlong timeframe: Higher TF, Setup TF, Entry TF — pareho sa setup sa
+   Calculator. Ilang larawan bawat isa. Naka-imbak sa parehong Storage bucket
+   ng setup screenshots ('setup-screenshots', sa folder ng user), at ang mga
+   path ay nasa trading_journal.chart_shots = { htf:[], setup:[], entry:[] }.
+   Ang chart ng naka-link na setup ay ipinapakita rin (nauuna, may tatak na
+   "from setup") — hindi ito kinokopya, kaya hindi ito nabubura rito. */
+const CHART_SLOTS = [
+  { key:'htf',   label:'Higher TF', hint:'The bigger picture: trend and the area you are trading from.' },
+  { key:'setup', label:'Setup TF',  hint:'Where the pattern formed.' },
+  { key:'entry', label:'Entry TF',  hint:'The trigger and the entry itself.' }
+];
+let _tpActiveSlot = 'htf';
+let _tpUploading = {};          // slot -> bilang ng ina-upload
+const _signedUrlCache = {};     // path -> { url, at }
+
+async function _signedUrl(path){
+  const c = _signedUrlCache[path];
+  if(c && Date.now() - c.at < 50 * 60000) return c.url;
+  const { data } = await sb.storage.from('setup-screenshots').createSignedUrl(path, 3600);
+  const url = data && data.signedUrl;
+  if(url) _signedUrlCache[path] = { url, at: Date.now() };
+  return url || null;
+}
+
+function _chartShotsOf(obj){
+  let v = obj && obj.chart_shots;
+  if(typeof v === 'string'){ try{ v = JSON.parse(v); }catch(e){ v = null; } }
+  const out = { htf: [], setup: [], entry: [] };
+  if(v && typeof v === 'object') CHART_SLOTS.forEach(s => { if(Array.isArray(v[s.key])) out[s.key] = v[s.key].filter(Boolean); });
+  return out;
+}
+
+// Ang mga chart ng setup na pinagmulan: ang bagong chart_shots, at ang lumang
+// Before/After (Before → Setup TF, After → Entry TF).
+function _setupShotsFor(row){
+  if(row.linked_setup_id == null) return { htf: [], setup: [], entry: [] };
+  const s = (SAVED_SETUPS || []).find(x => String(x.id) === String(row.linked_setup_id))
+    || (SETUP_SCREENSHOTS && SETUP_SCREENSHOTS[row.linked_setup_id] ? { id: row.linked_setup_id, ...SETUP_SCREENSHOTS[row.linked_setup_id] } : null);
+  const out = _chartShotsOf(s);
+  if(s && s.before_screenshot && !out.setup.includes(s.before_screenshot)) out.setup.unshift(s.before_screenshot);
+  if(s && s.after_screenshot && !out.entry.includes(s.after_screenshot)) out.entry.unshift(s.after_screenshot);
+  return out;
+}
+
+function _renderTradeCharts(row){
+  const el = document.getElementById('tpCharts');
+  const own = _chartShotsOf(row);
+  const fromSetup = _setupShotsFor(row);
+  const pid = row.position_id;
+  el.innerHTML = CHART_SLOTS.map(s => {
+    const items = [...fromSetup[s.key].map(p => ({ p, setup: true })), ...own[s.key].map(p => ({ p, setup: false }))];
+    const up = _tpUploading[s.key] || 0;
+    return `<div class="tp-slot ${_tpActiveSlot === s.key ? 'active' : ''}" data-slot="${s.key}" tabindex="0"
+        onclick="setTradeChartSlot('${s.key}')" onfocus="setTradeChartSlot('${s.key}', true)"
+        ondragover="event.preventDefault(); this.classList.add('drag')" ondragleave="this.classList.remove('drag')"
+        ondrop="onTradeChartDrop(event, '${s.key}')">
+      <div class="tp-slot-head"><b>${s.label}</b><span title="${escapeHtml(s.hint)}">ⓘ</span>
+        <button type="button" class="tp-slot-add" onclick="event.stopPropagation(); pickTradeChart('${s.key}')">+ Add</button></div>
+      <div class="tp-slot-body">
+        ${items.length ? items.map((it, i) => `<div class="tp-shot ${i === 0 ? 'main' : ''}" data-path="${escapeHtml(it.p)}">
+            <img alt="${s.label} chart" data-path="${escapeHtml(it.p)}" onclick="event.stopPropagation(); openTradeChart(this)">
+            ${it.setup ? '<span class="tp-shot-tag">from setup</span>'
+              : `<button type="button" class="tp-shot-x" title="Delete this screenshot" aria-label="Delete" onclick="event.stopPropagation(); deleteTradeChart('${escapeHtml(pid)}', '${s.key}', this.closest('.tp-shot').dataset.path)">✕</button>`}
+          </div>`).join('') : ''}
+        ${up ? `<div class="tp-uploading">Uploading${up > 1 ? ` ${up}` : ''}…<i></i></div>` : ''}
+        ${!items.length && !up ? `<div class="tp-empty">Click, then paste (Ctrl+V)<br><small>or drop an image here</small></div>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+  // Ang mga signed URL ay kinukuha nang hiwalay — lumalabas ang bawat larawan
+  // pagdating nito, hindi naghihintay sa lahat.
+  el.querySelectorAll('img[data-path]').forEach(async img => {
+    try{ const u = await _signedUrl(img.dataset.path); if(u) img.src = u; else img.closest('.tp-shot').classList.add('broken'); }
+    catch(e){ img.closest('.tp-shot').classList.add('broken'); }
+  });
+}
+
+function setTradeChartSlot(slot, quiet){
+  _tpActiveSlot = slot;
+  document.querySelectorAll('#tpCharts .tp-slot').forEach(x => x.classList.toggle('active', x.dataset.slot === slot));
+}
+function pickTradeChart(slot){
+  setTradeChartSlot(slot);
+  document.getElementById('tpChartFile').click();
+}
+function onTradeChartFiles(input){
+  const files = [...(input.files || [])].filter(f => f.type.startsWith('image/'));
+  input.value = '';
+  if(files.length) _uploadTradeCharts(_tpActiveSlot, files);
+}
+function onTradeChartDrop(e, slot){
+  e.preventDefault();
+  e.currentTarget.classList.remove('drag');
+  const files = [...(e.dataTransfer && e.dataTransfer.files || [])].filter(f => f.type.startsWith('image/'));
+  setTradeChartSlot(slot);
+  if(files.length) _uploadTradeCharts(slot, files);
+}
+function openTradeChart(img){
+  if(img.src) openLightbox(img.src);
+}
+
+// Paste: sa pahina ng trade, kapag walang bukas na modal o drawer.
+document.addEventListener('paste', (e) => {
+  if(typeof currentView === 'undefined' || currentView !== 'trade') return;
+  if(document.querySelector('.modal-overlay.open') || document.getElementById('drawer')?.classList.contains('open')) return;
+  const t = e.target;
+  if(t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+  const files = [...(e.clipboardData && e.clipboardData.items || [])]
+    .filter(i => i.type && i.type.startsWith('image/')).map(i => i.getAsFile()).filter(Boolean);
+  if(!files.length) return;
+  e.preventDefault();
+  _uploadTradeCharts(_tpActiveSlot, files);
+});
+
+async function _saveTradeChartShots(pid, shots){
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${TABLE_NAME}?position_id=eq.${encodeURIComponent(pid)}`, {
+    method: 'PATCH',
+    headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${USER_ACCESS_TOKEN}`,
+               'Content-Type': 'application/json', 'Prefer': 'return=representation' },
+    body: JSON.stringify({ chart_shots: shots })
+  });
+  if(!res.ok){
+    const t = await res.text();
+    throw new Error(/chart_shots/.test(t)
+      ? 'The chart column is not in the database yet. Run supabase_trading_journal_chart_shots.sql in Supabase, then try again.'
+      : t);
+  }
+  const raw = RAW_TRADES.find(r => r.position_id === pid);
+  if(raw) raw.chart_shots = shots;
+}
+
+async function _uploadTradeCharts(slot, files){
+  const row = tradeViewList[tradeViewIndex];
+  if(!row) return;
+  const pid = row.position_id;
+  _tpUploading[slot] = (_tpUploading[slot] || 0) + files.length;
+  _renderTradeCharts(row);
+  try{
+    const { data: { user } } = await sb.auth.getUser();
+    const paths = [];
+    for(const f of files){
+      const ext = (f.type && f.type.split('/')[1]) || 'png';
+      const safePid = String(pid).replace(/[^A-Za-z0-9_-]/g, '');
+      const path = `${user.id}/trade_${safePid}_${slot}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}.${ext}`;
+      const { error } = await sb.storage.from('setup-screenshots').upload(path, f, { contentType: f.type || 'image/png' });
+      if(error) throw error;
+      paths.push(path);
+      _tpUploading[slot]--;
+    }
+    const raw = RAW_TRADES.find(r => r.position_id === pid) || row;
+    const shots = _chartShotsOf(raw);
+    shots[slot] = [...shots[slot], ...paths];
+    await _saveTradeChartShots(pid, shots);
+    showToast(`${paths.length} screenshot${paths.length === 1 ? '' : 's'} added to ${CHART_SLOTS.find(s => s.key === slot).label}`);
+  }catch(e){
+    console.error('Chart upload failed:', e);
+    await customAlert(`Couldn't add the screenshot: ${e.message || e}`);
+  }finally{
+    _tpUploading[slot] = 0;
+    if(currentView === 'trade' && tradeViewList[tradeViewIndex] && tradeViewList[tradeViewIndex].position_id === pid) renderTradeViewModal();
+  }
+}
+
+async function deleteTradeChart(pid, slot, path){
+  if(!(await customConfirm('Delete this screenshot?'))) return;
+  try{
+    const raw = RAW_TRADES.find(r => r.position_id === pid);
+    const shots = _chartShotsOf(raw);
+    shots[slot] = shots[slot].filter(p => p !== path);
+    await _saveTradeChartShots(pid, shots);
+    // Ang file mismo — hindi mahalaga kung pumalya; wala na ito sa trade.
+    try{ await sb.storage.from('setup-screenshots').remove([path]); }catch(e){}
+    showToast('Screenshot deleted');
+  }catch(e){
+    await customAlert(`Couldn't delete it: ${e.message || e}`);
+  }
+  if(currentView === 'trade') renderTradeViewModal();
 }
 
 function openDrawer(mode, positionId, prefill){
@@ -17290,6 +17615,8 @@ function renderDrawerFields(){
 function closeDrawer(){
   document.getElementById('drawerOverlay').classList.remove('open');
   document.getElementById('drawer').classList.remove('open');
+  // Bukas ang pahina ng trade sa likod: iguhit ulit, baka na-edit.
+  if(typeof currentView !== 'undefined' && currentView === 'trade') setTimeout(() => { try{ renderTradeViewModal(); }catch(e){} }, 50);
   // Dismissing the drawer abandons a multi-account run — including the tickets
   // already pasted into it. Without this they would sit in memory and reappear
   // attached to whatever was journaled next.
@@ -24793,7 +25120,7 @@ async function saveConfluenceModal(){
       const idx = RAW_TRADES.findIndex(r => r.position_id === confluenceTarget.positionId);
       if(idx !== -1 && updated[0]) RAW_TRADES[idx] = updated[0];
       renderJournalTable();
-      if(document.getElementById('tradeViewModal').classList.contains('open')) renderTradeViewModal();
+      if(currentView === 'trade') renderTradeViewModal();
     }
     closeConfluenceModal();
     showToast('Confluence saved');
@@ -25490,9 +25817,14 @@ function renderSavedSetups(){
 // Before/After are two fixed, independent slots (not a growing log) — each
 // pasted image replaces whatever was in that slot. Uploaded to storage only
 // on Save, so cancelling out of the modal costs nothing.
-let activeScreenshotSlot = 'before';
-let pendingScreenshotBlobs = { before: null, after: null };
-let removedScreenshotSlots = { before: false, after: false };
+/* Tatlo na ngayon: Higher TF, Setup TF, Entry TF (CHART_SLOTS), naka-imbak sa
+   position_setups.chart_shots. Ang lumang Before/After ay binabasa pa rin:
+   Before → Setup TF, After → Entry TF, hanggang palitan o alisin mo. */
+const SETUP_SHOT_SLOTS = ['htf', 'setup', 'entry'];
+const SETUP_LEGACY_COL = { setup: 'before_screenshot', entry: 'after_screenshot' };
+let activeScreenshotSlot = 'htf';
+let pendingScreenshotBlobs = { htf: null, setup: null, entry: null };
+let removedScreenshotSlots = { htf: false, setup: false, entry: false };
 
 function setActiveScreenshotSlot(slot){
   activeScreenshotSlot = slot;
@@ -25502,7 +25834,15 @@ function setActiveScreenshotSlot(slot){
 // camera roll, or "Take Photo" on mobile) for whichever slot was clicked.
 function triggerScreenshotFilePicker(slot){
   activeScreenshotSlot = slot;
-  document.getElementById(slot === 'before' ? 'setupNotesBeforeFileInput' : 'setupNotesAfterFileInput').click();
+  document.getElementById(`setupNotes_${slot}_File`).click();
+}
+
+// Ang larawang nasa isang slot ng setup: ang bago, o ang lumang Before/After.
+function _setupSlotPath(s, slot){
+  const shots = _chartShotsOf(s);
+  if(shots[slot] && shots[slot][0]) return shots[slot][0];
+  const legacy = SETUP_LEGACY_COL[slot];
+  return legacy && s && s[legacy] ? s[legacy] : null;
 }
 
 function handleScreenshotFileSelect(slot, inputEl){
@@ -25515,7 +25855,7 @@ function handleScreenshotFileSelect(slot, inputEl){
 }
 
 function _screenshotZoneId(slot){
-  return slot === 'before' ? 'setupNotesBeforeDropzone' : 'setupNotesAfterDropzone';
+  return `setupNotes_${slot}_Dropzone`;
 }
 
 document.addEventListener('paste', (e) => {
@@ -25553,14 +25893,14 @@ function removeScreenshotSlot(slot){
 }
 
 function resetScreenshotSlots(){
-  activeScreenshotSlot = 'before';
-  pendingScreenshotBlobs = { before: null, after: null };
-  removedScreenshotSlots = { before: false, after: false };
+  activeScreenshotSlot = 'htf';
+  pendingScreenshotBlobs = { htf: null, setup: null, entry: null };
+  removedScreenshotSlots = { htf: false, setup: false, entry: false };
 }
 
 async function loadScreenshotSlotsIntoModal(s){
-  for(const slot of ['before','after']){
-    const path = s[`${slot}_screenshot`];
+  for(const slot of SETUP_SHOT_SLOTS){
+    const path = _setupSlotPath(s, slot);
     const zone = document.getElementById(_screenshotZoneId(slot));
     if(!zone) continue;
     if(path){
@@ -25645,8 +25985,7 @@ async function saveSetupNotes(){
 
     const symbol = document.getElementById('setupNotesSymbol').value.trim() || null;
     const newText = document.getElementById('setupNotesNewEntry').value.trim();
-    const hasScreenshotChange = pendingScreenshotBlobs.before || pendingScreenshotBlobs.after
-      || removedScreenshotSlots.before || removedScreenshotSlots.after;
+    const hasScreenshotChange = SETUP_SHOT_SLOTS.some(k => pendingScreenshotBlobs[k] || removedScreenshotSlots[k]);
     if(!newText && !hasScreenshotChange && symbol === (s.symbol || null)){
       await customAlert('Nothing to save — enter a Symbol, write a New Note, or paste a screenshot first.');
       return;
@@ -25655,12 +25994,20 @@ async function saveSetupNotes(){
     if(newText) log.push({ ts: new Date().toISOString(), text: newText });
 
     const patch = { symbol, notes_log: log };
-    for(const slot of ['before','after']){
-      if(pendingScreenshotBlobs[slot]){
-        patch[`${slot}_screenshot`] = await uploadSetupScreenshot(pendingScreenshotBlobs[slot], editingSetupNotesId, slot);
-      }else if(removedScreenshotSlots[slot]){
-        patch[`${slot}_screenshot`] = null;
+    if(hasScreenshotChange){
+      // Isang larawan bawat slot dito; ang pinalitan o inalis ay pinapalitan
+      // sa chart_shots, at ang lumang Before/After na katapat ay nililinis para
+      // hindi ito bumalik.
+      const shots = _chartShotsOf(s);
+      for(const slot of SETUP_SHOT_SLOTS){
+        if(pendingScreenshotBlobs[slot]){
+          shots[slot] = [await uploadSetupScreenshot(pendingScreenshotBlobs[slot], editingSetupNotesId, slot)];
+        }else if(removedScreenshotSlots[slot]){
+          shots[slot] = [];
+        }else continue;
+        if(SETUP_LEGACY_COL[slot] && s[SETUP_LEGACY_COL[slot]]) patch[SETUP_LEGACY_COL[slot]] = null;
       }
+      patch.chart_shots = shots;
     }
 
     const res = await fetch(`${SUPABASE_URL}/rest/v1/position_setups?id=eq.${editingSetupNotesId}`, {
@@ -25673,7 +26020,11 @@ async function saveSetupNotes(){
       },
       body: JSON.stringify(patch)
     });
-    if(!res.ok) throw new Error(await res.text());
+    if(!res.ok){
+      const t = await res.text();
+      throw new Error(/chart_shots/.test(t)
+        ? 'The chart column is not in the database yet. Run supabase_trading_journal_chart_shots.sql in Supabase, then try again.' : t);
+    }
     const rows = await res.json();
     if(!rows.length){
       throw new Error("Nothing actually updated in the database (0 rows) — the UPDATE policy on position_setups is probably missing. Run supabase_position_setups_add_update_policy.sql in Supabase.");
@@ -25776,7 +26127,7 @@ async function saveTradeNote(){
     // The Trade View modal (if that's where "Add Note" was opened from)
     // sits open in the background — refresh its Notes section immediately
     // instead of making the user close and reopen it to see the new entry.
-    if(document.getElementById('tradeViewModal').classList.contains('open')) renderTradeViewModal();
+    if(currentView === 'trade') renderTradeViewModal();
   }catch(e){
     console.error("Couldn't save trade note:", e);
     errEl.textContent = "Couldn't save — make sure you've run supabase_trading_journal_add_notes_log.sql in Supabase.";
