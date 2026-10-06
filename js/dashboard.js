@@ -15524,6 +15524,24 @@ function parseThe5ersEasyAddText(raw){
     parsed.win_loss = pnl > 0 ? 'Win' : (pnl < 0 ? 'Loss' : 'Breakeven');
   }
 
+  /* ANG QTY NG THE5ERS AY LOTS, HINDI UNITS.
+
+     Sa gold, 1 lot = 100 oz: "0.42" ay 42 oz. Ang journal ay nag-iimbak ng
+     units (ang Risk Amount ay |entry − SL| × units), kaya ang 0.42 ay
+     nagbigay ng risk na 100 beses na mas maliit. Iba-iba ang laki ng lot kada
+     instrument (gold 100, BTC 1, forex 100,000), kaya hindi ito hinuhulaan
+     mula sa pangalan: kinukuwenta mula sa sariling P&L ng row. Ang units ay
+     gross P&L ÷ galaw ng presyo; ang hinati sa lots ay ang laki ng lot.
+     Tinatanggap lang kapag malapit ito sa isang malinis na laki (1, 10,
+     100…); kung hindi, iniiwan ang Qty gaya ng nasa row. */
+  if(qty > 0 && entry > 0 && exit > 0 && entry !== exit && parsed.profit_loss != null && parsed.trade_type){
+    const move = (exit - entry) * (parsed.trade_type === 'Long' ? 1 : -1);
+    const units = parsed.profit_loss / move;
+    const lot = units / Math.abs(qty);
+    const snap = [1, 10, 100, 1000, 10000, 100000].find(s => Math.abs(lot - s) / s < 0.03);
+    if(snap && snap !== 1) parsed.position_size = Math.round(Math.abs(qty) * snap * 1e6) / 1e6;
+  }
+
   if(parsed.entry_price && parsed.close_price){
     const rawPct = (parsed.close_price - parsed.entry_price) / parsed.entry_price * 100;
     parsed.pnl_percent = parsed.trade_type === 'Short' ? -rawPct : rawPct;
@@ -24453,6 +24471,10 @@ function journalFromSetup(id){
     // a bulk save merges the prefill straight into the insert, and Postgres
     // rejects the whole batch over a column that doesn't exist.
     rr: rr,
+    /* Ang leverage na binalak sa calculator. Ang paste ng Upscale ay may sarili
+       nitong "LONG x3" at iyon ang mananaig (ang naging tunay); ang The5ers
+       ay walang leverage sa row, kaya ito ang pupuno. */
+    leverage: s.leverage != null && s.leverage !== '' ? Number(s.leverage) : undefined,
     trade_type: s.trade_type || undefined,
     pattern_type: s.pattern_type || undefined,
     // The PLANNED levels from the calculator — entry_price is left to the
@@ -24492,6 +24514,7 @@ function journalFromSetup(id){
        naman nito ginalaw. Inaalis dito, kung saan alam natin ang mode. */
     delete prefill.account;
     delete prefill.position_size;
+    delete prefill.leverage;    // realOnly din, gaya ng account at quantity
     delete prefill.rr;          // kinukuwenta mula sa entry/TP/SL, hindi naka-imbak
     drawerJournalSetupId = id;
     pendingJournalPrefill = null;
