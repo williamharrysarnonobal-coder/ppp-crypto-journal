@@ -3697,6 +3697,9 @@ function renderEquityCurve(){
    trade na iyon sa Trade Journals. Pareho ang pangalan ng function para hindi
    magalaw ang limang lugar na tumatawag dito. */
 function renderWinLossChart(){
+  // Kasama ng Trade Quality ang Streaks — iisang lugar ng pagtawag, kaya
+  // sumusunod ito sa bawat pagbabago ng filter.
+  try{ renderStreaksPanel(); }catch(e){ console.error('Streaks failed:', e); }
   const body = document.getElementById('tradeQualityBody');
   if(!body){ return _renderWinLossDonut(); }
   if(winLossChartRef){ winLossChartRef.destroy(); winLossChartRef = null; }
@@ -3726,6 +3729,47 @@ function renderWinLossChart(){
     </div>
     <div class="tq-foot">${be ? `Breakeven: ${counts['Good BE'] || 0} good · ${counts['Bad BE'] || 0} bad · ` : ''}${rated} rated${unrated ? ` · ${unrated} without Rules Followed?` : ''}</div>`;
 }
+/* STREAKS — ang pinakamahabang sunod-sunod, sa mga trade na nasa view.
+
+   Trades: sunod-sunod na Win o Loss ayon sa close date. Ang Breakeven ay
+   nilalaktawan (hindi pumuputol at hindi nagdadagdag), gaya ng Current streak
+   sa KPI. Days: sunod-sunod na araw ng trading na positibo o negatibo ang net
+   P&L; ang araw na walang trade ay hindi pumuputol, ang araw na $0 ay
+   pumuputol. Ang kasalukuyan ay nakasulat sa tabi ng bawat isa. */
+function renderStreaksPanel(){
+  const el = document.getElementById('streaksBody');
+  if(!el) return;
+  const sorted = [...FILTERED].filter(x => x.close_date).sort((a, b) => a.close_date - b.close_date);
+  if(!sorted.length){ el.innerHTML = '<div class="empty-state">No trades in view.</div>'; return; }
+  const runs = seq => {
+    let best = { win: 0, loss: 0 }, cur = null, n = 0;
+    seq.forEach(v => {
+      if(v === null) { cur = null; n = 0; return; }
+      if(v === cur) n++; else { cur = v; n = 1; }
+      if(n > best[v]) best[v] = n;
+    });
+    return { best, cur, n };
+  };
+  const tradeSeq = sorted.map(t => _isWin(t) ? 'win' : _isLoss(t) ? 'loss' : undefined).filter(v => v !== undefined);
+  const tr = runs(tradeSeq);
+  const dayNet = new Map();
+  sorted.forEach(t => {
+    const d = new Date(t.close_date);
+    const k = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+    dayNet.set(k, (dayNet.get(k) || 0) + netPnl(t));
+  });
+  const daySeq = [...dayNet.values()].map(v => v > 0 ? 'win' : v < 0 ? 'loss' : null);
+  const dr = runs(daySeq);
+  const now = (r, kind) => r.cur === kind && r.n > 0 ? `<span class="sk-now">now ${r.n}</span>` : '';
+  const row = (label, val, cls, nowHtml) =>
+    `<div class="sk-row"><span>${label}</span><span class="sk-val">${nowHtml}<b class="${cls}">${val}</b></span></div>`;
+  el.innerHTML =
+    row('Max win streak', tr.best.win, 'pos', now(tr, 'win')) +
+    row('Max loss streak', tr.best.loss, 'neg', now(tr, 'loss')) +
+    row('Max winning days', dr.best.win, 'pos', now(dr, 'win')) +
+    row('Max losing days', dr.best.loss, 'neg', now(dr, 'loss'));
+}
+
 // Mula sa Trade Quality: buksan ang Trade Journals na naka-filter sa kahong iyon.
 function openTradeQualityInJournal(q){
   JOURNAL_ACTIVE_FILTERS = [{ key: 'trade_quality', value: q }];
@@ -4096,6 +4140,11 @@ const PANEL_INFO = {
     `Running total of <b>net P&amp;L</b> (profit minus fee), trades ordered by
      <b>close date</b>. It starts at zero — it's the change over the selected
      range, not your account balance.`],
+  streaks: ['Streaks',
+    `The longest runs in the trades in view. <b>Win / loss streak</b> counts trades
+     in close order; breakevens are skipped and do not break a run. <b>Winning /
+     losing days</b> counts trading days by net P&amp;L — a day with no trades does
+     not break a run, a flat day does. "now" is the run you are on at the moment.`],
   quality: ['Trade Quality',
     `Each trade by <b>Rules Followed?</b> and <b>Win/Loss</b>: Good Win and Good Loss
      followed your rules, Bad Win and Bad Loss broke one. Counted in <b>trades</b>,
