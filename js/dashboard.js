@@ -13884,7 +13884,7 @@ function renderJournalFilterChips(){
                    (document.getElementById('journalMonthFilter')?.value ?? 'all') !== 'all' ||
                    !!_journalDateRange();
     const anything = JOURNAL_ACTIVE_FILTERS.length || JOURNAL_BLANK_FILTER || period ||
-      JOURNAL_INCOMPLETE_ONLY || JOURNAL_INVALID_ONLY || (document.getElementById('journalSearch')?.value || '').trim();
+      JOURNAL_INCOMPLETE_ONLY || JOURNAL_INVALID_ONLY || (typeof JOURNAL_NUMBERS_ONLY !== 'undefined' && JOURNAL_NUMBERS_ONLY) || (document.getElementById('journalSearch')?.value || '').trim();
     clearBtn.style.display = anything ? '' : 'none';
   }
 }
@@ -14178,6 +14178,7 @@ function clearJournalFilters(){
   setJournalBlankFilter(null);
   JOURNAL_INCOMPLETE_ONLY = false;
   JOURNAL_INVALID_ONLY = false;
+  if(typeof JOURNAL_NUMBERS_ONLY !== 'undefined') JOURNAL_NUMBERS_ONLY = false;
   renderJournalTable();
 }
 
@@ -14703,6 +14704,7 @@ function getFilteredJournalRows(exceptKey){
 
   if(JOURNAL_INCOMPLETE_ONLY) rows = rows.filter(r => _journalMissingFields(r).length);
   if(JOURNAL_INVALID_ONLY) rows = rows.filter(r => _journalInvalidFields(r).length);
+  if(typeof JOURNAL_NUMBERS_ONLY !== 'undefined' && JOURNAL_NUMBERS_ONLY) rows = rows.filter(r => _tradeNumberIssues(r).length);
 
   // sort by Close Date (most recent first) — matches the same field the
   // Calendar, Reports, and Discipline Radar all already use as the
@@ -14760,6 +14762,52 @@ let JOURNAL_INVALID_ONLY = false;
 function toggleJournalInvalidOnly(){
   JOURNAL_INVALID_ONLY = !JOURNAL_INVALID_ONLY;
   renderJournalTable();
+}
+
+/* ANG MGA NUMERONG HINDI MAGKATUGMA. Ang bawat metric (win rate, R, P&L,
+   Price Move, Account %) ay nakasalalay sa iilang field ng trade. Kapag
+   nagkakasalungatan ang mga iyon, may mali sa isa sa kanila, at tahimik na
+   nadadala ang mali sa lahat ng Dashboard. Mga tiyak na salungatan lang ang
+   hinahanap dito, hindi hula:
+   - Win/Loss na salungat sa sign ng P&L;
+   - direksyon + entry/exit na salungat sa sign ng P&L (maling Long/Short o
+     presyo);
+   - Quantity na hindi tugma sa P&L ÷ galaw ng presyo (hal. lots imbes na units);
+   - TP sa maling panig ng entry; negatibong fee; close bago open. */
+let JOURNAL_NUMBERS_ONLY = false;
+function toggleJournalNumbersOnly(){
+  JOURNAL_NUMBERS_ONLY = !JOURNAL_NUMBERS_ONLY;
+  renderJournalTable();
+}
+function _tradeNumberIssues(r){
+  if(!r || r.is_paper === true || r.is_paper === 'true') return [];
+  const out = [];
+  const num = v => { const n = parseFloat(v); return Number.isFinite(n) ? n : null; };
+  const gross = num(r.profit_loss), fee = num(r.fee);
+  const e = num(r.entry_price), x = num(r.close_price), tp = num(r.tp_price), q = num(r.position_size);
+  const dir = String(r.trade_type || '').trim().toLowerCase();
+  const sgn = dir === 'long' ? 1 : dir === 'short' ? -1 : 0;
+  const wl = String(r.win_loss || '').trim().toLowerCase();
+  if(gross !== null && Math.abs(gross) >= 0.5){
+    if(wl === 'win' && gross < 0) out.push(`Marked Win, but P&L is ${fmtMoney(gross)}.`);
+    if((wl === 'loss' || wl === 'liquidated') && gross > 0) out.push(`Marked Loss, but P&L is ${fmtMoney(gross)}.`);
+  }
+  if(sgn && e > 0 && x > 0 && gross !== null && Math.abs(gross) >= 1){
+    const move = (x - e) * sgn;
+    if(Math.abs(x - e) / e > 0.0005 && Math.sign(move) !== Math.sign(gross)){
+      out.push(`${r.trade_type} from ${e} to ${x} should be a ${move > 0 ? 'profit' : 'loss'}, but P&L is ${fmtMoney(gross)}. Check the direction, the prices or the P&L.`);
+    }else if(q > 0 && Math.abs(x - e) / e > 0.001 && Math.abs(gross) >= 5){
+      const units = Math.abs(gross / (x - e));
+      const ratio = q / units;
+      if(ratio < 0.6 || ratio > 1.67){
+        out.push(`Quantity ${q} does not match the P&L: ${fmtMoney(gross)} over a move of ${Math.abs(x - e).toLocaleString(undefined, { maximumFractionDigits: 5 })} means about ${units.toLocaleString(undefined, { maximumFractionDigits: 4 })} units${ratio < 0.2 ? ' (lots instead of units?)' : ''}. Risk and R use this quantity.`);
+      }
+    }
+  }
+  if(sgn && e > 0 && tp > 0 && (tp - e) * sgn < 0) out.push(`TP ${tp} is on the wrong side of the entry for a ${r.trade_type}.`);
+  if(fee !== null && fee < 0) out.push(`Fee is negative (${fee}). Fees are a cost and should be positive, unless this was a swap credit.`);
+  if(r.open_date && r.close_date && new Date(r.close_date) < new Date(r.open_date)) out.push('Close date is before the open date.');
+  return out;
 }
 
 function warnIconSVG(){
@@ -15080,7 +15128,12 @@ function renderJournalTable(){
       : (invalid ? ` · <span class="journal-invalid-count" onclick="toggleJournalInvalidOnly()" title="${
           escapeHtml(_journalInvalidSummary(rows).map(([label, n]) => `${label} (${n})`).join('\n') +
             '\n\nClick to show only these')
-        }">${invalid} to fix</span>` : ''));
+        }">${invalid} to fix</span>` : '')) +
+    (() => {
+      if(JOURNAL_NUMBERS_ONLY) return ` · <span class="journal-invalid-count" onclick="toggleJournalNumbersOnly()" title="Show all trades again">showing number checks only ✕</span>`;
+      const bad = rows.filter(r => _tradeNumberIssues(r).length).length;
+      return bad ? ` · <span class="journal-invalid-count" onclick="toggleJournalNumbersOnly()" title="${escapeHtml('Trades whose numbers contradict each other (Win/Loss vs P&L, direction vs prices, quantity vs P&L). Click to show only these; open one to see what is off.')}">${bad} number check${bad === 1 ? '' : 's'}</span>` : '';
+    })();
 
   if(rows.length === 0){
     table.innerHTML = `<tr><td colspan="99" style="padding:24px;color:var(--muted);">No trades found.</td></tr>`;
@@ -16687,6 +16740,7 @@ let tradeViewIndex = -1;
    Ang ‹ Previous / Next › ay sumusunod sa listahan ng Trade Journals gaya ng
    dati, at ang "← Trade Journals" ay bumabalik sa pinanggalingan. */
 let _tradePageFrom = 'journal';
+let _tpSetupsRequested = false;
 function openTradeViewModal(positionId){
   tradeViewList = getFilteredJournalRows();
   tradeViewIndex = tradeViewList.findIndex(r => r.position_id === positionId);
@@ -16879,7 +16933,17 @@ function renderTradeViewModal(){
   tradeViewList[tradeViewIndex] = row;
 
   _renderTradePageHead(row);
-  document.getElementById('tradeViewSetupNotesBtn').style.display = row.linked_setup_id ? '' : 'none';
+  // Ang mga numerong nagkakasalungatan — nasa itaas, dahil mali ang lahat ng
+  // metric na galing sa trade na ito hangga't hindi naaayos.
+  const issues = _tradeNumberIssues(row);
+  document.getElementById('tpIssues').innerHTML = issues.length
+    ? `<div class="tp-issues"><b>⚠ These numbers don't add up</b><ul>${issues.map(i => `<li>${escapeHtml(i)}</li>`).join('')}</ul>
+        <span>Every dashboard metric uses them. Fix with <a href="#" onclick="event.preventDefault(); editFromTradeView()">Edit</a>.</span></div>` : '';
+  // Ang setup notes ay kailangan ng SAVED_SETUPS; kunin minsan kung wala pa.
+  if(row.linked_setup_id != null && !SAVED_SETUPS_LOADED && !_tpSetupsRequested && typeof loadSavedSetups === 'function'){
+    _tpSetupsRequested = true;
+    Promise.resolve(loadSavedSetups()).then(() => { if(currentView === 'trade') renderTradeViewModal(); }).catch(() => {});
+  }
   try{ _renderTradeDetails(row); }catch(e){ console.error('Trade details failed:', e); }
   try{ _renderTradeCharts(row); }catch(e){ console.error('Trade charts failed:', e); }
 
@@ -16939,10 +17003,22 @@ function renderTradeViewModal(){
   };
   const conf = _renderTradeViewConfluenceGroup(row)
     .replace('<div class="field-row span-2 field-group-title">', '<div class="tp-card-t">');
+  /* Notes ng setup, read-only — PERO ang mga kinopya na sa Notes ng trade
+     noong ni-journal ay hindi na inuulit. Ang naiiwan ay ang mga isinulat sa
+     setup pagkatapos noon. Ang Edit nito ay sa Calculator. */
+  const setupCard = (() => {
+    const s = row.linked_setup_id != null ? (SAVED_SETUPS || []).find(x => String(x.id) === String(row.linked_setup_id)) : null;
+    const plain = String(row.notes || '');
+    const extra = (s && Array.isArray(s.notes_log) ? s.notes_log : []).filter(e => e && e.text && !plain.includes(String(e.text).trim()));
+    if(!extra.length) return '';
+    return `<div class="tp-card"><div class="tp-card-t">From the setup</div>${extra.map(e =>
+      `<div class="field-row span-2"><label>${escapeHtml(new Date(e.ts).toLocaleString(undefined, { dateStyle:'medium', timeStyle:'short' }))}</label><div class="field-static" style="white-space:pre-wrap;">${escapeHtml(String(e.text).trim())}</div></div>`).join('')}</div>`;
+  })();
   document.getElementById('tradeViewBody').innerHTML =
     JOURNAL_FIELD_GROUPS.map(renderGroup).join('')
     + `<div class="tp-card">${conf}</div>`
-    + renderGroup(NOTES_LINKS_GROUP);
+    + renderGroup(NOTES_LINKS_GROUP)
+    + setupCard;
 
   document.getElementById('tradeViewPrevBtn').disabled = tradeViewIndex <= 0;
   document.getElementById('tradeViewNextBtn').disabled = tradeViewIndex < 0 || tradeViewIndex >= tradeViewList.length - 1;
@@ -26095,13 +26171,26 @@ function openTradeNoteModal(positionId){
   document.getElementById('tradeNoteModalTitle').textContent = `Notes — ${row.symbol || 'Trade'}`;
   document.getElementById('tradeNoteNewEntry').value = '';
   document.getElementById('tradeNoteError').textContent = '';
-  renderTradeNoteLog(row.notes_log || []);
+  renderTradeNoteLog(_tradeNotesAll(row));
   document.getElementById('tradeNoteModal').classList.add('open');
 }
 
 function closeTradeNoteModal(){
   document.getElementById('tradeNoteModal').classList.remove('open');
   editingTradeNotePositionId = null;
+}
+
+/* ISANG NOTES LANG ANG TRADE. Dalawang column ang pinanggagalingan: ang plain
+   na `notes` (mula sa Edit drawer, sa Easy Add, at sa setup notes na kinopya
+   noong ni-journal) at ang `notes_log` (bawat Add note, may oras). Dati ay
+   `notes_log` lang ang nasa log, kaya "No notes yet" kahit may Notes. Ngayon
+   ay pareho: ang plain notes muna (walang oras), saka ang mga may oras. */
+function _tradeNotesAll(row){
+  const out = [];
+  const plain = String(row && row.notes || '').trim();
+  if(plain) out.push({ ts: null, text: plain, label: 'Journal notes' });
+  (Array.isArray(row && row.notes_log) ? row.notes_log : []).forEach(e => out.push(e));
+  return out;
 }
 
 function renderTradeNoteLog(log){
@@ -26112,7 +26201,7 @@ function renderTradeNoteLog(log){
   }
   el.innerHTML = log.map(entry => `
     <div style="margin-bottom:10px;">
-      <div style="font-size:11px;color:var(--muted);font-family:'IBM Plex Mono',monospace;">${new Date(entry.ts).toLocaleString(undefined,{dateStyle:'medium',timeStyle:'short'})}</div>
+      <div style="font-size:11px;color:var(--muted);font-family:'IBM Plex Mono',monospace;">${entry.ts ? new Date(entry.ts).toLocaleString(undefined,{dateStyle:'medium',timeStyle:'short'}) : escapeHtml(entry.label || 'Notes')}</div>
       <div style="font-size:13px;color:var(--ink);white-space:pre-wrap;">${escapeHtml(String(entry.text || '').trim())}</div>
     </div>
   `).join('');

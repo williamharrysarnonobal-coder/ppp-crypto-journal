@@ -17,7 +17,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<link rel="stylesheet" href="css/style.css?v=343">
+<link rel="stylesheet" href="css/style.css?v=344">
 </head>
 <body>
 
@@ -391,7 +391,6 @@
       <div class="tp-actions">
         <button type="button" class="tp-btn" onclick="openTradeNoteModalFromTradeView()">Add note</button>
         <button type="button" class="tp-btn" onclick="openConfluenceModalFromTradeView()">Confluence</button>
-        <button type="button" class="tp-btn" id="tradeViewSetupNotesBtn" onclick="openLinkedSetupNotesFromTradeView()" style="display:none;">Setup notes</button>
         <button type="button" class="tp-btn tp-btn-primary" onclick="editFromTradeView()">Edit</button>
         <button type="button" class="tp-btn tp-btn-icon" onclick="deleteFromTradeView()" title="Delete trade" aria-label="Delete trade"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button>
         <div class="tp-nav">
@@ -409,6 +408,7 @@
         <input type="file" id="tpChartFile" accept="image/*" multiple style="display:none;" onchange="onTradeChartFiles(this)">
       </section>
     </div>
+    <div id="tpIssues"></div>
     <!-- Lahat ng field, naka-table bawat grupo, magkakatabi — walang dropdown. -->
     <div id="tradeViewBody" class="tp-tables"></div>
   </div>
@@ -2633,6 +2633,6 @@
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=2"></script>
-<script src="js/dashboard.js?v=575"></script>
+<script src="js/dashboard.js?v=576"></script>
 </body>
 </html>

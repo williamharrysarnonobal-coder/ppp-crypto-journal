@@ -4597,6 +4597,11 @@ table.journal td.paper-why-col{line-height:1.5;}
 
 /* ---------- Daily Plan ---------- */
 .dp-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:20px;}
+@media(max-width:700px){.dp-summary{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;}}
+body.mobile-mode .dp-summary{grid-template-columns:repeat(2,minmax(0,1fr)) !important;gap:8px;}
+@media(max-width:700px){.dp-tr{font-size:9px;overflow:hidden;text-overflow:ellipsis;} .dp-tr span{display:block;}}
+body.mobile-mode .dp-tr{font-size:9px;overflow:hidden;text-overflow:ellipsis;}
+body.mobile-mode .dp-tr span{display:block;}
 .dp-sum{display:flex;flex-direction:column;gap:3px;padding:12px 14px;border-radius:12px;border:1px solid var(--rule);background:var(--surface);}
 .dp-sum-k{font-size:10.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);}
 .dp-sum-v{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums;}
@@ -4795,6 +4800,11 @@ body.mobile-mode .tp-grid{grid-template-columns:minmax(0,1fr) !important;}
 .tp-card .field-row .field-static{padding:0;text-align:right;font-size:12.5px;word-break:break-word;min-width:0;}
 .tp-card .field-row:has(.tp-tags),.tp-card .field-row.span-2{flex-direction:column;align-items:stretch;gap:6px;}
 .tp-card .field-row:has(.tp-tags) .field-static,.tp-card .field-row.span-2 .field-static{text-align:left;}
+.tp-issues{margin:0 0 16px;padding:12px 16px;border-radius:12px;border:1px solid color-mix(in srgb,var(--warn) 50%,transparent);background:color-mix(in srgb,var(--warn) 10%,var(--surface));font-size:13px;}
+.tp-issues ul{margin:6px 0 6px 18px;padding:0;}
+.tp-issues li{margin:3px 0;}
+.tp-issues span{font-size:12px;color:var(--muted);}
+.tp-issues a{color:var(--accent);}
 .tp-tag.clean{border-color:color-mix(in srgb,var(--win) 45%,transparent);color:var(--win);}
 .tp-all{margin-top:22px;border-top:1px solid var(--rule);padding-top:12px;}
 .tp-all summary{cursor:pointer;font-size:13px;color:var(--muted);font-weight:600;}
