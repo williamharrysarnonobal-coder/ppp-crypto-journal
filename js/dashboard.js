@@ -803,6 +803,7 @@ function switchView(view){
   if(view === 'settings') renderSettingsPage();
   if(view === 'notebook') loadNotes();
   if(view === 'mood') loadMoodEntries();
+  if(view === 'plan') loadDailyPlans();
   if(view === 'reports'){
     // Trading data loads eagerly at app start, but Finance and Diary data
     // are lazy (only loaded when their own view is first opened) — Reports
@@ -16935,7 +16936,8 @@ function _renderTradePageHead(row){
     + (q ? `<span class="tp-chip ${qCls}">${escapeHtml(q)}</span>` : '')
     + (row.account ? `<span class="tp-chip muted">${escapeHtml(row.account)}</span>` : '');
   document.getElementById('tpBackLabel').textContent =
-    _tradePageFrom === 'paper' ? 'Paper Journal' : _tradePageFrom === 'dashboard' ? 'Dashboard' : 'Trade Journals';
+    _tradePageFrom === 'paper' ? 'Paper Journal' : _tradePageFrom === 'dashboard' ? 'Dashboard'
+    : _tradePageFrom === 'plan' ? 'Daily Plan' : 'Trade Journals';
   document.getElementById('tradeViewPrevBtn').disabled = tradeViewIndex <= 0;
   document.getElementById('tradeViewNextBtn').disabled = tradeViewIndex < 0 || tradeViewIndex >= tradeViewList.length - 1;
 }
@@ -27543,6 +27545,223 @@ async function deleteMoodEntry(){
   }catch(e){
     console.error("Couldn't delete mood entry:", e);
     await customAlert("Couldn't delete — please try again.");
+  }
+}
+
+/* ---------- DAILY PLAN ----------
+   Isang plano at review bawat araw (daily_plans, upsert sa user_id+plan_date,
+   gaya ng Diary). Ang calendar ay nagpapakita ng bias, kung sinunod, at ang
+   mga trade na talagang kinuha noong araw na iyon — kaya kita agad kung
+   lumampas ka sa max trades o nag-trade sa araw na "No trade" ang plano. */
+let DAILY_PLANS = [];
+let dpCalMonth = new Date();
+let _dpEditing = null;            // ISO date na bukas sa modal
+let _dpLoaded = false;
+
+async function loadDailyPlans(){
+  try{
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/daily_plans?select=*`, {
+      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}` }
+    });
+    if(!res.ok) throw new Error(await res.text());
+    DAILY_PLANS = await res.json();
+    _dpLoaded = true;
+  }catch(e){
+    console.error("Couldn't load daily plans:", e);
+    DAILY_PLANS = [];
+    _dpLoaded = false;
+  }
+  renderPlanCalendar();
+}
+
+function shiftPlanMonth(dir){
+  dpCalMonth = new Date(dpCalMonth.getFullYear(), dpCalMonth.getMonth() + dir, 1);
+  renderPlanCalendar();
+}
+
+const _dpIso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+// Ang mga tunay na trade na nagsara sa araw na iyon (oras mo).
+function _dpTradesOn(iso){
+  return ALL_TRADES.filter(t => t.close_date && _dpIso(t.close_date) === iso
+    && (typeof _isRealMoney !== 'function' || _isRealMoney(t)));
+}
+const DP_BIAS_CLS = { 'Bullish':'bull', 'Bearish':'bear', 'Neutral':'neutral', 'No trade':'none' };
+const DP_FOLLOW = { 'Yes': ['✓', 'pos'], 'Partly': ['~', 'tp-acc'], 'No': ['✗', 'neg'] };
+
+function renderPlanCalendar(){
+  const grid = document.getElementById('dpCalGrid');
+  if(!grid) return;
+  const y = dpCalMonth.getFullYear(), m = dpCalMonth.getMonth();
+  document.getElementById('dpCalLabel').textContent = dpCalMonth.toLocaleDateString('en-US', { month:'long', year:'numeric' });
+  const byDate = {};
+  DAILY_PLANS.forEach(p => { byDate[p.plan_date] = p; });
+  const firstDow = new Date(y, m, 1).getDay();
+  const days = new Date(y, m + 1, 0).getDate();
+  let html = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => `<div class="cal-dow">${d}</div>`).join('');
+  for(let i = 0; i < firstDow; i++) html += '<div class="cal-cell empty"></div>';
+  const today = _dpIso(new Date());
+  for(let d = 1; d <= days; d++){
+    const iso = `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    const p = byDate[iso];
+    const tr = _dpTradesOn(iso);
+    const net = tr.reduce((a, t) => a + netPnl(t), 0);
+    const over = p && p.max_trades != null && tr.length > p.max_trades;
+    const noTradeBreak = p && p.bias === 'No trade' && tr.length > 0;
+    const f = p && DP_FOLLOW[p.followed];
+    html += `<div class="cal-cell dp-cell${iso === today ? ' today' : ''}${p ? ' has-plan' : ''}" onclick="openDailyPlan('${iso}')" tabindex="0"
+        onkeydown="if(event.key==='Enter') openDailyPlan('${iso}')">
+      <div class="d">${d}${f ? `<b class="dp-f ${f[1]}" title="Followed the plan: ${p.followed}">${f[0]}</b>` : ''}</div>
+      ${p && p.bias ? `<div class="dp-bias"><i class="dp-dot ${DP_BIAS_CLS[p.bias] || ''}"></i>${escapeHtml(p.bias)}</div>` : ''}
+      ${tr.length ? `<div class="dp-tr ${over || noTradeBreak ? 'over' : ''}" title="${tr.length} trade${tr.length === 1 ? '' : 's'}${p && p.max_trades != null ? ` of ${p.max_trades} planned` : ''}">
+          ${tr.length}${p && p.max_trades != null ? `/${p.max_trades}` : ''}T <span class="${net >= 0 ? 'pos' : 'neg'}">${net >= 0 ? '+' : '−'}$${Math.abs(net).toFixed(0)}</span></div>` : ''}
+    </div>`;
+  }
+  const rem = (firstDow + days) % 7;
+  if(rem) for(let i = 0; i < 7 - rem; i++) html += '<div class="cal-cell empty"></div>';
+  grid.innerHTML = html;
+  renderPlanSummary();
+}
+
+/* Ang buod ng buwan — disiplina at resulta magkasama: ilang araw ang may
+   plano, ilang sinunod, at ang win rate sa mga araw na sinunod laban sa hindi. */
+function renderPlanSummary(){
+  const el = document.getElementById('dpSummary');
+  if(!el) return;
+  const y = dpCalMonth.getFullYear(), m = dpCalMonth.getMonth();
+  const inMonth = DAILY_PLANS.filter(p => { const [py, pm] = String(p.plan_date).split('-').map(Number); return py === y && pm === m + 1; });
+  const planned = inMonth.filter(p => p.bias || p.plan_notes || p.key_levels || p.max_trades != null).length;
+  const reviewed = inMonth.filter(p => p.followed);
+  const yes = reviewed.filter(p => p.followed === 'Yes').length;
+  const daysTraded = new Set(ALL_TRADES.filter(t => t.close_date && t.close_date.getFullYear() === y && t.close_date.getMonth() === m
+    && (typeof _isRealMoney !== 'function' || _isRealMoney(t))).map(t => _dpIso(t.close_date)));
+  const tradedNoPlan = [...daysTraded].filter(iso => !inMonth.some(p => p.plan_date === iso)).length;
+  const rateOn = arr => { const tr = arr.flatMap(p => _dpTradesOn(p.plan_date)); const s = _tagArmStats(tr); return { ...s }; };
+  const fol = rateOn(reviewed.filter(p => p.followed === 'Yes'));
+  const not = rateOn(reviewed.filter(p => p.followed !== 'Yes'));
+  const overDays = inMonth.filter(p => p.max_trades != null && _dpTradesOn(p.plan_date).length > p.max_trades).length;
+  const card = (k, v, s, tone) => `<div class="dp-sum ${tone || ''}"><span class="dp-sum-k">${k}</span><span class="dp-sum-v">${v}</span><span class="dp-sum-s">${s}</span></div>`;
+  const pct = s => s.rate === null ? '—' : Math.round(s.rate) + '%';
+  el.innerHTML = !_dpLoaded && !DAILY_PLANS.length
+    ? `<div class="dp-warn">Plans could not be loaded. If this is the first time, run <b>supabase_daily_plans.sql</b> in Supabase.</div>`
+    : card('Days planned', planned, `${daysTraded.size} days traded${tradedNoPlan ? ` · <b class="neg">${tradedNoPlan} without a plan</b>` : ''}`, tradedNoPlan ? 'bad' : '')
+    + card('Followed the plan', reviewed.length ? `${yes} of ${reviewed.length}` : '—', reviewed.length ? `${Math.round(yes / reviewed.length * 100)}% of reviewed days` : 'review a day to see this', reviewed.length && yes / reviewed.length >= 0.8 ? 'good' : '')
+    + card('Win rate · followed days', pct(fol), `${fol.wins}W ${fol.losses}L on days you stuck to it`, 'good')
+    + card('Win rate · other days', pct(not), `${not.wins}W ${not.losses}L when you didn't`, not.settled ? 'bad' : '')
+    + card('Over max trades', overDays, overDays ? 'days you took more than planned' : 'never went over the plan', overDays ? 'bad' : 'good');
+}
+
+function _dpSeg(id, value){
+  document.querySelectorAll(`#${id} button`).forEach(b => {
+    b.classList.toggle('on', b.dataset.v === value);
+    b.setAttribute('aria-pressed', b.dataset.v === value ? 'true' : 'false');
+  });
+}
+function _dpSegValue(id){
+  const b = document.querySelector(`#${id} button.on`);
+  return b ? b.dataset.v : null;
+}
+document.addEventListener('click', e => {
+  const b = e.target.closest && e.target.closest('.dp-seg button');
+  if(!b) return;
+  const seg = b.parentElement;
+  // Pindot ulit sa napili = alisin.
+  _dpSeg(seg.id, b.classList.contains('on') ? null : b.dataset.v);
+});
+
+function openDailyPlan(iso){
+  _dpEditing = iso;
+  const p = DAILY_PLANS.find(x => x.plan_date === iso) || {};
+  const d = new Date(iso + 'T00:00:00');
+  document.getElementById('dpTitle').textContent = d.toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric', year:'numeric' });
+  _dpSeg('dpBias', p.bias || null);
+  _dpSeg('dpFollowed', p.followed || null);
+  document.getElementById('dpMax').value = p.max_trades ?? '';
+  document.getElementById('dpLevels').value = p.key_levels || '';
+  document.getElementById('dpPlan').value = p.plan_notes || '';
+  document.getElementById('dpWell').value = p.went_well || '';
+  document.getElementById('dpImprove').value = p.improve || '';
+  document.getElementById('dpError').textContent = '';
+  document.getElementById('dpDeleteBtn').style.visibility = p.id ? 'visible' : 'hidden';
+  const tr = _dpTradesOn(iso);
+  const net = tr.reduce((a, t) => a + netPnl(t), 0);
+  const broke = tr.filter(t => _brokenRuleTags(t.unfollowed_rules).length || /^no$/i.test(String(t.rules_followed || '').trim())).length;
+  document.getElementById('dpTrades').innerHTML = !tr.length
+    ? '<span class="tp-muted">No trades closed this day.</span>'
+    : `<div class="dp-tr-sum"><b>${tr.length}</b> trade${tr.length === 1 ? '' : 's'}${p.max_trades != null ? ` <span class="${tr.length > p.max_trades ? 'neg' : 'tp-muted'}">(plan: ${p.max_trades})</span>` : ''}
+        · ${tr.filter(_isWin).length}W ${tr.filter(_isLoss).length}L
+        · <b class="${net >= 0 ? 'pos' : 'neg'}">${net >= 0 ? '+' : '−'}$${Math.abs(net).toFixed(2)}</b>
+        · ${broke ? `<span class="neg">${broke} broke a rule</span>` : '<span class="pos">no rules broken</span>'}</div>
+       <div class="dp-tr-list">${tr.map(t => `<button type="button" class="tp-tag" onclick="closeDailyPlan(); openTradeViewModal(${escapeHtml(JSON.stringify(t.position_id))})">${escapeHtml(t.symbol || '')} ${escapeHtml(t.trade_type || '')} <span class="${netPnl(t) >= 0 ? 'pos' : 'neg'}">${netPnl(t) >= 0 ? '+' : '−'}$${Math.abs(netPnl(t)).toFixed(0)}</span></button>`).join('')}</div>`;
+  document.getElementById('dpModal').classList.add('open');
+}
+
+function closeDailyPlan(){
+  document.getElementById('dpModal').classList.remove('open');
+  _dpEditing = null;
+}
+
+async function saveDailyPlan(){
+  const err = document.getElementById('dpError');
+  err.textContent = '';
+  const txt = id => document.getElementById(id).value.trim() || null;
+  const maxRaw = document.getElementById('dpMax').value;
+  const row = {
+    plan_date: _dpEditing,
+    bias: _dpSegValue('dpBias'),
+    max_trades: maxRaw === '' ? null : Math.max(0, parseInt(maxRaw, 10) || 0),
+    key_levels: txt('dpLevels'), plan_notes: txt('dpPlan'),
+    followed: _dpSegValue('dpFollowed'), went_well: txt('dpWell'), improve: txt('dpImprove'),
+    updated_at: new Date().toISOString()
+  };
+  if(!row.bias && row.max_trades == null && !row.key_levels && !row.plan_notes && !row.followed && !row.went_well && !row.improve){
+    err.textContent = 'Nothing to save yet. Pick a bias or write something first.';
+    return;
+  }
+  const btn = document.getElementById('dpSaveBtn');
+  btn.disabled = true; btn.textContent = 'Saving…';
+  try{
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/daily_plans?on_conflict=user_id,plan_date`, {
+      method: 'POST',
+      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}`,
+                 "Content-Type": "application/json", "Prefer": "resolution=merge-duplicates,return=representation" },
+      body: JSON.stringify([row])
+    });
+    if(!res.ok){
+      const t = await res.text();
+      throw new Error(/daily_plans/.test(t) && /does not exist|not find/i.test(t)
+        ? 'The Daily Plan table is not in the database yet. Run supabase_daily_plans.sql in Supabase.' : t);
+    }
+    const rows = await res.json();
+    const saved = rows[0] || row;
+    const i = DAILY_PLANS.findIndex(p => p.plan_date === saved.plan_date);
+    if(i >= 0) DAILY_PLANS[i] = saved; else DAILY_PLANS.push(saved);
+    _dpLoaded = true;
+    closeDailyPlan();
+    renderPlanCalendar();
+    showToast('Plan saved');
+  }catch(e){
+    console.error("Couldn't save daily plan:", e);
+    err.textContent = "Couldn't save: " + e.message;
+  }finally{
+    btn.disabled = false; btn.textContent = 'Save';
+  }
+}
+
+async function deleteDailyPlan(){
+  const p = DAILY_PLANS.find(x => x.plan_date === _dpEditing);
+  if(!p || !p.id) return;
+  if(!(await customConfirm('Delete the plan and review for this day?'))) return;
+  try{
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/daily_plans?id=eq.${p.id}`, {
+      method: 'DELETE', headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}` }
+    });
+    if(!res.ok) throw new Error(await res.text());
+    DAILY_PLANS = DAILY_PLANS.filter(x => x.id !== p.id);
+    closeDailyPlan();
+    renderPlanCalendar();
+    showToast('Plan deleted');
+  }catch(e){
+    await customAlert("Couldn't delete: " + e.message);
   }
 }
 
