@@ -291,6 +291,16 @@ const isChildOf = (o, id) => [].concat(o.parentOrderId || []).includes(id);
 // Fill price of an executed entry order: indexPrice is the execution price,
 // triggerPrice the requested level (crypto fills at the trigger).
 const entryOf = (o) => fromFp9(o.indexPrice) || fromFp9(o.triggerPrice);
+// When an order was filled, as ISO. Upscale's field name is not pinned down in
+// its docs, so the likely ones are tried in order; seconds or ms both work.
+// Null when none is there — the app then uses the time it saw the change.
+const tsOf = (o) => {
+  const v = o && (o.executedAt ?? o.filledAt ?? o.updatedAt ?? o.updateTime ?? o.createdAt);
+  if (v == null || v === '') return null;
+  const n = Number(v);
+  const d = Number.isFinite(n) ? new Date(n < 1e12 ? n * 1000 : n) : new Date(v);
+  return isNaN(d) ? null : d.toISOString();
+};
 // Two prices the same level, within 0.02% (a tick or the spread).
 const sameLevel = (a, b) => a > 0 && b > 0 && Math.abs(a - b) / b < 0.0002;
 
@@ -379,12 +389,21 @@ async function handleUpscale(request, env, action) {
           continue;
         }
         const closer = history.find(o => isChildOf(o, id) && o.status === 'executed');
+        const pnl = closer ? fromFp9(closer.realizedPnl) : null;
         let how = null;
         if (closer) {
           if (closer.type === 'take') how = 'TP Hit';
-          else if (STOP_TYPES.has(closer.type)) how = sameLevel(fromFp9(closer.triggerPrice), entry) ? 'BE Hit' : 'SL Hit';
+          else if (STOP_TYPES.has(closer.type)) {
+            // Ang stop na may kita at wala sa entry ay isang trailing stop na
+            // nag-lock ng kita: "Stop Profit", gaya ng sa Easy Add.
+            how = sameLevel(fromFp9(closer.triggerPrice), entry) ? 'BE Hit'
+              : (pnl != null && pnl > 0) ? 'Stop Profit' : 'SL Hit';
+          }
         }
-        states[id] = { state: 'Closed', how, pnl: closer ? fromFp9(closer.realizedPnl) : null };
+        // Para sa auto-journal: ang exit at ang oras ng fill at ng pagsara.
+        states[id] = { state: 'Closed', how, pnl, entry,
+          exit: closer ? entryOf(closer) : null,
+          openedAt: tsOf(h), closedAt: closer ? tsOf(closer) : null };
       }
       return json({ states });
     }

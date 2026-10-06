@@ -1975,6 +1975,7 @@ function applyFilters(){
   renderCalendar();
   renderEquityCurve();
   renderWinLossChart();
+  renderReviewPanels();
   renderDisciplineRadar();
   renderDayOfWeekChart();
   renderSessionFrequencyChart();
@@ -2175,6 +2176,165 @@ function _winRateOf(trades){
   return decided ? (wins / decided * 100) : null;
 }
 
+/* ANG R NG ISANG TRADE — nasa labas na ng renderKPIs para magamit din ng
+   Weekly / Monthly / Yearly. Ang paliwanag ay nasa renderKPIs. */
+function _setupRiskOf(x){
+  if(x.linked_setup_id == null || !Array.isArray(SAVED_SETUPS)) return null;
+  const s = SAVED_SETUPS.find(z => String(z.id) === String(x.linked_setup_id));
+  const v = s ? Number(s.risk_amount) : NaN;
+  return v > 0 ? v : null;
+}
+function _accSizeOf(x){
+  const a = (TRADING_ACCOUNTS || []).find(z => z.account_name === x.account);
+  const v = a ? Number(a.account_size) : NaN;
+  return v > 0 ? v : null;
+}
+function _tradeR(x){
+  let risk = _setupRiskOf(x);
+  if(!risk){
+    const r = _beAvoidedLoss(x);
+    if(!r || r.suspect || !(r.value > 0)) return null;
+    const size = _accSizeOf(x);
+    if(size && (r.value < size * 0.0005 || r.value > size * 0.05)) return null;
+    risk = r.value;
+  }
+  const R = netPnl(x) / risk;
+  return Math.abs(R) <= 15 ? R : null;
+}
+
+/* WEEKLY · MONTHLY · YEARLY. Tatlong panel na magkatabi, bawat isa may sariling
+   ‹ › para lumipat ng panahon. Sumusunod sa Account at Real money only ng
+   Dashboard, pero HINDI sa Year/Month filter — ang ‹ › mismo ang panahon.
+   Ang linggo ay Lunes hanggang Linggo, sa oras ng browser (Dubai). */
+const REVIEW_OFFSET = { week: 0, month: 0, year: 0 };
+
+function _reviewRange(kind, offset){
+  const now = new Date();
+  let from, to;
+  if(kind === 'week'){
+    const d = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const mon = (d.getDay() + 6) % 7;            // 0 = Lunes
+    from = new Date(d.getFullYear(), d.getMonth(), d.getDate() - mon + offset * 7);
+    to = new Date(from.getFullYear(), from.getMonth(), from.getDate() + 7);
+  }else if(kind === 'month'){
+    from = new Date(now.getFullYear(), now.getMonth() + offset, 1);
+    to = new Date(from.getFullYear(), from.getMonth() + 1, 1);
+  }else{
+    from = new Date(now.getFullYear() + offset, 0, 1);
+    to = new Date(from.getFullYear() + 1, 0, 1);
+  }
+  return { from, to };
+}
+
+function _reviewLabel(kind, offset, r){
+  if(kind === 'week'){
+    const last = new Date(r.to.getTime() - 86400000);
+    const sameMonth = last.getMonth() === r.from.getMonth();
+    const txt = `${r.from.toLocaleDateString('en-US', { month:'short', day:'numeric' })} – ${
+      last.toLocaleDateString('en-US', sameMonth ? { day:'numeric' } : { month:'short', day:'numeric' })}`;
+    return offset === 0 ? `This week · ${txt}` : offset === -1 ? `Last week · ${txt}` : txt;
+  }
+  if(kind === 'month') return r.from.toLocaleDateString('en-US', { month:'long', year:'numeric' });
+  return String(r.from.getFullYear());
+}
+
+function _reviewBase(){
+  const acct = document.getElementById('accountFilter')?.value || 'all';
+  const realOnly = _realMoneyOnly();
+  return ALL_TRADES.filter(t => t.close_date
+    && (acct === 'all' || t.account === acct)
+    && (!realOnly || _isRealMoney(t)));
+}
+
+function _periodStats(trades){
+  const s = _tagArmStats(trades);
+  const net = trades.reduce((a, t) => a + netPnl(t), 0);
+  const rs = trades.map(_tradeR).filter(v => v !== null);
+  const tagged = trades.filter(t => _ruleTags(t.unfollowed_rules).length);
+  const kept = tagged.length ? tagged.filter(t => _isCleanRules(t.unfollowed_rules)).length / tagged.length * 100 : null;
+  const costly = _tagLeaderboard(trades).filter(r => r.losses > 0)
+    .sort((a, b) => b.losses - a.losses || (a.kind === 'breach' ? -1 : 1))[0] || null;
+  const sess = {};
+  trades.forEach(t => { if(t.session) (sess[t.session] = sess[t.session] || []).push(t); });
+  const sessRows = Object.entries(sess).map(([k, arr]) => ({ k, ...(_tagArmStats(arr)) }))
+    .filter(x => x.settled >= 2 && x.rate !== null);
+  // Ang "best" na walang panalo ay hindi best.
+  const bestS = sessRows.filter(x => x.wins > 0).sort((a, b) => b.rate - a.rate || b.settled - a.settled)[0] || null;
+  const worstS = sessRows.slice().sort((a, b) => a.rate - b.rate || b.settled - a.settled)[0] || null;
+  return { ...s, net, R: rs.length ? rs.reduce((a, b) => a + b, 0) : null, rN: rs.length,
+           kept, costly, bestS, worstS: worstS && (!bestS || worstS.k !== bestS.k) ? worstS : null };
+}
+
+function _reviewFix(p){
+  if(!p.n) return '';
+  if(p.costly && p.costly.kind === 'breach' && p.costly.losses >= 2)
+    return `Cut out <b>${escapeHtml(p.costly.tag)}</b>. It was on ${p.costly.losses} of your losing trades.`;
+  if(p.worstS && p.rate !== null && p.worstS.settled >= 3 && p.worstS.rate < p.rate - EM_MIN_GAP)
+    return `Go easy on <b>${escapeHtml(p.worstS.k)}</b>: ${p.worstS.wins} of ${p.worstS.settled} won there.`;
+  if(p.kept !== null && p.kept < 80)
+    return `Rules were kept on ${Math.round(p.kept)}% of tagged trades. Aim for every one.`;
+  if(p.costly && p.costly.losses >= 2)
+    return `Watch <b>${escapeHtml(p.costly.tag)}</b>. It was on ${p.costly.losses} losing trades.`;
+  if(p.n < EM_MIN_N) return `Only ${p.n} trade${p.n === 1 ? '' : 's'} so far. Too few to read anything into yet.`;
+  return 'Nothing stands out. Keep doing what you are doing.';
+}
+
+function renderReviewPanel(kind){
+  const el = document.getElementById('review-' + kind);
+  if(!el) return;
+  const off = REVIEW_OFFSET[kind];
+  const r = _reviewRange(kind, off), pr = _reviewRange(kind, off - 1);
+  const base = _reviewBase();
+  const inR = (t, x) => t.close_date >= x.from && t.close_date < x.to;
+  const p = _periodStats(base.filter(t => inR(t, r)));
+  const q = _periodStats(base.filter(t => inR(t, pr)));
+  const prevWord = { week:'last week', month:'last month', year:'last year' }[kind];
+  const oldest = base.reduce((m, t) => t.close_date < m ? t.close_date : m, new Date());
+  const canBack = pr.to > oldest;
+
+  const delta = (a, b, unit) => {
+    if(a === null || b === null || !q.n) return '';
+    const d = Math.round(a - b);
+    if(!d) return `<span class="rv-d">= ${prevWord}</span>`;
+    return `<span class="rv-d ${d > 0 ? 'pos' : 'neg'}" title="Compared with ${prevWord}">${d > 0 ? '▲' : '▼'} ${Math.abs(d)}${unit}</span>`;
+  };
+  const money = v => `${v >= 0 ? '+' : '−'}$${Math.abs(v).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+  const row = (k, v, extra) => `<div class="rv-line"><span class="rv-k">${k}</span><span class="rv-v">${v}${extra || ''}</span></div>`;
+
+  const head = `<div class="rv-nav">
+      <button type="button" class="rv-arrow" aria-label="Previous" ${canBack ? '' : 'disabled'} onclick="shiftReview('${kind}', -1)">‹</button>
+      <span class="rv-label">${escapeHtml(_reviewLabel(kind, off, r))}</span>
+      <button type="button" class="rv-arrow" aria-label="Next" ${off < 0 ? '' : 'disabled'} onclick="shiftReview('${kind}', 1)">›</button>
+    </div>`;
+  if(!p.n){
+    el.innerHTML = head + `<div class="empty-state">No trades closed in this ${kind}.</div>`;
+    return;
+  }
+  el.innerHTML = head
+    + row('Trades', `<b>${p.n}</b> <span class="rv-sub">${p.wins}W · ${p.losses}L${p.bes ? ` · ${p.bes}BE` : ''}</span>`)
+    + row('Win rate', `<b>${p.rate === null ? '—' : Math.round(p.rate) + '%'}</b>`, delta(p.rate, q.rate, ' pts'))
+    + row('Net P&amp;L', `<b class="${p.net >= 0 ? 'pos' : 'neg'}">${money(p.net)}</b>`)
+    + row('Total R', p.R === null ? '—' : `<b class="${p.R >= 0 ? 'pos' : 'neg'}">${p.R >= 0 ? '+' : '−'}${Math.abs(p.R).toFixed(1)}R</b>${p.rN < p.n ? ` <span class="rv-sub" title="Trades with no usable risk are left out">${p.rN} of ${p.n}</span>` : ''}`)
+    + row('Rules kept', p.kept === null ? '<span class="rv-sub">nothing tagged</span>' : `<b>${Math.round(p.kept)}%</b>`, delta(p.kept, q.kept, ' pts'))
+    + row('Costliest tag', p.costly
+        ? `<a class="rv-tag" data-tag="${escapeHtml(p.costly.tag)}" onclick="openTagInJournal(this.dataset.tag)" title="Open these trades">${escapeHtml(p.costly.tag)}</a> <span class="rv-sub">${p.costly.losses}L</span>`
+        : '<span class="rv-sub">none</span>')
+    + row('Best session', p.bestS ? `${escapeHtml(p.bestS.k)} <span class="rv-sub">${p.bestS.wins}/${p.bestS.settled}</span>` : '<span class="rv-sub">—</span>')
+    + row('Worst session', p.worstS ? `${escapeHtml(p.worstS.k)} <span class="rv-sub">${p.worstS.wins}/${p.worstS.settled}</span>` : '<span class="rv-sub">—</span>')
+    + `<div class="rv-fix">${_reviewFix(p)}</div>`;
+}
+
+function renderReviewPanels(){
+  ['week', 'month', 'year'].forEach(k => {
+    try{ renderReviewPanel(k); }catch(e){ console.error('Review panel failed:', k, e); }
+  });
+}
+
+function shiftReview(kind, step){
+  REVIEW_OFFSET[kind] = Math.min(0, REVIEW_OFFSET[kind] + step);
+  renderReviewPanel(kind);
+}
+
 function renderKPIs(){
   const t = FILTERED;
   const wins = t.filter(_isWin);
@@ -2219,29 +2379,7 @@ function renderKPIs(){
        2. kung wala, ang kinuwentang risk, pero kung makatwiran lamang:
           0.05%–5% ng laki ng account;
        3. ang R na lampas sa ±15 ay hindi isinasama — hindi iyon totoong R. */
-  const setupRisk = x => {
-    if(x.linked_setup_id == null || !Array.isArray(SAVED_SETUPS)) return null;
-    const s = SAVED_SETUPS.find(z => String(z.id) === String(x.linked_setup_id));
-    const v = s ? Number(s.risk_amount) : NaN;
-    return v > 0 ? v : null;
-  };
-  const accSize = x => {
-    const a = (TRADING_ACCOUNTS || []).find(z => z.account_name === x.account);
-    const v = a ? Number(a.account_size) : NaN;
-    return v > 0 ? v : null;
-  };
-  const tradeR = x => {
-    let risk = setupRisk(x);
-    if(!risk){
-      const r = _beAvoidedLoss(x);
-      if(!r || r.suspect || !(r.value > 0)) return null;
-      const size = accSize(x);
-      if(size && (r.value < size * 0.0005 || r.value > size * 0.05)) return null;
-      risk = r.value;
-    }
-    const R = netPnl(x) / risk;
-    return Math.abs(R) <= 15 ? R : null;
-  };
+  const tradeR = _tradeR;
   const winR = wins.map(tradeR).filter(v => v !== null);
   const lossR = losses.map(tradeR).filter(v => v !== null);
   const avgWinR = winR.length ? winR.reduce((a,b)=>a+b,0) / winR.length : null;
@@ -22920,6 +23058,7 @@ async function placeUpscaleOrders(accountIds){
   const placeBtn = document.getElementById('upOrderPlaceBtn');
   placeBtn.disabled = true; placeBtn.textContent = 'Place Order';
   _renderUpscaleNewsWarning();
+  _renderUpscaleHabitWarning(direction, accs);
   document.getElementById('upOrderCancelBtn').textContent = 'Cancel';
   document.getElementById('upOrderModal').classList.add('open');
   _renderUpscaleOrderRows();
@@ -22965,6 +23104,83 @@ async function _renderUpscaleNewsWarning(){
       return `<li>${escapeHtml(e.title)} — ${when} (${t.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'})})</li>`;
     }).join('')}</ul>
     Spreads widen and stops can slip around these releases.</div>`;
+}
+
+/* BABALA MULA SA SARILI MONG JOURNAL. Bago ka pumindot ng Place Order,
+   tinitingnan ang tatlong bagay na alam na ng journal tungkol sa iyo:
+   - pang-ilang trade mo na ito ngayong araw sa bawat account (bawat account
+     ay bilang na hiwalay, gaya ng After a loss sa Discipline);
+   - ilang sunod na talo na ang nauna;
+   - ang session ngayon, at ang direksyong ito sa session na iyon.
+   Lumalabas lang kapag ang grupo ay talagang mas mahina sa average mo
+   (EM_MIN_GAP na puntos, sa EM_MIN_N o higit pang trade). Babala lang. */
+function _upHabitWarnings(direction, accs){
+  const base = ALL_TRADES.filter(t => t.close_date && (typeof _isRealMoney !== 'function' || _isRealMoney(t)));
+  const avg = _tagArmStats(base).rate;
+  if(avg === null) return [];
+  const weak = arr => {
+    const s = _tagArmStats(arr);
+    return s.settled >= EM_MIN_N && s.rate !== null && s.rate < avg - EM_MIN_GAP ? s : null;
+  };
+  const pct = s => `${Math.round(s.rate)}% (${s.wins} of ${s.settled})`;
+  const ord = n => n + (n === 1 ? 'st' : n === 2 ? 'nd' : n === 3 ? 'rd' : 'th');
+  const out = [];
+  const al = _afterLossStats(base);
+
+  // 1. Pang-ilang trade ngayong araw, kada account.
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const byNth = {};
+  accs.forEach(a => {
+    const n = base.filter(t => t.account === a.account_name && t.close_date >= today).length + 1;
+    (byNth[n] = byNth[n] || []).push(a.account_name);
+  });
+  Object.entries(byNth).forEach(([n, names]) => {
+    n = Number(n);
+    if(n < 2) return;
+    const s = weak(al.byNth[Math.min(n, 4)]);
+    if(s) out.push(`This would be your <b>${n >= 4 ? '4th or later' : ord(n)}</b> trade today on ${names.map(escapeHtml).join(', ')}.
+      Those trades win ${pct(s)}, against your ${Math.round(avg)}% average.`);
+  });
+
+  // 2. Sunod-sunod na talo bago ito.
+  let run = 0;
+  [...base].sort((a, b) => a.close_date - b.close_date).forEach(t => {
+    if(_isLoss(t)) run++; else if(_isWin(t)) run = 0;
+  });
+  if(run >= 1){
+    const s = weak(al.byRun[run === 1 ? 'l1' : run === 2 ? 'l2' : 'l3']);
+    if(s) out.push(`Your last <b>${run} trade${run === 1 ? ' was a loss' : 's were losses'}</b>.
+      After ${run >= 3 ? '3 or more losses' : run === 1 ? 'a loss' : '2 losses'} in a row you win ${pct(s)}.`);
+  }
+
+  // 3. Ang session ngayon, at ang direksyong ito roon.
+  const sess = computeSession({ open_date: new Date().toISOString() });
+  if(sess){
+    const inSess = base.filter(t => t.session === sess);
+    const s = weak(inSess);
+    if(s) out.push(`It is the <b>${escapeHtml(sess)}</b> session. You win ${pct(s)} here.`);
+    else{
+      const d = weak(inSess.filter(t => t.trade_type === direction));
+      if(d) out.push(`<b>${direction}</b> trades in the <b>${escapeHtml(sess)}</b> session win ${pct(d)}.`);
+    }
+  }
+  return out;
+}
+
+function _renderUpscaleHabitWarning(direction, accs){
+  const news = document.getElementById('upOrderNews');
+  if(!news) return;
+  let box = document.getElementById('upOrderHabits');
+  if(!box){
+    box = document.createElement('div');
+    box.id = 'upOrderHabits';
+    news.insertAdjacentElement('afterend', box);
+  }
+  let lines = [];
+  try{ lines = _upHabitWarnings(direction, accs); }catch(e){ console.warn('Habit warning failed:', e); }
+  box.innerHTML = !lines.length ? '' : `<div class="up-news-warn up-habit-warn"><b>⚠ From your own journal</b>
+    <ul>${lines.map(l => `<li>${l}</li>`).join('')}</ul>
+    A warning only. The order still goes through if you place it.</div>`;
 }
 
 function _upOrderTypeFor(direction, entry, price){
@@ -23039,7 +23255,8 @@ async function confirmUpscaleOrders(){
          order ay tinatandaan lamang, para kapag pinindot niya ang Trade This
          Setup sa parehong account at parehong presyo, makilala ito ng setup
          (Order Placed + Cancel Order). */
-      _rememberPlacedOrder(r.acc.id, entry, sl, r.result.orderId);
+      _rememberPlacedOrder(r.acc.id, entry, sl, r.result.orderId,
+        { symbol, tp: Number.isFinite(tp) ? tp : null, qty: r.qty, lev: r.lev });
     }catch(e){
       r.state = 'error'; r.note = e.message;
     }
@@ -23062,13 +23279,14 @@ async function confirmUpscaleOrders(){
 // isang araw lang ang buhay nito.
 const _UP_PLACED_KEY = 'tanaydana-upscale-placed';
 function _placedKey(accId, entry, sl){ return `${accId}|${Number(entry)}|${Number(sl)}`; }
-function _rememberPlacedOrder(accId, entry, sl, orderId){
+function _rememberPlacedOrder(accId, entry, sl, orderId, info){
   if(!orderId) return;
   try{
     const m = JSON.parse(localStorage.getItem(_UP_PLACED_KEY) || '{}');
     const now = Date.now();
     Object.keys(m).forEach(k => { if(now - m[k].at > 86400000) delete m[k]; });
-    m[_placedKey(accId, entry, sl)] = { orderId, at: now };
+    // `info` — symbol, TP, qty, leverage — para sa auto-journal kapag walang setup.
+    m[_placedKey(accId, entry, sl)] = { orderId, at: now, info: info || null };
     localStorage.setItem(_UP_PLACED_KEY, JSON.stringify(m));
   }catch(e){}
 }
@@ -23138,7 +23356,11 @@ async function refreshUpscaleOrderStates(force){
         const prevRec = Object.values(m).find(v => v.orderId === orderId);
         const prevSetup = (SAVED_SETUPS || []).find(s => s.upscale_order_id === orderId);
         const prev = (prevRec && (prevRec.state || 'Order Placed')) || (prevSetup && prevSetup.status) || null;
-        if(prev && prev !== st.state) _upNotifyTransition(acc, st, prevSetup);
+        // Ang sarado ay itinatabi para sa auto-journal bago ang abiso, para
+        // ang "Journal it" sa banner ay may babasahin na.
+        if(st.state === 'Closed') _upRememberClosed(orderId, acc, st, prevRec, prevSetup, m);
+        if(st.state === 'In Position' && prevRec && !prevRec.filledSeenAt){ prevRec.filledSeenAt = Date.now(); changed = true; }
+        if(prev && prev !== st.state) _upNotifyTransition(acc, st, prevSetup, orderId);
 
         // Ang tala sa calculator.
         Object.keys(m).forEach(k => {
@@ -23183,7 +23405,91 @@ setInterval(() => {
 /* ANG ABISO. Isang banner sa loob ng app (nananatili hanggang isara), at
    isang system notification ng browser kapag pinayagan mo — para makita mo
    kahit nasa ibang tab o ibang app ka. */
-function _upNotifyTransition(acc, st, setup){
+/* AUTO-JOURNAL. Kapag nagsara ang isang order, itinatabi ang mga numero mula
+   sa Upscale (fill, exit, P&L, paano nagsara, mga oras) kasama ang plano
+   (symbol, TP, SL, qty, leverage). Ang "Journal it" ay nagbubukas ng Add Trade
+   drawer na puno na ang mga iyon — ang tags, Rules Followed at confluence na
+   lang ang ilalagay mo, at ikaw ang magse-save. 14 na araw ang buhay nito. */
+const _UP_CLOSED_KEY = 'tanaydana-upscale-closed';
+function _upClosedAll(){
+  try{
+    const c = JSON.parse(localStorage.getItem(_UP_CLOSED_KEY) || '{}');
+    const now = Date.now();
+    Object.keys(c).forEach(k => { if(now - (c[k].at || 0) > 14 * 86400000) delete c[k]; });
+    return c;
+  }catch(e){ return {}; }
+}
+function _upClosedRecord(orderId){
+  const r = _upClosedAll()[orderId];
+  return r && !r.journaled ? r : null;
+}
+function _upRememberClosed(orderId, acc, st, rec, setup, placedMap){
+  const c = _upClosedAll();
+  if(c[orderId]) return;
+  // Ang SL at entry ng plano ay nasa susi ng calculator: "accId|entry|sl".
+  const key = Object.keys(placedMap || {}).find(k => placedMap[k].orderId === orderId);
+  const [, pEntry, pSl] = key ? key.split('|') : [];
+  c[orderId] = {
+    at: Date.now(), accId: acc.id, account: acc.account_name, setupId: setup ? setup.id : null,
+    how: st.how || null, pnl: st.pnl ?? null, entry: st.entry ?? null, exit: st.exit ?? null,
+    openedAt: st.openedAt || (rec && rec.filledSeenAt ? new Date(rec.filledSeenAt).toISOString() : null),
+    closedAt: st.closedAt || new Date().toISOString(),
+    plan: { ...(rec && rec.info || {}),
+            entry: pEntry != null ? Number(pEntry) : null, sl: pSl != null ? Number(pSl) : null }
+  };
+  try{ localStorage.setItem(_UP_CLOSED_KEY, JSON.stringify(c)); }catch(e){}
+}
+function _upMarkJournaled(orderId){
+  const c = _upClosedAll();
+  if(!c[orderId]) return;
+  c[orderId].journaled = true;
+  try{ localStorage.setItem(_UP_CLOSED_KEY, JSON.stringify(c)); }catch(e){}
+}
+// ISO (UTC) → "YYYY-MM-DDTHH:mm:ss" sa oras mo, ang hugis na binabasa ng drawer.
+function _localIso(iso){
+  const d = new Date(iso);
+  if(isNaN(d)) return undefined;
+  const p = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
+
+function journalFromUpscaleClose(orderId){
+  const r = _upClosedAll()[orderId];
+  if(!r){ customAlert('The closed trade details are no longer here. Use Easy Add instead.'); return; }
+  const setup = (SAVED_SETUPS || []).find(s => s.upscale_order_id === orderId)
+    || (r.setupId != null ? (SAVED_SETUPS || []).find(s => String(s.id) === String(r.setupId)) : null);
+  const plan = r.plan || {};
+  const entryForDir = r.entry ?? plan.entry;
+  const base = setup ? _setupJournalPrefill(setup) : {
+    account: r.account || undefined,
+    symbol: plan.symbol || undefined,
+    trade_type: (entryForDir != null && plan.sl != null) ? (entryForDir > plan.sl ? 'Long' : 'Short') : undefined,
+    sl_price: plan.sl ?? undefined,
+    tp_price: plan.tp ?? undefined,
+    position_size: plan.qty ?? undefined,
+    leverage: plan.lev ?? undefined
+  };
+  const up = {
+    entry_price: r.entry ?? undefined,
+    close_price: r.exit ?? undefined,
+    profit_loss: r.pnl ?? undefined,
+    win_loss: r.pnl == null ? undefined : r.pnl > 0 ? 'Win' : r.pnl < 0 ? 'Loss' : 'Breakeven',
+    exit_type: r.how || undefined,
+    open_date: r.openedAt ? _localIso(r.openedAt) : undefined,
+    close_date: r.closedAt ? _localIso(r.closedAt) : undefined
+  };
+  const parsed = { ...base };
+  Object.entries(up).forEach(([k, v]) => { if(v !== undefined && v !== null) parsed[k] = v; });
+  if(setup) _mergeSetupFieldsIntoPrefill(parsed, setup.id);
+  drawerJournalSetupId = setup ? setup.id : null;
+  pendingJournalPrefill = null;
+  pendingJournalSetupId = null;
+  _upMarkJournaled(orderId);
+  document.querySelectorAll(`.up-banner[data-order="${orderId}"]`).forEach(b => b.remove());
+  openDrawer('create', null, parsed);
+}
+
+function _upNotifyTransition(acc, st, setup, orderId){
   const name = acc.account_name;
   const sym = (setup && setup.symbol) || (document.getElementById('psSymbol')?.value || '').trim() || 'Order';
   let title, body, tone;
@@ -23200,14 +23506,14 @@ function _upNotifyTransition(acc, st, setup){
     body = `${sym} order was cancelled on Upscale.`;
     tone = 'info';
   }else return;
-  _upBanner(title, body, tone);
+  _upBanner(title, body, tone, st.state === 'Closed' && orderId ? orderId : null);
   try{
     if('Notification' in window && Notification.permission === 'granted'){
       new Notification(title, { body, tag: `upscale-${st.state}-${name}` });
     }
   }catch(e){}
 }
-function _upBanner(title, body, tone){
+function _upBanner(title, body, tone, journalOrderId){
   let wrap = document.getElementById('upBannerWrap');
   if(!wrap){
     wrap = document.createElement('div');
@@ -23219,8 +23525,12 @@ function _upBanner(title, body, tone){
   }
   const el = document.createElement('div');
   el.className = `up-banner ${tone || ''}`;
+  if(journalOrderId) el.dataset.order = journalOrderId;
+  const safeId = String(journalOrderId || '').replace(/[^0-9a-f-]/gi, '');
   el.innerHTML = `<div class="up-banner-text"><b>${escapeHtml(title)}</b><span>${escapeHtml(body)}</span></div>
-    <button type="button" class="up-banner-go" onclick="switchView('calculator'); this.closest('.up-banner').remove();">View</button>
+    ${safeId
+      ? `<button type="button" class="up-banner-go" onclick="journalFromUpscaleClose('${safeId}');">Journal it</button>`
+      : `<button type="button" class="up-banner-go" onclick="switchView('calculator'); this.closest('.up-banner').remove();">View</button>`}
     <button type="button" class="up-banner-x" aria-label="Dismiss" onclick="this.closest('.up-banner').remove();">✕</button>`;
   wrap.appendChild(el);
 }
@@ -23241,8 +23551,10 @@ function _placedRowHTML(acc, rec){
       : `<span class="up-placed-pill live">● In Position</span><button type="button" class="up-chip-cancel up-chip-be" title="Move the stop loss to your entry price on Upscale" onclick="moveSlToBE('${acc.id}', '${rec.orderId}', this)">SL → BE</button>`;
   }
   if(st === 'Closed'){
-    const cls = rec.how === 'TP Hit' ? 'tp' : rec.how === 'SL Hit' ? 'sl' : 'closed';
-    return `<span class="up-placed-pill ${cls}">Closed${rec.how ? ' · ' + escapeHtml(rec.how) : ''}</span>`;
+    const cls = rec.how === 'TP Hit' || rec.how === 'Stop Profit' ? 'tp' : rec.how === 'SL Hit' ? 'sl' : 'closed';
+    const canJournal = rec.orderId && _upClosedRecord(rec.orderId);
+    return `<span class="up-placed-pill ${cls}">Closed${rec.how ? ' · ' + escapeHtml(rec.how) : ''}</span>`
+      + (canJournal ? `<button type="button" class="up-chip-cancel up-chip-be" title="Open Add Trade with the numbers from Upscale filled in" onclick="journalFromUpscaleClose('${String(rec.orderId).replace(/[^0-9a-f-]/gi, '')}')">Journal</button>` : '');
   }
   return `<span class="up-placed-pill">✓ Order Placed</span><button type="button" class="up-chip-cancel" title="Cancel this order on Upscale" onclick="cancelPlacedFromRow('${acc.id}', this)">Cancel</button>`;
 }
@@ -23431,7 +23743,7 @@ async function loadSavedSetups(){
     SAVED_SETUPS = await res.json();
     SAVED_SETUPS_LOADED = true;
     // Ang R sa Dashboard ay gumagamit ng binalak na risk ng setup — iguhit ulit.
-    if(typeof currentView !== 'undefined' && currentView === 'dashboard') { try{ renderKPIs(); }catch(e){} }
+    if(typeof currentView !== 'undefined' && currentView === 'dashboard') { try{ renderKPIs(); renderReviewPanels(); }catch(e){} }
     // May order sa Upscale na nakabitin? Tingnan agad, huwag nang maghintay
     // ng 30 segundo.
     if(SAVED_SETUPS.some(s => s.upscale_order_id && _UP_SETUP_LIVE.has(s.status))) refreshUpscaleOrderStates(true);
@@ -25435,6 +25747,19 @@ async function saveTradeNote(){
 function journalFromSetup(id){
   const s = SAVED_SETUPS.find(x => x.id === id);
   if(!s) return;
+  /* Ang setup na nagsara na sa Upscale at alam na ang mga numero: diretso sa
+     drawer na puno na, walang paste. Hindi sa gitna ng multi-account na
+     pagjo-journal — may sarili iyong daloy. */
+  if(!journalQueue.length && s.upscale_order_id && _upClosedRecord(s.upscale_order_id)){
+    journalFromUpscaleClose(s.upscale_order_id);
+    return;
+  }
+  pendingJournalPrefill = _setupJournalPrefill(s);
+  pendingJournalSetupId = id;
+  _journalFromSetupContinue(s, id);
+}
+
+function _setupJournalPrefill(s){
   const log = Array.isArray(s.notes_log) ? s.notes_log : [];
   const notesText = log.map(entry =>
     `${new Date(entry.ts).toLocaleString(undefined,{dateStyle:'medium',timeStyle:'short'})}\n${entry.text}`
@@ -25444,7 +25769,7 @@ function journalFromSetup(id){
   const tpPct = s.take_profit_pct != null ? Number(s.take_profit_pct) : null;
   const rr = (slPct && tpPct != null) ? +(tpPct / slPct).toFixed(2) : undefined;
 
-  pendingJournalPrefill = {
+  return {
     account: s.account_name || undefined,
     // The journal's position_size is a UNIT quantity (what the Upscale card's
     // bare decimal is), while the setup's position_size is dollar notional —
@@ -25472,7 +25797,9 @@ function journalFromSetup(id){
     tp_price: s.tp_price != null ? Number(s.tp_price) : undefined,
     sl_price: s.sl_price != null ? Number(s.sl_price) : undefined
   };
-  pendingJournalSetupId = id;
+}
+
+function _journalFromSetupContinue(s, id){
 
   /* ANG PAPER AY WALANG BROKER.
 

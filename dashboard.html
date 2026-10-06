@@ -17,7 +17,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<link rel="stylesheet" href="css/style.css?v=337">
+<link rel="stylesheet" href="css/style.css?v=338">
 </head>
 <body>
 
@@ -173,6 +173,13 @@
       <h2>Streaks<button type="button" class="panel-info-btn" title="How this is worked out" onclick="event.stopPropagation(); openPanelInfo('streaks')"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button></h2>
       <div id="streaksBody" class="streaks-body"></div>
     </div>
+  </div>
+
+  <!-- Weekly · Monthly · Yearly: bawat isa may sariling ‹ › -->
+  <div class="row rv-grid">
+    <div class="panel"><h2>Weekly</h2><div id="review-week" class="rv-body"></div></div>
+    <div class="panel"><h2>Monthly</h2><div id="review-month" class="rv-body"></div></div>
+    <div class="panel"><h2>Yearly</h2><div id="review-year" class="rv-body"></div></div>
   </div>
 
   
@@ -2473,6 +2480,6 @@
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=2"></script>
-<script src="js/dashboard.js?v=569"></script>
+<script src="js/dashboard.js?v=570"></script>
 </body>
 </html>
