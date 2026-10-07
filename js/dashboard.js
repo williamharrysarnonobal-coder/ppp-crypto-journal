@@ -783,6 +783,8 @@ function switchView(view){
   // sa dati nitong lugar, at itapon ang hindi na-save na dropdown.
   if(view !== 'trade' && typeof _tpInlineDrawer !== 'undefined' && _tpInlineDrawer){
     _tpInlineDrawer = false;
+    _drawerScope = null;
+    document.querySelectorAll('#drawerBody .tp-out').forEach(el => el.classList.remove('tp-out'));
     const dr = document.getElementById('drawer');
     dr.classList.remove('drawer-inline', 'open');
     if(_tpDrawerHome) _tpDrawerHome.insertBefore(dr, _tpDrawerNext);
@@ -7165,6 +7167,21 @@ function renderBarChart(labels, values, colors, onClick){
 }
 
 /* ---------------- Journal table ---------------- */
+/* Emoji ng bawat damdamin — sa label lang ng option at sa chip; ang naka-save
+   ay ang salita, kaya walang nagbabago sa datos o sa mga filter. */
+const EMOTION_EMOJI = {
+  'calm':'😌', 'confident':'😎', 'focused':'🎯', 'patient':'🧘', 'excited':'🤩', 'greedy':'🤑',
+  'impatient':'😣', 'anxious':'😟', 'fearful':'😨', 'hesitant':'😬', 'bored':'🥱', 'frustrated':'😤',
+  'angry':'😠', 'disappointed':'😞', 'relieved':'😮‍💨', 'satisfied':'😊', 'regretful':'😔', 'overconfident':'😏',
+  'tired':'😴'
+};
+function _optLabel(key, o){
+  if(key === 'entry_emotion' || key === 'exit_emotion' || key === 'emotion'){
+    const e = EMOTION_EMOJI[String(o).trim().toLowerCase()];
+    return e ? `${e} ${o}` : String(o);
+  }
+  return String(o);
+}
 const FIELD_OPTIONS = {
   /* Review ng isang trade: ang mga pagkakamali (hiwalay sa Trade Tags, sa
      kahilingan niya), ang damdamin sa pagpasok at paglabas, at kung paano
@@ -17013,13 +17030,14 @@ function renderTradeViewModal(){
   const issues = _tradeNumberIssues(row);
   document.getElementById('tpIssues').innerHTML = issues.length
     ? `<div class="tp-issues"><b>⚠ These numbers don't add up</b><ul>${issues.map(i => `<li>${escapeHtml(i)}</li>`).join('')}</ul>
-        <span>Every dashboard metric uses them. Fix with <a href="#" onclick="event.preventDefault(); editFromTradeView()">Edit</a>.</span></div>` : '';
+        <span>Every dashboard metric uses them. Fix with <a href="#" onclick="event.preventDefault(); editFromTradeView('all')">Edit</a>.</span></div>` : '';
   // Ang setup notes ay kailangan ng SAVED_SETUPS; kunin minsan kung wala pa.
   if(row.linked_setup_id != null && !SAVED_SETUPS_LOADED && !_tpSetupsRequested && typeof loadSavedSetups === 'function'){
     _tpSetupsRequested = true;
     Promise.resolve(loadSavedSetups()).then(() => { if(currentView === 'trade') renderTradeViewModal(); }).catch(() => {});
   }
-  setTradeTab(_tpTab);
+  // Habang nakabukas ang Edit, huwag itong isara ng isang pag-render ulit.
+  if(!_tpInlineDrawer) setTradeTab(_tpTab);
   try{ _renderTradeDetails(row); }catch(e){ console.error('Trade details failed:', e); }
   try{ _renderTradeReview(row); }catch(e){ console.error('Trade review failed:', e); }
   try{ _renderTradeCharts(row); }catch(e){ console.error('Trade charts failed:', e); }
@@ -17047,6 +17065,12 @@ function renderTradeViewModal(){
     if(!fields.length) return '';
     return `<div class="field-row span-2 field-group-title">${g.title}</div>` +
       fields.map(f => {
+        if(f.key === 'link'){
+          const url = _safeUrl(row.link);
+          return `<div class="field-row"><label>${f.label}</label><div class="field-static">${url
+            ? `<a class="tp-btn tp-link-btn" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">Open chart ↗</a>`
+            : '<span class="tp-muted">No link. Add one with Edit.</span>'}</div></div>`;
+        }
         const sel = f.widget === 'select' ? _tpSelect(f.key, row) : null;
         return sel ? `<div class="field-row"><label>${f.label}</label><div class="field-static">${sel}</div></div>`
                    : _renderTradeViewFieldRow(f, row);
@@ -17093,9 +17117,43 @@ function closeTradeViewModal(){
    save at ang lahat ng tuntunin nito), pero inililipat ang node sa loob ng
    kanang box at walang overlay. Ibinabalik ito sa dati kapag isinara. */
 let _tpInlineDrawer = false;
-function editFromTradeView(){
+/* EDIT NG ISANG TAB LANG. Ang Review ay nag-e-edit ng mga field ng review;
+   ang Details ng iba pa; ang Confluence ay bumubukas sa checklist nito. Ang
+   ibang field ay NAKATAGO lang sa form (hindi tinanggal), kaya ang save ay
+   pareho pa rin at walang nabubura. */
+const TP_REVIEW_KEYS = new Set(['rules_followed','unfollowed_rules','mistakes','entry_emotion','exit_emotion',
+  'trade_management','exit_type','post_be_result','post_cutloss_result','post_stop_profit_result','notes']);
+let _drawerScope = null;     // { only:Set } | { except:Set } | null
+function _applyDrawerScope(){
+  const body = document.getElementById('drawerBody');
+  if(!body) return;
+  const sc = _drawerScope;
+  const keyOf = el => {
+    const i = el.querySelector('[data-field],[data-checklist],[data-optionlist],[data-checklist-for]');
+    if(!i) return null;
+    return i.dataset.field || i.dataset.checklist || i.dataset.optionlist || i.dataset.checklistFor || null;
+  };
+  let lastTitle = null, titleHasVisible = false;
+  const closeTitle = () => { if(lastTitle) lastTitle.classList.toggle('tp-out', !!sc && !titleHasVisible); };
+  [...body.children].forEach(el => {
+    if(el.classList.contains('field-group-title')){ closeTitle(); lastTitle = el; titleHasVisible = false; return; }
+    if(!el.classList.contains('field-row')) return;
+    const k = keyOf(el);
+    const show = !sc ? true
+      : sc.only ? (k !== null && sc.only.has(k))
+      : (k === null || !sc.except.has(k));
+    el.classList.toggle('tp-out', !show);
+    if(show) titleHasVisible = true;
+  });
+  closeTitle();
+}
+function editFromTradeView(scopeTab){
   const row = tradeViewList[tradeViewIndex];
   if(!row) return;
+  const tab = scopeTab || _tpTab;
+  if(tab === 'confluence'){ openConfluenceModalFromTradeView(); return; }
+  _drawerScope = tab === 'review' ? { only: TP_REVIEW_KEYS }
+    : tab === 'all' ? { except: TP_REVIEW_KEYS } : null;
   if(Object.keys(_tpDirty).length) discardTradeInline();
   const drawer = document.getElementById('drawer');
   const host = document.getElementById('tpEditHost');
@@ -17108,15 +17166,19 @@ function editFromTradeView(){
   }
   openDrawer('view', row.position_id);
   enterEditMode();
+  _applyDrawerScope();
   document.getElementById('drawerOverlay').classList.remove('open');
   setTradeTab('edit');
-  document.querySelectorAll('[data-tp-tab]').forEach(b => b.classList.remove('active'));
+  // Nananatiling naka-highlight ang tab na ine-edit.
+  document.querySelectorAll('[data-tp-tab]').forEach(b => b.classList.toggle('active', b.dataset.tpTab === (tab === 'charts' || tab === 'summary' ? '' : tab)));
   host && host.scrollIntoView({ block: 'nearest' });
 }
 let _tpDrawerHome = null, _tpDrawerNext = null;
 function _tpReturnDrawer(){
   if(!_tpInlineDrawer) return;
   _tpInlineDrawer = false;
+  _drawerScope = null;
+  document.querySelectorAll('#drawerBody .tp-out').forEach(el => el.classList.remove('tp-out'));
   const drawer = document.getElementById('drawer');
   drawer.classList.remove('drawer-inline');
   if(_tpDrawerHome) _tpDrawerHome.insertBefore(drawer, _tpDrawerNext);
@@ -17136,8 +17198,57 @@ function _tpSelect(key, row){
   if(setup && TRADE_SETUP_PATTERN_MAP[setup]) opts = TRADE_SETUP_PATTERN_MAP[setup].slice();
   const cur = key in _tpDirty ? (_tpDirty[key] ?? '') : (row[key] ?? '');
   if(cur && !opts.includes(cur)) opts.unshift(cur);
-  return `<select class="tp-inl${key in _tpDirty ? ' dirty' : ''}" data-k="${key}" aria-label="${escapeHtml(f.label)}" onchange="onTradeInlineChange(this)">
-    <option value="">—</option>${opts.map(o => `<option value="${escapeHtml(o)}"${o === cur ? ' selected' : ''}>${escapeHtml(o)}</option>`).join('')}</select>`;
+  return `<select class="tp-inl${key in _tpDirty ? ' dirty' : ''}${_tpToneClass(key, cur)}" data-k="${key}" aria-label="${escapeHtml(f.label)}" onchange="onTradeInlineChange(this)">
+    <option value="">—</option>${opts.map(o => `<option value="${escapeHtml(o)}"${o === cur ? ' selected' : ''}>${escapeHtml(_optLabel(key, o))}</option>`).join('')}</select>`;
+}
+// Ang mahalagang sagot ay may kulay: Rules Followed? Yes berde, No pula; ganoon
+// din ang Win/Loss, para kita agad.
+function _tpToneClass(key, v){
+  const s = String(v || '').trim().toLowerCase();
+  if(key === 'rules_followed') return s === 'yes' ? ' tone-win' : s === 'no' ? ' tone-loss' : '';
+  if(key === 'win_loss') return s === 'win' ? ' tone-win' : (s === 'loss' || s === 'liquidated') ? ' tone-loss' : s === 'breakeven' ? ' tone-be' : '';
+  return '';
+}
+
+/* MARAMIHANG PAGPILI, DIREKTA RIN. Ang Trade Management at Mistakes ay
+   listahan: isang button na may mga napili, at pagpindot ay isang dropdown na
+   may checkbox. Pumapasok din sa _tpDirty gaya ng ibang dropdown. */
+const _tpList = v => String(v || '').split(/[,;]/).map(x => x.trim()).filter(Boolean);
+function _tpMulti(key, row, chipCls){
+  const f = ALL_DRAWER_FIELDS.find(x => x.key === key);
+  if(!f || !Array.isArray(f.options)) return null;
+  const cur = _tpList(key in _tpDirty ? _tpDirty[key] : row[key]);
+  const opts = [...cur.filter(c => !f.options.includes(c)), ...f.options];
+  return `<div class="tp-multi" data-k="${key}">
+    <button type="button" class="tp-multi-btn${key in _tpDirty ? ' dirty' : ''}" aria-haspopup="true" onclick="toggleTpMulti(this)">
+      ${cur.length ? cur.map(c => `<span class="tp-tag ${chipCls || ''}">${escapeHtml(c)}</span>`).join('') : '<span class="tp-muted">Choose…</span>'}<span class="tp-caret">▾</span></button>
+    <div class="tp-multi-pop" hidden>${opts.map(o => `<label><input type="checkbox" value="${escapeHtml(o)}" ${cur.includes(o) ? 'checked' : ''} onchange="onTpMultiChange(this)"> ${escapeHtml(o)}</label>`).join('')}</div>
+  </div>`;
+}
+function toggleTpMulti(btn){
+  const pop = btn.nextElementSibling;
+  const open = pop.hidden;
+  document.querySelectorAll('.tp-multi-pop').forEach(p => { p.hidden = true; });
+  pop.hidden = !open;
+}
+document.addEventListener('click', e => {
+  if(e.target.closest && e.target.closest('.tp-multi')) return;
+  document.querySelectorAll('.tp-multi-pop').forEach(p => { p.hidden = true; });
+});
+function onTpMultiChange(cb){
+  const row = tradeViewList[tradeViewIndex];
+  if(!row) return;
+  const box = cb.closest('.tp-multi');
+  const k = box.dataset.k;
+  const picked = [...box.querySelectorAll('input:checked')].map(i => i.value);
+  const v = picked.length ? picked.join(', ') : null;
+  const before = _tpList(row[k]).join(', ') || null;
+  if(before === v) delete _tpDirty[k]; else _tpDirty[k] = v;
+  _renderTradeSaveBar();
+  const btn = box.querySelector('.tp-multi-btn');
+  const cls = k === 'mistakes' ? 'rule' : '';
+  btn.classList.toggle('dirty', k in _tpDirty);
+  btn.innerHTML = (picked.length ? picked.map(c => `<span class="tp-tag ${cls}">${escapeHtml(c)}</span>`).join('') : '<span class="tp-muted">Choose…</span>') + '<span class="tp-caret">▾</span>';
 }
 function onTradeInlineChange(sel){
   const row = tradeViewList[tradeViewIndex];
@@ -17147,7 +17258,11 @@ function onTradeInlineChange(sel){
   _renderTradeSaveBar();
   // Ang Pattern Type ay nakadepende sa Trade Setup — iguhit ulit ang mga select.
   if(k === 'trade_setup') renderTradeViewModal();
-  else sel.classList.toggle('dirty', k in _tpDirty);
+  else{
+    sel.classList.toggle('dirty', k in _tpDirty);
+    sel.classList.remove('tone-win', 'tone-loss', 'tone-be');
+    const t = _tpToneClass(k, v).trim(); if(t) sel.classList.add(t);
+  }
 }
 function _renderTradeSaveBar(){
   const bar = document.getElementById('tpSaveBar');
@@ -17201,6 +17316,14 @@ const _tpMoney = v => `${v >= 0 ? '+' : '−'}$${Math.abs(v).toLocaleString(unde
 const _tpNum = v => (v === null || v === undefined || v === '' || !Number.isFinite(Number(v))) ? '—'
   : Number(v).toLocaleString(undefined, { maximumFractionDigits: 6 });
 
+// http(s) lang — ang ibang scheme (javascript: atbp.) ay hindi ginagawang link.
+function _safeUrl(v){
+  const s = String(v || '').trim();
+  if(!s) return null;
+  const u = /^[a-z][a-z0-9+.-]*:/i.test(s) ? s : 'https://' + s;
+  return /^https?:\/\//i.test(u) ? u : null;
+}
+
 function _renderTradePageHead(row){
   const dir = String(row.trade_type || '').trim();
   const arrow = /^long$/i.test(dir) ? '↑' : /^short$/i.test(dir) ? '↓' : '';
@@ -17217,7 +17340,9 @@ function _renderTradePageHead(row){
     (_tradeNo(row) ? `<span class="tp-chip">#${_tradeNo(row)}</span>` : '')
     + (wl ? `<span class="tp-chip ${/^win$/i.test(wl) ? 'win' : /^(loss|liquidated)$/i.test(wl) ? 'loss' : 'be'}">${escapeHtml(wl)}</span>` : '')
     + (q ? `<span class="tp-chip ${qCls}">${escapeHtml(q)}</span>` : '')
-    + (row.account ? `<span class="tp-chip muted">${escapeHtml(row.account)}</span>` : '');
+    + (row.account ? `<span class="tp-chip muted">${escapeHtml(row.account)}</span>` : '')
+    // Isang pindot sa chart, mula saanmang tab.
+    + (_safeUrl(row.link) ? `<a class="tp-chip tp-chip-link" href="${escapeHtml(_safeUrl(row.link))}" target="_blank" rel="noopener noreferrer">Open chart ↗</a>` : '');
   document.getElementById('tpBackLabel').textContent =
     _tradePageFrom === 'paper' ? 'Paper Journal' : _tradePageFrom === 'dashboard' ? 'Dashboard'
     : _tradePageFrom === 'plan' ? 'Daily Plan' : 'Trade Journals';
@@ -17247,7 +17372,7 @@ function _renderTradeDetails(row){
   const d = row.open_date ? new Date(row.open_date) : null;
   el.innerHTML = `
     <div class="tp-det-head"><h2 class="tp-h2">Trade details</h2>
-      <button type="button" class="tp-edit-link" onclick="editFromTradeView()">Edit</button></div>
+      <button type="button" class="tp-edit-link" onclick="editFromTradeView('all')">Edit</button></div>
     <div class="tp-pnl ${net >= 0 ? 'pos' : 'neg'}">${_tpMoney(net)}</div>
     <div class="tp-pnl-k">Net P&amp;L${has(row.fee) && Number(row.fee) ? ` · fees ${escapeHtml(fmtMoney(-Math.abs(Number(row.fee))))}` : ''}</div>
     <div class="tp-kpis">
@@ -17284,7 +17409,7 @@ function _renderTradeReview(row){
   const EMO_GOOD = ['calm','confident','focused','patient','satisfied','relieved'];
   const EMO_BAD = ['greedy','impatient','anxious','fearful','frustrated','angry','overconfident','regretful'];
   const emo = v => { const s = String(v || '').trim(); if(!s) return '<span class="tp-muted">—</span>';
-    const k = s.toLowerCase(); return `<span class="tp-chip ${EMO_GOOD.includes(k) ? 'win' : EMO_BAD.includes(k) ? 'loss' : 'muted'}">${escapeHtml(s)}</span>`; };
+    const k = s.toLowerCase(); return `<span class="tp-chip ${EMO_GOOD.includes(k) ? 'win' : EMO_BAD.includes(k) ? 'loss' : 'muted'}">${escapeHtml(_optLabel('emotion', s))}</span>`; };
   const notesTxt = String(row.notes || '').trim();
   // Ang notes ng setup na isinulat PAGKATAPOS ma-journal — ang nakopya na sa
   // Notes ng trade ay hindi inuulit. Kasama sa iisang Notes, may tatak.
@@ -17310,7 +17435,7 @@ function _renderTradeReview(row){
       </div>
       <div class="tp-rv tp-rv-wide">
         <div class="tp-rv-k">Mistakes</div>
-        <div class="tp-tags">${listOf(row.mistakes).length ? listOf(row.mistakes).map(m => `<span class="tp-tag rule">${escapeHtml(m)}</span>`).join('') : '<span class="tp-muted">—</span>'}</div>
+        ${_tpMulti('mistakes', row, 'rule') || `<div class="tp-tags">${listOf(row.mistakes).length ? listOf(row.mistakes).map(m => `<span class="tp-tag rule">${escapeHtml(m)}</span>`).join('') : '<span class="tp-muted">—</span>'}</div>`}
       </div>
       <div class="tp-rv">
         <div class="tp-rv-k">Entry emotion</div>
@@ -17322,7 +17447,7 @@ function _renderTradeReview(row){
       </div>
       <div class="tp-rv tp-rv-wide">
         <div class="tp-rv-k">Trade management</div>
-        <div class="tp-tags">${listOf(row.trade_management).length ? listOf(row.trade_management).map(m => `<span class="tp-tag">${escapeHtml(m)}</span>`).join('') : '<span class="tp-muted">—</span>'}</div>
+        ${_tpMulti('trade_management', row) || `<div class="tp-tags">${listOf(row.trade_management).length ? listOf(row.trade_management).map(m => `<span class="tp-tag">${escapeHtml(m)}</span>`).join('') : '<span class="tp-muted">—</span>'}</div>`}
       </div>
       <div class="tp-rv">
         <div class="tp-rv-k">Exit</div>
@@ -17500,6 +17625,7 @@ function _shareBlob(canvasId){
   });
 }
 function _shareFileName(canvasId){
+  if(canvasId === 'calShareCanvas' && _calShareKind === 'year') return `year-${YEAR_OVERVIEW}.png`;
   if(canvasId === 'calShareCanvas'){
     return `calendar-${calMonth.getFullYear()}-${String(calMonth.getMonth() + 1).padStart(2, '0')}.png`;
   }
@@ -17536,7 +17662,20 @@ async function nativeShareCard(canvasId){
    Ang buwang nakabukas sa Calendar ng Dashboard (sumusunod sa Account at Real
    money only), bilang 1200×1080 na larawan. Ikaw ang pipili kung ano ang
    nasa bawat araw: R, % ng account, $, o W–L lang. */
+let _calShareKind = 'month';   // 'month' (Calendar) o 'year' (Year overview)
+function openShareYear(){
+  _calShareKind = 'year';
+  document.getElementById('calShareMonth').textContent = String(YEAR_OVERVIEW);
+  document.getElementById('calShareEachK').textContent = 'Each month shows';
+  document.getElementById('calShareTotalsK').textContent = 'Year totals';
+  document.getElementById('calShareNativeBtn').style.display = (navigator.canShare && navigator.share) ? '' : 'none';
+  document.getElementById('calShareModal').classList.add('open');
+  drawCalendarShare();
+}
 function openShareCalendar(){
+  _calShareKind = 'month';
+  document.getElementById('calShareEachK').textContent = 'Each day shows';
+  document.getElementById('calShareTotalsK').textContent = 'Month totals';
   document.getElementById('calShareMonth').textContent = calMonth.toLocaleDateString('en-US', { month:'long', year:'numeric' });
   document.getElementById('calShareNativeBtn').style.display = (navigator.canShare && navigator.share) ? '' : 'none';
   document.getElementById('calShareModal').classList.add('open');
@@ -17545,12 +17684,104 @@ function openShareCalendar(){
 function closeShareCalendar(){
   document.getElementById('calShareModal').classList.remove('open');
 }
+/* Isang bucket (araw o buwan) ng mga trade → mga bilang na kailangan ng larawan. */
+function _shareBucket(trades){
+  const s = { net: 0, R: 0, rN: 0, pct: 0, pN: 0, w: 0, l: 0, n: 0 };
+  trades.forEach(t => {
+    s.net += netPnl(t); s.n++;
+    if(_isWin(t)) s.w++; else if(_isLoss(t)) s.l++;
+    const r = _tradeR(t); if(r !== null){ s.R += r; s.rN++; }
+    const raw = RAW_TRADES.find(x => x.position_id === t.position_id);
+    const p = raw ? _accountPct(raw) : null; if(p !== null){ s.pct += p; s.pN++; }
+  });
+  return s;
+}
+
+/* ANG TAON BILANG LARAWAN — mula sa Year overview: labindalawang buwan, berde
+   o pula, at ang mga kabuuan ng taon. Parehong mga pagpipilian gaya ng buwan. */
+function _drawYearShare(cv, modes, showTotals, showAcc){
+  const ctx = cv.getContext('2d');
+  const W = cv.width, H = cv.height;
+  const C = { bg:'#12141C', surf:'#1B1F2B', ink:'#F1EEE6', muted:'#93989F', win:'#2ECC71', loss:'#FF5C5C', accent: cssVar('--accent') || '#F0B429' };
+  const font = (w, s) => `${w} ${s}px "Public Sans", system-ui, sans-serif`;
+  const rr = (x, y, w, h, r) => { ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x, y, w, h, r) : ctx.rect(x, y, w, h); };
+  const sign = v => v >= -0.005 ? '+' : '−';  // −0.0 ay "+0.0"
+  const valOf = (s, md) => md === 'usd' ? `${sign(s.net)}$${Math.abs(s.net).toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+    : md === 'r' ? (s.rN ? `${sign(s.R)}${Math.abs(s.R).toFixed(1)}R` : null)
+    : md === 'pct' ? (s.pN ? `${sign(s.pct)}${Math.abs(s.pct).toFixed(2)}%` : null)
+    : `${s.w}W ${s.l}L`;
+  const mode = modes[0] || 'wl';
+  const y = YEAR_OVERVIEW;
+  const pool = _yearOverviewPool().filter(t => t.close_date.getFullYear() === y);
+  const months = Array.from({ length: 12 }, (_, m) => _shareBucket(pool.filter(t => t.close_date.getMonth() === m)));
+  const year = _shareBucket(pool);
+
+  ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+  const L = 56;
+  ctx.fillStyle = C.ink; ctx.font = font(800, 60); ctx.fillText(String(y), L, 100);
+  const acct = document.getElementById('accountFilter')?.value;
+  ctx.fillStyle = C.muted; ctx.font = font(500, 22);
+  ctx.fillText(showAcc && acct && acct !== 'all' ? acct : 'Year in trading', L, 138);
+
+  let gy = 172;
+  if(showTotals){
+    const traded = months.filter(s => s.n);
+    const boxes = [
+      [mode === 'wl' ? 'Result' : 'Year', valOf(year, mode) || '—', mode === 'wl' ? C.ink : (year.net >= 0 ? C.win : C.loss)],
+      ['Win rate', (year.w + year.l) ? `${Math.round(year.w / (year.w + year.l) * 100)}%` : '—', C.ink],
+      ['Trades', String(year.n), C.ink],
+      ['Green months', `${traded.filter(s => s.net > 0).length} of ${traded.length}`, C.ink]
+    ];
+    const bw = (W - L * 2 - 3 * 16) / 4;
+    boxes.forEach(([k, v, col], i) => {
+      const x = L + i * (bw + 16);
+      ctx.fillStyle = C.surf; rr(x, gy, bw, 96, 14); ctx.fill();
+      ctx.fillStyle = C.muted; ctx.font = font(700, 16); ctx.fillText(k.toUpperCase(), x + 20, gy + 34);
+      ctx.fillStyle = col; ctx.font = font(800, 32); ctx.fillText(v, x + 20, gy + 76);
+    });
+    gy += 126;
+  }
+  const MN = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const cols = 4, rows = 3, gap = 14;
+  const cw = (W - L * 2 - (cols - 1) * gap) / cols;
+  const ch = (H - gy - 80 - (rows - 1) * gap) / rows;
+  months.forEach((s, m) => {
+    const x = L + (m % cols) * (cw + gap), yy = gy + Math.floor(m / cols) * (ch + gap);
+    const up = s.n && (mode === 'wl' ? s.w >= s.l : s.net >= 0);
+    ctx.fillStyle = !s.n ? C.surf : up ? 'rgba(46,204,113,.18)' : 'rgba(255,92,92,.18)';
+    rr(x, yy, cw, ch, 14); ctx.fill();
+    if(s.n){ ctx.strokeStyle = up ? 'rgba(46,204,113,.55)' : 'rgba(255,92,92,.55)'; ctx.lineWidth = 2; rr(x, yy, cw, ch, 14); ctx.stroke(); }
+    ctx.fillStyle = s.n ? C.ink : C.muted; ctx.font = font(700, 22); ctx.fillText(MN[m], x + 18, yy + 36);
+    if(s.n){
+      ctx.fillStyle = up ? C.win : C.loss; ctx.font = font(800, 34);
+      ctx.fillText(valOf(s, mode) || `${s.w}W ${s.l}L`, x + 18, yy + ch - 50);
+      const extra = modes.slice(1).map(md => valOf(s, md)).filter(Boolean);
+      ctx.fillStyle = C.muted; ctx.font = font(600, 17);
+      let small = extra.length ? extra.join('  ·  ') : `${s.n} trades`;
+      while(ctx.measureText(small).width > cw - 30 && small.length > 3) small = small.slice(0, -1);
+      ctx.fillText(small, x + 18, yy + ch - 20);
+    }else{
+      ctx.fillStyle = C.muted; ctx.font = font(500, 17); ctx.fillText('no trades', x + 18, yy + ch - 20);
+    }
+  });
+  ctx.fillStyle = C.accent; ctx.font = font(800, 22); ctx.fillText('TANAYDANA', L, H - 30);
+  const bw2 = ctx.measureText('TANAYDANA').width;
+  ctx.fillStyle = C.muted; ctx.font = font(500, 18); ctx.fillText('trading journal', L + bw2 + 12, H - 30);
+}
+
 function drawCalendarShare(){
   const cv = document.getElementById('calShareCanvas');
   if(!cv) return;
+  if(_calShareKind === 'year'){
+    _drawYearShare(cv, [...document.querySelectorAll('.cal-share-val:checked')].map(c => c.value),
+      document.getElementById('calShareTotals').checked, document.getElementById('calShareAccount').checked);
+    return;
+  }
   const ctx = cv.getContext('2d');
   const W = cv.width, H = cv.height;
-  const mode = document.getElementById('calShareValue').value;
+  // Maramihan: ang unang napili ang malaki sa bawat araw, ang iba ay maliit sa ilalim.
+  const modes = [...document.querySelectorAll('.cal-share-val:checked')].map(c => c.value);
+  const mode = modes[0] || 'wl';
   const showTotals = document.getElementById('calShareTotals').checked;
   const showAcc = document.getElementById('calShareAccount').checked;
   const C = { bg:'#12141C', surf:'#1B1F2B', rule:'#2E3446', ink:'#F1EEE6', muted:'#93989F',
@@ -17570,11 +17801,12 @@ function drawCalendarShare(){
     const raw = RAW_TRADES.find(x => x.position_id === t.position_id);
     const p = raw ? _accountPct(raw) : null; if(p !== null){ s.pct += p; s.pN++; }
   });
-  const sign = v => v >= 0 ? '+' : '−';
-  const val = s => mode === 'usd' ? `${sign(s.net)}$${Math.abs(s.net).toLocaleString(undefined, { maximumFractionDigits: 0 })}`
-    : mode === 'r' ? (s.rN ? `${sign(s.R)}${Math.abs(s.R).toFixed(1)}R` : `${s.w}W ${s.l}L`)
-    : mode === 'pct' ? (s.pN ? `${sign(s.pct)}${Math.abs(s.pct).toFixed(2)}%` : `${s.w}W ${s.l}L`)
+  const sign = v => v >= -0.005 ? '+' : '−';  // −0.0 ay "+0.0"
+  const valOf = (s, md) => md === 'usd' ? `${sign(s.net)}$${Math.abs(s.net).toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+    : md === 'r' ? (s.rN ? `${sign(s.R)}${Math.abs(s.R).toFixed(1)}R` : null)
+    : md === 'pct' ? (s.pN ? `${sign(s.pct)}${Math.abs(s.pct).toFixed(2)}%` : null)
     : `${s.w}W ${s.l}L`;
+  const val = s => valOf(s, mode) || `${s.w}W ${s.l}L`;
 
   ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
   const L = 56;
@@ -17634,9 +17866,12 @@ function drawCalendarShare(){
       ctx.fillStyle = up ? C.win : C.loss; ctx.font = font(800, 24);
       let t = val(s);
       while(ctx.measureText(t).width > cw - 20 && t.length > 3) t = t.slice(0, -1);
-      ctx.fillText(t, x + 12, y + ch - 36);
-      ctx.fillStyle = C.muted; ctx.font = font(500, 15);
-      ctx.fillText(`${s.n} trade${s.n === 1 ? '' : 's'}`, x + 12, y + ch - 14);
+      const extra = modes.slice(1).map(md => valOf(s, md)).filter(Boolean);
+      ctx.fillText(t, x + 12, y + ch - (extra.length ? 40 : 36));
+      ctx.fillStyle = C.muted; ctx.font = font(600, 15);
+      let small = extra.length ? extra.join('  ·  ') : `${s.n} trade${s.n === 1 ? '' : 's'}`;
+      while(ctx.measureText(small).width > cw - 20 && small.length > 3) small = small.slice(0, -1);
+      ctx.fillText(small, x + 12, y + ch - 14);
     }
   }
 
@@ -17952,7 +18187,7 @@ function _renderDrawerFieldRow(f, mode, row){
        magkatulad ang mukha ay hindi tutugma kung magkaiba ang uri.
        Naka-escape ang value dahil isinusulat na niya mismo ito ngayon. */
     const optTag = o =>
-      `<option value="${escapeHtml(String(o))}" ${rawStr===String(o)?'selected':''}>${escapeHtml(String(o))}</option>`;
+      `<option value="${escapeHtml(String(o))}" ${rawStr===String(o)?'selected':''}>${escapeHtml(_optLabel(f.key, o))}</option>`;
     /* NAKAGRUPO KUNG MAY GRUPO.
 
        Ang "Why you did not take it" ay may labing-apat na pagpipilian at
@@ -18186,6 +18421,8 @@ function renderDrawerFields(){
   };
   body.innerHTML = _bulkDrawerBannerHtml() +
     JOURNAL_FIELD_GROUPS.map(renderGroup).join('') + renderGroup(NOTES_LINKS_GROUP);
+  // Edit ng isang tab sa pahina ng trade: itago ulit ang hindi kasama.
+  if(typeof _drawerScope !== 'undefined' && _drawerScope) _applyDrawerScope();
 
   // Prefilled values (Easy Add / Journal from a saved setup) set the
   // select's initial value directly, which doesn't fire "change" — so the

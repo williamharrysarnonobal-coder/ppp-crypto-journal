@@ -17,7 +17,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<link rel="stylesheet" href="css/style.css?v=349">
+<link rel="stylesheet" href="css/style.css?v=350">
 </head>
 <body>
 
@@ -1618,6 +1618,7 @@
         <input type="checkbox" class="real-money-box" id="yoRealMoneyOnly" onchange="setRealMoneyOnly(this.checked)">
         Real money only
       </label>
+      <button type="button" class="poscalc-accent-btn" onclick="openShareYear()" title="Make an image of this year to share">Share</button>
       <div class="yo-nav">
         <button type="button" onclick="shiftOverviewYear(-1)" title="Previous year">‹</button>
         <span id="yearOverviewLabel">—</span>
@@ -2477,15 +2478,13 @@
     <button class="modal-close" onclick="closeShareCalendar()">✕</button>
     <h3 style="padding-right:24px;margin-bottom:12px;">Share <span id="calShareMonth">month</span></h3>
     <div class="share-opts">
-      <label>Each day shows
-        <select id="calShareValue" onchange="drawCalendarShare()" style="margin-left:6px;">
-          <option value="r">R</option>
-          <option value="pct">% of account</option>
-          <option value="usd">$ amount</option>
-          <option value="wl">Wins / losses only</option>
-        </select>
-      </label>
-      <label><input type="checkbox" id="calShareTotals" checked onchange="drawCalendarShare()"> Month totals</label>
+      <span class="share-opt-k" id="calShareEachK">Each day shows</span>
+      <label><input type="checkbox" class="cal-share-val" value="r" checked onchange="drawCalendarShare()"> R</label>
+      <label><input type="checkbox" class="cal-share-val" value="pct" onchange="drawCalendarShare()"> % of account</label>
+      <label><input type="checkbox" class="cal-share-val" value="usd" onchange="drawCalendarShare()"> $ amount</label>
+      <label><input type="checkbox" class="cal-share-val" value="wl" checked onchange="drawCalendarShare()"> Wins / losses</label>
+      <span class="share-opt-sep"></span>
+      <label><input type="checkbox" id="calShareTotals" checked onchange="drawCalendarShare()"> <span id="calShareTotalsK">Month totals</span></label>
       <label><input type="checkbox" id="calShareAccount" onchange="drawCalendarShare()"> Show account name</label>
     </div>
     <div class="share-canvas-wrap"><canvas id="calShareCanvas" width="1200" height="1080"></canvas></div>
@@ -2710,6 +2709,6 @@
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=2"></script>
-<script src="js/dashboard.js?v=581"></script>
+<script src="js/dashboard.js?v=582"></script>
 </body>
 </html>
