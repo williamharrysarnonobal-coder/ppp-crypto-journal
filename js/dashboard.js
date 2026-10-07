@@ -8997,7 +8997,37 @@ function _renderReminderPending(){
 // Kada minuto; ang unang tingin ay ilang segundo pagkabukas, kapag naroon na ang datos.
 setTimeout(() => { try{ if(typeof DAILY_PLANS !== 'undefined' && !_dpLoaded) loadDailyPlans(); }catch(e){} }, 4000);
 setTimeout(runReminders, 9000);
-setInterval(runReminders, 60000);
+setInterval(() => { runReminders(); recordAppVisit(); }, 60000);
+
+/* PAGBISITA — para sa Daily Check-in Streak. Isang hilera bawat araw na
+   binuksan ang app (app_visits, kahit anong device); ang duplicate ay
+   binabalewala ng database. Isang beses lang sinusubukan bawat araw sa device
+   na ito, at tinitingnan ulit kada minuto para sa paglipas ng hatinggabi. */
+let APP_VISITS = [];
+async function recordAppVisit(){
+  if(typeof USER_ACCESS_TOKEN === 'undefined' || !USER_ACCESS_TOKEN) return;
+  const today = _dpIso(new Date());
+  let done = null;
+  try{ done = localStorage.getItem('tanaydana-visit'); }catch(e){}
+  if(done === today && APP_VISITS.includes(today)) return;
+  try{
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/app_visits?on_conflict=user_id,visit_date`, {
+      method: 'POST',
+      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}`, "Content-Type": "application/json",
+                 "Prefer": "resolution=ignore-duplicates,return=minimal" },
+      body: JSON.stringify({ visit_date: today })
+    });
+    if(!res.ok) return;                     // wala pang table: tahimik, naka-lock pa ang challenge
+    try{ localStorage.setItem('tanaydana-visit', today); }catch(e){}
+    const got = await fetch(`${SUPABASE_URL}/rest/v1/app_visits?select=visit_date&order=visit_date.desc&limit=1000`, {
+      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}` }
+    });
+    if(got.ok) APP_VISITS = (await got.json()).map(r => r.visit_date);
+    if(!APP_VISITS.includes(today)) APP_VISITS.push(today);
+    if(typeof currentView !== 'undefined' && currentView === 'challenges' && typeof renderChallenges === 'function') renderChallenges();
+  }catch(e){}
+}
+setTimeout(recordAppVisit, 3000);
 
 /* ======================== BACKUP ========================
    Ang bawat table na sa iyo, buo (pahina-pahina, dahil 1000 hilera lang ang
@@ -9005,7 +9035,7 @@ setInterval(runReminders, 60000);
    na API key ay inaalis — hindi ito kailangan sa isang backup at hindi dapat
    nakakalat sa isang file. */
 const BACKUP_TABLES = [TABLE_NAME, 'position_setups', 'trading_accounts', 'daily_plans', 'mood_entries',
-  'notebook_entries', 'finance_accounts', 'finance_transactions', 'finance_budgets', 'finance_recurring', 'achievements', 'user_profile'];
+  'notebook_entries', 'finance_accounts', 'finance_transactions', 'finance_budgets', 'finance_recurring', 'achievements', 'user_profile', 'app_visits'];
 async function _fetchAllRows(table){
   const rows = [];
   const page = 1000;
@@ -9070,6 +9100,7 @@ const DB_CHECKS = [
   { file:'supabase_trading_journal_tp_sl_area.sql', what:'TP Area and SL Area on trades', table:'trading_journal', col:'tp_area,sl_area' },
   { file:'supabase_trading_journal_chart_shots.sql', what:'Chart screenshots (Higher / Setup / Entry TF)', table:'trading_journal', col:'chart_shots', also:{ table:'position_setups', col:'chart_shots' } },
   { file:'supabase_daily_plans.sql', what:'Daily Plan and the psychology check-in', table:'daily_plans', col:'psych' },
+  { file:'supabase_app_visits.sql', what:'Daily Check-in Streak (days you opened the app)', table:'app_visits', col:'visit_date' },
   { file:'supabase_trading_journal_add_post_stop_profit.sql', what:'Post-Stop Profit on trades', table:'trading_journal', col:'post_stop_profit_result' },
   { file:'supabase_position_setups_upscale_order.sql', what:'Upscale order on a setup (Order Placed, Cancel)', table:'position_setups', col:'upscale_order_id' },
   { file:'supabase_trading_accounts_upscale_api.sql', what:'Upscale API key on My Accounts', table:'trading_accounts', col:'upscale_account_id,upscale_account_label' }
@@ -21971,7 +22002,27 @@ function computeChallenges(trades, achRows){
     statOverride: `${fullCharts} trade${fullCharts === 1 ? '' : 's'} with all three charts`
   };
 
-  return [c39, c40, c41, c42];
+  // Daily Check-in Streak: sunod-sunod na ARAW (pati weekend) na binuksan
+  // ang app. Ang "ngayon" ay hindi pa pumuputol kung hindi pa naitatala.
+  const visits = new Set(typeof APP_VISITS !== 'undefined' ? APP_VISITS : []);
+  let c43 = null;
+  if(visits.size){
+    const dayBefore = iso => { const d = new Date(iso + 'T12:00:00'); d.setDate(d.getDate() - 1); return _dpIso(d); };
+    let cur = 0, day = _dpIso(new Date());
+    if(!visits.has(day)) day = dayBefore(day);
+    while(visits.has(day)){ cur++; day = dayBefore(day); }
+    let best = 0, run = 0, prev = null;
+    [...visits].sort().forEach(d => { run = prev && dayBefore(d) === prev ? run + 1 : 1; best = Math.max(best, run); prev = d; });
+    c43 = {
+      icon:'flame', title:'Daily Check-in Streak', points:50,
+      desc:'Opening Tanaydana every day, weekends included.',
+      howTo:'Each day you open the app on any device is written down once. Counts the days in a row up to today; today does not break it until the day is over. Days before this was tracked are not counted. Levels: 3, 7, 14, 30, 60 days in a row.',
+      current: cur, tiers: [3, 7, 14, 30, 60], target: 60, done: cur >= 60,
+      statOverride: `Now ${cur} day${cur === 1 ? '' : 's'} in a row · best ${best}`
+    };
+  }
+
+  return [c39, c40, c41, c42, c43];
   }catch(e){ return []; } })();
 
   return [c1,c2,c3,c4,c5,c6,c7,c8,c9,c10,c11,c12,c13,c14,c15,c17,c18,c19,c20,c21,c22,c23,c24,c25,c26,c27,c28,c29,c30,c31,c32,c33,c34,
@@ -21993,7 +22044,10 @@ function computeChallenges(trades, achRows){
    walang datos ay mas masahol kaysa sa pagsasabing hindi pa kaya. */
 const LOCKED_CHALLENGES = [
   {icon:'percent', title:'1% Risk Master', desc:'Risking ≤1% per trade, 30 trades in a row.', needs:'Entry and stop-loss prices exist now, but this also needs the account balance as it was on the day of each trade — only the current balance is stored, so old trades would be measured against the wrong number.'},
-  {icon:'calendar', title:'Daily Check-in Streak', desc:'Visiting the dashboard every day.', needs:'Needs new tracking of login/visit dates — not derived from trades.'},
+  // Ang Daily Check-in Streak ay naka-lock lang hangga't hindi pa nare-run ang
+  // supabase_app_visits.sql (walang naitalang pagbisita); nawawala ito rito
+  // kapag may APP_VISITS na, at lumalabas bilang c43.
+  {icon:'flame', title:'Daily Check-in Streak', desc:'Opening Tanaydana every day.', needs:'Run supabase_app_visits.sql in Supabase (Configuration → Database status shows it). Counting starts from the first day after that.', whenVisits:true},
   {icon:'medal', title:'Tournament Placement', desc:'Placing Top 10 or winning a tournament.', needs:'Needs a structured "placement" field on Achievements (currently just free text in subject/body).'}
 ];
 
@@ -22227,7 +22281,8 @@ function renderChallengeGrid(){
     : withStatus;
 
   grid.innerHTML = rows.length ? rows.map(x => activeCardHTML(x.c, x.status)).join('') : `<div class="empty-state">No challenges in this filter.</div>`;
-  if(lockedGrid) lockedGrid.innerHTML = LOCKED_CHALLENGES.map(lockedCardHTML).join('');
+  const hasVisits = typeof APP_VISITS !== 'undefined' && APP_VISITS.length > 0;
+  if(lockedGrid) lockedGrid.innerHTML = LOCKED_CHALLENGES.filter(l => !(l.whenVisits && hasVisits)).map(lockedCardHTML).join('');
 
   LAST_LEADERBOARD_SCORE = { points: totalPoints, label: current.label };
   syncLeaderboardScore(totalPoints, current.label);
