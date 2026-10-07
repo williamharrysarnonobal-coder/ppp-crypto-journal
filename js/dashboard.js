@@ -7185,7 +7185,7 @@ function renderBarChart(labels, values, colors, onClick){
    ay ang salita, kaya walang nagbabago sa datos o sa mga filter. */
 const EMOTION_EMOJI = {
   'calm':'😌', 'confident':'😎', 'focused':'🎯', 'patient':'🧘', 'excited':'🤩', 'greedy':'🤑',
-  'impatient':'😣', 'anxious':'😟', 'fearful':'😨', 'hesitant':'😬', 'bored':'🥱', 'frustrated':'😤',
+  'impatient':'😣', 'anxious':'😟', 'nervous':'😰', 'fearful':'😨', 'hesitant':'😬', 'bored':'🥱', 'frustrated':'😤',
   'angry':'😠', 'disappointed':'😞', 'relieved':'😮‍💨', 'satisfied':'😊', 'regretful':'😔', 'overconfident':'😏',
   'tired':'😴'
 };
@@ -7203,7 +7203,7 @@ const FIELD_OPTIONS = {
   mistakes: ['Entered too early','Chased the entry','No confirmation','Oversized','Undersized',
     'SL too tight','SL too wide','Moved SL','Exited too early','Held too long','Ignored the plan',
     'Traded against bias','Traded the news','Overtraded','Revenge trade','FOMO entry'],
-  emotion: ['Calm','Confident','Focused','Patient','Excited','Greedy','Impatient','Anxious','Fearful',
+  emotion: ['Calm','Confident','Focused','Patient','Excited','Greedy','Impatient','Anxious','Nervous','Fearful',
     'Hesitant','Bored','Frustrated','Angry','Disappointed','Relieved','Satisfied','Regretful','Overconfident'],
   trade_management: ['Set and Forget','SL to BE','Partials','Trailing Stop','Moved TP','Moved SL',
     'Added to Position','Scaled In','Closed Early','Closed Manually'],
@@ -17749,7 +17749,7 @@ function _renderTradeReview(row){
   const listOf = v => String(v || '').split(/[,;]/).map(x => x.trim()).filter(Boolean);
   // Kulay ng damdamin: ang mahinahon ay berde, ang mabigat ay pula, ang iba ay neutral.
   const EMO_GOOD = ['calm','confident','focused','patient','satisfied','relieved'];
-  const EMO_BAD = ['greedy','impatient','anxious','fearful','frustrated','angry','overconfident','regretful'];
+  const EMO_BAD = ['greedy','impatient','anxious','nervous','fearful','frustrated','angry','overconfident','regretful'];
   const emo = v => { const s = String(v || '').trim(); if(!s) return '<span class="tp-muted">—</span>';
     const k = s.toLowerCase(); return `<span class="tp-chip ${EMO_GOOD.includes(k) ? 'win' : EMO_BAD.includes(k) ? 'loss' : 'muted'}">${escapeHtml(_optLabel('emotion', s))}</span>`; };
   const notesTxt = String(row.notes || '').trim();
