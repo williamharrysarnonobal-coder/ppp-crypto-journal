@@ -28947,6 +28947,45 @@ document.addEventListener('click', e => {
   if(e.target.closest && e.target.closest('#dpModal .dp-seg, #dpModal .dp-rate, #dpModal .dp-pick, #dpModal #dpMood')) setTimeout(_dpScheduleDraft, 0);
 });
 
+/* UMAGA AT GABI. Ang "Before the session" (Body, Mind, Feeling, Plan) ay
+   pinupunan sa umaga; ang "After the session" (Review, Emotions, Diary) ay sa
+   gabi, kapag nasusukat na ang buong araw. Kaya ngayong araw ay NAKA-LOCK ang
+   After hanggang sa oras ng gabi (ang nasa Reminders, default 9:00 PM) — o
+   hanggang pindutin mo ang "I'm done trading". Ang mga nakaraang araw ay bukas;
+   ang mga darating ay Plan lang. Bukas din kapag may naisulat na sa After. */
+const _DP_UNLOCK = 'tanaydana-dp-unlocked';
+function unlockDpAfter(){
+  if(!_dpEditing) return;
+  try{ const u = JSON.parse(localStorage.getItem(_DP_UNLOCK) || '{}'); u[_dpEditing] = true; localStorage.setItem(_DP_UNLOCK, JSON.stringify(u)); }catch(e){}
+  _applyDpLock(_dpEditing);
+}
+function _applyDpLock(iso){
+  const wrap = document.getElementById('dpAfter'), lock = document.getElementById('dpLock');
+  if(!wrap || !lock) return;
+  const today = _dpIso(new Date());
+  const p = DAILY_PLANS.find(x => x.plan_date === iso) || {};
+  const postKeys = PSYCH_FIELDS.filter(f => f.g === 'post').map(f => f.k);
+  const hasAfter = p.followed || p.went_well || p.improve || postKeys.some(k => p.psych && p.psych[k] != null) || !!_dpMoodEntry(iso);
+  let unlocked = {};
+  try{ unlocked = JSON.parse(localStorage.getItem(_DP_UNLOCK) || '{}'); }catch(e){}
+  const ev = (typeof _rmSettings === 'function' ? _rmSettings().evening : '21:00') || '21:00';
+  const [eh, em] = ev.split(':').map(Number);
+  const now = new Date();
+  const beforeEvening = now.getHours() * 60 + now.getMinutes() < eh * 60 + (em || 0);
+  const evLabel = new Date(2000, 0, 1, eh, em || 0).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  let locked = false, text = '', canUnlock = true;
+  if(iso > today){ locked = true; canUnlock = false; text = 'You can review this day once it has happened. Fill in the plan now.'; }
+  else if(iso === today && beforeEvening && !unlocked[iso] && !hasAfter){
+    locked = true; text = `Opens at ${evLabel}, when the whole day can be measured. Done trading earlier? Unlock it now.`;
+  }
+  wrap.classList.toggle('locked', locked);
+  lock.hidden = !locked;
+  document.getElementById('dpLockText').textContent = text;
+  lock.querySelector('button').style.display = canUnlock ? '' : 'none';
+  // Hindi maaabot ng Tab o ng pindot ang naka-lock na bahagi.
+  [...wrap.children].forEach(c => { if(c !== lock){ if(locked) c.setAttribute('inert', ''); else c.removeAttribute('inert'); } });
+}
+
 function shiftPlanMonth(dir){
   dpCalMonth = new Date(dpCalMonth.getFullYear(), dpCalMonth.getMonth() + dir, 1);
   renderPlanCalendar();
@@ -29330,6 +29369,7 @@ function openDailyPlan(iso){
   const oldNote = document.getElementById('dpDraftNote'); if(oldNote) oldNote.remove();
   _dpRestoreDraft(iso);
   _attachDpInfo();
+  _applyDpLock(iso);
   document.getElementById('dpError').textContent = '';
   document.getElementById('dpDeleteBtn').style.visibility = (p.id || (_dpMoodEntry(iso) || {}).id) ? 'visible' : 'hidden';
   const tr = _dpTradesOn(iso);

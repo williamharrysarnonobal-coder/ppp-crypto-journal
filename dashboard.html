@@ -17,7 +17,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<link rel="stylesheet" href="css/style.css?v=358">
+<link rel="stylesheet" href="css/style.css?v=359">
 </head>
 <body>
 
@@ -2620,6 +2620,7 @@
       </div>
     </section>
 
+    <div id="dpAfter" class="dp-after">
     <div class="dp-phase">After the session</div>
     <div class="dp-grid-2">
       <section class="dp-card">
@@ -2662,6 +2663,11 @@
         <div class="field-row"><label for="dpMoodNote">Anything else</label><textarea id="dpMoodNote" rows="2"></textarea><button type="button" class="mic-bar" onpointerdown="voiceHoldStart(event,'dpMoodNote','text',this)" onpointerup="voiceHoldEnd(event,this)" onpointercancel="voiceHoldEnd(event,this)" onpointerleave="voiceHoldEnd(event,this)" oncontextmenu="return false"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="9" y1="21" x2="15" y2="21"/></svg><span class="mic-bar-idle">Hold to speak</span><span class="mic-bar-live">Listening — let go when done</span><span class="mic-bar-busy">Transcribing…</span></button></div>
       </div>
     </section>
+    <div class="dp-lock" id="dpLock" hidden>
+      <div class="dp-lock-box"><b>🔒 After the session</b><span id="dpLockText">Opens this evening.</span>
+        <button type="button" class="ai-btn" onclick="unlockDpAfter()">I'm done trading, unlock now</button></div>
+    </div>
+    </div>
 
     <div class="sub" id="dpError" style="color:var(--loss);margin-top:6px;"></div>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-top:14px;gap:8px;">
@@ -2791,6 +2797,6 @@
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=2"></script>
-<script src="js/dashboard.js?v=594"></script>
+<script src="js/dashboard.js?v=595"></script>
 </body>
 </html>
