@@ -5399,3 +5399,4 @@ body.mobile-mode .mh-vaxis span:nth-child(even){display:none;}
 .nf-toggle,.nf-link{font:inherit;font-size:12px;text-align:left;border:1px solid var(--rule);background:var(--surface-2);color:var(--muted);border-radius:8px;padding:7px 10px;cursor:pointer;}
 .nf-toggle.on{color:var(--ink);border-color:var(--accent);}
 .nf-link{border:0;background:none;padding:2px 0;color:var(--accent);font-weight:600;}
+.nf-dot.warn{background:var(--info, #5B8DEF);}

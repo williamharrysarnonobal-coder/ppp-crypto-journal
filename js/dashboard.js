@@ -31524,6 +31524,9 @@ function _notifViewOf(k){
   const kind = String(k || '').split(':')[0];
   if(kind.startsWith('mh-')) return 'hours';
   if(kind.startsWith('econ')) return 'news';
+  if(kind === 'journal-incomplete') return 'journal';
+  if(kind === 'alerts') return 'alerts';
+  if(kind === 'challenge') return 'challenges';
   return { setups:'calculator', plan:'plan', evening:'plan', morning:'plan', diary:'plan', backup:'config', journal:'journal' }[kind] || null;
 }
 function _notifUnseen(){
@@ -31566,6 +31569,14 @@ function renderNotifFabPanel(){
         <span class="nf-dot ${x.kind === 'econ' ? 'hi' : ''}"></span><span class="nf-t"><b>${escapeHtml(x.title)}</b><small>${_mhTime(x.t, _mhDayIso(x.t) !== today)}${x.kind === 'econ' ? ' · High impact' : ''}</small></span>
         <span class="nf-in">in ${_mhLeft(x.t - now)}</span></button>`).join('')
       : '<div class="nf-empty">Nothing in the next 24 hours. Turn on 🔔 for a market in Market Hours.</div>'}
+    ${(() => {
+      const inc = typeof getIncompleteTrades === 'function' ? getIncompleteTrades() : [];
+      if(!inc.length) return '';
+      return `<div class="nf-sec">Needs attention</div>
+        ${inc.slice(0, 4).map(t => `<button class="nf-item" onclick='toggleNotifFab(false); goToTradeFromNotif(${JSON.stringify(t.position_id)})'>
+          <span class="nf-dot warn"></span><span class="nf-t"><b>${escapeHtml(t.symbol || 'Trade')} needs details</b><small>${escapeHtml((getMissingFieldLabels(t) || []).join(', '))}</small></span></button>`).join('')}
+        ${inc.length > 4 ? `<button class="nf-item" onclick="toggleNotifFab(false); switchView('journal')"><span class="nf-t"><small>+${inc.length - 4} more in Trade Journals →</small></span></button>` : ''}`;
+    })()}
     <div class="nf-sec">Earlier today</div>
     ${earlier.length ? earlier.slice(0, 15).map(x => { const v = _notifViewOf(x.k); return `<button class="nf-item past" ${v ? `onclick="toggleNotifFab(false); switchView('${v}')"` : 'disabled'}>
         <span class="nf-t"><b>${escapeHtml(x.title)}</b><small>${escapeHtml(_mhTime(x.ts))}${x.body ? ' · ' + escapeHtml(x.body) : ''}</small></span></button>`; }).join('')
@@ -31716,3 +31727,88 @@ async function nativeShareMarketHours(){
     else if(navigator.share) await navigator.share({ text });
   }catch(e){ /* kinansela */ }
 }
+
+
+/* ---------- 🔔 INBOX: incomplete trades, Trade Alerts, challenges ----------
+   Ang bawat bago ay ISANG BESES lang: may listahan ng nakita na sa device
+   (ang unang takbo ay tahimik na baseline — walang baha ng lumang bagay).
+   - Incomplete trades: sa listahan lang (ang Reminders na ang nagpapaalala).
+   - Trade Alerts: popup + listahan. Kinukuha sa likod bawat 2 minuto.
+   - Challenges: popup kapag may natapos o umakyat ng level. Bawat 5 minuto. */
+const _NF_KNOWN = 'tanaydana-nf-known';
+function _nfKnown(){ try{ return JSON.parse(localStorage.getItem(_NF_KNOWN) || '{}') || {}; }catch(e){ return {}; } }
+function _nfSaveKnown(k){ try{ localStorage.setItem(_NF_KNOWN, JSON.stringify(k)); }catch(e){} }
+let _nfAlerts = [], _nfAlertsAt = 0, _nfChAt = 0;
+
+function _nfCheckIncomplete(known){
+  if(typeof getIncompleteTrades !== 'function' || !Array.isArray(RAW_TRADES) || !RAW_TRADES.length) return;
+  const list = getIncompleteTrades();
+  const ids = list.map(t => t.position_id);
+  if(!known.incomplete){ known.incomplete = ids; return; }
+  const seen = new Set(known.incomplete);
+  list.filter(t => !seen.has(t.position_id)).forEach(t => {
+    _notifLogPush(`journal-incomplete:${t.position_id}`, `${t.symbol || 'A trade'} needs details`, (getMissingFieldLabels(t) || []).join(', '));
+  });
+  known.incomplete = ids;   // ang naayos na ay nawawala; ang bago lang ang itinatala
+}
+async function _nfCheckAlerts(known){
+  if(Date.now() - _nfAlertsAt < 2 * 60000) return;
+  _nfAlertsAt = Date.now();
+  try{
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/signal_alerts?select=id,symbol,setup,message,alert_at,seen&order=alert_at.desc&limit=30`, {
+      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}` }
+    });
+    if(!res.ok) return;
+    _nfAlerts = await res.json();
+  }catch(e){ return; }
+  const ids = _nfAlerts.map(a => a.id);
+  if(!known.alerts){ known.alerts = ids; return; }
+  const seen = new Set(known.alerts);
+  _nfAlerts.filter(a => !seen.has(a.id) && !a.seen).reverse().forEach(a => {
+    const first = String(a.message || '').split('\n').find(Boolean) || '';
+    _rmShow(`alerts:${a.id}`, `New trade alert: ${a.setup || a.symbol || 'signal'}`, first.slice(0, 140), () => switchView('alerts'));
+  });
+  known.alerts = [...new Set([...ids, ...known.alerts])].slice(0, 300);
+}
+async function _nfCheckChallenges(known){
+  if(Date.now() - _nfChAt < 5 * 60000 || typeof computeChallenges !== 'function' || !ALL_TRADES.length) return;
+  _nfChAt = Date.now();
+  let list;
+  try{ list = computeChallenges(ALL_TRADES, await loadAchievementSummaryForChallenges()); }catch(e){ return; }
+  const levels = {};
+  list.forEach(c => { levels[c.title] = c.tiers ? c.tiers.filter(t => c.current >= t).length : (c.done ? 1 : 0); });
+  if(!known.ch){ known.ch = levels; return; }
+  list.forEach(c => {
+    const before = known.ch[c.title] || 0, now = levels[c.title];
+    if(now <= before) return;
+    const finished = c.done && now === (c.tiers ? c.tiers.length : 1);
+    const lvl = c.tiers ? c.tiers[now - 1] : null;
+    _rmShow(`challenge:${c.title}:${now}`, finished ? `🏆 Challenge done: ${c.title} (+${c.points} pts)` : `🏆 ${c.title}: level ${lvl} reached`,
+      c.statOverride || c.desc || '', () => switchView('challenges'));
+  });
+  // Pinakamataas na naabot ang naaalala — ang streak na bumaba at umakyat
+  // ulit ay hindi na muling nagno-notify.
+  Object.keys(levels).forEach(t => { known.ch[t] = Math.max(known.ch[t] || 0, levels[t]); });
+}
+async function runInboxChecks(){
+  if(typeof USER_ACCESS_TOKEN === 'undefined' || !USER_ACCESS_TOKEN) return;
+  const known = _nfKnown();
+  try{ _nfCheckIncomplete(known); }catch(e){}
+  try{ await _nfCheckAlerts(known); }catch(e){}
+  try{ await _nfCheckChallenges(known); }catch(e){}
+  _nfSaveKnown(known);
+  _renderNotifFab();
+}
+setTimeout(runInboxChecks, 15000);
+setInterval(runInboxChecks, 60000);
+
+/* Bukas na ang Reminders — isang beses lang itong binubuksan dito; kapag
+   pinatay mo sa Configuration, hindi na ito bubuksan ulit. */
+try{
+  if(!localStorage.getItem('tanaydana-rm-autoon')){
+    const s = _rmSettings();
+    s.enabled = true;
+    localStorage.setItem(_RM_KEY, JSON.stringify(s));
+    localStorage.setItem('tanaydana-rm-autoon', '1');
+  }
+}catch(e){}
