@@ -472,11 +472,33 @@ async function handleUpscale(request, env, action) {
     if (!type) throw new UpscaleError(409, 'market_price_stale', UPSCALE_MESSAGES.market_price_stale);
 
     // Sized by quantity (sizeMode base), so the loss at SL is exactly the
-    // risk amount. `amount` carries the collateral the position needs.
+    // risk amount. `amount` is the RESERVE taken from the free balance, and per
+    // Upscale's docs it must cover "margin, fee, spread and buffer" — not the
+    // margin alone. Sending the bare margin got a stop_market cancelled with
+    // "reserved amount was insufficient for execution due to an increase in
+    // slippage": it fills past the trigger and needs a little more than that.
+    // So: margin with room for price to slip, plus fees and spread on the
+    // notional, kept inside the account's free balance.
+    const notional = qty * entry;
+    const margin = notional / lev;
+    const SLIP = type === 'limit' ? 0.005 : 0.02;   // a stop fills past its trigger; a limit does not
+    const FEES = 0.003;                              // fee + spread, both legs, on the notional
+    let reserve = margin * (1 + SLIP) + notional * FEES;
+    try {
+      const all = (await upscale(key, 'GET', '/accounts/with-risk-status') || []).map(summarizeAccount);
+      const acct = all.find(a => a.accountId === upId);
+      const free = acct && Number(acct.balance);
+      if (free > 0 && reserve > free * 0.99) {
+        // Not enough room for the full buffer: reserve what there is, as long
+        // as it still covers the margin and the fees.
+        if (free * 0.99 < margin + notional * FEES) throw new UpscaleError(400, 'insufficient_balance', UPSCALE_MESSAGES.insufficient_balance);
+        reserve = free * 0.99;
+      }
+    } catch (e) { if (e instanceof UpscaleError) throw e; /* balance unknown: keep the buffer */ }
     const order = {
       accountId: upId, marketId: market.id, type, direction,
       sizeMode: 'base', baseSize: toFp9(qty),
-      amount: toFp9(qty * entry / lev), leverage: toFp9(lev),
+      amount: toFp9(reserve), leverage: toFp9(lev),
       triggerPrice: toFp9(entry), stopTriggerPrice: toFp9(sl)
     };
     if (tp != null) order.takeTriggerPrice = toFp9(tp);
