@@ -17304,6 +17304,10 @@ function renderTradeViewModal(){
             ? `<a class="tp-btn tp-link-btn" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">Open chart ↗</a>`
             : '<span class="tp-muted">No link. Add one with Edit.</span>'}</div></div>`;
         }
+        // TP/SL Area: direktang nae-edit din, may mungkahi mula sa dati.
+        if(f.suggest === 'history'){
+          return `<div class="field-row"><label>${f.label}</label><div class="field-static">${_tpText(f, row)}</div></div>`;
+        }
         const sel = f.widget === 'select' ? _tpSelect(f.key, row) : null;
         return sel ? `<div class="field-row"><label>${f.label}</label><div class="field-static">${sel}</div></div>`
                    : _renderTradeViewFieldRow(f, row);
@@ -17434,6 +17438,24 @@ function _tpSelect(key, row){
   return `<select class="tp-inl${key in _tpDirty ? ' dirty' : ''}${_tpToneClass(key, cur)}" data-k="${key}" aria-label="${escapeHtml(f.label)}" onchange="onTradeInlineChange(this)">
     <option value="">—</option>${opts.map(o => `<option value="${escapeHtml(o)}"${o === cur ? ' selected' : ''}>${escapeHtml(_optLabel(key, o))}</option>`).join('')}</select>`;
 }
+// Teksto na direktang nae-edit (TP/SL Area), may mungkahi mula sa dati mong isinulat.
+function _tpText(f, row){
+  const cur = f.key in _tpDirty ? (_tpDirty[f.key] ?? '') : (row[f.key] ?? '');
+  const listId = 'tpdl-' + f.key;
+  return `<input type="text" class="tp-inl tp-inl-text${f.key in _tpDirty ? ' dirty' : ''}" data-k="${f.key}" list="${listId}" autocomplete="off"
+      aria-label="${escapeHtml(f.label)}" placeholder="${escapeHtml(f.placeholder || 'Type or pick')}" value="${escapeHtml(String(cur))}"
+      oninput="onTradeInlineText(this)">
+    <datalist id="${listId}">${_historyValues(f.key).map(s => `<option value="${escapeHtml(s)}"></option>`).join('')}</datalist>`;
+}
+function onTradeInlineText(inp){
+  const row = tradeViewList[tradeViewIndex];
+  if(!row) return;
+  const k = inp.dataset.k;
+  const v = inp.value.trim().replace(/\s+/g, ' ') || null;
+  if((String(row[k] || '').trim() || null) === v) delete _tpDirty[k]; else _tpDirty[k] = v;
+  inp.classList.toggle('dirty', k in _tpDirty);
+  _renderTradeSaveBar();
+}
 // Ang mahalagang sagot ay may kulay: Rules Followed? Yes berde, No pula; ganoon
 // din ang Win/Loss, para kita agad.
 function _tpToneClass(key, v){
@@ -17518,6 +17540,8 @@ async function saveTradeInline(){
   const btn = document.getElementById('tpSaveBarBtn');
   btn.disabled = true; btn.textContent = 'Saving…';
   const patch = { ..._tpDirty };
+  // TP/SL Area: ang dating baybay ang ginagamit, gaya sa Edit form.
+  ['tp_area', 'sl_area'].forEach(k => { if(k in patch) patch[k] = _canonicalHistoryValue(k, patch[k]); });
   try{
     const res = await _journalSend(`${SUPABASE_URL}/rest/v1/${TABLE_NAME}?position_id=eq.${encodeURIComponent(row.position_id)}`, 'PATCH', patch);
     if(!res.ok) throw new Error(await res.text());
