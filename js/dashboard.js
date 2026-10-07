@@ -779,6 +779,18 @@ function switchView(view){
   // In Mobile Mode the nav lives in a slide-in drawer — picking a page
   // should close it, like any mobile app menu.
   if(document.body.classList.contains('mobile-mode')) closeMobileMenu();
+  // Paalis sa pahina ng trade habang nakabukas ang Edit doon: ibalik ang form
+  // sa dati nitong lugar, at itapon ang hindi na-save na dropdown.
+  if(view !== 'trade' && typeof _tpInlineDrawer !== 'undefined' && _tpInlineDrawer){
+    _tpInlineDrawer = false;
+    const dr = document.getElementById('drawer');
+    dr.classList.remove('drawer-inline', 'open');
+    if(_tpDrawerHome) _tpDrawerHome.insertBefore(dr, _tpDrawerNext);
+  }
+  if(view !== 'trade' && typeof _tpDirty !== 'undefined' && Object.keys(_tpDirty).length){
+    _tpDirty = {};
+    const bar = document.getElementById('tpSaveBar'); if(bar) bar.hidden = true;
+  }
   currentView = view;
   // Per-device, like Mobile Mode — remembered so a refresh reopens on the
   // same tab instead of always bouncing back to Profile. Ang pahina ng isang
@@ -16785,9 +16797,14 @@ let tradeViewIndex = -1;
 /* Ang tab sa kanang box ng trade page — naaalala sa device na ito. */
 let _tpTab = (() => { try{ return localStorage.getItem('tanaydana-trade-tab') || 'charts'; }catch(e){ return 'charts'; } })();
 function setTradeTab(tab){
-  if(!['charts', 'review', 'all', 'confluence', 'summary'].includes(tab)) tab = 'charts';
-  _tpTab = tab;
-  try{ localStorage.setItem('tanaydana-trade-tab', tab); }catch(e){}
+  if(!['charts', 'review', 'all', 'confluence', 'summary', 'edit'].includes(tab)) tab = 'charts';
+  // Ang "edit" ay pansamantala lang: hindi ito naaalala, at ang pag-click sa
+  // ibang tab habang nag-e-edit ay nagsasara ng form (walang na-save).
+  if(tab !== 'edit' && _tpInlineDrawer) closeDrawer();
+  if(tab !== 'edit'){
+    _tpTab = tab;
+    try{ localStorage.setItem('tanaydana-trade-tab', tab); }catch(e){}
+  }
   document.querySelectorAll('[data-tp-tab]').forEach(b => {
     const on = b.dataset.tpTab === tab;
     b.classList.toggle('active', on);
@@ -16808,6 +16825,8 @@ function openTradeViewModal(positionId){
     tradeViewList = [one]; tradeViewIndex = 0;
   }
   if(currentView !== 'trade') _tradePageFrom = currentView || 'journal';
+  _tpDirty = {};
+  _renderTradeSaveBar();
   switchView('trade');
   renderTradeViewModal();
   window.scrollTo(0, 0);
@@ -17021,12 +17040,17 @@ function renderTradeViewModal(){
   DRAWER_FIELDS.filter(f => _drawerIsPaper(row) ? !f.realOnly : !f.paperOnly)
     .forEach(f => { fieldByKey[f.key] = f; });
 
-  // Ang nasa kaliwang box na ay hindi na inuulit sa Details tab.
+  // Ang nasa kaliwang box na ay hindi na inuulit sa Details tab. Ang mga
+  // dropdown ay napapalitan agad (tingnan ang _tpSelect).
   const renderGroup = g => {
     const fields = g.keys.filter(k => !TP_LEFT_KEYS.has(k)).map(k => fieldByKey[k]).filter(Boolean);
     if(!fields.length) return '';
     return `<div class="field-row span-2 field-group-title">${g.title}</div>` +
-      fields.map(f => _renderTradeViewFieldRow(f, row)).join('');
+      fields.map(f => {
+        const sel = f.widget === 'select' ? _tpSelect(f.key, row) : null;
+        return sel ? `<div class="field-row"><label>${f.label}</label><div class="field-static">${sel}</div></div>`
+                   : _renderTradeViewFieldRow(f, row);
+      }).join('');
   };
   /* Hiwa-hiwalay na tab, walang inuulit:
      - Details: Overview, Result, Account, Setup & Strategy, at ang Chart Link.
@@ -17047,6 +17071,9 @@ function renderTradeViewModal(){
 }
 
 function navigateTradeView(dir){
+  // Agad kung walang hindi pa naise-save; nagtatanong muna kung meron.
+  if(Object.keys(_tpDirty).length){ _tpConfirmLeave().then(ok => { if(ok) navigateTradeView(dir); }); return; }
+  if(_tpInlineDrawer) closeDrawer();
   const newIndex = tradeViewIndex + dir;
   if(newIndex < 0 || newIndex >= tradeViewList.length) return;
   tradeViewIndex = newIndex;
@@ -17055,18 +17082,118 @@ function navigateTradeView(dir){
 
 function closeTradeViewModal(){
   if(currentView !== 'trade') return;
+  if(Object.keys(_tpDirty).length){ _tpConfirmLeave().then(ok => { if(ok) closeTradeViewModal(); }); return; }
+  if(_tpInlineDrawer) closeDrawer();
   const back = _tradePageFrom && _tradePageFrom !== 'trade' && document.getElementById('view-' + _tradePageFrom)
     ? _tradePageFrom : 'journal';
   switchView(back);
 }
 
-// Ang Edit ay ang kasalukuyang drawer, nakapatong sa pahina. Pagsara nito,
-// iginuguhit ulit ang pahina (tingnan ang closeDrawer).
+/* ANG EDIT, NASA PAHINA MISMO. Ang form ay ang parehong drawer (kaya iisa ang
+   save at ang lahat ng tuntunin nito), pero inililipat ang node sa loob ng
+   kanang box at walang overlay. Ibinabalik ito sa dati kapag isinara. */
+let _tpInlineDrawer = false;
 function editFromTradeView(){
   const row = tradeViewList[tradeViewIndex];
   if(!row) return;
+  if(Object.keys(_tpDirty).length) discardTradeInline();
+  const drawer = document.getElementById('drawer');
+  const host = document.getElementById('tpEditHost');
+  if(drawer && host){
+    _tpDrawerHome = drawer.parentNode;
+    _tpDrawerNext = drawer.nextSibling;
+    host.appendChild(drawer);
+    drawer.classList.add('drawer-inline');
+    _tpInlineDrawer = true;
+  }
   openDrawer('view', row.position_id);
   enterEditMode();
+  document.getElementById('drawerOverlay').classList.remove('open');
+  setTradeTab('edit');
+  document.querySelectorAll('[data-tp-tab]').forEach(b => b.classList.remove('active'));
+  host && host.scrollIntoView({ block: 'nearest' });
+}
+let _tpDrawerHome = null, _tpDrawerNext = null;
+function _tpReturnDrawer(){
+  if(!_tpInlineDrawer) return;
+  _tpInlineDrawer = false;
+  const drawer = document.getElementById('drawer');
+  drawer.classList.remove('drawer-inline');
+  if(_tpDrawerHome) _tpDrawerHome.insertBefore(drawer, _tpDrawerNext);
+  setTradeTab(_tpTab);
+}
+
+/* MGA DROPDOWN NA DIREKTANG NAPAPALITAN. Ang bawat select-field (Win/Loss,
+   Setup, Pattern, Rules Followed?, Exit Type, Emotions…) ay napapalitan agad
+   sa Review at Details. Ang binago ay nasa _tpDirty hanggang i-Save o
+   i-Discard; ang bar sa itaas ang nagsasabi kung ilan. */
+let _tpDirty = {};
+function _tpSelect(key, row){
+  const f = ALL_DRAWER_FIELDS.find(x => x.key === key);
+  if(!f || !Array.isArray(f.options) || f.editable === false) return null;
+  let opts = f.options.slice();
+  const setup = key === 'pattern_type' ? (_tpDirty.trade_setup ?? row.trade_setup) : null;
+  if(setup && TRADE_SETUP_PATTERN_MAP[setup]) opts = TRADE_SETUP_PATTERN_MAP[setup].slice();
+  const cur = key in _tpDirty ? (_tpDirty[key] ?? '') : (row[key] ?? '');
+  if(cur && !opts.includes(cur)) opts.unshift(cur);
+  return `<select class="tp-inl${key in _tpDirty ? ' dirty' : ''}" data-k="${key}" aria-label="${escapeHtml(f.label)}" onchange="onTradeInlineChange(this)">
+    <option value="">—</option>${opts.map(o => `<option value="${escapeHtml(o)}"${o === cur ? ' selected' : ''}>${escapeHtml(o)}</option>`).join('')}</select>`;
+}
+function onTradeInlineChange(sel){
+  const row = tradeViewList[tradeViewIndex];
+  if(!row) return;
+  const k = sel.dataset.k, v = sel.value || null;
+  if((row[k] ?? null) === v) delete _tpDirty[k]; else _tpDirty[k] = v;
+  _renderTradeSaveBar();
+  // Ang Pattern Type ay nakadepende sa Trade Setup — iguhit ulit ang mga select.
+  if(k === 'trade_setup') renderTradeViewModal();
+  else sel.classList.toggle('dirty', k in _tpDirty);
+}
+function _renderTradeSaveBar(){
+  const bar = document.getElementById('tpSaveBar');
+  if(!bar) return;
+  const n = Object.keys(_tpDirty).length;
+  bar.hidden = !n;
+  if(n){
+    const labels = Object.keys(_tpDirty).map(k => (ALL_DRAWER_FIELDS.find(f => f.key === k) || {}).label || k);
+    document.getElementById('tpSaveBarText').innerHTML = `<b>${n} unsaved change${n === 1 ? '' : 's'}</b> <span>${escapeHtml(labels.join(', '))}</span>`;
+  }
+}
+function discardTradeInline(){
+  _tpDirty = {};
+  _renderTradeSaveBar();
+  if(currentView === 'trade') renderTradeViewModal();
+}
+async function saveTradeInline(){
+  const row = tradeViewList[tradeViewIndex];
+  if(!row || !Object.keys(_tpDirty).length) return;
+  const btn = document.getElementById('tpSaveBarBtn');
+  btn.disabled = true; btn.textContent = 'Saving…';
+  const patch = { ..._tpDirty };
+  try{
+    const res = await _journalSend(`${SUPABASE_URL}/rest/v1/${TABLE_NAME}?position_id=eq.${encodeURIComponent(row.position_id)}`, 'PATCH', patch);
+    if(!res.ok) throw new Error(await res.text());
+    const raw = RAW_TRADES.find(r => r.position_id === row.position_id);
+    if(raw) Object.assign(raw, patch);
+    _rebuildTradeArrays();
+    _rebuildTradeNumbers();
+    _tpDirty = {};
+    _renderTradeSaveBar();
+    renderTradeViewModal();
+    showToast('Changes saved');
+  }catch(e){
+    console.error('Inline save failed:', e);
+    await customAlert("Couldn't save: " + e.message);
+  }finally{
+    btn.disabled = false; btn.textContent = 'Save changes';
+  }
+}
+// Bago umalis sa trade na may hindi pa naise-save.
+async function _tpConfirmLeave(){
+  if(!Object.keys(_tpDirty).length) return true;
+  const ok = await customConfirm('You have unsaved changes on this trade. Leave without saving?');
+  if(ok){ _tpDirty = {}; _renderTradeSaveBar(); }
+  return ok;
 }
 
 /* ---------- Trade page: ulo, details, review ---------- */
@@ -17171,7 +17298,7 @@ function _renderTradeReview(row){
     <div class="tp-rv-grid">
       <div class="tp-rv">
         <div class="tp-rv-k">Rules followed?</div>
-        <div>${rf ? `<span class="tp-chip ${/^yes$/i.test(rf) ? 'win' : 'loss'}">${escapeHtml(rf)}</span>` : '<span class="tp-muted">Not answered</span>'}</div>
+        <div>${_tpSelect('rules_followed', row) || (rf ? `<span class="tp-chip ${/^yes$/i.test(rf) ? 'win' : 'loss'}">${escapeHtml(rf)}</span>` : '<span class="tp-muted">Not answered</span>')}</div>
       </div>
       <div class="tp-rv">
         <div class="tp-rv-k">Confluence</div>
@@ -17187,11 +17314,11 @@ function _renderTradeReview(row){
       </div>
       <div class="tp-rv">
         <div class="tp-rv-k">Entry emotion</div>
-        <div>${emo(row.entry_emotion)}</div>
+        <div>${_tpSelect('entry_emotion', row) || emo(row.entry_emotion)}</div>
       </div>
       <div class="tp-rv">
         <div class="tp-rv-k">Exit emotion</div>
-        <div>${emo(row.exit_emotion)}</div>
+        <div>${_tpSelect('exit_emotion', row) || emo(row.exit_emotion)}</div>
       </div>
       <div class="tp-rv tp-rv-wide">
         <div class="tp-rv-k">Trade management</div>
@@ -17199,7 +17326,7 @@ function _renderTradeReview(row){
       </div>
       <div class="tp-rv">
         <div class="tp-rv-k">Exit</div>
-        <div>${row.exit_type ? escapeHtml(row.exit_type) : '<span class="tp-muted">—</span>'}</div>
+        <div>${_tpSelect('exit_type', row) || (row.exit_type ? escapeHtml(row.exit_type) : '<span class="tp-muted">—</span>')}</div>
       </div>
       ${post ? `<div class="tp-rv"><div class="tp-rv-k">After the exit</div><div class="tp-tags">${post}</div></div>` : ''}
       <div class="tp-rv tp-rv-wide">
@@ -17974,6 +18101,7 @@ function renderDrawerFields(){
 function closeDrawer(){
   document.getElementById('drawerOverlay').classList.remove('open');
   document.getElementById('drawer').classList.remove('open');
+  if(typeof _tpReturnDrawer === 'function') _tpReturnDrawer();
   // Bukas ang pahina ng trade sa likod: iguhit ulit, baka na-edit.
   if(typeof currentView !== 'undefined' && currentView === 'trade') setTimeout(() => { try{ renderTradeViewModal(); }catch(e){} }, 50);
   // Dismissing the drawer abandons a multi-account run — including the tickets

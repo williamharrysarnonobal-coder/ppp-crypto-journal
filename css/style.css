@@ -4798,6 +4798,33 @@ body.mobile-mode .tp-grid{grid-template-columns:minmax(0,1fr) !important;}
 .share-canvas-wrap canvas{display:block;width:100%;height:auto;}
 .share-actions{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-top:14px;}
 
+/* Ang Edit form sa loob ng pahina (ang drawer, inilipat) */
+.drawer.drawer-inline{position:static;transform:none;transition:none;height:auto;width:auto;max-width:none;
+  border:0;padding:0;z-index:auto;background:transparent;display:block;}
+.drawer.drawer-inline #drawerBody{overflow:visible;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:0 20px;}
+.drawer.drawer-inline #drawerBody > *{min-width:0;}
+.drawer.drawer-inline #drawerBody .field-group-title,
+.drawer.drawer-inline #drawerBody .field-row:has(.checklist-box),
+.drawer.drawer-inline #drawerBody .field-row:has(textarea),
+.drawer.drawer-inline #drawerBody .field-row:has(.optionlist),
+.drawer.drawer-inline #drawerBody .span-2{grid-column:1 / -1;}
+.drawer.drawer-inline .drawer-head .modal-close{display:none;}
+.drawer.drawer-inline .drawer-actions{position:sticky;bottom:0;background:var(--surface);padding-top:12px;border-top:1px solid var(--rule);margin-top:8px;}
+@media(max-width:700px){.drawer.drawer-inline #drawerBody{grid-template-columns:minmax(0,1fr);}}
+body.mobile-mode .drawer.drawer-inline #drawerBody{grid-template-columns:minmax(0,1fr);}
+/* Mga dropdown na direktang napapalitan */
+.tp-inl{background:var(--surface-2);border:1px solid var(--rule);border-radius:7px;color:var(--ink);font:inherit;font-size:12.5px;padding:5px 8px;max-width:100%;cursor:pointer;}
+.tp-inl:hover{border-color:var(--muted);}
+.tp-inl:focus-visible{outline:2px solid var(--accent);outline-offset:1px;}
+.tp-inl.dirty{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent);}
+.tp-savebar{position:sticky;top:8px;z-index:20;display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 14px;padding:10px 14px;border-radius:12px;
+  border:1px solid var(--accent);background:color-mix(in srgb,var(--accent) 12%,var(--surface));font-size:13px;}
+.tp-savebar[hidden]{display:none;}
+.tp-savebar #tpSaveBarText{flex:1;min-width:0;}
+.tp-savebar #tpSaveBarText span{color:var(--muted);margin-left:6px;}
+/* Notes na walang box */
+.tp-notes{border:0 !important;background:none !important;padding:0 !important;}
+
 /* Kanang box na may tabs */
 .tp-tabbed{padding-top:0;overflow:hidden;align-self:stretch;}
 .tp-tabs{display:flex;gap:2px;margin:0 -20px 16px;padding:0 20px;border-bottom:1px solid var(--rule);overflow-x:auto;}
