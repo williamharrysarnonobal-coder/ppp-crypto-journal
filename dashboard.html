@@ -17,7 +17,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<link rel="stylesheet" href="css/style.css?v=344">
+<link rel="stylesheet" href="css/style.css?v=345">
 </head>
 <body>
 
@@ -399,18 +399,22 @@
         </div>
       </div>
     </header>
+    <div id="tpIssues"></div>
     <div class="tp-grid">
       <aside class="panel tp-details" id="tpDetails"></aside>
       <section class="panel tp-main">
-        <div class="tp-charts-head"><h2 class="tp-h2">Charts</h2>
-          <span class="tp-sub">Click a slot, then paste (Ctrl+V), drop an image, or use + Add.</span></div>
+        <h2 class="tp-h2">Charts</h2>
+        <div class="tp-sub">Add or paste (Ctrl+V) a screenshot for each timeframe. Click a slot first, then paste.</div>
         <div id="tpCharts" class="tp-charts"></div>
         <input type="file" id="tpChartFile" accept="image/*" multiple style="display:none;" onchange="onTradeChartFiles(this)">
+        <h2 class="tp-h2" style="margin-top:26px;">Review</h2>
+        <div id="tpReview"></div>
+        <details class="tp-all">
+          <summary>All fields</summary>
+          <div id="tradeViewBody" class="trade-view-grid"></div>
+        </details>
       </section>
     </div>
-    <div id="tpIssues"></div>
-    <!-- Lahat ng field, naka-table bawat grupo, magkakatabi — walang dropdown. -->
-    <div id="tradeViewBody" class="tp-tables"></div>
   </div>
 
   <!-- DAILY PLAN: plano bago ang session, review pagkatapos — sa calendar,
@@ -2633,6 +2637,6 @@
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=2"></script>
-<script src="js/dashboard.js?v=576"></script>
+<script src="js/dashboard.js?v=577"></script>
 </body>
 </html>

@@ -181,6 +181,27 @@ function _rebuildTradeArrays(){
 }
 let RAW_TRADES = [];
 let FILTERED = [];
+
+/* ANG LUMANG QTY NA LOTS. Bago naayos ang Easy Add ng The5ers, ang Qty ay
+   na-save bilang LOTS (gold: 1.45 lots = 145 oz), kaya ang Risk Amount, R at
+   BE saved ng mga trade na iyon ay 100× na mas maliit. Kinukuwenta ito pagbasa:
+   ang units ay P&L ÷ galaw ng presyo; kapag ang units ÷ qty ay malapit (3%) sa
+   isang malinis na laki ng lot (10, 100, 1000, 10000, 100000), ang qty ay lots
+   at pinapalitan ng units. Ang orihinal ay nasa _qtyLots, at ang susunod na
+   Save ng trade ay nag-iimbak na ng tamang units. */
+function _fixLotQuantity(r){
+  if(!r || r.is_paper === true || r.is_paper === 'true') return r;
+  const q = parseFloat(r.position_size), e = parseFloat(r.entry_price), x = parseFloat(r.close_price), pl = parseFloat(r.profit_loss);
+  if(!(q > 0) || !(e > 0) || !(x > 0) || e === x || !Number.isFinite(pl) || Math.abs(pl) < 1) return r;
+  if(Math.abs(x - e) / e < 0.0005) return r;
+  const lot = Math.abs(pl / (x - e)) / q;
+  const snap = [10, 100, 1000, 10000, 100000].find(s => Math.abs(lot - s) / s < 0.03);
+  if(!snap) return r;
+  r._qtyLots = q;
+  r._qtyLotSize = snap;
+  r.position_size = Math.round(q * snap * 1e6) / 1e6;
+  return r;
+}
 let SETUP_SCREENSHOTS = {}; // { [position_setups.id]: {before_screenshot, after_screenshot} }, for trades with linked_setup_id
 
 async function loadLinkedSetupScreenshots(){
@@ -1001,6 +1022,7 @@ async function initApp(){
     }
 
     const data = await res.json();
+    data.forEach(_fixLotQuantity);
     RAW_TRADES = data;
     _rebuildTradeArrays();
     _rebuildTradeNumbers();
@@ -16945,6 +16967,7 @@ function renderTradeViewModal(){
     Promise.resolve(loadSavedSetups()).then(() => { if(currentView === 'trade') renderTradeViewModal(); }).catch(() => {});
   }
   try{ _renderTradeDetails(row); }catch(e){ console.error('Trade details failed:', e); }
+  try{ _renderTradeReview(row); }catch(e){ console.error('Trade review failed:', e); }
   try{ _renderTradeCharts(row); }catch(e){ console.error('Trade charts failed:', e); }
 
   /* DALAWANG DIREKSYON NG PAGSALA.
@@ -16963,62 +16986,16 @@ function renderTradeViewModal(){
   DRAWER_FIELDS.filter(f => _drawerIsPaper(row) ? !f.realOnly : !f.paperOnly)
     .forEach(f => { fieldByKey[f.key] = f; });
 
-  /* Bawat grupo ay isang maliit na table (label | halaga), at ang mga table ay
-     magkakatabi sa mga column — iisang page, kaunting scroll. Ang mga blangko
-     ay itinatago para hindi humaba; nasa Edit pa rin sila. */
-  const pctCell = (v, cls) => v === null ? null
-    : `<span class="${cls || (v >= 0 ? 'pos' : 'neg')}">${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(2)}%</span>`;
-  const rowHtml = (label, html) => `<div class="field-row"><label>${label}</label><div class="field-static">${html}</div></div>`;
-  const tagsHtml = () => {
-    const tags = _canonicalTags(row.unfollowed_rules);
-    if(!tags.length) return null;
-    return `<div class="tp-tags">${tags.map(t => {
-      const k = _tagKind(t);
-      return `<button type="button" class="tp-tag ${k === 'breach' ? 'rule' : k === 'sentinel' ? 'clean' : 'note'}" data-tag="${escapeHtml(t)}"
-        onclick="openTagInJournal(this.dataset.tag)" title="${k === 'breach' ? 'A rule you broke' : k === 'sentinel' ? 'No rule broken' : 'A note (not a rule)'} · click to see every trade with it">${escapeHtml(t)}</button>`;
-    }).join('')}</div>`;
-  };
-  const isBlank = (f) => {
-    if(['objective','duration','trade_summary','planned_rr','risk_amount','trade_quality'].includes(f.key)) return false;
-    if(f.key === 'notes' && Array.isArray(row.notes_log) && row.notes_log.length) return false;
-    const v = row[f.key];
-    return v === null || v === undefined || String(v).trim() === '' || v === 'Unspecified';
-  };
   const renderGroup = g => {
     const fields = g.keys.map(k => fieldByKey[k]).filter(Boolean);
-    const body = fields.map(f => {
-      if(f.key === 'pnl_percent'){
-        return [pctCell(_accountPct(row)) && rowHtml('Account %', pctCell(_accountPct(row))),
-                pctCell(_priceMovePct(row)) && rowHtml('Price move', pctCell(_priceMovePct(row)))].filter(Boolean).join('');
-      }
-      if(f.key === 'unfollowed_rules'){ const h = tagsHtml(); return h ? rowHtml('Trade Tags', h) : ''; }
-      // Ang Trade Summary ay inuulit lang ang lahat ng nasa page — kopya na
-      // lang (button sa itaas ng Notes & Links).
-      if(f.key === 'symbol' || f.key === 'trade_summary' || isBlank(f)) return '';
-      return _renderTradeViewFieldRow(f, row);
-    }).join('');
-    const copy = g === NOTES_LINKS_GROUP
-      ? `<button class="poscalc-copy-btn" title="Copy the trade summary" onclick="copyTradeSummaryToClipboard(this)" data-summary="${escapeHtml(computeTradeSummaryPlain(row))}">${copyIconSVG()}</button>` : '';
-    return body || copy ? `<div class="tp-card"><div class="tp-card-t">${g.title}${copy}</div>${body}</div>` : '';
+    if(!fields.length) return '';
+    return `<div class="field-row span-2 field-group-title">${g.title}</div>` +
+      fields.map(f => _renderTradeViewFieldRow(f, row)).join('');
   };
-  const conf = _renderTradeViewConfluenceGroup(row)
-    .replace('<div class="field-row span-2 field-group-title">', '<div class="tp-card-t">');
-  /* Notes ng setup, read-only — PERO ang mga kinopya na sa Notes ng trade
-     noong ni-journal ay hindi na inuulit. Ang naiiwan ay ang mga isinulat sa
-     setup pagkatapos noon. Ang Edit nito ay sa Calculator. */
-  const setupCard = (() => {
-    const s = row.linked_setup_id != null ? (SAVED_SETUPS || []).find(x => String(x.id) === String(row.linked_setup_id)) : null;
-    const plain = String(row.notes || '');
-    const extra = (s && Array.isArray(s.notes_log) ? s.notes_log : []).filter(e => e && e.text && !plain.includes(String(e.text).trim()));
-    if(!extra.length) return '';
-    return `<div class="tp-card"><div class="tp-card-t">From the setup</div>${extra.map(e =>
-      `<div class="field-row span-2"><label>${escapeHtml(new Date(e.ts).toLocaleString(undefined, { dateStyle:'medium', timeStyle:'short' }))}</label><div class="field-static" style="white-space:pre-wrap;">${escapeHtml(String(e.text).trim())}</div></div>`).join('')}</div>`;
-  })();
-  document.getElementById('tradeViewBody').innerHTML =
-    JOURNAL_FIELD_GROUPS.map(renderGroup).join('')
-    + `<div class="tp-card">${conf}</div>`
-    + renderGroup(NOTES_LINKS_GROUP)
-    + setupCard;
+  const preHtml = JOURNAL_FIELD_GROUPS.slice(0, JOURNAL_FIELD_GROUPS_PRE_CONFLUENCE_COUNT).map(renderGroup).join('');
+  const postHtml = JOURNAL_FIELD_GROUPS.slice(JOURNAL_FIELD_GROUPS_PRE_CONFLUENCE_COUNT).map(renderGroup).join('');
+
+  document.getElementById('tradeViewBody').innerHTML = preHtml + _renderTradeViewConfluenceGroup(row) + postHtml + renderGroup(NOTES_LINKS_GROUP);
 
   document.getElementById('tradeViewPrevBtn').disabled = tradeViewIndex <= 0;
   document.getElementById('tradeViewNextBtn').disabled = tradeViewIndex < 0 || tradeViewIndex >= tradeViewList.length - 1;
@@ -17077,35 +17054,97 @@ function _renderTradePageHead(row){
 }
 
 function _renderTradeDetails(row){
-  // Maikling buod lang — ang lahat ng detalye ay nasa mga table sa ilalim.
   const el = document.getElementById('tpDetails');
   const n = normalizeTrade({ ...row });
   const net = netPnl(n);
   const R = _tradeR(n);
-  const acc = _accountPct(row), move = _priceMovePct(row);
+  const risk = _beAvoidedLoss(row);
   const fmtTime = v => v ? new Date(v).toLocaleTimeString(undefined, { hour:'numeric', minute:'2-digit' }) : '';
-  const sgn = (v, unit, dp) => `<b class="${v >= 0 ? 'pos' : 'neg'}">${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(dp)}${unit}</b>`;
   const line = (k, v) => `<div class="tp-line"><span>${k}</span><b>${v}</b></div>`;
+  const sec = (title, lines) => { const body = lines.filter(Boolean).join(''); return body ? `<div class="tp-sec"><div class="tp-sec-t">${title}</div>${body}</div>` : ''; };
+  const val = (v) => (v === null || v === undefined || String(v).trim() === '' || v === 'Unspecified') ? null : escapeHtml(String(v));
+  const opt = (k, v) => v ? line(k, v) : '';
   const dur = computeDuration(row);
   const sess = computeSession(row) || row.session;
   el.innerHTML = `
+    <h2 class="tp-h2">Trade details</h2>
     <div class="tp-pnl ${net >= 0 ? 'pos' : 'neg'}">${_tpMoney(net)}</div>
-    <div class="tp-pnl-k">Net P&amp;L</div>
-    <div class="tp-kpis">
-      <div>${R !== null ? sgn(R, 'R', 2) : '<b>—</b>'}<span>Return</span></div>
-      <div>${acc !== null ? sgn(acc, '%', 2) : '<b>—</b>'}<span title="Net P&L as a share of the account size">Account</span></div>
-      <div>${move !== null ? sgn(move, '%', 2) : '<b>—</b>'}<span title="How far price moved from entry to exit, positive when it went your way">Price move</span></div>
-    </div>
+    <div class="tp-pnl-k">Net P&amp;L${R !== null ? ` · <b class="${R >= 0 ? 'pos' : 'neg'}">${R >= 0 ? '+' : '−'}${Math.abs(R).toFixed(2)}R</b>` : ''}</div>
     <div class="tp-trio">
       <div><b>${escapeHtml(row.symbol || '—')}</b><span>Instrument</span></div>
       <div><b class="${/^long$/i.test(row.trade_type || '') ? 'pos' : /^short$/i.test(row.trade_type || '') ? 'neg' : ''}">${escapeHtml(row.trade_type || '—')}</b><span>Direction</span></div>
-      <div><b>${_tpNum(row.position_size)}</b><span>Quantity</span></div>
+      <div><b>${_tpNum(row.position_size)}</b><span title="${row._qtyLots ? `Saved as ${row._qtyLots} lots; worked out as units (1 lot = ${row._qtyLotSize}).` : ''}">Quantity${row._qtyLots ? ` · ${row._qtyLots} lots` : ''}</span></div>
     </div>
-    <div class="tp-sec">
-      ${row.account ? line('Account', escapeHtml(row.account)) : ''}
-      ${sess ? line('Session', escapeHtml(sess)) : ''}
-      ${dur ? line('Duration', `${escapeHtml(dur)}${row.open_date && row.close_date ? `<small>${fmtTime(row.open_date)} – ${fmtTime(row.close_date)}</small>` : ''}`) : ''}
-      ${line('Entry / Exit', `${_tpNum(row.entry_price)} / ${_tpNum(row.close_price)}`)}
+    ${sec('Context', [
+      opt('Account', val(row.account)),
+      opt('Date', row.open_date ? escapeHtml(new Date(row.open_date).toLocaleDateString(undefined, { weekday:'short', month:'short', day:'numeric', year:'numeric' })) : null),
+      opt('Session', val(sess)),
+      dur ? line('Duration', `${escapeHtml(dur)}${row.open_date && row.close_date ? `<small>${fmtTime(row.open_date)} – ${fmtTime(row.close_date)}</small>` : ''}`) : '',
+      opt('Trade setup', val(row.trade_setup)),
+      opt('Pattern', val(row.pattern_type)),
+      opt('Execution TF', val(row.execution_tf)),
+      opt('AOF phase', val(row.aof_phase))
+    ])}
+    ${sec('Execution', [
+      line('Entry / Exit', `${_tpNum(row.entry_price)} / ${_tpNum(row.close_price)}`),
+      opt('Stop loss', row.sl_price != null && row.sl_price !== '' ? _tpNum(row.sl_price) : null),
+      opt('Take profit', row.tp_price != null && row.tp_price !== '' ? _tpNum(row.tp_price) : null),
+      opt('Leverage', row.leverage != null && row.leverage !== '' ? _tpNum(row.leverage) + 'x' : null),
+      opt('Exit', val(row.exit_type))
+    ])}
+    ${sec('Performance', [
+      opt('Risk', risk && !risk.suspect ? escapeHtml(fmtMoney(risk.value).replace('+', '')) : null),
+      opt('Planned RR', (() => { const p = _plannedRR(row); return p === null ? null : '1:' + fmtNum(p, 2); })()),
+      opt('RR', row.rr != null && row.rr !== '' ? _tpNum(row.rr) : null),
+      opt('Return (R)', R !== null ? `<span class="${R >= 0 ? 'pos' : 'neg'}">${R >= 0 ? '+' : '−'}${Math.abs(R).toFixed(2)}R</span>` : null),
+      // Ang lumang "P&L %" ay galaw ng presyo na maaaring mali ang sign —
+      // dalawang malinaw na bilang na ngayon, parehong kinukuwenta.
+      opt('Account %', (() => { const v = _accountPct(row); return v === null ? null : `<span class="${v >= 0 ? 'pos' : 'neg'}">${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(2)}%</span>`; })()),
+      opt('Price move', (() => { const v = _priceMovePct(row); return v === null ? null : `<span class="${v >= 0 ? 'pos' : 'neg'}">${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(2)}%</span>`; })())
+    ])}
+    ${sec('Costs', [
+      line('Fees', row.fee != null && row.fee !== '' ? escapeHtml(fmtMoney(-Math.abs(Number(row.fee)))) : '$0.00')
+    ])}`;
+}
+
+function _renderTradeReview(row){
+  const el = document.getElementById('tpReview');
+  const rf = String(row.rules_followed || '').trim();
+  const tags = _canonicalTags(row.unfollowed_rules);
+  const broke = tags.filter(t => _tagKind(t) === 'breach');
+  const notes = tags.filter(t => _tagKind(t) === 'observation');
+  const chips = (arr, cls) => arr.map(t => `<button type="button" class="tp-tag ${cls}" data-tag="${escapeHtml(t)}" onclick="openTagInJournal(this.dataset.tag)" title="Open every trade with this tag">${escapeHtml(t)}</button>`).join('');
+  const cd = _confluenceCellData(row);
+  const post = ['post_be_result', 'post_cutloss_result', 'post_stop_profit_result']
+    .map(k => row[k] && row[k] !== 'N/A' ? `<span class="tp-tag">${escapeHtml(row[k])}</span>` : '').join('');
+  const notesTxt = String(row.notes || '').trim();
+  // Ang notes ng setup na isinulat PAGKATAPOS ma-journal — ang nakopya na sa
+  // Notes ng trade ay hindi inuulit. Kasama sa iisang Notes, may tatak.
+  const s = row.linked_setup_id != null ? (SAVED_SETUPS || []).find(x => String(x.id) === String(row.linked_setup_id)) : null;
+  const fromSetup = (s && Array.isArray(s.notes_log) ? s.notes_log : [])
+    .filter(e => e && e.text && !notesTxt.includes(String(e.text).trim()))
+    .map(e => ({ ...e, setup: true }));
+  const log = [...(Array.isArray(row.notes_log) ? row.notes_log : []), ...fromSetup]
+    .sort((a, b) => new Date(a.ts) - new Date(b.ts));
+  el.innerHTML = `
+    <div class="tp-rv-grid">
+      <div class="tp-rv">
+        <div class="tp-rv-k">Rules followed?</div>
+        <div>${rf ? `<span class="tp-chip ${/^yes$/i.test(rf) ? 'win' : 'loss'}">${escapeHtml(rf)}</span>` : '<span class="tp-muted">Not answered</span>'}</div>
+      </div>
+      <div class="tp-rv">
+        <div class="tp-rv-k">Confluence</div>
+        <div>${cd ? `<b class="${cd.state === 'pass' ? 'pos' : cd.state === 'near' ? 'tp-acc' : 'neg'}">${cd.pct}%</b> <span class="tp-muted">${Number(cd.done.toFixed(1))} of ${cd.total} · bar ${cd.bar}%</span>` : '<span class="tp-muted">Not filled in</span>'}</div>
+      </div>
+      <div class="tp-rv tp-rv-wide">
+        <div class="tp-rv-k" title="Your Trade Tags column. Red = a rule you broke, green = Rules Followed, grey = a note (not a rule).">Trade Tags</div>
+        <div class="tp-tags">${tags.length ? chips(broke, 'rule') + chips(tags.filter(t => _tagKind(t) === 'sentinel'), 'clean') + chips(notes, 'note') : '<span class="tp-muted">—</span>'}</div>
+      </div>
+      ${post ? `<div class="tp-rv tp-rv-wide"><div class="tp-rv-k">After the exit</div><div class="tp-tags">${post}</div></div>` : ''}
+      <div class="tp-rv tp-rv-wide">
+        <div class="tp-rv-k">Notes</div>
+        <div class="tp-notes">${notesTxt ? `<p>${escapeHtml(notesTxt)}</p>` : ''}${log.map(e => `<div class="tp-note"><small>${escapeHtml(new Date(e.ts).toLocaleString(undefined, { dateStyle:'medium', timeStyle:'short' }))}${e.setup ? ' · from the setup' : ''}</small>${escapeHtml(String(e.text || '').trim())}</div>`).join('')}${!notesTxt && !log.length ? '<span class="tp-muted">No notes yet. Use Add note above.</span>' : ''}</div>
+      </div>
     </div>`;
 }
 
