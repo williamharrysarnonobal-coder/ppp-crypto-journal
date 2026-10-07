@@ -8519,6 +8519,8 @@ const ALL_DRAWER_FIELDS = [
   // drift out of step with the prices.
   {key:'risk_amount', label:'Risk Amount ($)', widget:'text', editable:false, realOnly:true},
   {key:'win_loss', label:'Win/Loss', widget:'select', editable:true, options:FIELD_OPTIONS.win_loss, realOnly:true},
+  {key:'tp_area', label:'TP Area', widget:'text', editable:true, suggest:'history', realOnly:true, placeholder:'e.g. Prev day high, 4H FVG, Weekly open'},
+  {key:'sl_area', label:'SL Area', widget:'text', editable:true, suggest:'history', realOnly:true, placeholder:'e.g. Below Asia low, Below the HL'},
   {key:'trade_type', label:'Trade Type', widget:'select', editable:true, options:FIELD_OPTIONS.trade_type},
   {key:'trade_setup', label:'Trade Setup', widget:'select', editable:true, options:FIELD_OPTIONS.trade_setup},
   {key:'pattern_type', label:'Pattern Type', widget:'select', editable:true, options:FIELD_OPTIONS.pattern_type},
@@ -8668,6 +8670,8 @@ const ALL_JOURNAL_COLUMNS = [
   {key:'post_be_result', label:'Post-BE Result'},
   {key:'post_cutloss_result', label:'Post-Cutloss Result'},
   {key:'post_stop_profit_result', label:'Post-Stop Profit'},
+  {key:'tp_area', label:'TP Area'},
+  {key:'sl_area', label:'SL Area'},
   {key:'mistakes', label:'Mistakes'},
   {key:'entry_emotion', label:'Entry Emotion'},
   {key:'exit_emotion', label:'Exit Emotion'},
@@ -8835,6 +8839,187 @@ function switchConfigTab(tab){
   document.querySelectorAll('#view-config .subnav-item').forEach(el => el.classList.toggle('active', el.dataset.tab === tab));
   document.querySelectorAll('#view-config .subnav-panel').forEach(el => el.classList.toggle('active', el.id === 'configPanel-' + tab));
   if(tab === 'dbstatus') checkDatabaseStatus();
+  if(tab === 'reminders') _fillReminderSettings();
+}
+
+/* ======================== REMINDERS ========================
+   Hiwalay sa lumang notification system (naka-off pa rin iyon). Iisang
+   tuntunin para hindi na paulit-ulit: bawat paalala ay may susi, at ang susi
+   ay lumalabas NANG ISANG BESES BAWAT ARAW — naaalala sa localStorage. Tinitingnan
+   kada minuto habang bukas ang app. Ang lumalabas ay isang banner sa app, at
+   isang system notification kapag pinayagan mo. */
+const _RM_KEY = 'tanaydana-reminders';
+const _RM_FIRED = 'tanaydana-reminders-fired';
+const RM_DEFAULTS = { enabled: false, morning: '08:00', evening: '21:00',
+  types: { plan: true, review: true, journal: true, incomplete: true, setups: true } };
+function _rmSettings(){
+  try{ const s = JSON.parse(localStorage.getItem(_RM_KEY) || 'null'); return s ? { ...RM_DEFAULTS, ...s, types: { ...RM_DEFAULTS.types, ...(s.types || {}) } } : { ...RM_DEFAULTS }; }
+  catch(e){ return { ...RM_DEFAULTS }; }
+}
+function _fillReminderSettings(){
+  const s = _rmSettings();
+  const el = id => document.getElementById(id);
+  if(!el('rmEnabled')) return;
+  el('rmEnabled').checked = !!s.enabled;
+  el('rmMorning').value = s.morning;
+  el('rmEvening').value = s.evening;
+  document.querySelectorAll('[data-rm]').forEach(c => { c.checked = s.types[c.dataset.rm] !== false; });
+  _renderReminderPerm();
+  _renderReminderPending();
+}
+function saveReminderSettings(){
+  const s = {
+    enabled: document.getElementById('rmEnabled').checked,
+    morning: document.getElementById('rmMorning').value || '08:00',
+    evening: document.getElementById('rmEvening').value || '21:00',
+    types: Object.fromEntries([...document.querySelectorAll('[data-rm]')].map(c => [c.dataset.rm, c.checked]))
+  };
+  try{ localStorage.setItem(_RM_KEY, JSON.stringify(s)); }catch(e){}
+  if(s.enabled && 'Notification' in window && Notification.permission === 'default') askReminderPermission();
+  _renderReminderPending();
+  showToast(s.enabled ? 'Reminders on' : 'Reminders off');
+}
+function _renderReminderPerm(){
+  const st = document.getElementById('rmPermState'), btn = document.getElementById('rmPermBtn');
+  if(!st) return;
+  const p = 'Notification' in window ? Notification.permission : 'unsupported';
+  st.textContent = p === 'granted' ? 'Notifications allowed on this device.'
+    : p === 'denied' ? 'Notifications are blocked in this browser. Reminders still show inside the app; allow them in the browser’s site settings to get them on screen.'
+    : p === 'unsupported' ? 'This browser has no notifications; reminders show inside the app.'
+    : 'Not allowed yet: reminders will only show inside the app.';
+  if(btn) btn.style.display = p === 'default' ? '' : 'none';
+}
+async function askReminderPermission(){
+  try{ if('Notification' in window) await Notification.requestPermission(); }catch(e){}
+  _renderReminderPerm();
+}
+function testReminder(){ _rmShow('test-' + Date.now(), 'Reminders are working', 'This is how a reminder will look.', null); }
+
+// Ang mga paalalang dapat ipakita NGAYON, bawat isa may susi at kung saan papunta.
+function _rmDue(){
+  const s = _rmSettings();
+  const now = new Date();
+  const today = _dpIso(now);
+  const hm = now.getHours() * 60 + now.getMinutes();
+  const toMin = t => { const [h, m] = String(t || '0:0').split(':').map(Number); return h * 60 + (m || 0); };
+  const out = [];
+  const plan = (typeof DAILY_PLANS !== 'undefined' ? DAILY_PLANS : []).find(p => p.plan_date === today);
+  const planned = plan && (plan.bias || plan.max_trades != null || (plan.psych && Object.keys(plan.psych).length));
+  const tradesToday = (typeof ALL_TRADES !== 'undefined' ? ALL_TRADES : []).filter(t => t.close_date && _dpIso(t.close_date) === today);
+  if(s.types.plan && hm >= toMin(s.morning) && !planned)
+    out.push({ key: 'plan', title: "Fill in today's plan", body: 'Bias, max trades and your mindset, before the first trade.', go: () => { switchView('plan'); openDailyPlan(today); } });
+  if(s.types.review && hm >= toMin(s.evening) && (tradesToday.length || plan) && !(plan && plan.followed))
+    out.push({ key: 'review', title: 'Review today', body: 'Did you follow the plan? How did the session feel?', go: () => { switchView('plan'); openDailyPlan(today); } });
+  if(s.types.journal && typeof _upClosedAll === 'function'){
+    const open = Object.entries(_upClosedAll()).filter(([, r]) => !r.journaled);
+    if(open.length) out.push({ key: 'journal', fire: open.map(([id]) => 'journal:' + id),
+      title: `${open.length} closed trade${open.length === 1 ? '' : 's'} to journal`,
+      body: 'Upscale closed them; the numbers are ready to fill in.', go: () => journalFromUpscaleClose(open[0][0]) });
+  }
+  if(s.types.incomplete && typeof _journalMissingFields === 'function'){
+    const raw = (typeof RAW_TRADES !== 'undefined' ? RAW_TRADES : []).filter(r => r.close_date && _dpIso(new Date(r.close_date)) === today && !(r.is_paper === true || r.is_paper === 'true'));
+    const inc = raw.filter(r => _journalMissingFields(r).length);
+    if(inc.length) out.push({ key: 'incomplete', title: `${inc.length} of today's trades have blank fields`,
+      body: 'Fill them in while you still remember.', go: () => { switchView('journal'); JOURNAL_INCOMPLETE_ONLY = true; renderJournalTable(); } });
+  }
+  if(s.types.setups && typeof SAVED_SETUPS !== 'undefined'){
+    const live = SAVED_SETUPS.filter(x => ['Pending', 'Order Placed', 'In Position'].includes(x.status || 'Pending') && !x.is_paper);
+    const need = live.filter(x => !_setupHasConfluence(x) || !x.entry_emotion);
+    if(need.length) out.push({ key: 'setups',
+      title: `${need.length} pending setup${need.length === 1 ? '' : 's'} need Confluence or Entry Emotion`,
+      body: 'Easier now than after the trade closes.', go: () => switchView('calculator') });
+  }
+  return out;
+}
+function _rmFired(){
+  try{ const f = JSON.parse(localStorage.getItem(_RM_FIRED) || '{}'); const today = _dpIso(new Date()); return f.day === today ? f : { day: today, keys: [] }; }
+  catch(e){ return { day: _dpIso(new Date()), keys: [] }; }
+}
+function _rmShow(key, title, body, go){
+  // Banner sa app (gamit ang banner ng Upscale), at system notification.
+  if(typeof _upBanner === 'function'){
+    _upBanner(title, body, 'info');
+    const b = document.querySelector('#upBannerWrap .up-banner:last-child');
+    if(b && go){
+      const btn = b.querySelector('.up-banner-go');
+      if(btn){ btn.textContent = 'Open'; btn.onclick = () => { b.remove(); go(); }; }
+    }
+  }
+  try{
+    if('Notification' in window && Notification.permission === 'granted'){
+      const n = new Notification(title, { body, tag: 'tanaydana-' + key.split(':')[0] });
+      n.onclick = () => { window.focus(); if(go) go(); n.close(); };
+    }
+  }catch(e){}
+}
+function runReminders(){
+  const s = _rmSettings();
+  if(!s.enabled || typeof USER_ACCESS_TOKEN === 'undefined' || !USER_ACCESS_TOKEN) return;
+  const fired = _rmFired();
+  // Lumalabas lang kapag may susing hindi pa nailalabas ngayong araw. Ang Upscale ay may
+  // susi bawat order, kaya ang bagong sarang trade lang ang nagpapalabas ulit.
+  const due = _rmDue().filter(r => (r.fire || [r.key]).some(k => !fired.keys.includes(k)));
+  if(!due.length) return;
+  due.forEach(r => { _rmShow(r.key, r.title, r.body, r.go); (r.fire || [r.key]).forEach(k => { if(!fired.keys.includes(k)) fired.keys.push(k); }); });
+  try{ localStorage.setItem(_RM_FIRED, JSON.stringify(fired)); }catch(e){}
+}
+function _renderReminderPending(){
+  const el = document.getElementById('rmPending');
+  if(!el) return;
+  const due = _rmDue();
+  window.__rmGo = due.map(d => d.go);
+  el.innerHTML = !due.length ? '<div class="empty-state">Nothing to remind you about right now.</div>'
+    : due.map((d, i) => `<div class="rm-item"><div><b>${escapeHtml(d.title)}</b><span>${escapeHtml(d.body)}</span></div>
+        <button class="drawer-secondary-btn" onclick="window.__rmGo[${i}] && window.__rmGo[${i}]()">Open</button></div>`).join('');
+}
+// Kada minuto; ang unang tingin ay ilang segundo pagkabukas, kapag naroon na ang datos.
+setTimeout(() => { try{ if(typeof DAILY_PLANS !== 'undefined' && !_dpLoaded) loadDailyPlans(); }catch(e){} }, 4000);
+setTimeout(runReminders, 9000);
+setInterval(runReminders, 60000);
+
+/* ======================== BACKUP ========================
+   Ang bawat table na sa iyo, buo (pahina-pahina, dahil 1000 hilera lang ang
+   ibinibigay ng Supabase bawat hiling), sa iisang JSON file. Ang naka-encrypt
+   na API key ay inaalis — hindi ito kailangan sa isang backup at hindi dapat
+   nakakalat sa isang file. */
+const BACKUP_TABLES = [TABLE_NAME, 'position_setups', 'trading_accounts', 'daily_plans', 'mood_entries',
+  'notebook_entries', 'finance_accounts', 'finance_transactions', 'finance_budgets', 'finance_recurring', 'achievements', 'user_profile'];
+async function _fetchAllRows(table){
+  const rows = [];
+  const page = 1000;
+  for(let from = 0; ; from += page){
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?select=*`, {
+      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}`, "Range-Unit": "items", "Range": `${from}-${from + page - 1}` }
+    });
+    if(!res.ok){ if(res.status === 416) break; throw new Error(await res.text()); }
+    const chunk = await res.json();
+    rows.push(...chunk);
+    if(chunk.length < page) break;
+  }
+  return rows;
+}
+async function downloadAllData(){
+  const btn = document.getElementById('backupBtn'), st = document.getElementById('backupState');
+  btn.disabled = true; btn.textContent = 'Collecting…';
+  const out = { app: 'Tanaydana', exported_at: new Date().toISOString(), tables: {} };
+  const skipped = [];
+  for(const t of BACKUP_TABLES){
+    try{
+      let rows = await _fetchAllRows(t);
+      if(t === 'trading_accounts') rows = rows.map(({ upscale_api_key_enc, ...r }) => r);
+      out.tables[t] = rows;
+      st.textContent = `${t}: ${rows.length} rows`;
+    }catch(e){ skipped.push(t); }
+  }
+  const counts = Object.entries(out.tables).map(([t, r]) => `${t} ${r.length}`).join(' · ');
+  const blob = new Blob([JSON.stringify(out, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `tanaydana-backup-${_dpIso(new Date())}.json`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+  st.innerHTML = `Saved <b>${escapeHtml(a.download)}</b>: ${escapeHtml(counts)}${skipped.length ? `<br>Skipped (not available): ${escapeHtml(skipped.join(', '))}` : ''}<br>Chart screenshots stay in Supabase Storage; the file lists where each one is.`;
+  btn.disabled = false; btn.textContent = 'Download all my data';
 }
 
 /* DATABASE STATUS. Bawat feature na nangangailangan ng column, at ang SQL na
@@ -8844,6 +9029,7 @@ function switchConfigTab(tab){
 const DB_CHECKS = [
   { file:'supabase_trading_journal_review_fields.sql', what:'Mistakes, Entry/Exit Emotion, Trade Management on trades', table:'trading_journal', col:'mistakes,entry_emotion,exit_emotion,trade_management' },
   { file:'supabase_position_setups_entry_emotion.sql', what:'Entry Emotion on Pending Setups', table:'position_setups', col:'entry_emotion' },
+  { file:'supabase_trading_journal_tp_sl_area.sql', what:'TP Area and SL Area on trades', table:'trading_journal', col:'tp_area,sl_area' },
   { file:'supabase_trading_journal_chart_shots.sql', what:'Chart screenshots (Higher / Setup / Entry TF)', table:'trading_journal', col:'chart_shots', also:{ table:'position_setups', col:'chart_shots' } },
   { file:'supabase_daily_plans.sql', what:'Daily Plan and the psychology check-in', table:'daily_plans', col:'psych' },
   { file:'supabase_trading_journal_add_post_stop_profit.sql', what:'Post-Stop Profit on trades', table:'trading_journal', col:'post_stop_profit_result' },
@@ -14948,7 +15134,7 @@ function warnIconSVG(){
    sabihin nito ay WALANG trade na mase-save. Kaya: kapag tinanggihan dahil sa
    isa sa mga ito, alisin ito at subukan ulit, at huwag na itong ipadala sa
    natitirang session. Ang tanging nawawala ay ang sagot sa bagong field. */
-const _OPTIONAL_JOURNAL_COLS = ['post_stop_profit_result', 'mistakes', 'entry_emotion', 'exit_emotion', 'trade_management'];
+const _OPTIONAL_JOURNAL_COLS = ['post_stop_profit_result', 'mistakes', 'entry_emotion', 'exit_emotion', 'trade_management', 'tp_area', 'sl_area'];
 const _missingJournalCols = new Set();
 async function _journalSend(url, method, body){
   const strip = b => {
@@ -16913,7 +17099,7 @@ const JOURNAL_FIELD_GROUPS = [
                               'no_trade_reason','paper_outcome','planned_rr'] },
   { title: 'Result', keys: ['win_loss','profit_loss','pnl_percent','rr','fee','entry_price','close_price','tp_price','sl_price','position_size','leverage','risk_amount'] },
   { title: 'Account', keys: ['account','account_type','session','day_of_week'] },
-  { title: 'Setup & Strategy', keys: ['trade_type','trade_setup','pattern_type','execution_tf','aof_phase'] },
+  { title: 'Setup & Strategy', keys: ['trade_type','trade_setup','pattern_type','execution_tf','aof_phase','tp_area','sl_area'] },
   { title: 'Discipline', keys: ['rules_followed','unfollowed_rules','mistakes','entry_emotion','exit_emotion','trade_management','exit_type','post_be_result','post_cutloss_result','post_stop_profit_result'] },
 ];
 const JOURNAL_FIELD_GROUPS_PRE_CONFLUENCE_COUNT = 4; // Overview, Result, Account, Setup & Strategy
@@ -18411,7 +18597,38 @@ function _renderDrawerFieldRow(f, mode, row){
       <datalist id="${listId}">${
         seen.map(s => `<option value="${escapeHtml(s)}"></option>`).join('')}</datalist></div>`;
   }
+  /* Ang TP Area at SL Area: malayang teksto, pero ang mga dati mong isinulat
+     ang mungkahi — pinakamadalas muna — para pare-pareho ang pagsulat at
+     mabilang nang tama. Pag-save, ang kaparehong salita na iba lang ang laki
+     ng titik ay ginagawang dating baybay (tingnan ang _canonicalHistoryValue). */
+  if(f.suggest === 'history'){
+    const listId = 'dl-' + f.key;
+    return `<div class="${rowCls}"><label>${f.label}</label>
+      <input type="text" data-field="${f.key}" list="${listId}" autocomplete="off" placeholder="${escapeHtml(f.placeholder || 'Start typing — your past entries show up')}"
+             value="${escapeHtml(raw !== undefined && raw !== null ? String(raw) : '')}">
+      <datalist id="${listId}">${_historyValues(f.key).map(s => `<option value="${escapeHtml(s)}"></option>`).join('')}</datalist></div>`;
+  }
   return `<div class="${rowCls}"><label>${f.label}</label><input type="text" data-field="${f.key}" value="${raw!==undefined&&raw!==null?raw:''}"></div>`;
+}
+
+// Ang mga halagang naisulat na sa isang field, pinakamadalas muna.
+function _historyValues(key){
+  const freq = new Map();
+  (RAW_TRADES || []).forEach(r => {
+    const v = String(r[key] || '').trim();
+    if(!v) return;
+    const k = v.toLowerCase();
+    const cur = freq.get(k) || { v, n: 0 };
+    cur.n++; freq.set(k, cur);
+  });
+  return [...freq.values()].sort((a, b) => b.n - a.n || a.v.localeCompare(b.v)).map(x => x.v);
+}
+// "prev high" ay nagiging "Prev High" kung iyon ang dati mong isinulat.
+function _canonicalHistoryValue(key, v){
+  const s = String(v || '').trim().replace(/\s+/g, ' ');
+  if(!s) return null;
+  const hit = _historyValues(key).find(x => x.toLowerCase() === s.toLowerCase());
+  return hit || s;
 }
 
 // Names the accounts these answers are about to be written to. Without it the
@@ -18573,6 +18790,12 @@ function _collectDrawerPatch(){
     const on = [...document.querySelectorAll(`#drawerBody [data-optionlist="${key}"]:checked`)]
       .map(el => el.value);
     patch[key] = on.length ? on.join(', ') : null;
+  });
+
+  // TP/SL Area: ang parehong salita sa ibang laki ng titik ay ginagawang ang
+  // dating baybay, para mabilang bilang iisang lugar.
+  ALL_DRAWER_FIELDS.filter(f => f.suggest === 'history').forEach(f => {
+    if(f.key in patch) patch[f.key] = _canonicalHistoryValue(f.key, patch[f.key]);
   });
 
   // checklist fields (currently just unfollowed_rules) — join checked values
@@ -28645,6 +28868,61 @@ async function _saveDpDiary(iso){
   return 'saved';
 }
 
+/* AUTO-SAVE NG DAILY PLAN. Habang nagsusulat, ang laman ng popup ay itinatabi
+   sa device (kada petsa). Kapag isinara o nag-refresh bago pinindot ang Save,
+   ibinabalik ito sa susunod na pagbukas ng araw na iyon — may tatak at may
+   "Discard". Nabubura ang draft kapag na-Save o na-Delete. */
+const _DP_DRAFT = 'tanaydana-dp-draft';
+function _dpDrafts(){ try{ return JSON.parse(localStorage.getItem(_DP_DRAFT) || '{}'); }catch(e){ return {}; } }
+function _dpDraftWrite(all){ try{ localStorage.setItem(_DP_DRAFT, JSON.stringify(all)); }catch(e){} }
+const _DP_TEXT_IDS = ['dpMax','dpLevels','dpPlan','dpWell','dpImprove','dpMoodTrading','dpMoodWork','dpMoodLife','dpMoodNote'];
+function _dpCollect(){
+  const d = { at: Date.now(), bias: _dpSegValue('dpBias'), followed: _dpSegValue('dpFollowed'),
+              psych: { ..._dpPsych }, mood: _dpMood };
+  _DP_TEXT_IDS.forEach(id => { const el = document.getElementById(id); if(el) d[id] = el.value; });
+  return d;
+}
+let _dpDraftTimer = null, _dpRestoring = false;
+function _dpScheduleDraft(){
+  if(!_dpEditing || _dpRestoring) return;
+  clearTimeout(_dpDraftTimer);
+  const iso = _dpEditing;
+  _dpDraftTimer = setTimeout(() => { const all = _dpDrafts(); all[iso] = _dpCollect(); _dpDraftWrite(all); }, 400);
+}
+function _dpClearDraft(iso){
+  clearTimeout(_dpDraftTimer);
+  const all = _dpDrafts(); delete all[iso]; _dpDraftWrite(all);
+  const n = document.getElementById('dpDraftNote'); if(n) n.remove();
+}
+function _dpRestoreDraft(iso){
+  const d = _dpDrafts()[iso];
+  if(!d) return;
+  _dpRestoring = true;
+  _dpSeg('dpBias', d.bias || null);
+  _dpSeg('dpFollowed', d.followed || null);
+  _dpPsych = { ...(d.psych || {}) };
+  _dpMood = d.mood || null;
+  _DP_TEXT_IDS.forEach(id => { const el = document.getElementById(id); if(el && d[id] != null) el.value = d[id]; });
+  _renderPsychFields(); _renderDpMood();
+  _dpRestoring = false;
+  const head = document.querySelector('#dpModal .dp-head');
+  if(head && !document.getElementById('dpDraftNote')){
+    head.insertAdjacentHTML('afterend', `<div id="dpDraftNote" class="dp-draft-note">Restored what you wrote on ${escapeHtml(new Date(d.at).toLocaleString(undefined, { dateStyle:'medium', timeStyle:'short' }))} but did not save.
+      <button type="button" onclick="discardDpDraft()">Discard</button></div>`);
+  }
+}
+function discardDpDraft(){
+  const iso = _dpEditing;
+  _dpClearDraft(iso);
+  openDailyPlan(iso);
+}
+['input', 'change'].forEach(ev => document.addEventListener(ev, e => {
+  if(e.target.closest && e.target.closest('#dpModal')) _dpScheduleDraft();
+}));
+document.addEventListener('click', e => {
+  if(e.target.closest && e.target.closest('#dpModal .dp-seg, #dpModal .dp-rate, #dpModal .dp-pick, #dpModal #dpMood')) setTimeout(_dpScheduleDraft, 0);
+});
+
 function shiftPlanMonth(dir){
   dpCalMonth = new Date(dpCalMonth.getFullYear(), dpCalMonth.getMonth() + dir, 1);
   renderPlanCalendar();
@@ -29025,6 +29303,8 @@ function openDailyPlan(iso){
   _dpPsych = { ...(p.psych || {}) };
   _renderPsychFields();
   _fillDpDiary(iso);
+  const oldNote = document.getElementById('dpDraftNote'); if(oldNote) oldNote.remove();
+  _dpRestoreDraft(iso);
   _attachDpInfo();
   document.getElementById('dpError').textContent = '';
   document.getElementById('dpDeleteBtn').style.visibility = (p.id || (_dpMoodEntry(iso) || {}).id) ? 'visible' : 'hidden';
@@ -29094,6 +29374,7 @@ async function saveDailyPlan(){
       _dpLoaded = true;
     }
     if(diaryHas) await _saveDpDiary(_dpEditing);
+    _dpClearDraft(_dpEditing);
     closeDailyPlan();
     renderPlanCalendar();
     if(typeof renderMoodRecent === 'function') renderMoodRecent();
@@ -29123,6 +29404,7 @@ async function deleteDailyPlan(){
       if(!res.ok) throw new Error(await res.text());
       MOOD_ENTRIES = MOOD_ENTRIES.filter(x => x.id !== m.id);
     }
+    _dpClearDraft(_dpEditing);
     closeDailyPlan();
     renderPlanCalendar();
     if(typeof renderMoodRecent === 'function') renderMoodRecent();

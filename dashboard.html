@@ -17,7 +17,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<link rel="stylesheet" href="css/style.css?v=356">
+<link rel="stylesheet" href="css/style.css?v=357">
 </head>
 <body>
 
@@ -1009,6 +1009,8 @@
         <div class="subnav-item active" data-tab="columns" onclick="switchConfigTab('columns')">Trade Journal Columns</div>
         <div class="subnav-item" data-tab="options" onclick="switchConfigTab('options')">Dropdown Options</div>
         <div class="subnav-item" data-tab="formfields" onclick="switchConfigTab('formfields')">Trade Form Fields</div>
+        <div class="subnav-item" data-tab="reminders" onclick="switchConfigTab('reminders')">Reminders</div>
+        <div class="subnav-item" data-tab="backup" onclick="switchConfigTab('backup')">Backup</div>
         <div class="subnav-item" data-tab="dbstatus" onclick="switchConfigTab('dbstatus')">Database status</div>
       </nav>
 
@@ -1041,6 +1043,44 @@
             <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">Controls both the trade detail view (click a row) and the "+ Add Trade" form. Check to show a field. Drag a row (⠿) to reorder.</div>
             <div id="formFieldConfigList"></div>
             <button class="drawer-secondary-btn" style="margin-top:14px;" onclick="resetFormFieldConfig()">Reset to default</button>
+          </div>
+        </div>
+
+        <!-- REMINDERS: paalala sa umaga/gabi at sa mga nakakalimutan. Isang beses
+             lang bawat paalala bawat araw. -->
+        <div class="subnav-panel" id="configPanel-reminders">
+          <div class="panel">
+            <h2>Reminders</h2>
+            <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">A nudge in the app (and as a phone/computer notification if you allow it) for the things that are easy to forget. Each reminder shows at most once a day. Works while Tanaydana is open in a tab or installed on your phone.</div>
+            <label class="rm-switch"><input type="checkbox" id="rmEnabled" onchange="saveReminderSettings()"> <b>Turn reminders on</b></label>
+            <div class="rm-grid">
+              <label>Morning plan at <input type="time" id="rmMorning" value="08:00" onchange="saveReminderSettings()"></label>
+              <label>Evening review at <input type="time" id="rmEvening" value="21:00" onchange="saveReminderSettings()"></label>
+            </div>
+            <div class="rm-list">
+              <label><input type="checkbox" data-rm="plan" checked onchange="saveReminderSettings()"> Fill in today's plan <span>from the morning time, until you do</span></label>
+              <label><input type="checkbox" data-rm="review" checked onchange="saveReminderSettings()"> Review today <span>from the evening time, on days you traded or planned</span></label>
+              <label><input type="checkbox" data-rm="journal" checked onchange="saveReminderSettings()"> Closed Upscale trades to journal</label>
+              <label><input type="checkbox" data-rm="incomplete" checked onchange="saveReminderSettings()"> Today's trades with blank fields</label>
+              <label><input type="checkbox" data-rm="setups" checked onchange="saveReminderSettings()"> Pending setups without Confluence or Entry Emotion</label>
+            </div>
+            <div class="rm-actions">
+              <button class="drawer-secondary-btn" id="rmPermBtn" onclick="askReminderPermission()">Allow notifications</button>
+              <button class="drawer-secondary-btn" onclick="testReminder()">Send a test</button>
+              <span id="rmPermState" class="rm-perm"></span>
+            </div>
+            <h3 class="rm-h3">Right now</h3>
+            <div id="rmPending"></div>
+          </div>
+        </div>
+
+        <!-- BACKUP: ang lahat ng datos mo, sa isang file. -->
+        <div class="subnav-panel" id="configPanel-backup">
+          <div class="panel">
+            <h2>Backup</h2>
+            <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">Everything you have in Tanaydana, in one file you keep: trades (real and paper), setups, Daily Plans, diary, accounts, notes and finance. API keys are left out. Keep one somewhere safe, for example once a week.</div>
+            <button class="ai-btn" id="backupBtn" onclick="downloadAllData()">Download all my data</button>
+            <div id="backupState" class="sub" style="margin-top:10px;"></div>
           </div>
         </div>
 
@@ -2751,6 +2791,6 @@
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=2"></script>
-<script src="js/dashboard.js?v=592"></script>
+<script src="js/dashboard.js?v=593"></script>
 </body>
 </html>
