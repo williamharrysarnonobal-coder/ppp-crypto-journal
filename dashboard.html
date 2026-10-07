@@ -17,7 +17,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<link rel="stylesheet" href="css/style.css?v=354">
+<link rel="stylesheet" href="css/style.css?v=355">
 </head>
 <body>
 
@@ -69,7 +69,6 @@
     <div class="nav-item" data-view="alerts" onclick="switchView('alerts')"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg> <span class="nav-label">Trade Alerts</span><span class="nav-badge" id="navBadge-alerts" style="display:none;"></span><span class="nav-tooltip">Trade Alerts</span></div>
     <div class="nav-section-label">Growth</div>
     <div class="nav-item" data-view="notebook" onclick="switchView('notebook')"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg> <span class="nav-label">Notebook</span><span class="nav-tooltip">Notebook</span></div>
-    <div class="nav-item" data-view="mood" onclick="switchView('mood')"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><line x1="8" y1="9" x2="8.01" y2="9"/><line x1="16" y1="9" x2="16.01" y2="9"/><path d="M8 15s1.5 2 4 2 4-2 4-2"/></svg> <span class="nav-label">Diary</span><span class="nav-tooltip">Diary</span></div>
     <div class="nav-item" data-view="achievements" onclick="switchView('achievements')"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="6"/><path d="M8.21 13.89 7 22l5-3 5 3-1.21-8.11"/></svg> <span class="nav-label">Achievements</span><span class="nav-tooltip">Achievements</span></div>
     <div class="nav-item" data-view="challenges" onclick="switchView('challenges')"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5.5"/><circle cx="12" cy="12" r="2"/></svg> <span class="nav-label">Challenges</span><span class="nav-badge" id="navBadge-challenges" style="display:none;"></span><span class="nav-tooltip">Challenges</span></div>
     <div class="nav-section-label">Market</div>
@@ -449,7 +448,7 @@
     <header class="top">
       <div>
         <h1>Daily Plan</h1>
-        <div class="sub">Plan the day before you trade, then say whether you stuck to it. Each day sits next to the trades you actually took.</div>
+        <div class="sub">Plan the day before you trade, then say whether you stuck to it, and how the day went. Each day sits next to the trades you actually took.</div>
       </div>
       <div class="header-actions">
         <button class="ai-btn" onclick="openDailyPlan(_moodTodayISO())">+ Plan today</button>
@@ -477,6 +476,19 @@
       <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">How your trades go on days you felt each way. All your check-ins, not just this month. Trades and rules, not money.</div>
       <div id="dpInsights"></div>
     </div>
+    <div class="panel" style="margin-top:20px;">
+      <h2 style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+        <span>Diary — recent entries</span>
+        <select id="moodRecentFilter" onchange="renderMoodRecent()" style="max-width:180px;font-size:11.5px;padding:4px 8px;">
+          <option value="all">All sections</option>
+          <option value="note_trading">📈 Trading</option>
+          <option value="note_work">💼 Work</option>
+          <option value="note_life">🌱 Life</option>
+        </select>
+      </h2>
+      <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">Your latest written entries, newest first — click one to open that day.</div>
+      <div id="moodRecentList"></div>
+    </div>
   </div>
 
   <div class="view" id="view-mood">
@@ -501,19 +513,7 @@
       <div class="cal-grid mood-cal-grid" id="moodCalGrid"></div>
     </div>
 
-    <div class="panel" style="margin-top:20px;">
-      <h2 style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
-        <span>Recent logs</span>
-        <select id="moodRecentFilter" onchange="renderMoodRecent()" style="max-width:180px;font-size:11.5px;padding:4px 8px;">
-          <option value="all">All sections</option>
-          <option value="note_trading">📈 Trading</option>
-          <option value="note_work">💼 Work</option>
-          <option value="note_life">🌱 Life</option>
-        </select>
-      </h2>
-      <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">Your latest written entries, newest first — click one to open that day.</div>
-      <div id="moodRecentList"></div>
-    </div>
+    
   </div>
 
   <div class="view" id="view-alerts">
@@ -1009,6 +1009,7 @@
         <div class="subnav-item active" data-tab="columns" onclick="switchConfigTab('columns')">Trade Journal Columns</div>
         <div class="subnav-item" data-tab="options" onclick="switchConfigTab('options')">Dropdown Options</div>
         <div class="subnav-item" data-tab="formfields" onclick="switchConfigTab('formfields')">Trade Form Fields</div>
+        <div class="subnav-item" data-tab="dbstatus" onclick="switchConfigTab('dbstatus')">Database status</div>
       </nav>
 
       <div class="subnav-content">
@@ -1040,6 +1041,17 @@
             <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">Controls both the trade detail view (click a row) and the "+ Add Trade" form. Check to show a field. Drag a row (⠿) to reorder.</div>
             <div id="formFieldConfigList"></div>
             <button class="drawer-secondary-btn" style="margin-top:14px;" onclick="resetFormFieldConfig()">Reset to default</button>
+          </div>
+        </div>
+
+        <!-- Aling SQL ang napatakbo na. Kapag kulang ang column, ang datos para
+             roon ay tahimik na hindi nase-save — kaya ito ang pinakaunang tinitingnan. -->
+        <div class="subnav-panel" id="configPanel-dbstatus">
+          <div class="panel">
+            <h2>Database status</h2>
+            <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">Each feature that needs a column in Supabase. A red row means that SQL file has not been run yet, and what it stores is not being saved. Run it in Supabase → SQL Editor, then press Check again.</div>
+            <div id="dbStatusList"></div>
+            <button class="drawer-secondary-btn" style="margin-top:14px;" onclick="checkDatabaseStatus()">Check again</button>
           </div>
         </div>
       </div>
@@ -2598,6 +2610,18 @@
         <div id="dpPsychPost" class="dp-psych-grid one"></div>
       </section>
     </div>
+    <!-- Ang dating Diary, dito na: ang mood ng araw at ang mga tala. Nasa
+         mood_entries pa rin ang datos, kaya walang nawala. -->
+    <section class="dp-card">
+      <div class="dp-card-h"><span class="dp-ico">✎</span>Diary <span class="dp-card-sub">how the day went</span></div>
+      <div class="field-row"><label>Mood</label><div id="dpMood" class="mood-dot-row"></div></div>
+      <div class="dp-grid-2 inner">
+        <div class="field-row"><label for="dpMoodTrading">📈 Trading</label><textarea id="dpMoodTrading" rows="2" placeholder="How did the session go? What did you see, take, or skip?"></textarea></div>
+        <div class="field-row"><label for="dpMoodWork">💼 Work</label><textarea id="dpMoodWork" rows="2" placeholder="The job: what happened, what drained you, what went well."></textarea></div>
+        <div class="field-row"><label for="dpMoodLife">🌱 Life</label><textarea id="dpMoodLife" rows="2" placeholder="Family, health, rest, everything outside the screens."></textarea></div>
+        <div class="field-row"><label for="dpMoodNote">Anything else</label><textarea id="dpMoodNote" rows="2"></textarea></div>
+      </div>
+    </section>
 
     <div class="sub" id="dpError" style="color:var(--loss);margin-top:6px;"></div>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-top:14px;gap:8px;">
@@ -2727,6 +2751,6 @@
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=2"></script>
-<script src="js/dashboard.js?v=589"></script>
+<script src="js/dashboard.js?v=590"></script>
 </body>
 </html>

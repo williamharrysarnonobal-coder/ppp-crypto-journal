@@ -772,6 +772,9 @@ function closeMobileMenu(){
 })();
 
 function switchView(view){
+  // Ang Diary ay bahagi na ng Daily Plan — ang lumang link (at ang naaalalang
+  // huling page) ay papunta roon.
+  if(view === 'mood') view = 'plan';
   if(DISABLED_FEATURES.has(view)){
     showToast("You don't have permission to access this feature.");
     return;
@@ -8495,7 +8498,6 @@ const ALL_DRAWER_FIELDS = [
   {key:'duration', label:'Duration', widget:'text', editable:false, realOnly:true},
   {key:'objective', label:'Objective', widget:'text', editable:false, realOnly:true},
   {key:'profit_loss', label:'Profit/Loss', widget:'number', editable:true, realOnly:true},
-  {key:'pnl_percent', label:'Price Move %', widget:'number', editable:true, realOnly:true},
   {key:'fee', label:'Fee', widget:'number', editable:false, realOnly:true},
   /* Ang RR ng isang trade na NANGYARI. Sa paper trade ay walang ganito at
      laging blangko ito — at ang blangkong "RR" sa tabi ng isang "Planned RR"
@@ -8832,6 +8834,51 @@ function switchConfigTab(tab){
   activeConfigTab = tab;
   document.querySelectorAll('#view-config .subnav-item').forEach(el => el.classList.toggle('active', el.dataset.tab === tab));
   document.querySelectorAll('#view-config .subnav-panel').forEach(el => el.classList.toggle('active', el.id === 'configPanel-' + tab));
+  if(tab === 'dbstatus') checkDatabaseStatus();
+}
+
+/* DATABASE STATUS. Bawat feature na nangangailangan ng column, at ang SQL na
+   nagdadagdag nito. Sinusuri sa pamamagitan ng isang select ng column na iyon
+   (limit 1): ang column na wala ay sinasagot ng PostgREST ng error. Walang
+   isinusulat. */
+const DB_CHECKS = [
+  { file:'supabase_trading_journal_review_fields.sql', what:'Mistakes, Entry/Exit Emotion, Trade Management on trades', table:'trading_journal', col:'mistakes,entry_emotion,exit_emotion,trade_management' },
+  { file:'supabase_position_setups_entry_emotion.sql', what:'Entry Emotion on Pending Setups', table:'position_setups', col:'entry_emotion' },
+  { file:'supabase_trading_journal_chart_shots.sql', what:'Chart screenshots (Higher / Setup / Entry TF)', table:'trading_journal', col:'chart_shots', also:{ table:'position_setups', col:'chart_shots' } },
+  { file:'supabase_daily_plans.sql', what:'Daily Plan and the psychology check-in', table:'daily_plans', col:'psych' },
+  { file:'supabase_trading_journal_add_post_stop_profit.sql', what:'Post-Stop Profit on trades', table:'trading_journal', col:'post_stop_profit_result' },
+  { file:'supabase_position_setups_upscale_order.sql', what:'Upscale order on a setup (Order Placed, Cancel)', table:'position_setups', col:'upscale_order_id' },
+  { file:'supabase_trading_accounts_upscale_api.sql', what:'Upscale API key on My Accounts', table:'trading_accounts', col:'upscale_account_id,upscale_account_label' }
+];
+async function _dbHasColumns(table, cols){
+  try{
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?select=${cols}&limit=1`, {
+      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}` }
+    });
+    if(res.ok) return true;
+    const t = await res.text();
+    // Hindi lahat ng error ay "walang column" — ang iba (network, auth) ay hindi alam.
+    return /does not exist|could not find|42703|42P01|PGRST20/i.test(t) ? false : null;
+  }catch(e){ return null; }
+}
+async function checkDatabaseStatus(){
+  const el = document.getElementById('dbStatusList');
+  if(!el) return;
+  el.innerHTML = '<div class="empty-state">Checking…</div>';
+  const results = await Promise.all(DB_CHECKS.map(async c => {
+    let ok = await _dbHasColumns(c.table, c.col);
+    if(ok && c.also) ok = await _dbHasColumns(c.also.table, c.also.col);
+    return { ...c, ok };
+  }));
+  const missing = results.filter(r => r.ok === false).length;
+  el.innerHTML = `<div class="db-summary ${missing ? 'bad' : 'good'}">${missing
+      ? `<b>${missing} SQL file${missing === 1 ? '' : 's'} still to run.</b> Until then, what they store is not being saved.`
+      : '<b>Everything is in place.</b> Every feature has its columns.'}</div>`
+    + results.map(r => `<div class="db-row ${r.ok === true ? 'ok' : r.ok === false ? 'missing' : 'unknown'}">
+        <span class="db-mark">${r.ok === true ? '✓' : r.ok === false ? '✗' : '?'}</span>
+        <span class="db-what"><b>${escapeHtml(r.what)}</b><code>${escapeHtml(r.file)}</code></span>
+        <span class="db-state">${r.ok === true ? 'Ready' : r.ok === false ? 'Run this SQL' : 'Could not check'}</span>
+      </div>`).join('');
 }
 
 /* ANG RISK AMOUNT AY GALING SA MY ACCOUNTS.
@@ -15333,7 +15380,7 @@ const BULK_GROUPS = [
   { t: 'Discipline', keys: ['rules_followed','exit_type','post_be_result','post_cutloss_result','post_stop_profit_result'] },
   { t: 'Result', keys: ['win_loss'] },
   { t: 'Account', keys: ['account','account_type'] },
-  { t: 'Prices & size', keys: ['symbol','entry_price','close_price','tp_price','sl_price','position_size','leverage','profit_loss','pnl_percent','fee'] },
+  { t: 'Prices & size', keys: ['symbol','entry_price','close_price','tp_price','sl_price','position_size','leverage','profit_loss','fee'] },
   { t: 'Other', keys: ['link'] },
 ];
 let _bulkTagState = {};   // tag -> 'add' | 'remove'
@@ -28361,7 +28408,7 @@ function renderMoodRecent(){
       ? MOOD_SECTIONS.filter(s => (e[s.key] || '').trim())
       : MOOD_SECTIONS.filter(s => s.key === filter);
     return `
-      <div class="mood-recent" onclick="openMoodModal('${e.entry_date}')">
+      <div class="mood-recent" onclick="openDailyPlan('${e.entry_date}')">
         <div class="mood-recent-top">
           <span class="mood-recent-date">${d.toLocaleDateString('en-US',{weekday:'short', month:'short', day:'numeric'})}</span>
           ${mood ? `<span class="mood-recent-mood mood-view-badge-${mood.sentiment}">${mood.emoji} ${escapeHtml(mood.label)}</span>` : ''}
@@ -28536,6 +28583,8 @@ let _dpEditing = null;            // ISO date na bukas sa modal
 let _dpLoaded = false;
 
 async function loadDailyPlans(){
+  // Kasabay ang Diary (mood_entries) — nasa iisang page na sila.
+  const moodLoad = (typeof loadMoodEntries === 'function') ? loadMoodEntries().catch(() => {}) : Promise.resolve();
   try{
     const res = await fetch(`${SUPABASE_URL}/rest/v1/daily_plans?select=*`, {
       headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}` }
@@ -28548,7 +28597,51 @@ async function loadDailyPlans(){
     DAILY_PLANS = [];
     _dpLoaded = false;
   }
+  await moodLoad;
   renderPlanCalendar();
+  if(typeof renderMoodRecent === 'function') renderMoodRecent();
+}
+
+/* ANG DIARY SA LOOB NG DAILY PLAN. Ang mood at mga tala ng araw ay nasa
+   mood_entries pa rin (iisang hilera bawat araw); binabasa at isinusulat lang
+   ito mula sa modal ng Daily Plan. */
+let _dpMood = null;
+const _dpMoodEntry = iso => (typeof MOOD_ENTRIES !== 'undefined' ? MOOD_ENTRIES : []).find(e => e.entry_date === iso) || null;
+function _renderDpMood(){
+  const el = document.getElementById('dpMood');
+  if(!el) return;
+  el.innerHTML = MOOD_OPTIONS.map(o => `<button type="button" class="mood-dot mood-dot-${o.sentiment}${_dpMood === o.key ? ' selected' : ''}"
+      title="${escapeHtml(o.label)}" aria-pressed="${_dpMood === o.key}" onclick="_dpMood = (_dpMood === '${o.key}' ? null : '${o.key}'); _renderDpMood();">${o.emoji}</button>`).join('')
+    + `<span class="mood-picker-label" style="margin-left:6px;">${_dpMood ? escapeHtml(MOOD_OPTIONS.find(o => o.key === _dpMood).label) : 'How did the day feel?'}</span>`;
+}
+function _fillDpDiary(iso){
+  const e = _dpMoodEntry(iso);
+  _dpMood = e ? e.mood : null;
+  _renderDpMood();
+  document.getElementById('dpMoodTrading').value = (e && e.note_trading) || '';
+  document.getElementById('dpMoodWork').value = (e && e.note_work) || '';
+  document.getElementById('dpMoodLife').value = (e && e.note_life) || '';
+  document.getElementById('dpMoodNote').value = (e && e.note) || '';
+}
+async function _saveDpDiary(iso){
+  const txt = id => document.getElementById(id).value.trim() || null;
+  const row = { entry_date: iso, mood: _dpMood, note_trading: txt('dpMoodTrading'), note_work: txt('dpMoodWork'),
+                note_life: txt('dpMoodLife'), note: txt('dpMoodNote') };
+  const has = row.mood || row.note_trading || row.note_work || row.note_life || row.note;
+  if(!has) return 'empty';
+  if(!row.mood) throw new Error('Pick a mood for the Diary, or clear its notes.');
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/mood_entries?on_conflict=user_id,entry_date`, {
+    method: 'POST',
+    headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}`,
+               "Content-Type": "application/json", "Prefer": "resolution=merge-duplicates,return=representation" },
+    body: JSON.stringify([row])
+  });
+  if(!res.ok) throw new Error(await res.text());
+  const rows = await res.json();
+  const saved = rows[0] || row;
+  const i = MOOD_ENTRIES.findIndex(e => e.entry_date === iso);
+  if(i >= 0) MOOD_ENTRIES[i] = saved; else MOOD_ENTRIES.push(saved);
+  return 'saved';
 }
 
 function shiftPlanMonth(dir){
@@ -28590,6 +28683,8 @@ function renderPlanCalendar(){
       <div class="d">${d}${f ? `<b class="dp-f ${f[1]}" title="Followed the plan: ${p.followed}">${f[0]}</b>` : ''}</div>
       ${(() => { const r = p ? _psychReadiness(p.psych) : null; return r === null ? '' : `<div class="dp-rd ${_readyTone(r)}" title="Readiness ${r}/100">◉ ${r}</div>`; })()}
       ${p && p.bias ? `<div class="dp-bias"><i class="dp-dot ${DP_BIAS_CLS[p.bias] || ''}"></i>${escapeHtml(p.bias)}</div>` : ''}
+      ${(() => { const me = _dpMoodEntry(iso); const mo = me && MOOD_OPTIONS.find(o => o.key === me.mood);
+        return mo ? `<div class="dp-moodc" title="Diary: ${escapeHtml(mo.label)}">${mo.emoji}</div>` : ''; })()}
       ${tr.length ? `<div class="dp-tr ${over || noTradeBreak ? 'over' : ''}" title="${tr.length} trade${tr.length === 1 ? '' : 's'}${p && p.max_trades != null ? ` of ${p.max_trades} planned` : ''}">
           ${tr.length}${p && p.max_trades != null ? `/${p.max_trades}` : ''}T <span class="${net >= 0 ? 'pos' : 'neg'}">${net >= 0 ? '+' : '−'}$${Math.abs(net).toFixed(0)}</span></div>` : ''}
     </div>`;
@@ -28825,8 +28920,9 @@ function openDailyPlan(iso){
   document.getElementById('dpImprove').value = p.improve || '';
   _dpPsych = { ...(p.psych || {}) };
   _renderPsychFields();
+  _fillDpDiary(iso);
   document.getElementById('dpError').textContent = '';
-  document.getElementById('dpDeleteBtn').style.visibility = p.id ? 'visible' : 'hidden';
+  document.getElementById('dpDeleteBtn').style.visibility = (p.id || (_dpMoodEntry(iso) || {}).id) ? 'visible' : 'hidden';
   const tr = _dpTradesOn(iso);
   const net = tr.reduce((a, t) => a + netPnl(t), 0);
   const broke = tr.filter(t => _brokenRuleTags(t.unfollowed_rules).length || /^no$/i.test(String(t.rules_followed || '').trim())).length;
@@ -28859,33 +28955,43 @@ async function saveDailyPlan(){
     psych: Object.fromEntries(Object.entries(_dpPsych).filter(([, v]) => v !== null && v !== undefined && v !== '')),
     updated_at: new Date().toISOString()
   };
-  if(!row.bias && row.max_trades == null && !row.key_levels && !row.plan_notes && !row.followed && !row.went_well && !row.improve
-     && !Object.keys(row.psych).length){
-    err.textContent = 'Nothing to save yet. Pick a bias or write something first.';
+  const planHas = row.bias || row.max_trades != null || row.key_levels || row.plan_notes || row.followed
+    || row.went_well || row.improve || Object.keys(row.psych).length;
+  const existing = DAILY_PLANS.some(p => p.plan_date === _dpEditing);
+  const diaryHas = _dpMood || ['dpMoodTrading','dpMoodWork','dpMoodLife','dpMoodNote'].some(id => document.getElementById(id).value.trim());
+  if(!planHas && !existing && !diaryHas){
+    err.textContent = 'Nothing to save yet. Pick a bias, a mood, or write something first.';
     return;
   }
+  if(diaryHas && !_dpMood){ err.textContent = 'Pick a mood for the Diary, or clear its notes.'; return; }
   const btn = document.getElementById('dpSaveBtn');
   btn.disabled = true; btn.textContent = 'Saving…';
   try{
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/daily_plans?on_conflict=user_id,plan_date`, {
-      method: 'POST',
-      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}`,
-                 "Content-Type": "application/json", "Prefer": "resolution=merge-duplicates,return=representation" },
-      body: JSON.stringify([row])
-    });
-    if(!res.ok){
-      const t = await res.text();
-      throw new Error((/daily_plans/.test(t) && /does not exist|not find/i.test(t)) || /psych/.test(t)
-        ? 'The Daily Plan table is not up to date in the database. Run supabase_daily_plans.sql in Supabase (safe to run again).' : t);
+    // Ang plano at ang diary ay magkahiwalay na hilera; ang alinmang may laman
+    // (o ang planong dati nang naroon) ang isinusulat.
+    if(planHas || existing){
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/daily_plans?on_conflict=user_id,plan_date`, {
+        method: 'POST',
+        headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}`,
+                   "Content-Type": "application/json", "Prefer": "resolution=merge-duplicates,return=representation" },
+        body: JSON.stringify([row])
+      });
+      if(!res.ok){
+        const t = await res.text();
+        throw new Error((/daily_plans/.test(t) && /does not exist|not find/i.test(t)) || /psych/.test(t)
+          ? 'The Daily Plan table is not up to date in the database. Run supabase_daily_plans.sql in Supabase (safe to run again).' : t);
+      }
+      const rows = await res.json();
+      const saved = rows[0] || row;
+      const i = DAILY_PLANS.findIndex(p => p.plan_date === saved.plan_date);
+      if(i >= 0) DAILY_PLANS[i] = saved; else DAILY_PLANS.push(saved);
+      _dpLoaded = true;
     }
-    const rows = await res.json();
-    const saved = rows[0] || row;
-    const i = DAILY_PLANS.findIndex(p => p.plan_date === saved.plan_date);
-    if(i >= 0) DAILY_PLANS[i] = saved; else DAILY_PLANS.push(saved);
-    _dpLoaded = true;
+    if(diaryHas) await _saveDpDiary(_dpEditing);
     closeDailyPlan();
     renderPlanCalendar();
-    showToast('Plan saved');
+    if(typeof renderMoodRecent === 'function') renderMoodRecent();
+    showToast(planHas && diaryHas ? 'Plan and diary saved' : diaryHas && !planHas ? 'Diary saved' : 'Plan saved');
   }catch(e){
     console.error("Couldn't save daily plan:", e);
     err.textContent = "Couldn't save: " + e.message;
@@ -28896,17 +29002,25 @@ async function saveDailyPlan(){
 
 async function deleteDailyPlan(){
   const p = DAILY_PLANS.find(x => x.plan_date === _dpEditing);
-  if(!p || !p.id) return;
-  if(!(await customConfirm('Delete the plan and review for this day?'))) return;
+  const m = _dpMoodEntry(_dpEditing);
+  if(!(p && p.id) && !(m && m.id)) return;
+  if(!(await customConfirm('Delete this day\'s plan, review and diary?'))) return;
   try{
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/daily_plans?id=eq.${p.id}`, {
-      method: 'DELETE', headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}` }
-    });
-    if(!res.ok) throw new Error(await res.text());
-    DAILY_PLANS = DAILY_PLANS.filter(x => x.id !== p.id);
+    const del = url => fetch(url, { method: 'DELETE', headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}` } });
+    if(p && p.id){
+      const res = await del(`${SUPABASE_URL}/rest/v1/daily_plans?id=eq.${p.id}`);
+      if(!res.ok) throw new Error(await res.text());
+      DAILY_PLANS = DAILY_PLANS.filter(x => x.id !== p.id);
+    }
+    if(m && m.id){
+      const res = await del(`${SUPABASE_URL}/rest/v1/mood_entries?id=eq.${m.id}`);
+      if(!res.ok) throw new Error(await res.text());
+      MOOD_ENTRIES = MOOD_ENTRIES.filter(x => x.id !== m.id);
+    }
     closeDailyPlan();
     renderPlanCalendar();
-    showToast('Plan deleted');
+    if(typeof renderMoodRecent === 'function') renderMoodRecent();
+    showToast('Day deleted');
   }catch(e){
     await customAlert("Couldn't delete: " + e.message);
   }
