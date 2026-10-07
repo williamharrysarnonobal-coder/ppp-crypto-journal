@@ -425,7 +425,9 @@ const UI_PREF_LS_KEYS = {
   // kaya sumusunod ito sa account.
   real_money_only: 'ledger-real-money-only',
   // Kung Rule o Note ang bawat Trade Tag — siya ang nagpapasya, sa Options.
-  tag_kinds: 'ledger-tag-kinds'
+  tag_kinds: 'ledger-tag-kinds',
+  // Aling market sa Market Hours ang may 🔔 — sumusunod sa account.
+  market_hours_notify: 'tanaydana-mh-notify'
 };
 
 let _uiPrefsSyncTimer = null;
@@ -824,6 +826,7 @@ function switchView(view){
     if(typeof _dpLoaded !== 'undefined' && !_dpLoaded) loadDailyPlans().then(() => { if(currentView === 'challenges') renderChallenges(); });
   }
   if(view === 'leaderboard') renderLeaderboard();
+  if(view === 'hours') openMarketHours();
   if(view === 'finance') renderFinance();
   if(view === 'salary'){
     fillSalaryInputs();
@@ -31160,3 +31163,198 @@ function runAskQuestion(id){
     ${r.action ? `<span class="ask-action">${escapeHtml(r.action)}</span>` : ''}
     ${r.basis ? `<span class="ask-basis">Worked out from: ${escapeHtml(r.basis)}</span>` : ''}`;
 }
+
+
+/* ======================== MARKET HOURS ========================
+   Live na tracker, sa oras ng UAE. Ang bawat market ay nakasulat sa SARILI
+   nitong orasan (gaya ng SESSION_WINDOWS) at kinukuwenta papuntang Dubai, kaya
+   tama pa rin pagdating ng daylight saving ng London, New York at Sydney.
+   Hindi kasama ang mga holiday. */
+const MARKET_HOURS = [
+  { id:'sydney',  name:'Sydney',              tz:'Australia/Sydney', from:7,   dur:9,   days:[1,2,3,4,5], note:'Forex opens the week here. Usually quiet for gold and crypto.' },
+  { id:'tokyo',   name:'Tokyo · Asia',        tz:'Asia/Tokyo',       from:9,   dur:9,   days:[1,2,3,4,5], note:'The Asia session in your journal.' },
+  { id:'london',  name:'London',              tz:'Europe/London',    from:8,   dur:9,   days:[1,2,3,4,5], note:'Volume arrives. Gold often picks its direction for the day here.' },
+  { id:'newyork', name:'New York',            tz:'America/New_York', from:8,   dur:9,   days:[1,2,3,4,5], note:'The New York forex session. US news (CPI, NFP…) lands 30 min in, at 8:30am New York. Big for gold.' },
+  { id:'overlap', name:'London + NY Overlap', overlap:['london','newyork'],                               note:'London and New York both open: usually the busiest hours of the day.' },
+  { id:'nyse',    name:'US stock market',     tz:'America/New_York', from:9.5, dur:6.5, days:[1,2,3,4,5], note:'The "US market open" people wait for (NYSE). Crypto often moves with US stocks here.' },
+  { id:'gold',    name:'Gold (XAU/USD)',      tz:'America/New_York', from:18,  dur:23,  days:[0,1,2,3,4], note:'Nearly 24 hours: a one-hour break each day, closed from Friday night to Monday.' },
+  { id:'crypto',  name:'Crypto',              always:true,                                               note:'Never closes, weekends included.' }
+];
+const MH_NOTIFY_KEY = 'tanaydana-mh-notify';
+const MH_DEFAULT_NOTIFY = ['london', 'newyork', 'nyse'];
+const _mhById = id => MARKET_HOURS.find(m => m.id === id);
+const _MH_WD = { Sun:0, Mon:1, Tue:2, Wed:3, Thu:4, Fri:5, Sat:6 };
+
+function _mhNotifySet(){
+  try{ const v = JSON.parse(localStorage.getItem(MH_NOTIFY_KEY)); if(Array.isArray(v)) return new Set(v); }catch(e){}
+  return new Set(MH_DEFAULT_NOTIFY);
+}
+// Oras sa pader ng `tz` → ms (UTC). Inuulit kapag tumawid ang DST.
+function _mhLocalToUtc(tz, y, mo, d, hours){
+  const guess = Date.UTC(y, mo, d) + hours * 3600000;
+  const off = _tzOffsetHours(tz, new Date(guess));
+  let t = guess - off * 3600000;
+  const off2 = _tzOffsetHours(tz, new Date(t));
+  if(off2 !== off) t = guess - off2 * 3600000;
+  return t;
+}
+// Lahat ng [simula, tapos] ng isang market na tumatama sa [fromMs, toMs).
+function _mhIntervals(m, fromMs, toMs){
+  if(m.always) return [[fromMs, toMs]];
+  if(m.overlap){
+    const a = _mhIntervals(_mhById(m.overlap[0]), fromMs, toMs), b = _mhIntervals(_mhById(m.overlap[1]), fromMs, toMs);
+    const out = [];
+    a.forEach(x => b.forEach(y => { const s = Math.max(x[0], y[0]), e = Math.min(x[1], y[1]); if(e > s) out.push([s, e]); }));
+    return out;
+  }
+  const fmt = new Intl.DateTimeFormat('en-US', { timeZone: m.tz, year:'numeric', month:'2-digit', day:'2-digit', weekday:'short' });
+  const seen = new Set(), out = [];
+  for(let t = fromMs - 2 * 86400000; t < toMs + 86400000; t += 86400000){
+    const p = Object.fromEntries(fmt.formatToParts(new Date(t)).map(x => [x.type, x.value]));
+    const key = `${p.year}-${p.month}-${p.day}`;
+    if(seen.has(key)) continue;
+    seen.add(key);
+    if(!m.days.includes(_MH_WD[p.weekday])) continue;
+    const s = _mhLocalToUtc(m.tz, +p.year, +p.month - 1, +p.day, m.from), e = s + m.dur * 3600000;
+    if(e > fromMs && s < toMs) out.push([s, e]);
+  }
+  return out.sort((x, y) => x[0] - y[0]);
+}
+// Ngayon: bukas ba, at kailan ang susunod na pagbabago.
+function _mhStatus(m, now){
+  if(m.always) return { open: true, always: true };
+  const iv = _mhIntervals(m, now - 86400000, now + 8 * 86400000);
+  const cur = iv.find(x => x[0] <= now && now < x[1]);
+  if(cur){
+    // Magkadikit na window (hal. walang tigil) — ang tunay na pagsara.
+    let end = cur[1];
+    iv.forEach(x => { if(x[0] <= end && x[1] > end) end = x[1]; });
+    return { open: true, until: end };
+  }
+  const next = iv.find(x => x[0] > now);
+  return { open: false, next: next ? next[0] : null, nextEnd: next ? next[1] : null };
+}
+const _mhTime = (ms, withDay) => new Date(ms).toLocaleString('en-US', { timeZone:'Asia/Dubai', hour:'numeric', minute:'2-digit', ...(withDay ? { weekday:'short' } : {}) });
+const _mhDayIso = ms => new Date(ms).toLocaleDateString('en-CA', { timeZone:'Asia/Dubai' });
+function _mhLeft(ms){
+  const min = Math.max(0, Math.round(ms / 60000));
+  const d = Math.floor(min / 1440), h = Math.floor(min % 1440 / 60), m = min % 60;
+  return d ? `${d}d ${h}h` : h ? `${h}h ${m}m` : `${m}m`;
+}
+
+let _mhTimer = null, _mhTick = 0;
+function renderMarketHours(){
+  const now = Date.now();
+  const notify = _mhNotifySet();
+  const dxb = _tzOffsetHours('Asia/Dubai', new Date(now));
+  // Simula ng araw ngayon sa Dubai, sa UTC ms.
+  const today = _mhDayIso(now);
+  const dayStart = Date.UTC(+today.slice(0, 4), +today.slice(5, 7) - 1, +today.slice(8, 10)) - dxb * 3600000;
+  const dayEnd = dayStart + 86400000;
+
+  // Ngayon
+  const nowEl = document.getElementById('mhNow');
+  const openNames = MARKET_HOURS.filter(m => !m.always && _mhStatus(m, now).open).map(m => m.name);
+  if(nowEl){
+    nowEl.innerHTML = `
+      <div class="mh-clock"><b id="mhClock">${new Date(now).toLocaleTimeString('en-US', { timeZone:'Asia/Dubai', hour:'numeric', minute:'2-digit', second:'2-digit' })}</b>
+        <span>${new Date(now).toLocaleDateString('en-US', { timeZone:'Asia/Dubai', weekday:'long', month:'long', day:'numeric' })} · UAE time</span></div>
+      <div class="mh-nowinfo"><span class="prof-k">Open now</span><b>${openNames.length ? escapeHtml(openNames.join(' · ')) : 'Only crypto. Forex and gold are closed.'}</b>
+        <span>A trade opened now goes in your journal as <b>${escapeHtml(computeSession({ open_date: new Date(now) }))}</b>.</span></div>`;
+  }
+
+  // Timeline ng araw
+  const tl = document.getElementById('mhTimeline');
+  if(tl){
+    const pct = ms => (ms - dayStart) / 86400000 * 100;
+    const ticks = [0, 3, 6, 9, 12, 15, 18, 21, 24].map(h => `<span style="left:${h / 24 * 100}%">${h === 24 ? '' : _hr(h)}</span>`).join('');
+    tl.innerHTML = `<div class="mh-row mh-axis"><div class="mh-lab"></div><div class="mh-track">${ticks}</div></div>` +
+      MARKET_HOURS.map(m => {
+        const segs = _mhIntervals(m, dayStart, dayEnd).map(([s, e]) => {
+          const a = Math.max(s, dayStart), b = Math.min(e, dayEnd);
+          const live = s <= now && now < e;
+          return `<i class="${live ? 'live' : ''}${m.id === 'overlap' ? ' ov' : ''}" style="left:${pct(a)}%;width:${pct(b) - pct(a)}%" title="${escapeHtml(m.name)}: ${_mhTime(s)} – ${_mhTime(e)}"></i>`;
+        }).join('');
+        return `<div class="mh-row"><div class="mh-lab">${escapeHtml(m.name)}</div><div class="mh-track">${segs}<b class="mh-nowline" style="left:${pct(now)}%"></b></div></div>`;
+      }).join('');
+  }
+
+  // Mga card
+  const cards = document.getElementById('mhCards');
+  if(cards){
+    cards.innerHTML = MARKET_HOURS.map(m => {
+      const st = _mhStatus(m, now);
+      const soon = !st.open && st.next && st.next - now <= 3600000;
+      const pill = st.always ? '<span class="mh-pill open">Always open</span>'
+        : st.open ? '<span class="mh-pill open">Open</span>'
+        : soon ? '<span class="mh-pill soon">Opens soon</span>' : '<span class="mh-pill">Closed</span>';
+      const line = st.always ? 'Trades around the clock'
+        : st.open ? `Closes in <b>${_mhLeft(st.until - now)}</b> · ${_mhTime(st.until, _mhDayIso(st.until) !== today)}`
+        : st.next ? `Opens in <b>${_mhLeft(st.next - now)}</b> · ${_mhTime(st.next, _mhDayIso(st.next) !== today)}` : '';
+      const hours = !st.always && (st.open || st.next)
+        ? (() => { const iv = _mhIntervals(m, now - 86400000, now + 8 * 86400000).find(x => x[1] > now); return iv ? `${_mhTime(iv[0])} – ${_mhTime(iv[1])}` : ''; })() : '24/7';
+      const bell = m.always ? '' : `<button type="button" class="mh-bell${notify.has(m.id) ? ' on' : ''}" onclick="toggleMarketNotify('${m.id}')"
+          title="${notify.has(m.id) ? 'Notifying you 30 min before it opens and when it closes. Click to turn off.' : 'Get a notification 30 min before it opens and when it closes.'}"
+          aria-pressed="${notify.has(m.id)}">${notify.has(m.id) ? '🔔 On' : '🔕 Off'}</button>`;
+      return `<div class="mh-card${st.open ? ' is-open' : ''}">
+        <div class="mh-card-top"><b>${escapeHtml(m.name)}</b>${pill}</div>
+        <div class="mh-line">${line}</div>
+        <div class="mh-hours">${escapeHtml(hours)}${!st.always ? ' <small>your time</small>' : ''}</div>
+        <div class="mh-note">${escapeHtml(m.note)}</div>
+        ${bell}
+      </div>`;
+    }).join('');
+  }
+}
+function _mhClockTick(){
+  if(currentView !== 'hours'){ clearInterval(_mhTimer); _mhTimer = null; return; }
+  const c = document.getElementById('mhClock');
+  if(c) c.textContent = new Date().toLocaleTimeString('en-US', { timeZone:'Asia/Dubai', hour:'numeric', minute:'2-digit', second:'2-digit' });
+  if(++_mhTick % 20 === 0) renderMarketHours();
+}
+function openMarketHours(){
+  renderMarketHours();
+  clearInterval(_mhTimer);
+  _mhTick = 0;
+  _mhTimer = setInterval(_mhClockTick, 1000);
+}
+function toggleMarketNotify(id){
+  const s = _mhNotifySet();
+  if(s.has(id)) s.delete(id); else s.add(id);
+  try{ localStorage.setItem(MH_NOTIFY_KEY, JSON.stringify([...s])); }catch(e){}
+  if(typeof syncUIPrefsToProfile === 'function') syncUIPrefsToProfile();
+  // Ang system notification ay kailangan ng pahintulot ng browser — hinihingi
+  // lang kapag may binuksan kang bell.
+  try{ if(s.has(id) && 'Notification' in window && Notification.permission === 'default') Notification.requestPermission(); }catch(e){}
+  renderMarketHours();
+}
+
+/* MGA NOTIFICATION: 30 minuto bago bumukas at pagsara, para sa mga market na
+   naka-🔔. Isang beses lang bawat pangyayari (tanda sa localStorage). Gumagana
+   lang habang bukas ang app, gaya ng Reminders. */
+const MH_FIRED_KEY = 'tanaydana-mh-fired';
+function runMarketNotifications(){
+  if(typeof USER_ACCESS_TOKEN === 'undefined' || !USER_ACCESS_TOKEN) return;
+  const now = Date.now();
+  let fired = {};
+  try{ fired = JSON.parse(localStorage.getItem(MH_FIRED_KEY) || '{}') || {}; }catch(e){}
+  Object.keys(fired).forEach(k => { if(now - fired[k] > 2 * 86400000) delete fired[k]; });
+  const on = _mhNotifySet();
+  let changed = false;
+  MARKET_HOURS.filter(m => !m.always && on.has(m.id)).forEach(m => {
+    _mhIntervals(m, now - 3600000, now + 2 * 3600000).forEach(([s, e]) => {
+      const pre = `${m.id}:${s}:pre`, cls = `${m.id}:${e}:close`;
+      if(!fired[pre] && now >= s - 30 * 60000 && now < s){
+        fired[pre] = now; changed = true;
+        _rmShow(`mh-${m.id}:pre`, `${m.name} opens in ${_mhLeft(s - now)}`, `At ${_mhTime(s)} your time.`, () => switchView('hours'));
+      }
+      if(!fired[cls] && now >= e && now < e + 10 * 60000){
+        fired[cls] = now; changed = true;
+        _rmShow(`mh-${m.id}:close`, `${m.name} is now closed`, m.id === 'gold' ? 'Daily break or weekend close.' : `Closed at ${_mhTime(e)} your time.`, () => switchView('hours'));
+      }
+    });
+  });
+  if(changed){ try{ localStorage.setItem(MH_FIRED_KEY, JSON.stringify(fired)); }catch(e){} }
+}
+setTimeout(runMarketNotifications, 10000);
+setInterval(runMarketNotifications, 30000);
