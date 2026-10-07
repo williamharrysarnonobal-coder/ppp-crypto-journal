@@ -17663,36 +17663,38 @@ async function nativeShareCard(canvasId){
    money only), bilang 1200×1080 na larawan. Ikaw ang pipili kung ano ang
    nasa bawat araw: R, % ng account, $, o W–L lang. */
 let _calShareKind = 'month';   // 'month' (Calendar) o 'year' (Year overview)
-/* Ang Header at Subtitle ng larawan ay ikaw ang sumusulat; ang default ay ang
-   buwan/taon at isang maikling linya. Blangko = ang default. */
-function _calShareDefaults(title, sub){
-  const t = document.getElementById('calShareTitle'), s = document.getElementById('calShareSub');
-  t.value = ''; t.placeholder = title;
-  s.value = ''; s.placeholder = sub;
+/* ANG MALAKING NUMERO. Ikaw ang pumipili kung alin ang malaki sa bawat araw/
+   buwan (R, %, $ o W–L); ang iba pang naka-check sa "Also show" ay maliit sa
+   ilalim. Ang pinili ay laging kasama, kaya naka-check din ito. */
+function _calShareModes(){
+  const main = document.getElementById('calShareMain')?.value || 'r';
+  const rest = [...document.querySelectorAll('.cal-share-val:checked')].map(c => c.value).filter(v => v !== main);
+  return [main, ...rest];
 }
-function _calShareText(id, fallback){
-  const v = (document.getElementById(id)?.value || '').trim();
-  return v || fallback;
+function onCalShareMain(){
+  const main = document.getElementById('calShareMain').value;
+  document.querySelectorAll('.cal-share-val').forEach(c => {
+    // Ang pangunahin ay hindi na kailangang i-check sa "Also show".
+    c.closest('label').style.display = c.value === main ? 'none' : '';
+  });
+  drawCalendarShare();
 }
 function openShareYear(){
   _calShareKind = 'year';
   document.getElementById('calShareMonth').textContent = String(YEAR_OVERVIEW);
-  document.getElementById('calShareEachK').textContent = 'Each month shows';
   document.getElementById('calShareTotalsK').textContent = 'Year totals';
-  _calShareDefaults(String(YEAR_OVERVIEW), 'Year in trading');
+  onCalShareMain();
   document.getElementById('calShareNativeBtn').style.display = (navigator.canShare && navigator.share) ? '' : 'none';
   document.getElementById('calShareModal').classList.add('open');
   drawCalendarShare();
 }
 function openShareCalendar(){
   _calShareKind = 'month';
-  document.getElementById('calShareEachK').textContent = 'Each day shows';
   document.getElementById('calShareTotalsK').textContent = 'Month totals';
-  _calShareDefaults(calMonth.toLocaleDateString('en-US', { month:'long', year:'numeric' }), 'Trading calendar');
   document.getElementById('calShareMonth').textContent = calMonth.toLocaleDateString('en-US', { month:'long', year:'numeric' });
   document.getElementById('calShareNativeBtn').style.display = (navigator.canShare && navigator.share) ? '' : 'none';
   document.getElementById('calShareModal').classList.add('open');
-  drawCalendarShare();
+  onCalShareMain();
 }
 function closeShareCalendar(){
   document.getElementById('calShareModal').classList.remove('open');
@@ -17731,10 +17733,10 @@ function _drawYearShare(cv, modes, showTotals, showAcc){
 
   ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
   const L = 56;
-  ctx.fillStyle = C.ink; ctx.font = font(800, 60); ctx.fillText(_calShareText('calShareTitle', String(y)), L, 100, W - L * 2);
+  ctx.fillStyle = C.ink; ctx.font = font(800, 60); ctx.fillText(String(y), L, 100, W - L * 2);
   const acct = document.getElementById('accountFilter')?.value;
   ctx.fillStyle = C.muted; ctx.font = font(500, 22);
-  ctx.fillText(_calShareText('calShareSub', 'Year in trading') + (showAcc && acct && acct !== 'all' ? '  ·  ' + acct : ''), L, 138, W - L * 2);
+  ctx.fillText((showAcc && acct && acct !== 'all' ? acct : 'Year in trading'), L, 138, W - L * 2);
 
   let gy = 172;
   if(showTotals){
@@ -17786,14 +17788,14 @@ function drawCalendarShare(){
   const cv = document.getElementById('calShareCanvas');
   if(!cv) return;
   if(_calShareKind === 'year'){
-    _drawYearShare(cv, [...document.querySelectorAll('.cal-share-val:checked')].map(c => c.value),
+    _drawYearShare(cv, _calShareModes(),
       document.getElementById('calShareTotals').checked, document.getElementById('calShareAccount').checked);
     return;
   }
   const ctx = cv.getContext('2d');
   const W = cv.width, H = cv.height;
   // Maramihan: ang unang napili ang malaki sa bawat araw, ang iba ay maliit sa ilalim.
-  const modes = [...document.querySelectorAll('.cal-share-val:checked')].map(c => c.value);
+  const modes = _calShareModes();
   const mode = modes[0] || 'wl';
   const showTotals = document.getElementById('calShareTotals').checked;
   const showAcc = document.getElementById('calShareAccount').checked;
@@ -17824,10 +17826,10 @@ function drawCalendarShare(){
   ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
   const L = 56;
   ctx.fillStyle = C.ink; ctx.font = font(800, 52);
-  ctx.fillText(_calShareText('calShareTitle', calMonth.toLocaleDateString('en-US', { month:'long', year:'numeric' })), L, 96, W - L * 2);
+  ctx.fillText(calMonth.toLocaleDateString('en-US', { month:'long', year:'numeric' }), L, 96, W - L * 2);
   const acct = document.getElementById('accountFilter')?.value;
   ctx.fillStyle = C.muted; ctx.font = font(500, 22);
-  ctx.fillText(_calShareText('calShareSub', 'Trading calendar') + (showAcc && acct && acct !== 'all' ? '  ·  ' + acct : ''), L, 134, W - L * 2);
+  ctx.fillText((showAcc && acct && acct !== 'all' ? acct : 'Trading calendar'), L, 134, W - L * 2);
 
   // Mga kabuuan ng buwan.
   let gy = 170;

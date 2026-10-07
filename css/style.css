@@ -4856,6 +4856,12 @@ body.mobile-mode .drawer.drawer-inline #drawerBody{grid-template-columns:minmax(
 #tpReview .tp-rv .tp-tags{padding:4px 0;}
 #tpReview .tp-notes p,#tpReview .tp-note{margin:4px 0;}
 @media(max-width:700px){#tpReview .tp-rv > .tp-rv-k{flex-basis:110px;}}
+/* Details at Confluence: magkatabi rin ang label at sagot */
+/* Ang Confluence ay nananatiling nakapatong (tanong sa itaas, sagot sa ilalim). */
+#tradeViewBody .field-row:not(.field-group-title){display:flex;align-items:center;gap:12px;min-height:38px;}
+#tradeViewBody .field-row:not(.field-group-title) > label{margin:0;flex:0 0 130px;}
+#tradeViewBody .field-row:not(.field-group-title) > .field-static{flex:1;min-width:0;}
+@media(max-width:700px){#tradeViewBody .field-row:not(.field-group-title) > label{flex-basis:105px;}}
 /* Share: header at subtitle */
 .share-text{display:inline-flex;align-items:center;gap:6px;}
 .share-text input{background:var(--surface-2);border:1px solid var(--rule);border-radius:7px;color:var(--ink);font:inherit;font-size:13px;padding:5px 8px;width:180px;}
