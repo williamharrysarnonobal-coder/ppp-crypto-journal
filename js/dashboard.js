@@ -23997,8 +23997,7 @@ function saveCalculatorDraft(){
     direction: document.getElementById('psDirection').value || null,
     entry: document.getElementById('psEntry').value || null,
     tp: document.getElementById('psTP').value || null,
-    sl: document.getElementById('psSL').value || null,
-    emotion: document.getElementById('psEmotion')?.value || null
+    sl: document.getElementById('psSL').value || null
   };
   const stateEl = document.getElementById('posCalcSaveState');
   try{
@@ -24172,32 +24171,17 @@ function clearCalculatorDraft(){
   document.getElementById('psEntry').value = '';
   document.getElementById('psTP').value = '';
   document.getElementById('psSL').value = '';
-  const es = document.getElementById('psEmotion'); if(es) es.value = '';
   renderPosSizeCalculator();
   showToast('Calculator cleared');
 }
 
 // Restores a saved draft once per session, then renders — called whenever
 // the accounts list changes too, since the table's rows come from it.
-// Ang listahan ng damdamin ay ang parehong nasa journal (FIELD_OPTIONS.emotion,
-// nae-edit sa Configuration), may emoji sa label.
-function _fillPsEmotion(){
-  const sel = document.getElementById('psEmotion');
-  if(!sel) return;
-  const cur = sel.value;
-  sel.innerHTML = '<option value="">How do you feel right now?</option>'
-    + FIELD_OPTIONS.emotion.map(o => `<option value="${escapeHtml(o)}">${escapeHtml(_optLabel('emotion', o))}</option>`).join('');
-  if(cur) sel.value = cur;
-}
-const _psEmotion = () => (document.getElementById('psEmotion')?.value || '').trim() || null;
-
 function refreshPosSizeCalculator(){
   if(!document.getElementById('psEntry')) return;
-  _fillPsEmotion();
   if(!calcDraftLoaded){
     calcDraftLoaded = true;
     const draft = loadCalculatorDraft();
-    if(draft && draft.emotion){ const es = document.getElementById('psEmotion'); if(es) es.value = draft.emotion; }
     if(draft){
       if(draft.symbol) document.getElementById('psSymbol').value = draft.symbol;
       if(draft.direction) document.getElementById('psDirection').value = draft.direction;
@@ -24517,7 +24501,7 @@ async function confirmUpscaleOrders(){
          Setup sa parehong account at parehong presyo, makilala ito ng setup
          (Order Placed + Cancel Order). */
       _rememberPlacedOrder(r.acc.id, entry, sl, r.result.orderId,
-        { symbol, tp: Number.isFinite(tp) ? tp : null, qty: r.qty, lev: r.lev, emotion: _psEmotion() });
+        { symbol, tp: Number.isFinite(tp) ? tp : null, qty: r.qty, lev: r.lev });
     }catch(e){
       r.state = 'error'; r.note = e.message;
     }
@@ -24728,8 +24712,7 @@ function journalFromUpscaleClose(orderId){
     sl_price: plan.sl ?? undefined,
     tp_price: plan.tp ?? undefined,
     position_size: plan.qty ?? undefined,
-    leverage: plan.lev ?? undefined,
-    entry_emotion: plan.emotion || undefined
+    leverage: plan.lev ?? undefined
   };
   const up = {
     entry_price: r.entry ?? undefined,
@@ -24945,8 +24928,6 @@ async function tradeThisSetup(accountId, opts){
     quantity: c.qty,
     status: 'Pending'
   };
-  // Ang damdamin bago pumasok — dala hanggang sa journal.
-  if(_psEmotion()) payload.entry_emotion = _psEmotion();
 
   /* Ang setup na ginawa sa loob ng Paper Trade Journal ay isang PAPER na
      setup. Kapareho ng trade: sa PAGGAWA lang ito isinusulat, dahil ang
@@ -25789,6 +25770,15 @@ function openConfluenceModalFromTradeView(){
 }
 
 function _openConfluenceModalWith(s){
+  // Entry Emotion: ang parehong listahan ng journal, may emoji.
+  const emoSel = document.getElementById('confluenceEmotion');
+  if(emoSel){
+    emoSel.innerHTML = '<option value="">How do you feel about this entry?</option>'
+      + FIELD_OPTIONS.emotion.map(o => `<option value="${escapeHtml(o)}">${escapeHtml(_optLabel('emotion', o))}</option>`).join('');
+    const cur = s.entry_emotion || '';
+    if(cur && !FIELD_OPTIONS.emotion.includes(cur)) emoSel.insertAdjacentHTML('beforeend', `<option value="${escapeHtml(cur)}">${escapeHtml(cur)}</option>`);
+    emoSel.value = cur;
+  }
   confluenceAnswers = (s.confluence_answers && typeof s.confluence_answers === 'object') ? {...s.confluence_answers} : {};
   confluenceChartPattern = s.chart_pattern || null;
 
@@ -25899,6 +25889,27 @@ async function saveConfluenceModal(){
     confluence_answers: confluenceAnswers,
     chart_pattern: confluenceChartPattern
   };
+  // Entry Emotion — isinusulat lang kapag may pinili; ang blangko ay hindi
+  // nagbubura ng dati.
+  const emo = (document.getElementById('confluenceEmotion')?.value || '').trim();
+  if(emo) payload.entry_emotion = emo;
+  // PATCH na may isang pagsubok ulit: kapag wala pa ang entry_emotion column
+  // (hindi pa naru-run ang SQL), ise-save ang confluence nang wala ito.
+  const patchJson = async (url) => {
+    const send = body => fetch(url, { method: 'PATCH', headers: {
+      "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}`,
+      "Content-Type": "application/json", "Prefer": "return=representation" }, body: JSON.stringify(body) });
+    let res = await send(payload);
+    if(!res.ok && 'entry_emotion' in payload){
+      const t = await res.clone().text();
+      if(t.includes('entry_emotion')){
+        console.warn('entry_emotion column missing — run supabase_position_setups_entry_emotion.sql / supabase_trading_journal_review_fields.sql');
+        delete payload.entry_emotion;
+        res = await send(payload);
+      }
+    }
+    return res;
+  };
 
   // Auto-populate Rules Followed / Unfollowed Rules from the checklist just
   // answered — only for an already-journaled trade (Pending Setups have no
@@ -25968,14 +25979,7 @@ async function saveConfluenceModal(){
       // PostgREST in.() so all the ticked setups are written in one request —
       // no partial state if the connection drops halfway through.
       const idList = confluenceTarget.ids.join(',');
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/position_setups?id=in.(${idList})`, {
-        method: 'PATCH',
-        headers: {
-          "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}`,
-          "Content-Type": "application/json", "Prefer": "return=representation"
-        },
-        body: JSON.stringify(payload)
-      });
+      const res = await patchJson(`${SUPABASE_URL}/rest/v1/position_setups?id=in.(${idList})`);
       if(!res.ok) throw new Error(await res.text());
       const updated = await res.json();
       updated.forEach(u => {
@@ -25988,28 +25992,14 @@ async function saveConfluenceModal(){
       return;
     }
     if(confluenceTarget.type === 'setup'){
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/position_setups?id=eq.${confluenceTarget.id}`, {
-        method: 'PATCH',
-        headers: {
-          "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}`,
-          "Content-Type": "application/json", "Prefer": "return=representation"
-        },
-        body: JSON.stringify(payload)
-      });
+      const res = await patchJson(`${SUPABASE_URL}/rest/v1/position_setups?id=eq.${confluenceTarget.id}`);
       if(!res.ok) throw new Error(await res.text());
       const updated = await res.json();
       const idx = SAVED_SETUPS.findIndex(s => s.id === confluenceTarget.id);
       if(idx !== -1 && updated[0]) SAVED_SETUPS[idx] = updated[0];
       renderSavedSetups();
     }else{
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/${TABLE_NAME}?position_id=eq.${encodeURIComponent(confluenceTarget.positionId)}`, {
-        method: 'PATCH',
-        headers: {
-          "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}`,
-          "Content-Type": "application/json", "Prefer": "return=representation"
-        },
-        body: JSON.stringify(payload)
-      });
+      const res = await patchJson(`${SUPABASE_URL}/rest/v1/${TABLE_NAME}?position_id=eq.${encodeURIComponent(confluenceTarget.positionId)}`);
       if(!res.ok) throw new Error(await res.text());
       const updated = await res.json();
       const idx = RAW_TRADES.findIndex(r => r.position_id === confluenceTarget.positionId);
@@ -27098,7 +27088,7 @@ function _setupJournalPrefill(s){
     // beyond close_price.
     tp_price: s.tp_price != null ? Number(s.tp_price) : undefined,
     sl_price: s.sl_price != null ? Number(s.sl_price) : undefined,
-    // Ang damdaming itinala sa Calculator bago pumasok.
+    // Ang Entry Emotion na itinala sa Confluence ng setup.
     entry_emotion: s.entry_emotion || undefined
   };
 }

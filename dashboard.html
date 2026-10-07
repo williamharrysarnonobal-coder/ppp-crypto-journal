@@ -771,12 +771,6 @@
           <button type="button" class="mic-bar mic-bar-inline" title="Hold to speak the price" onpointerdown="voiceHoldStart(event,'psSL','number',this)" onpointerup="voiceHoldEnd(event,this)" onpointercancel="voiceHoldEnd(event,this)" onpointerleave="voiceHoldEnd(event,this)" oncontextmenu="return false"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="9" y1="21" x2="15" y2="21"/></svg><span class="mic-bar-idle">Hold to speak</span><span class="mic-bar-live">Listening — let go when done</span></button>
         </div>
       </div>
-      <!-- Ang damdamin BAGO pumasok, habang sariwa pa. Dala ito ng setup at ng
-           order hanggang sa journal (Entry Emotion). -->
-      <div class="field-row">
-        <label for="psEmotion">Entry emotion</label>
-        <select id="psEmotion" onchange="onPosSizeInput()"><option value="">How do you feel right now?</option></select>
-      </div>
 
       <div class="empty-state" id="psError" style="display:none;">Enter Entry and SL (they must be different) to see position sizes.</div>
 
@@ -2034,6 +2028,12 @@
       <label>Pattern Type</label>
       <select id="confluencePatternType" onchange="onConfluenceTypeChange()"></select>
     </div>
+    <!-- Ang damdamin bago pumasok, kasama ng confluence — dala ng setup hanggang
+         sa Entry Emotion ng journal. -->
+    <div class="field-row" style="flex-shrink:0;">
+      <label for="confluenceEmotion">Entry Emotion</label>
+      <select id="confluenceEmotion"><option value="">How do you feel about this entry?</option></select>
+    </div>
     <div id="confluenceBulkNote" style="display:none;flex-shrink:0;border:1px solid var(--rule);border-left:3px solid var(--info);background:var(--surface-2);border-radius:7px;padding:10px 13px;margin-bottom:12px;font-size:12px;color:var(--ink);line-height:1.55;"></div>
     <div id="confluenceBody" style="flex-shrink:0;"></div>
     <button class="ai-btn" style="margin-top:6px;width:100%;flex-shrink:0;" onclick="saveConfluenceModal()">Save Confluence</button>
@@ -2724,6 +2724,6 @@
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=2"></script>
-<script src="js/dashboard.js?v=586"></script>
+<script src="js/dashboard.js?v=587"></script>
 </body>
 </html>
