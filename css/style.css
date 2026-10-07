@@ -4847,6 +4847,19 @@ body.mobile-mode .drawer.drawer-inline #drawerBody{grid-template-columns:minmax(
 .tp-rv-k{font-size:11px !important;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--ink) !important;opacity:.78;margin-bottom:7px !important;}
 #view-trade .trade-view-grid .field-row label{font-size:10.5px;font-weight:700;letter-spacing:.07em;color:var(--ink);opacity:.72;}
 #view-trade .trade-view-grid .field-group-title{color:var(--accent);font-weight:800;letter-spacing:.09em;}
+/* Review: label at sagot magkatabi — "Rules followed? [No]" sa iisang hanay */
+#tpReview .tp-rv-grid{gap:10px 28px;}
+#tpReview .tp-rv{display:flex;align-items:center;gap:12px;min-height:36px;padding:2px 0;border-bottom:1px solid var(--rule);}
+#tpReview .tp-rv > .tp-rv-k{flex:0 0 140px;margin:0 !important;}
+#tpReview .tp-rv > :not(.tp-rv-k){flex:1;min-width:0;}
+#tpReview .tp-rv-wide > .tp-rv-k{align-self:flex-start;padding-top:9px;}
+#tpReview .tp-rv .tp-tags{padding:4px 0;}
+#tpReview .tp-notes p,#tpReview .tp-note{margin:4px 0;}
+@media(max-width:700px){#tpReview .tp-rv > .tp-rv-k{flex-basis:110px;}}
+/* Share: header at subtitle */
+.share-text{display:inline-flex;align-items:center;gap:6px;}
+.share-text input{background:var(--surface-2);border:1px solid var(--rule);border-radius:7px;color:var(--ink);font:inherit;font-size:13px;padding:5px 8px;width:180px;}
+.share-break{flex-basis:100%;height:0;}
 /* Chart link */
 .tp-link-btn{text-decoration:none;font-family:var(--font-ui);height:30px;}
 .tp-chip-link{text-decoration:none;color:var(--accent);border-color:color-mix(in srgb,var(--accent) 45%,transparent);}
