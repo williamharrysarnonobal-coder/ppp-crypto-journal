@@ -17904,6 +17904,8 @@ function drawShareCard(){
     ctx.restore();
     ctx.strokeStyle = C.rule; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.roundRect ? ctx.roundRect(bx, by, bw, bh, 18) : ctx.rect(bx, by, bw, bh); ctx.stroke();
+  } else {
+    _drawShareTradeMap(ctx, row, good, C, font, W);
   }
 
   // Paa: tatak.
@@ -17917,6 +17919,82 @@ function drawShareCard(){
     document.getElementById('shareChart').checked && !_shareChartImg
       ? ((_chartShotsOf(row).entry.length + _chartShotsOf(row).setup.length + _chartShotsOf(row).htf.length) ? 'Loading the chart…' : 'This trade has no chart yet. Add one in the Charts tab to include it.')
       : '';
+}
+
+/* TRADE MAP sa kanang itaas ng Share Trade — parang position tool ng
+   TradingView: berdeng zone Entry→TP, pulang zone Entry→SL, at ang linya
+   mula Entry papunta sa totoong exit. Win: berdeng linya; Loss: pula. Galing
+   lahat sa totoong presyo ng trade; walang ipinapakita kapag kulang ang
+   Entry o Exit. */
+function _drawShareTradeMap(ctx, row, good, C, font, W){
+  const num = v => { const x = parseFloat(v); return Number.isFinite(x) && x > 0 ? x : null; };
+  const e = num(row.entry_price), x = num(row.close_price);
+  if(e === null || x === null) return;
+  // Hindi iginuguhit ang TP/SL na nasa maling panig (hal. SL na inilipat na
+  // sa kita) o higit 25% ang layo — mali o luma na ang ganoong numero.
+  const side = /^short$/i.test(String(row.trade_type || '').trim()) ? -1 : 1;
+  const sane = (v, s) => v !== null && (v - e) * side * s > 0 && Math.abs(v - e) / e <= 0.25 ? v : null;
+  const tp = sane(num(row.tp_price), 1), sl = sane(num(row.sl_price), -1);
+  const bx = 760, by = 72, bw = W - bx - 56, bh = 250;
+  const zx0 = bx, zx1 = bx + bw - 150;                 // ang zone; sa kanan ang mga presyo
+  const levels = [e, x, tp, sl].filter(v => v !== null);
+  let lo = Math.min(...levels), hi = Math.max(...levels);
+  const pad = (hi - lo || e * 0.002) * 0.14;
+  lo -= pad; hi += pad;
+  const Y = p => by + (hi - p) / (hi - lo) * bh;
+  const tone = good ? C.win : C.loss;
+
+  // Mga zone
+  const zone = (a, b, fill, line) => {
+    const y1 = Math.min(Y(a), Y(b)), y2 = Math.max(Y(a), Y(b));
+    ctx.fillStyle = fill; ctx.fillRect(zx0, y1, zx1 - zx0, y2 - y1);
+    ctx.strokeStyle = line; ctx.lineWidth = 2; ctx.setLineDash([8, 6]);
+    ctx.beginPath(); ctx.moveTo(zx0, Y(b)); ctx.lineTo(zx1, Y(b)); ctx.stroke();
+    ctx.setLineDash([]);
+  };
+  if(tp !== null) zone(e, tp, 'rgba(46,204,113,.13)', 'rgba(46,204,113,.7)');
+  if(sl !== null) zone(e, sl, 'rgba(255,92,92,.13)', 'rgba(255,92,92,.7)');
+  ctx.strokeStyle = C.muted; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(zx0, Y(e)); ctx.lineTo(zx1, Y(e)); ctx.stroke();
+
+  // Ang daan mula Entry hanggang Exit
+  const sx = zx0 + 18, sy = Y(e), ex = zx1 - 22, ey = Y(x), w = ex - sx;
+  ctx.strokeStyle = tone; ctx.lineWidth = 4; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(sx, sy);
+  ctx.bezierCurveTo(sx + w * 0.4, sy + (sy - ey) * 0.22, sx + w * 0.62, ey, ex, ey);
+  ctx.stroke();
+  ctx.fillStyle = C.ink; ctx.beginPath(); ctx.arc(sx, sy, 6, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = good ? 'rgba(46,204,113,.28)' : 'rgba(255,92,92,.28)';
+  ctx.beginPath(); ctx.arc(ex, ey, 16, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = tone; ctx.beginPath(); ctx.arc(ex, ey, 8, 0, Math.PI * 2); ctx.fill();
+
+  // Mga presyo sa kanan — itinutulak palayo sa isa't isa para hindi magpatong.
+  const dec = Math.max(...levels) >= 1000 ? 2 : Math.max(...levels) >= 1 ? 4 : 6;
+  const fmt = v => v.toLocaleString('en-US', { maximumFractionDigits: dec });
+  const labels = [
+    tp !== null ? { k:'TP', v:tp, c:C.win } : null,
+    { k:'Entry', v:e, c:C.ink },
+    sl !== null ? { k:'SL', v:sl, c:C.loss } : null,
+    { k:'Exit', v:x, c:tone }
+  ].filter(Boolean).map(l => ({ ...l, y: Y(l.v) })).sort((a, b) => a.y - b.y);
+  for(let i = 1; i < labels.length; i++) if(labels[i].y - labels[i - 1].y < 26) labels[i].y = labels[i - 1].y + 26;
+  const over = labels[labels.length - 1].y - (by + bh + 4);
+  if(over > 0) labels.forEach(l => l.y -= over);
+  const lx = zx1 + 18;
+  labels.forEach(l => {
+    ctx.fillStyle = l.c; ctx.font = font(700, 16);
+    ctx.fillText(l.k.toUpperCase(), lx, l.y + 6);
+    ctx.fillStyle = l.k === 'Exit' ? tone : C.ink; ctx.font = font(l.k === 'Exit' ? 800 : 600, 18);
+    ctx.textAlign = 'right'; ctx.fillText(fmt(l.v), bx + bw, l.y + 6); ctx.textAlign = 'left';
+  });
+
+  // Maikling paliwanag sa ilalim
+  const near = (a, b, ref) => b !== null && Math.abs(a - b) <= Math.abs(ref) * 0.12;
+  const cap = good
+    ? (tp !== null && near(x, tp, tp - e) ? 'Hit take profit' : 'Closed in profit')
+    : (sl === null ? 'Closed at a loss' : near(x, sl, sl - e) ? 'Stopped out' : 'Closed before the stop');
+  ctx.fillStyle = tone; ctx.font = font(700, 18);
+  ctx.fillText(`${good ? '✓' : '✕'}  ${cap}`, zx0, by + bh + 36);
 }
 
 function _shareBlob(canvasId){
