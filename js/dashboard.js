@@ -22023,7 +22023,35 @@ function computeChallenges(trades, achRows){
     };
   }
 
-  return [c39, c40, c41, c42, c43];
+  // 1% Risk Master: sunod-sunod na trade na ang risk ay ≤1% ng ACCOUNT SIZE
+  // (ganoon sumukat ang prop firm). Ang risk ay galing sa Calculator setup, o
+  // sa Entry→SL kapag wala. Ang trade na hindi alam ang risk o ang laki ng
+  // account ay nilalaktawan — hindi pumuputol, hindi rin nabibilang.
+  const rawById = new Map((typeof RAW_TRADES !== 'undefined' ? RAW_TRADES : []).map(r => [r.position_id, r]));
+  const riskPctOf = t => {
+    const size = _accSizeOf(t);
+    if(!size) return null;
+    let risk = _setupRiskOf(rawById.get(t.position_id) || t);   // ang normalized ay walang linked_setup_id
+    if(!risk){ const r = _beAvoidedLoss(t); risk = r && !r.suspect && r.value > 0 ? r.value : null; }
+    // Higit 5% ay halos tiyak na maling numero (hal. lots na nabasang units) —
+    // gaya ng hangganan ng _tradeR; nilalaktawan, hindi pumuputol.
+    const pct = risk ? risk / size * 100 : null;
+    return pct !== null && pct <= 5 ? pct : null;
+  };
+  const sized = closed.filter(t => !t.is_paper).slice().sort((a, b) => a.close_date - b.close_date)
+    .map(riskPctOf).filter(p => p !== null);
+  let rmRun = 0, rmBest = 0, rmCur = 0;
+  sized.forEach(p => { if(p <= 1.02){ rmRun++; rmBest = Math.max(rmBest, rmRun); } else rmRun = 0; });
+  for(let i = sized.length - 1; i >= 0 && sized[i] <= 1.02; i--) rmCur++;
+  const c44 = sized.length ? {
+    icon:'percent', title:'1% Risk Master', points:90,
+    desc:'Trades in a row risking 1% or less of the account size.',
+    howTo:'Risk is the amount from your Calculator setup, or Entry to Stop Loss times the quantity when there is no setup, divided by the account size in My Accounts (how prop firms measure it). Trades without a known risk or account size, or with a risk over 5% (almost always a typo in the numbers), are skipped. Counted back from your latest trade. Levels: 5, 10, 20, 30 in a row.',
+    current: rmCur, tiers: [5, 10, 20, 30], target: 30, done: rmCur >= 30,
+    statOverride: `Now ${rmCur} in a row · best ${rmBest} · ${sized.length} trades measured`
+  } : null;
+
+  return [c39, c40, c41, c42, c43, c44];
   }catch(e){ return []; } })();
 
   return [c1,c2,c3,c4,c5,c6,c7,c8,c9,c10,c11,c12,c13,c14,c15,c17,c18,c19,c20,c21,c22,c23,c24,c25,c26,c27,c28,c29,c30,c31,c32,c33,c34,
@@ -22044,7 +22072,6 @@ function computeChallenges(trades, achRows){
    mahirap gawin; wala lang talagang datos, at ang paggawa ng bilang mula sa
    walang datos ay mas masahol kaysa sa pagsasabing hindi pa kaya. */
 const LOCKED_CHALLENGES = [
-  {icon:'percent', title:'1% Risk Master', desc:'Risking ≤1% per trade, 30 trades in a row.', needs:'Entry and stop-loss prices exist now, but this also needs the account balance as it was on the day of each trade — only the current balance is stored, so old trades would be measured against the wrong number.'},
   // Ang Daily Check-in Streak ay naka-lock lang hangga't hindi pa nare-run ang
   // supabase_app_visits.sql (walang naitalang pagbisita); nawawala ito rito
   // kapag may APP_VISITS na, at lumalabas bilang c43.
