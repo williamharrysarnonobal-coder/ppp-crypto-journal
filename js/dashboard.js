@@ -26043,6 +26043,7 @@ function renderSetupBulkBar(){
   const n = SELECTED_SETUP_IDS.size;
   bar.style.display = n ? 'flex' : 'none';
   count.textContent = `${n} setup${n===1?'':'s'} selected`;
+  _fillBulkEmotionSelect();
 }
 
 // Confluence can be written to every ticked setup at once because it really
@@ -26539,6 +26540,42 @@ async function setSetupEmotion(id, sel){
     await customAlert("Couldn't save: " + e.message);
   }finally{
     sel.disabled = false;
+  }
+}
+
+/* BULK: isang Entry Emotion para sa lahat ng naka-tick na setup, sa iisang
+   request (in.()), para walang kalahating na-save kung maputol. */
+function _fillBulkEmotionSelect(){
+  const sel = document.getElementById('setupBulkEmotion');
+  if(!sel || sel.options.length > 1) return;
+  sel.insertAdjacentHTML('beforeend', FIELD_OPTIONS.emotion.map(o =>
+    `<option value="${escapeHtml(o)}">${escapeHtml(_optLabel('emotion', o))}</option>`).join(''));
+}
+async function bulkSetSetupEmotion(sel){
+  const v = sel.value;
+  const ids = [...SELECTED_SETUP_IDS];
+  if(!v || !ids.length){ sel.value = ''; return; }
+  sel.disabled = true;
+  try{
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/position_setups?id=in.(${ids.join(',')})`, {
+      method: 'PATCH',
+      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}`,
+                 "Content-Type": "application/json", "Prefer": "return=minimal" },
+      body: JSON.stringify({ entry_emotion: v })
+    });
+    if(!res.ok){
+      const t = await res.text();
+      throw new Error(t.includes('entry_emotion')
+        ? 'The Entry Emotion column is not in the database yet. Run supabase_position_setups_entry_emotion.sql in Supabase.' : t);
+    }
+    SAVED_SETUPS.forEach(s => { if(ids.includes(s.id)) s.entry_emotion = v; });
+    renderSavedSetups();
+    showToast(`Entry emotion ${_optLabel('emotion', v)} set on ${ids.length} setup${ids.length === 1 ? '' : 's'}`);
+  }catch(e){
+    await customAlert("Couldn't save: " + e.message);
+  }finally{
+    sel.disabled = false;
+    sel.value = '';
   }
 }
 

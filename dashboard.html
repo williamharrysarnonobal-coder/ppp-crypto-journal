@@ -816,6 +816,9 @@
       <div id="setupBulkBar" style="display:none;align-items:center;gap:10px;margin-bottom:12px;font-size:12.5px;">
         <span id="setupBulkCount"></span>
         <button class="poscalc-accent-btn" onclick="openConfluenceModalBulk()">Add Confluence</button>
+        <select id="setupBulkEmotion" class="ps-emo-sel" aria-label="Entry emotion for the selected setups" onchange="bulkSetSetupEmotion(this)">
+          <option value="">Entry Emotion…</option>
+        </select>
         <button class="poscalc-accent-btn" onclick="journalSelectedSetups()">Add Journal</button>
         <button class="poscalc-accent-btn" onclick="openBulkNotesModal()">Add New Notes</button>
         <button class="drawer-secondary-btn" onclick="clearSetupSelection()">Clear</button>
@@ -2724,6 +2727,6 @@
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=2"></script>
-<script src="js/dashboard.js?v=588"></script>
+<script src="js/dashboard.js?v=589"></script>
 </body>
 </html>
