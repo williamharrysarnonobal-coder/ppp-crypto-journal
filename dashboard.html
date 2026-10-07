@@ -17,7 +17,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<link rel="stylesheet" href="css/style.css?v=355">
+<link rel="stylesheet" href="css/style.css?v=356">
 </head>
 <body>
 
@@ -2570,11 +2570,11 @@
         <div>
           <div class="field-row">
             <label for="dpLevels">Key levels</label>
-            <textarea id="dpLevels" rows="2" placeholder="Prev high 64,250 · Asia low 62,900 · 4H FVG 63,400–63,600"></textarea>
+            <textarea id="dpLevels" rows="2" placeholder="Prev high 64,250 · Asia low 62,900 · 4H FVG 63,400–63,600"></textarea><button type="button" class="mic-bar" onpointerdown="voiceHoldStart(event,'dpLevels','text',this)" onpointerup="voiceHoldEnd(event,this)" onpointercancel="voiceHoldEnd(event,this)" onpointerleave="voiceHoldEnd(event,this)" oncontextmenu="return false"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="9" y1="21" x2="15" y2="21"/></svg><span class="mic-bar-idle">Hold to speak</span><span class="mic-bar-live">Listening — let go when done</span><span class="mic-bar-busy">Transcribing…</span></button>
           </div>
           <div class="field-row">
             <label for="dpPlan">What I'm waiting for</label>
-            <textarea id="dpPlan" rows="2" placeholder="Sweep of Asia low into the 4H FVG, then a 15m bounce play. Nothing before London open."></textarea>
+            <textarea id="dpPlan" rows="2" placeholder="Sweep of Asia low into the 4H FVG, then a 15m bounce play. Nothing before London open."></textarea><button type="button" class="mic-bar" onpointerdown="voiceHoldStart(event,'dpPlan','text',this)" onpointerup="voiceHoldEnd(event,this)" onpointercancel="voiceHoldEnd(event,this)" onpointerleave="voiceHoldEnd(event,this)" oncontextmenu="return false"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="9" y1="21" x2="15" y2="21"/></svg><span class="mic-bar-idle">Hold to speak</span><span class="mic-bar-live">Listening — let go when done</span><span class="mic-bar-busy">Transcribing…</span></button>
           </div>
         </div>
       </div>
@@ -2598,11 +2598,11 @@
         </div>
         <div class="field-row">
           <label for="dpWell">What went well</label>
-          <textarea id="dpWell" rows="2"></textarea>
+          <textarea id="dpWell" rows="2"></textarea><button type="button" class="mic-bar" onpointerdown="voiceHoldStart(event,'dpWell','text',this)" onpointerup="voiceHoldEnd(event,this)" onpointercancel="voiceHoldEnd(event,this)" onpointerleave="voiceHoldEnd(event,this)" oncontextmenu="return false"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="9" y1="21" x2="15" y2="21"/></svg><span class="mic-bar-idle">Hold to speak</span><span class="mic-bar-live">Listening — let go when done</span><span class="mic-bar-busy">Transcribing…</span></button>
         </div>
         <div class="field-row">
           <label for="dpImprove">What to do better</label>
-          <textarea id="dpImprove" rows="2"></textarea>
+          <textarea id="dpImprove" rows="2"></textarea><button type="button" class="mic-bar" onpointerdown="voiceHoldStart(event,'dpImprove','text',this)" onpointerup="voiceHoldEnd(event,this)" onpointercancel="voiceHoldEnd(event,this)" onpointerleave="voiceHoldEnd(event,this)" oncontextmenu="return false"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="9" y1="21" x2="15" y2="21"/></svg><span class="mic-bar-idle">Hold to speak</span><span class="mic-bar-live">Listening — let go when done</span><span class="mic-bar-busy">Transcribing…</span></button>
         </div>
       </section>
       <section class="dp-card">
@@ -2616,10 +2616,10 @@
       <div class="dp-card-h"><span class="dp-ico">✎</span>Diary <span class="dp-card-sub">how the day went</span></div>
       <div class="field-row"><label>Mood</label><div id="dpMood" class="mood-dot-row"></div></div>
       <div class="dp-grid-2 inner">
-        <div class="field-row"><label for="dpMoodTrading">📈 Trading</label><textarea id="dpMoodTrading" rows="2" placeholder="How did the session go? What did you see, take, or skip?"></textarea></div>
-        <div class="field-row"><label for="dpMoodWork">💼 Work</label><textarea id="dpMoodWork" rows="2" placeholder="The job: what happened, what drained you, what went well."></textarea></div>
-        <div class="field-row"><label for="dpMoodLife">🌱 Life</label><textarea id="dpMoodLife" rows="2" placeholder="Family, health, rest, everything outside the screens."></textarea></div>
-        <div class="field-row"><label for="dpMoodNote">Anything else</label><textarea id="dpMoodNote" rows="2"></textarea></div>
+        <div class="field-row"><label for="dpMoodTrading">📈 Trading</label><textarea id="dpMoodTrading" rows="2" placeholder="How did the session go? What did you see, take, or skip?"></textarea><button type="button" class="mic-bar" onpointerdown="voiceHoldStart(event,'dpMoodTrading','text',this)" onpointerup="voiceHoldEnd(event,this)" onpointercancel="voiceHoldEnd(event,this)" onpointerleave="voiceHoldEnd(event,this)" oncontextmenu="return false"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="9" y1="21" x2="15" y2="21"/></svg><span class="mic-bar-idle">Hold to speak</span><span class="mic-bar-live">Listening — let go when done</span><span class="mic-bar-busy">Transcribing…</span></button></div>
+        <div class="field-row"><label for="dpMoodWork">💼 Work</label><textarea id="dpMoodWork" rows="2" placeholder="The job: what happened, what drained you, what went well."></textarea><button type="button" class="mic-bar" onpointerdown="voiceHoldStart(event,'dpMoodWork','text',this)" onpointerup="voiceHoldEnd(event,this)" onpointercancel="voiceHoldEnd(event,this)" onpointerleave="voiceHoldEnd(event,this)" oncontextmenu="return false"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="9" y1="21" x2="15" y2="21"/></svg><span class="mic-bar-idle">Hold to speak</span><span class="mic-bar-live">Listening — let go when done</span><span class="mic-bar-busy">Transcribing…</span></button></div>
+        <div class="field-row"><label for="dpMoodLife">🌱 Life</label><textarea id="dpMoodLife" rows="2" placeholder="Family, health, rest, everything outside the screens."></textarea><button type="button" class="mic-bar" onpointerdown="voiceHoldStart(event,'dpMoodLife','text',this)" onpointerup="voiceHoldEnd(event,this)" onpointercancel="voiceHoldEnd(event,this)" onpointerleave="voiceHoldEnd(event,this)" oncontextmenu="return false"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="9" y1="21" x2="15" y2="21"/></svg><span class="mic-bar-idle">Hold to speak</span><span class="mic-bar-live">Listening — let go when done</span><span class="mic-bar-busy">Transcribing…</span></button></div>
+        <div class="field-row"><label for="dpMoodNote">Anything else</label><textarea id="dpMoodNote" rows="2"></textarea><button type="button" class="mic-bar" onpointerdown="voiceHoldStart(event,'dpMoodNote','text',this)" onpointerup="voiceHoldEnd(event,this)" onpointercancel="voiceHoldEnd(event,this)" onpointerleave="voiceHoldEnd(event,this)" oncontextmenu="return false"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="9" y1="21" x2="15" y2="21"/></svg><span class="mic-bar-idle">Hold to speak</span><span class="mic-bar-live">Listening — let go when done</span><span class="mic-bar-busy">Transcribing…</span></button></div>
       </div>
     </section>
 
@@ -2751,6 +2751,6 @@
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=2"></script>
-<script src="js/dashboard.js?v=590"></script>
+<script src="js/dashboard.js?v=591"></script>
 </body>
 </html>

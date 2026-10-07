@@ -28750,6 +28750,93 @@ const PSYCH_FIELDS = [
 ];
 let _dpPsych = {};   // ang sagot na binabago sa modal
 
+/* ANG PALIWANAG NG BAWAT TANONG SA DAILY PLAN — lumalabas sa ⓘ kapag hover
+   (o pindot sa phone). Naka-key sa mismong label, kaya iisang lugar lang ang
+   babaguhin kapag may bagong tanong. Paliwanag muna, saka isang halimbawa. */
+const DP_INFO = {
+  // Plan
+  'Bias': 'Your expected direction for today, from your higher-timeframe read. Bullish = only looking for longs. Bearish = only shorts. Neutral = both, or a range. No trade = sitting out (news day, tired, already at your limit).',
+  'Max trades today': 'The most trades you will take today, decided before the session. Example: 2. Once you reach it you stop, win or lose.',
+  'Key levels': 'The prices that matter to you today. Example: Prev day high 64,250 · Asia low 62,900 · 4H FVG 63,400–63,600.',
+  "What I'm waiting for": 'The exact setup that would make you enter, written in advance so you are not making it up live. Example: Sweep of the Asia low into the 4H FVG, then a 15m bounce play. Nothing before London.',
+  // Review
+  'Trades that day': 'Filled in from your journal: every trade that closed on this day, with wins, losses, net and rules broken.',
+  'Did you follow the plan?': 'Did you trade the way the plan said? Yes = only the planned setup, within your max trades. Partly = mostly, with one slip. No = you traded outside the plan.',
+  'What went well': 'One or two things worth repeating. Example: Waited for confirmation and skipped the first fake move.',
+  'What to do better': 'One concrete thing for next time. Example: Stop after 2 trades even if the second one wins.',
+  // Body
+  'Sleep (hours)': 'How many hours you actually slept last night. Example: 6.5. Under 6 hours tends to mean slower reads and more impulsive entries.',
+  'Sleep quality': 'How rested you feel, not just the hours. 1 = woke up tired or slept badly. 5 = slept deeply and woke up clear.',
+  'Energy': 'Your physical and mental energy right now. 1 = drained, heavy eyes. 5 = sharp and alert. Example: after a long work day you might be a 2.',
+  'Ate properly?': 'Did you eat a proper meal before trading? Hunger quietly lowers patience and focus.',
+  'Exercised?': 'Any exercise today: a walk, the gym, a sport. It helps clear stress before a session.',
+  // Mind
+  'Stress': 'How much pressure you feel right now, from anything. 1 = calm. 5 = tight chest, racing thoughts. High stress makes you cut winners early and hold losers.',
+  'Focus': 'Can you watch the chart without drifting? 1 = scattered, checking your phone. 5 = locked in on your setups only.',
+  'Confidence': 'Trust in your process today, not in one trade. 1 = second-guessing everything. 5 = steady. Note: very high right after a big win can tip into overconfidence.',
+  'Patience': 'Can you wait for your setup? 1 = itchy, you want to be in a trade. 5 = happy to sit out all day if nothing comes.',
+  'Pressure outside trading': 'Stress from outside the screens: work, family, money, health. 1 = none. 5 = something heavy on your mind. Example: a work deadline or a family problem.',
+  'Need to make money today?': 'Do you feel you NEED a win today (bills, a target, making back a loss)? Yes is a warning sign: that pressure is when rules get bent.',
+  // Feeling
+  'Strongest feeling right now': 'The single feeling that is strongest right now. Example: Anxious after yesterday’s loss, or Excited because price is near your level. Calm and Focused are the states to trade in.',
+  // After the session
+  'Tilt during the session': 'Tilt is when emotions start making your decisions instead of your plan, usually after a loss. 1 = none, you followed the plan. 3 = you wanted to win it back but held back. 5 = lost it: revenge trades, bigger size, ignored the SL.',
+  'Felt FOMO?': 'Fear of missing out: wanting to jump in because price is moving without you. Example: entering a breakout late, with no setup.',
+  'Wanted to win it back (revenge)?': 'After a loss, wanting to make it back straight away. Example: taking the next trade bigger or faster than your plan allows.',
+  'Did feelings drive a decision?': 'Did a feeling, not your rules, decide an entry, exit or stop? Example: closing a winner early out of fear, or moving the SL out of hope.',
+  // Diary
+  'Mood': 'How the whole day felt, trading and life together. It shows as an emoji on the calendar.',
+  'Trading': 'What happened in the session in your own words: what you saw, took or skipped, and why.',
+  'Work': 'Your job today: what happened, what drained you, what went well. It often explains a bad trading day.',
+  'Life': 'Family, health, rest: everything outside the screens that affected you today.',
+  'Anything else': 'Whatever does not fit above.',
+  // Readiness
+  'Readiness': 'A 0–100 score from your before-session answers (sleep, energy, stress, focus, confidence, patience, outside pressure). Money pressure and a strong feeling other than calm or focused take it down. Under 50: consider trading smaller or not at all.'
+};
+const _dpInfoIcon = text => `<span class="dp-info" tabindex="0" role="button" aria-label="What does this mean?" data-tip="${escapeHtml(text)}">i</span>`;
+// Nilalagyan ng ⓘ ang bawat label sa Daily Plan popup na may paliwanag.
+function _attachDpInfo(){
+  const modal = document.getElementById('dpModal');
+  if(!modal) return;
+  const clean = s => s.replace(/[\u{1F300}-\u{1FAFF}☀-➿️]/gu, '').replace(/\s+/g, ' ').trim();
+  modal.querySelectorAll('label, .dp-q > label').forEach(l => {
+    if(l.querySelector('.dp-info')) return;
+    const t = DP_INFO[clean(l.textContent)];
+    if(t) l.insertAdjacentHTML('beforeend', ' ' + _dpInfoIcon(t));
+  });
+  const ready = document.getElementById('dpReady');
+  if(ready && !ready.parentElement.querySelector('.dp-info.ready')){
+    ready.insertAdjacentHTML('afterend', _dpInfoIcon(DP_INFO.Readiness).replace('class="dp-info"', 'class="dp-info ready"'));
+  }
+}
+// Isang lumulutang na tooltip (position: fixed), para hindi maputol ng scroll ng popup.
+(function(){
+  let tip = null;
+  const show = el => {
+    if(!tip){ tip = document.createElement('div'); tip.className = 'dp-tip'; tip.setAttribute('role', 'tooltip'); document.body.appendChild(tip); }
+    tip.textContent = el.dataset.tip;
+    tip.style.display = 'block';
+    const r = el.getBoundingClientRect(), w = Math.min(320, window.innerWidth - 24);
+    tip.style.width = w + 'px';
+    const left = Math.max(12, Math.min(window.innerWidth - w - 12, r.left + r.width / 2 - w / 2));
+    const h = tip.offsetHeight;
+    const top = r.bottom + 8 + h > window.innerHeight ? r.top - h - 8 : r.bottom + 8;
+    tip.style.left = left + 'px'; tip.style.top = Math.max(8, top) + 'px';
+  };
+  const hide = () => { if(tip) tip.style.display = 'none'; };
+  document.addEventListener('mouseover', e => { const el = e.target.closest && e.target.closest('.dp-info'); if(el) show(el); });
+  document.addEventListener('mouseout', e => { if(e.target.closest && e.target.closest('.dp-info')) hide(); });
+  document.addEventListener('focusin', e => { if(e.target.classList && e.target.classList.contains('dp-info')) show(e.target); });
+  document.addEventListener('focusout', e => { if(e.target.classList && e.target.classList.contains('dp-info')) hide(); });
+  // Pindot sa phone: ipakita; pindot sa labas: itago. Hindi rin pumipili ng
+  // radio/checkbox ang pagpindot sa ⓘ sa loob ng label.
+  document.addEventListener('click', e => {
+    const el = e.target.closest && e.target.closest('.dp-info');
+    if(el){ e.preventDefault(); e.stopPropagation(); show(el); } else hide();
+  }, true);
+  document.addEventListener('scroll', hide, true);
+})();
+
 function _psychReadiness(ps){
   if(!ps) return null;
   const vals = [];
@@ -28795,6 +28882,7 @@ function _renderPsychFields(){
   into('dpPsychMind', f => f.g === 'pre' && SUB[f.k] === 'mind');
   into('dpPsychFeel', f => f.g === 'pre' && SUB[f.k] === 'feel');
   into('dpPsychPost', f => f.g === 'post');
+  _attachDpInfo();
   const r = _psychReadiness(_dpPsych);
   const el = document.getElementById('dpReady');
   el.className = 'dp-ready ' + _readyTone(r);
@@ -28921,6 +29009,7 @@ function openDailyPlan(iso){
   _dpPsych = { ...(p.psych || {}) };
   _renderPsychFields();
   _fillDpDiary(iso);
+  _attachDpInfo();
   document.getElementById('dpError').textContent = '';
   document.getElementById('dpDeleteBtn').style.visibility = (p.id || (_dpMoodEntry(iso) || {}).id) ? 'visible' : 'hidden';
   const tr = _dpTradesOn(iso);
