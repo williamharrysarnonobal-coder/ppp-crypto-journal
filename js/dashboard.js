@@ -818,7 +818,11 @@ function switchView(view){
   if(view === 'alerts'){ loadSignalAlerts(); loadScreenerData(); startAlertsPolling(); } else { stopAlertsPolling(); }
   if(view === 'achievements') loadAchievements();
   if(view === 'news'){ loadMarketNewsWidget(); } else { clearInterval(econSyncLabelTimer); }
-  if(view === 'challenges') renderChallenges();
+  if(view === 'challenges'){
+    renderChallenges();
+    // Ang mga bagong challenge ay galing sa Daily Plan — kunin kung wala pa.
+    if(typeof _dpLoaded !== 'undefined' && !_dpLoaded) loadDailyPlans().then(() => { if(currentView === 'challenges') renderChallenges(); });
+  }
   if(view === 'leaderboard') renderLeaderboard();
   if(view === 'finance') renderFinance();
   if(view === 'salary'){
@@ -21832,8 +21836,89 @@ function computeChallenges(trades, achRows){
       + `with a recorded logging time were journalled same-day`
   } : null;
 
+  /* c39–c42. ANG MGA BAGONG FEATURE: Daily Plan, ang review sa gabi, ang
+     psychology check-in at ang mga chart. Ang streak ay sa mga ARAW NG TRADING
+     lang (ang araw na walang trade ay hindi pumuputol), binibilang mula sa
+     pinakabago pabalik — "ngayon", gaya ng Iron Discipline — at ang
+     pinakamahaba ay nasa ilalim. */
+  // Nakabalot: kapag wala ang Daily Plan / chart helpers (hal. sa isang
+  // hiwalay na pagsubok), walang bagong challenge — hindi nasisira ang iba.
+  const _habit = (() => { try{
+  const plans = (typeof DAILY_PLANS !== 'undefined' ? DAILY_PLANS : []);
+  const planOn = iso => plans.find(p => p.plan_date === iso) || null;
+  const tradeDays = [...new Set(closed.filter(t => !t.is_paper).map(t => _dpIso(t.close_date)))].sort();
+  const firstOpen = {};
+  closed.forEach(t => {
+    const iso = _dpIso(t.close_date);
+    const o = t.open_date || t.close_date;
+    if(!firstOpen[iso] || o < firstOpen[iso]) firstOpen[iso] = o;
+  });
+  const streaks = test => {
+    let run = 0, best = 0, cur = 0;
+    tradeDays.forEach(d => { if(test(d)){ run++; best = Math.max(best, run); } else run = 0; });
+    for(let i = tradeDays.length - 1; i >= 0 && test(tradeDays[i]); i--) cur++;
+    return { cur, best };
+  };
+  // Morning Routine: may plan, at isinulat BAGO ang unang trade ng araw.
+  const mr = streaks(d => {
+    const p = planOn(d);
+    if(!p || !(p.bias || p.max_trades != null || (p.psych && Object.keys(p.psych).length))) return false;
+    const made = p.created_at ? new Date(p.created_at) : null;
+    return !made || isNaN(made) || !firstOpen[d] || made <= firstOpen[d];
+  });
+  const c39 = {
+    icon:'calendar', title:'Morning Routine', points:70,
+    desc:'Trading days with your Daily Plan filled in before the first trade.',
+    howTo:'For every day you traded, checks that a Daily Plan exists (a bias, a max trades or a mindset check-in) and that it was written before the first trade of that day opened. Days you did not trade are skipped. Counted back from your latest trading day. Levels: 3, 7, 14, 21, 30 days in a row.',
+    current: mr.cur, tiers: [3, 7, 14, 21, 30], target: 30, done: mr.cur >= 30,
+    statOverride: `Now ${mr.cur} in a row · best ${mr.best}`
+  };
+  // End-of-Day Review: may sagot sa After the session.
+  const postKeys = PSYCH_FIELDS.filter(f => f.g === 'post').map(f => f.k);
+  const rv = streaks(d => {
+    const p = planOn(d);
+    return !!(p && (p.followed || p.went_well || p.improve || postKeys.some(k => p.psych && p.psych[k] != null)));
+  });
+  const c40 = {
+    icon:'book', title:'End-of-Day Review', points:70,
+    desc:'Trading days you reviewed after the session.',
+    howTo:'For every day you traded, checks that the Daily Plan has an After the session review: whether you followed the plan, what went well or better, or the tilt / emotion questions. Days you did not trade are skipped. Levels: 3, 7, 14, 21, 30 days in a row.',
+    current: rv.cur, tiers: [3, 7, 14, 21, 30], target: 30, done: rv.cur >= 30,
+    statOverride: `Now ${rv.cur} in a row · best ${rv.best}`
+  };
+  // Stayed Calm: tilt 1–2 at walang revenge urge.
+  const sc = streaks(d => {
+    const ps = (planOn(d) || {}).psych || {};
+    const tilt = Number(ps.tilt);
+    return tilt >= 1 && tilt <= 2 && ps.revenge !== 'Yes';
+  });
+  const c41 = {
+    icon:'check-circle', title:'Stayed Calm', points:80,
+    desc:'Trading days with tilt kept at 1–2 and no urge to win it back.',
+    howTo:'Reads the After the session answers in your Daily Plan: Tilt during the session must be 1 or 2, and "Wanted to win it back (revenge)?" must not be Yes. A trading day without the tilt answer breaks the run, so answer it every evening. Levels: 3, 7, 14, 21, 30 days in a row.',
+    current: sc.cur, tiers: [3, 7, 14, 21, 30], target: 30, done: sc.cur >= 30,
+    statOverride: `Now ${sc.cur} in a row · best ${sc.best}`
+  };
+  // Chart Story: may Higher TF, Setup TF at Entry TF (sa trade o sa setup nito).
+  let fullCharts = 0;
+  (typeof RAW_TRADES !== 'undefined' ? RAW_TRADES : []).forEach(r => {
+    if(r.is_paper === true || r.is_paper === 'true') return;
+    const own = _chartShotsOf(r), fromSetup = _setupShotsFor(r);
+    if(['htf', 'setup', 'entry'].every(k => (own[k].length + fromSetup[k].length) > 0)) fullCharts++;
+  });
+  const c42 = {
+    icon:'image', title:'Chart Story', points:60,
+    desc:'Trades with all three charts: Higher TF, Setup TF and Entry TF.',
+    howTo:'Counts trades whose Charts tab has at least one screenshot in each of the three slots, its own or carried from the setup. A trade you can look back at and see the whole story. Levels: 5, 10, 25, 50, 100 trades.',
+    current: fullCharts, tiers: [5, 10, 25, 50, 100], target: 100, done: fullCharts >= 100,
+    statOverride: `${fullCharts} trade${fullCharts === 1 ? '' : 's'} with all three charts`
+  };
+
+  return [c39, c40, c41, c42];
+  }catch(e){ return []; } })();
+
   return [c1,c2,c3,c4,c5,c6,c7,c8,c9,c10,c11,c12,c13,c14,c15,c17,c18,c19,c20,c21,c22,c23,c24,c25,c26,c27,c28,c29,c30,c31,c32,c33,c34,
-          c35,c36,c37,c38].filter(Boolean);
+          c35,c36,c37,c38, ..._habit].filter(Boolean);
 }
 
 // SL Discipline and Confluence Purist used to live here; they're now live as
