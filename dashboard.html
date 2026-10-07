@@ -17,7 +17,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<link rel="stylesheet" href="css/style.css?v=346">
+<link rel="stylesheet" href="css/style.css?v=347">
 </head>
 <body>
 
@@ -391,6 +391,7 @@
       <div class="tp-actions">
         <button type="button" class="tp-btn" onclick="openTradeNoteModalFromTradeView()">Add note</button>
         <button type="button" class="tp-btn" onclick="openConfluenceModalFromTradeView()">Confluence</button>
+        <button type="button" class="tp-btn" onclick="openShareTrade()">Share</button>
         <button type="button" class="tp-btn tp-btn-primary" onclick="editFromTradeView()">Edit</button>
         <button type="button" class="tp-btn tp-btn-icon" onclick="deleteFromTradeView()" title="Delete trade" aria-label="Delete trade"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button>
         <div class="tp-nav">
@@ -407,7 +408,9 @@
         <div class="tp-tabs" role="tablist" aria-label="Trade sections">
           <button type="button" role="tab" data-tp-tab="charts" onclick="setTradeTab('charts')">Charts</button>
           <button type="button" role="tab" data-tp-tab="review" onclick="setTradeTab('review')">Review</button>
-          <button type="button" role="tab" data-tp-tab="all" onclick="setTradeTab('all')">All fields</button>
+          <button type="button" role="tab" data-tp-tab="all" onclick="setTradeTab('all')">Details</button>
+          <button type="button" role="tab" data-tp-tab="confluence" onclick="setTradeTab('confluence')">Confluence</button>
+          <button type="button" role="tab" data-tp-tab="summary" onclick="setTradeTab('summary')">Summary</button>
         </div>
         <div class="tp-pane" data-tp-pane="charts" role="tabpanel">
           <div class="tp-sub">Add or paste (Ctrl+V) a screenshot for each timeframe. Click a slot first, then paste.</div>
@@ -419,6 +422,12 @@
         </div>
         <div class="tp-pane" data-tp-pane="all" role="tabpanel" hidden>
           <div id="tradeViewBody" class="trade-view-grid"></div>
+        </div>
+        <div class="tp-pane" data-tp-pane="confluence" role="tabpanel" hidden>
+          <div id="tpConfluence" class="trade-view-grid"></div>
+        </div>
+        <div class="tp-pane" data-tp-pane="summary" role="tabpanel" hidden>
+          <div id="tpSummary"></div>
         </div>
       </section>
     </div>
@@ -2431,6 +2440,27 @@
   </div>
 </div>
 
+<!-- SHARE TRADE: isang larawan ng trade, gawa sa browser (walang bayad, walang
+     serbisyong pinadadalhan). -->
+<div class="modal-overlay" id="shareModal" onclick="if(event.target===this) closeShareTrade()">
+  <div class="modal-box share-modal" style="position:relative;">
+    <button class="modal-close" onclick="closeShareTrade()">✕</button>
+    <h3 style="padding-right:24px;margin-bottom:12px;">Share trade</h3>
+    <div class="share-opts">
+      <label><input type="checkbox" id="shareMoney" onchange="drawShareCard()"> Show $ amounts</label>
+      <label><input type="checkbox" id="shareChart" checked onchange="drawShareCard()"> Include a chart</label>
+      <label><input type="checkbox" id="shareAccount" onchange="drawShareCard()"> Show account name</label>
+    </div>
+    <div class="share-canvas-wrap"><canvas id="shareCanvas" width="1200" height="675"></canvas></div>
+    <div class="sub" id="shareNote" style="margin-top:8px;"></div>
+    <div class="share-actions">
+      <button class="tp-btn" onclick="copyShareCard()">Copy image</button>
+      <button class="tp-btn" id="shareNativeBtn" onclick="nativeShareCard()" style="display:none;">Share…</button>
+      <button class="ai-btn" onclick="downloadShareCard()">Download PNG</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="dpModal" onclick="if(event.target===this) closeDailyPlan()">
   <div class="modal-box dp-modal" style="position:relative;">
     <button class="modal-close" onclick="closeDailyPlan()">✕</button>
@@ -2644,6 +2674,6 @@
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=2"></script>
-<script src="js/dashboard.js?v=578"></script>
+<script src="js/dashboard.js?v=579"></script>
 </body>
 </html>

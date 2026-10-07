@@ -7154,6 +7154,16 @@ function renderBarChart(labels, values, colors, onClick){
 
 /* ---------------- Journal table ---------------- */
 const FIELD_OPTIONS = {
+  /* Review ng isang trade: ang mga pagkakamali (hiwalay sa Trade Tags, sa
+     kahilingan niya), ang damdamin sa pagpasok at paglabas, at kung paano
+     hinawakan ang trade. Nae-edit ang lahat sa Configuration. */
+  mistakes: ['Entered too early','Chased the entry','No confirmation','Oversized','Undersized',
+    'SL too tight','SL too wide','Moved SL','Exited too early','Held too long','Ignored the plan',
+    'Traded against bias','Traded the news','Overtraded','Revenge trade','FOMO entry'],
+  emotion: ['Calm','Confident','Focused','Patient','Excited','Greedy','Impatient','Anxious','Fearful',
+    'Hesitant','Bored','Frustrated','Angry','Disappointed','Relieved','Satisfied','Regretful','Overconfident'],
+  trade_management: ['Set and Forget','SL to BE','Partials','Trailing Stop','Moved TP','Moved SL',
+    'Added to Position','Scaled In','Closed Early','Closed Manually'],
   win_loss: ['Loss','Win','Breakeven','Liquidated'],
   trade_type: ['Short','Long'],
   // Ang Creation Play ay ang ikaapat: hindi pagtalbog sa isang antas na naroon
@@ -8301,7 +8311,10 @@ const OPTIONS_FIELD_META = [
   {key:'post_stop_profit_result', label:'Post-Stop Profit'},
   {key:'session', label:'Session'},
   {key:'day_of_week', label:'Day of Week'},
-  {key:'unfollowed_rules', label:'Trade Tags (checklist)'}
+  {key:'unfollowed_rules', label:'Trade Tags (checklist)'},
+  {key:'mistakes', label:'Mistakes'},
+  {key:'emotion', label:'Emotions (entry & exit)'},
+  {key:'trade_management', label:'Trade Management'}
 ];
 
 function getOptionsArray(key){
@@ -8490,6 +8503,10 @@ const ALL_DRAWER_FIELDS = [
   {key:'post_be_result', label:'Post-BE Result', widget:'select', editable:true, options:FIELD_OPTIONS.post_be_result, realOnly:true},
   {key:'post_cutloss_result', label:'Post-Cutloss Result', widget:'select', editable:true, options:FIELD_OPTIONS.post_cutloss_result, realOnly:true},
   {key:'post_stop_profit_result', label:'Post-Stop Profit', widget:'select', editable:true, options:FIELD_OPTIONS.post_stop_profit_result, realOnly:true},
+  {key:'mistakes', label:'Mistakes', widget:'checklist', editable:true, options:FIELD_OPTIONS.mistakes, realOnly:true},
+  {key:'entry_emotion', label:'Entry Emotion', widget:'select', editable:true, options:FIELD_OPTIONS.emotion, realOnly:true},
+  {key:'exit_emotion', label:'Exit Emotion', widget:'select', editable:true, options:FIELD_OPTIONS.emotion, realOnly:true},
+  {key:'trade_management', label:'Trade Management', widget:'checklist', editable:true, options:FIELD_OPTIONS.trade_management, realOnly:true},
   {key:'account', label:'Account', widget:'select', editable:true, options:FIELD_OPTIONS.account, realOnly:true},
   {key:'account_type', label:'Account Type', widget:'select', editable:true, options:FIELD_OPTIONS.account_type, realOnly:true},
   // Read-only like Day of Week: always derived from the open date on load, so
@@ -8620,6 +8637,10 @@ const ALL_JOURNAL_COLUMNS = [
   {key:'post_be_result', label:'Post-BE Result'},
   {key:'post_cutloss_result', label:'Post-Cutloss Result'},
   {key:'post_stop_profit_result', label:'Post-Stop Profit'},
+  {key:'mistakes', label:'Mistakes'},
+  {key:'entry_emotion', label:'Entry Emotion'},
+  {key:'exit_emotion', label:'Exit Emotion'},
+  {key:'trade_management', label:'Trade Management'},
   {key:'confluence_score', label:'Confluence Score'},
   {key:'account', label:'Account'},
   {key:'account_type', label:'Account Type'},
@@ -14851,7 +14872,7 @@ function warnIconSVG(){
    sabihin nito ay WALANG trade na mase-save. Kaya: kapag tinanggihan dahil sa
    isa sa mga ito, alisin ito at subukan ulit, at huwag na itong ipadala sa
    natitirang session. Ang tanging nawawala ay ang sagot sa bagong field. */
-const _OPTIONAL_JOURNAL_COLS = ['post_stop_profit_result'];
+const _OPTIONAL_JOURNAL_COLS = ['post_stop_profit_result', 'mistakes', 'entry_emotion', 'exit_emotion', 'trade_management'];
 const _missingJournalCols = new Set();
 async function _journalSend(url, method, body){
   const strip = b => {
@@ -16764,7 +16785,7 @@ let tradeViewIndex = -1;
 /* Ang tab sa kanang box ng trade page — naaalala sa device na ito. */
 let _tpTab = (() => { try{ return localStorage.getItem('tanaydana-trade-tab') || 'charts'; }catch(e){ return 'charts'; } })();
 function setTradeTab(tab){
-  if(!['charts', 'review', 'all'].includes(tab)) tab = 'charts';
+  if(!['charts', 'review', 'all', 'confluence', 'summary'].includes(tab)) tab = 'charts';
   _tpTab = tab;
   try{ localStorage.setItem('tanaydana-trade-tab', tab); }catch(e){}
   document.querySelectorAll('[data-tp-tab]').forEach(b => {
@@ -16810,7 +16831,7 @@ const JOURNAL_FIELD_GROUPS = [
   { title: 'Result', keys: ['win_loss','profit_loss','pnl_percent','rr','fee','entry_price','close_price','tp_price','sl_price','position_size','leverage','risk_amount'] },
   { title: 'Account', keys: ['account','account_type','session','day_of_week'] },
   { title: 'Setup & Strategy', keys: ['trade_type','trade_setup','pattern_type','execution_tf','aof_phase'] },
-  { title: 'Discipline', keys: ['rules_followed','unfollowed_rules','exit_type','post_be_result','post_cutloss_result','post_stop_profit_result'] },
+  { title: 'Discipline', keys: ['rules_followed','unfollowed_rules','mistakes','entry_emotion','exit_emotion','trade_management','exit_type','post_be_result','post_cutloss_result','post_stop_profit_result'] },
 ];
 const JOURNAL_FIELD_GROUPS_PRE_CONFLUENCE_COUNT = 4; // Overview, Result, Account, Setup & Strategy
 const NOTES_LINKS_GROUP = { title: 'Notes & Links', keys: ['notes','link','trade_summary'] };
@@ -17000,16 +17021,26 @@ function renderTradeViewModal(){
   DRAWER_FIELDS.filter(f => _drawerIsPaper(row) ? !f.realOnly : !f.paperOnly)
     .forEach(f => { fieldByKey[f.key] = f; });
 
+  // Ang nasa kaliwang box na ay hindi na inuulit sa Details tab.
   const renderGroup = g => {
-    const fields = g.keys.map(k => fieldByKey[k]).filter(Boolean);
+    const fields = g.keys.filter(k => !TP_LEFT_KEYS.has(k)).map(k => fieldByKey[k]).filter(Boolean);
     if(!fields.length) return '';
     return `<div class="field-row span-2 field-group-title">${g.title}</div>` +
       fields.map(f => _renderTradeViewFieldRow(f, row)).join('');
   };
-  const preHtml = JOURNAL_FIELD_GROUPS.slice(0, JOURNAL_FIELD_GROUPS_PRE_CONFLUENCE_COUNT).map(renderGroup).join('');
-  const postHtml = JOURNAL_FIELD_GROUPS.slice(JOURNAL_FIELD_GROUPS_PRE_CONFLUENCE_COUNT).map(renderGroup).join('');
-
-  document.getElementById('tradeViewBody').innerHTML = preHtml + _renderTradeViewConfluenceGroup(row) + postHtml + renderGroup(NOTES_LINKS_GROUP);
+  /* Hiwa-hiwalay na tab, walang inuulit:
+     - Details: Overview, Result, Account, Setup & Strategy, at ang Chart Link.
+       Ang Discipline at Notes ay nasa Review na kaya wala rito.
+     - Confluence: ang checklist mismo.
+     - Summary: ang Trade Summary, may copy. */
+  document.getElementById('tradeViewBody').innerHTML =
+    JOURNAL_FIELD_GROUPS.slice(0, JOURNAL_FIELD_GROUPS_PRE_CONFLUENCE_COUNT).map(renderGroup).join('')
+    + renderGroup({ title: 'Links', keys: ['link'] });
+  document.getElementById('tpConfluence').innerHTML = _renderTradeViewConfluenceGroup(row);
+  document.getElementById('tpSummary').innerHTML =
+    `<div class="tp-summary-head"><span class="tp-muted">Everything about this trade in one block, ready to paste anywhere.</span>
+      <button class="tp-btn" onclick="copyTradeSummaryToClipboard(this)" data-summary="${escapeHtml(computeTradeSummaryPlain(row))}">${copyIconSVG()} Copy</button></div>
+     <div class="tp-summary">${computeTradeSummary(row)}</div>`;
 
   document.getElementById('tradeViewPrevBtn').disabled = tradeViewIndex <= 0;
   document.getElementById('tradeViewNextBtn').disabled = tradeViewIndex < 0 || tradeViewIndex >= tradeViewList.length - 1;
@@ -17067,58 +17098,48 @@ function _renderTradePageHead(row){
   document.getElementById('tradeViewNextBtn').disabled = tradeViewIndex < 0 || tradeViewIndex >= tradeViewList.length - 1;
 }
 
+/* ANG KALIWANG BOX: maikli. Ang pinakamahalaga lang — resulta, ang tatlong
+   presyo, risk, oras. Ang iba ay nasa Details tab, at ang ipinapakita rito ay
+   hindi na inuulit doon (tingnan ang TP_LEFT_KEYS). */
+const TP_LEFT_KEYS = new Set(['symbol','trade_type','position_size','account','open_date','close_date',
+  'session','duration','entry_price','close_price','sl_price','tp_price','risk_amount','fee','pnl_percent','rr']);
 function _renderTradeDetails(row){
   const el = document.getElementById('tpDetails');
   const n = normalizeTrade({ ...row });
   const net = netPnl(n);
   const R = _tradeR(n);
+  const acc = _accountPct(row), move = _priceMovePct(row);
   const risk = _beAvoidedLoss(row);
+  const plan = _plannedRR(row);
   const fmtTime = v => v ? new Date(v).toLocaleTimeString(undefined, { hour:'numeric', minute:'2-digit' }) : '';
-  const line = (k, v) => `<div class="tp-line"><span>${k}</span><b>${v}</b></div>`;
-  const sec = (title, lines) => { const body = lines.filter(Boolean).join(''); return body ? `<div class="tp-sec"><div class="tp-sec-t">${title}</div>${body}</div>` : ''; };
-  const val = (v) => (v === null || v === undefined || String(v).trim() === '' || v === 'Unspecified') ? null : escapeHtml(String(v));
-  const opt = (k, v) => v ? line(k, v) : '';
+  const sgn = (v, unit, dp) => `<b class="${v >= 0 ? 'pos' : 'neg'}">${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(dp)}${unit}</b>`;
+  const line = (k, v) => v ? `<div class="tp-line"><span>${k}</span><b>${v}</b></div>` : '';
+  const has = v => v != null && v !== '';
   const dur = computeDuration(row);
   const sess = computeSession(row) || row.session;
+  const d = row.open_date ? new Date(row.open_date) : null;
   el.innerHTML = `
-    <h2 class="tp-h2">Trade details</h2>
+    <div class="tp-det-head"><h2 class="tp-h2">Trade details</h2>
+      <button type="button" class="tp-edit-link" onclick="editFromTradeView()">Edit</button></div>
     <div class="tp-pnl ${net >= 0 ? 'pos' : 'neg'}">${_tpMoney(net)}</div>
-    <div class="tp-pnl-k">Net P&amp;L${R !== null ? ` · <b class="${R >= 0 ? 'pos' : 'neg'}">${R >= 0 ? '+' : '−'}${Math.abs(R).toFixed(2)}R</b>` : ''}</div>
+    <div class="tp-pnl-k">Net P&amp;L${has(row.fee) && Number(row.fee) ? ` · fees ${escapeHtml(fmtMoney(-Math.abs(Number(row.fee))))}` : ''}</div>
+    <div class="tp-kpis">
+      <div>${R !== null ? sgn(R, 'R', 2) : '<b>—</b>'}<span>Return</span></div>
+      <div>${acc !== null ? sgn(acc, '%', 2) : '<b>—</b>'}<span title="Net P&L as a share of the account size">Account</span></div>
+      <div>${move !== null ? sgn(move, '%', 2) : '<b>—</b>'}<span title="How far price moved from entry to exit, positive when it went your way">Price move</span></div>
+    </div>
     <div class="tp-trio">
       <div><b>${escapeHtml(row.symbol || '—')}</b><span>Instrument</span></div>
       <div><b class="${/^long$/i.test(row.trade_type || '') ? 'pos' : /^short$/i.test(row.trade_type || '') ? 'neg' : ''}">${escapeHtml(row.trade_type || '—')}</b><span>Direction</span></div>
       <div><b>${_tpNum(row.position_size)}</b><span title="${row._qtyLots ? `Saved as ${row._qtyLots} lots; worked out as units (1 lot = ${row._qtyLotSize}).` : ''}">Quantity${row._qtyLots ? ` · ${row._qtyLots} lots` : ''}</span></div>
     </div>
-    ${sec('Context', [
-      opt('Account', val(row.account)),
-      opt('Date', row.open_date ? escapeHtml(new Date(row.open_date).toLocaleDateString(undefined, { weekday:'short', month:'short', day:'numeric', year:'numeric' })) : null),
-      opt('Session', val(sess)),
-      dur ? line('Duration', `${escapeHtml(dur)}${row.open_date && row.close_date ? `<small>${fmtTime(row.open_date)} – ${fmtTime(row.close_date)}</small>` : ''}`) : '',
-      opt('Trade setup', val(row.trade_setup)),
-      opt('Pattern', val(row.pattern_type)),
-      opt('Execution TF', val(row.execution_tf)),
-      opt('AOF phase', val(row.aof_phase))
-    ])}
-    ${sec('Execution', [
-      line('Entry / Exit', `${_tpNum(row.entry_price)} / ${_tpNum(row.close_price)}`),
-      opt('Stop loss', row.sl_price != null && row.sl_price !== '' ? _tpNum(row.sl_price) : null),
-      opt('Take profit', row.tp_price != null && row.tp_price !== '' ? _tpNum(row.tp_price) : null),
-      opt('Leverage', row.leverage != null && row.leverage !== '' ? _tpNum(row.leverage) + 'x' : null),
-      opt('Exit', val(row.exit_type))
-    ])}
-    ${sec('Performance', [
-      opt('Risk', risk && !risk.suspect ? escapeHtml(fmtMoney(risk.value).replace('+', '')) : null),
-      opt('Planned RR', (() => { const p = _plannedRR(row); return p === null ? null : '1:' + fmtNum(p, 2); })()),
-      opt('RR', row.rr != null && row.rr !== '' ? _tpNum(row.rr) : null),
-      opt('Return (R)', R !== null ? `<span class="${R >= 0 ? 'pos' : 'neg'}">${R >= 0 ? '+' : '−'}${Math.abs(R).toFixed(2)}R</span>` : null),
-      // Ang lumang "P&L %" ay galaw ng presyo na maaaring mali ang sign —
-      // dalawang malinaw na bilang na ngayon, parehong kinukuwenta.
-      opt('Account %', (() => { const v = _accountPct(row); return v === null ? null : `<span class="${v >= 0 ? 'pos' : 'neg'}">${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(2)}%</span>`; })()),
-      opt('Price move', (() => { const v = _priceMovePct(row); return v === null ? null : `<span class="${v >= 0 ? 'pos' : 'neg'}">${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(2)}%</span>`; })())
-    ])}
-    ${sec('Costs', [
-      line('Fees', row.fee != null && row.fee !== '' ? escapeHtml(fmtMoney(-Math.abs(Number(row.fee)))) : '$0.00')
-    ])}`;
+    <div class="tp-sec">
+      ${line('Date', d ? escapeHtml(d.toLocaleDateString(undefined, { weekday:'short', month:'short', day:'numeric', year:'numeric' })) : '')}
+      ${line('Session', sess ? `${escapeHtml(sess)}${dur ? `<small>${escapeHtml(dur)} · ${fmtTime(row.open_date)} – ${fmtTime(row.close_date)}</small>` : ''}` : '')}
+      ${line('Entry / Exit', `${_tpNum(row.entry_price)} / ${_tpNum(row.close_price)}`)}
+      ${line('SL / TP', has(row.sl_price) || has(row.tp_price) ? `${_tpNum(row.sl_price)} / ${_tpNum(row.tp_price)}` : '')}
+      ${line('Risk · Planned RR', risk && !risk.suspect ? `${escapeHtml(fmtMoney(risk.value).replace('+', ''))}${plan !== null ? ` · 1:${fmtNum(plan, 2)}` : ''}` : (plan !== null ? `— · 1:${fmtNum(plan, 2)}` : ''))}
+    </div>`;
 }
 
 function _renderTradeReview(row){
@@ -17131,6 +17152,12 @@ function _renderTradeReview(row){
   const cd = _confluenceCellData(row);
   const post = ['post_be_result', 'post_cutloss_result', 'post_stop_profit_result']
     .map(k => row[k] && row[k] !== 'N/A' ? `<span class="tp-tag">${escapeHtml(row[k])}</span>` : '').join('');
+  const listOf = v => String(v || '').split(/[,;]/).map(x => x.trim()).filter(Boolean);
+  // Kulay ng damdamin: ang mahinahon ay berde, ang mabigat ay pula, ang iba ay neutral.
+  const EMO_GOOD = ['calm','confident','focused','patient','satisfied','relieved'];
+  const EMO_BAD = ['greedy','impatient','anxious','fearful','frustrated','angry','overconfident','regretful'];
+  const emo = v => { const s = String(v || '').trim(); if(!s) return '<span class="tp-muted">—</span>';
+    const k = s.toLowerCase(); return `<span class="tp-chip ${EMO_GOOD.includes(k) ? 'win' : EMO_BAD.includes(k) ? 'loss' : 'muted'}">${escapeHtml(s)}</span>`; };
   const notesTxt = String(row.notes || '').trim();
   // Ang notes ng setup na isinulat PAGKATAPOS ma-journal — ang nakopya na sa
   // Notes ng trade ay hindi inuulit. Kasama sa iisang Notes, may tatak.
@@ -17154,7 +17181,27 @@ function _renderTradeReview(row){
         <div class="tp-rv-k" title="Your Trade Tags column. Red = a rule you broke, green = Rules Followed, grey = a note (not a rule).">Trade Tags</div>
         <div class="tp-tags">${tags.length ? chips(broke, 'rule') + chips(tags.filter(t => _tagKind(t) === 'sentinel'), 'clean') + chips(notes, 'note') : '<span class="tp-muted">—</span>'}</div>
       </div>
-      ${post ? `<div class="tp-rv tp-rv-wide"><div class="tp-rv-k">After the exit</div><div class="tp-tags">${post}</div></div>` : ''}
+      <div class="tp-rv tp-rv-wide">
+        <div class="tp-rv-k">Mistakes</div>
+        <div class="tp-tags">${listOf(row.mistakes).length ? listOf(row.mistakes).map(m => `<span class="tp-tag rule">${escapeHtml(m)}</span>`).join('') : '<span class="tp-muted">—</span>'}</div>
+      </div>
+      <div class="tp-rv">
+        <div class="tp-rv-k">Entry emotion</div>
+        <div>${emo(row.entry_emotion)}</div>
+      </div>
+      <div class="tp-rv">
+        <div class="tp-rv-k">Exit emotion</div>
+        <div>${emo(row.exit_emotion)}</div>
+      </div>
+      <div class="tp-rv tp-rv-wide">
+        <div class="tp-rv-k">Trade management</div>
+        <div class="tp-tags">${listOf(row.trade_management).length ? listOf(row.trade_management).map(m => `<span class="tp-tag">${escapeHtml(m)}</span>`).join('') : '<span class="tp-muted">—</span>'}</div>
+      </div>
+      <div class="tp-rv">
+        <div class="tp-rv-k">Exit</div>
+        <div>${row.exit_type ? escapeHtml(row.exit_type) : '<span class="tp-muted">—</span>'}</div>
+      </div>
+      ${post ? `<div class="tp-rv"><div class="tp-rv-k">After the exit</div><div class="tp-tags">${post}</div></div>` : ''}
       <div class="tp-rv tp-rv-wide">
         <div class="tp-rv-k">Notes</div>
         <div class="tp-notes">${notesTxt ? `<p>${escapeHtml(notesTxt)}</p>` : ''}${log.map(e => `<div class="tp-note"><small>${escapeHtml(new Date(e.ts).toLocaleString(undefined, { dateStyle:'medium', timeStyle:'short' }))}${e.setup ? ' · from the setup' : ''}</small>${escapeHtml(String(e.text || '').trim())}</div>`).join('')}${!notesTxt && !log.length ? '<span class="tp-muted">No notes yet. Use Add note above.</span>' : ''}</div>
@@ -17174,6 +17221,185 @@ async function deleteFromTradeView(){
   if(!RAW_TRADES.some(r => r.position_id === row.position_id)){
     closeTradeViewModal();
   }
+}
+
+/* ---------- SHARE TRADE ----------
+   Isang 1200×675 na larawan, iginuguhit sa <canvas> sa browser mismo — walang
+   bayad at walang serbisyong pinadadalhan ng datos. Default ay R at % lang
+   (ligtas i-post); ang $ at ang pangalan ng account ay pinipili bago i-share. */
+let _shareRow = null;
+let _shareChartImg = null;    // ang chart na ilalagay, kung meron at kung na-load
+
+function openShareTrade(){
+  const row = tradeViewList[tradeViewIndex];
+  if(!row) return;
+  _shareRow = row;
+  _shareChartImg = null;
+  document.getElementById('shareNativeBtn').style.display =
+    (navigator.canShare && navigator.share) ? '' : 'none';
+  document.getElementById('shareModal').classList.add('open');
+  drawShareCard();
+  // Ang unang chart na meron: Entry TF, Setup TF, saka Higher TF.
+  const own = _chartShotsOf(row), fromSetup = _setupShotsFor(row);
+  const path = [...own.entry, ...fromSetup.entry, ...own.setup, ...fromSetup.setup, ...own.htf, ...fromSetup.htf][0];
+  if(path){
+    _signedUrl(path).then(url => {
+      if(!url) return;
+      const img = new Image();
+      img.crossOrigin = 'anonymous';   // kailangan para ma-export ang canvas
+      img.onload = () => { if(_shareRow === row){ _shareChartImg = img; drawShareCard(); } };
+      img.src = url;
+    }).catch(() => {});
+  }
+}
+function closeShareTrade(){
+  document.getElementById('shareModal').classList.remove('open');
+  _shareRow = null;
+}
+
+function drawShareCard(){
+  const row = _shareRow;
+  const cv = document.getElementById('shareCanvas');
+  if(!row || !cv) return;
+  const ctx = cv.getContext('2d');
+  const W = cv.width, H = cv.height;
+  const showMoney = document.getElementById('shareMoney').checked;
+  const useChart = document.getElementById('shareChart').checked && _shareChartImg;
+  const showAcc = document.getElementById('shareAccount').checked;
+  const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  // Laging madilim ang card, anuman ang theme — ito ang ipo-post.
+  const C = { bg:'#12141C', surf:'#1B1F2B', rule:'#2E3446', ink:'#F1EEE6', muted:'#93989F',
+              win:'#2ECC71', loss:'#FF5C5C', accent: css('--accent') || '#F0B429' };
+  const font = (w, s) => `${w} ${s}px "Public Sans", system-ui, sans-serif`;
+
+  const n = normalizeTrade({ ...row });
+  const net = netPnl(n), R = _tradeR(n), acc = _accountPct(row), move = _priceMovePct(row);
+  const plan = _plannedRR(row);
+  const dir = String(row.trade_type || '').trim();
+  const isLong = /^long$/i.test(dir);
+  const wl = String(row.win_loss || '').trim();
+  const good = /^win$/i.test(wl) ? true : /^(loss|liquidated)$/i.test(wl) ? false : (net >= 0);
+  const tone = good ? C.win : C.loss;
+  const d = row.close_date || row.open_date;
+
+  ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = tone; ctx.fillRect(0, 0, 10, H);
+
+  const L = 64;
+  const textW = useChart ? 520 : W - L * 2;
+  ctx.textBaseline = 'alphabetic';
+  // Ulo: symbol, direksyon, petsa.
+  ctx.fillStyle = C.ink; ctx.font = font(800, 54);
+  ctx.fillText(row.symbol || 'Trade', L, 112);
+  const symW = ctx.measureText(row.symbol || 'Trade').width;
+  if(dir){
+    ctx.fillStyle = isLong ? C.win : C.loss; ctx.font = font(700, 34);
+    ctx.fillText(`${isLong ? '▲' : '▼'} ${dir}`, L + symW + 22, 108);
+  }
+  ctx.fillStyle = C.muted; ctx.font = font(500, 24);
+  const sub = [d ? new Date(d).toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric', year:'numeric' }) : '',
+               computeSession(row) || row.session || '', showAcc ? row.account || '' : ''].filter(Boolean).join('  ·  ');
+  ctx.fillText(sub, L, 152);
+
+  // Ang malaking resulta.
+  const big = showMoney ? _tpMoney(net) : (R !== null ? `${R >= 0 ? '+' : '−'}${Math.abs(R).toFixed(2)}R` : (acc !== null ? `${acc >= 0 ? '+' : '−'}${Math.abs(acc).toFixed(2)}%` : (wl || '—')));
+  ctx.fillStyle = tone; ctx.font = font(800, 112);
+  ctx.fillText(big, L - 4, 290);
+  // Win/Loss pill
+  if(wl){
+    ctx.font = font(700, 22);
+    const pw = ctx.measureText(wl.toUpperCase()).width + 32;
+    ctx.fillStyle = good ? 'rgba(46,204,113,.16)' : 'rgba(255,92,92,.16)';
+    ctx.beginPath(); ctx.roundRect ? ctx.roundRect(L, 314, pw, 40, 20) : ctx.rect(L, 314, pw, 40); ctx.fill();
+    ctx.fillStyle = tone; ctx.fillText(wl.toUpperCase(), L + 16, 342);
+  }
+
+  // Mga numero sa ilalim: dalawang hanay.
+  const stats = [
+    // Ang R ay ang malaking numero kapag walang $; kapag may $, dito ito.
+    showMoney && R !== null ? ['Return', `${R >= 0 ? '+' : '−'}${Math.abs(R).toFixed(2)}R`] : null,
+    acc !== null ? ['Account', `${acc >= 0 ? '+' : '−'}${Math.abs(acc).toFixed(2)}%`] : null,
+    plan !== null ? ['Planned RR', `1:${plan.toFixed(2)}`] : null,
+    move !== null ? ['Price move', `${move >= 0 ? '+' : '−'}${Math.abs(move).toFixed(2)}%`] : null,
+    row.trade_setup ? ['Setup', row.trade_setup] : null,
+    row.pattern_type ? ['Pattern', row.pattern_type] : null,
+    computeDuration(row) ? ['Duration', computeDuration(row)] : null,
+    row.rules_followed ? ['Rules followed', /^yes$/i.test(row.rules_followed) ? 'Yes ✓' : 'No'] : null
+  ].filter(Boolean).slice(0, 6);
+  const colW = textW / 2;
+  stats.forEach(([k, v], i) => {
+    const x = L + (i % 2) * colW, y = 404 + Math.floor(i / 2) * 68;
+    ctx.fillStyle = C.muted; ctx.font = font(600, 18);
+    ctx.fillText(k.toUpperCase(), x, y);
+    ctx.fillStyle = C.ink; ctx.font = font(700, 30);
+    let txt = String(v);
+    while(ctx.measureText(txt).width > colW - 20 && txt.length > 4) txt = txt.slice(0, -2);
+    if(txt !== String(v)) txt = txt.slice(0, -1) + '…';
+    ctx.fillText(txt, x, y + 36);
+  });
+
+  // Chart sa kanan.
+  if(useChart){
+    const bx = 640, by = 64, bw = W - bx - 56, bh = H - by - 96;
+    ctx.save();
+    ctx.beginPath(); ctx.roundRect ? ctx.roundRect(bx, by, bw, bh, 18) : ctx.rect(bx, by, bw, bh); ctx.clip();
+    ctx.fillStyle = C.surf; ctx.fillRect(bx, by, bw, bh);
+    const img = _shareChartImg;
+    const s = Math.max(bw / img.width, bh / img.height);
+    const iw = img.width * s, ih = img.height * s;
+    ctx.drawImage(img, bx + (bw - iw) / 2, by + (bh - ih) / 2, iw, ih);
+    ctx.restore();
+    ctx.strokeStyle = C.rule; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.roundRect ? ctx.roundRect(bx, by, bw, bh, 18) : ctx.rect(bx, by, bw, bh); ctx.stroke();
+  }
+
+  // Paa: tatak.
+  ctx.fillStyle = C.accent; ctx.font = font(800, 22);
+  ctx.fillText('TANAYDANA', L, H - 36);
+  const brandW = ctx.measureText('TANAYDANA').width;   // sukat sa font ng tatak mismo
+  ctx.fillStyle = C.muted; ctx.font = font(500, 18);
+  ctx.fillText('trading journal', L + brandW + 12, H - 36);
+
+  document.getElementById('shareNote').textContent =
+    document.getElementById('shareChart').checked && !_shareChartImg
+      ? ((_chartShotsOf(row).entry.length + _chartShotsOf(row).setup.length + _chartShotsOf(row).htf.length) ? 'Loading the chart…' : 'This trade has no chart yet. Add one in the Charts tab to include it.')
+      : '';
+}
+
+function _shareBlob(){
+  return new Promise((res, rej) => {
+    try{ document.getElementById('shareCanvas').toBlob(b => b ? res(b) : rej(new Error('empty')), 'image/png'); }
+    catch(e){ rej(e); }
+  });
+}
+function _shareFileName(){
+  const r = _shareRow || {};
+  const d = r.close_date ? new Date(r.close_date) : new Date();
+  return `trade-${String(r.symbol || 'trade').replace(/[^A-Za-z0-9]+/g, '')}-${_dpIso(d)}.png`;
+}
+async function downloadShareCard(){
+  try{
+    const b = await _shareBlob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(b); a.download = _shareFileName();
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  }catch(e){ await customAlert("Couldn't make the image. Try again without the chart."); }
+}
+async function copyShareCard(){
+  try{
+    const b = await _shareBlob();
+    await navigator.clipboard.write([new ClipboardItem({ 'image/png': b })]);
+    showToast('Image copied — paste it anywhere');
+  }catch(e){ await customAlert("This browser can't copy images. Use Download PNG instead."); }
+}
+async function nativeShareCard(){
+  try{
+    const b = await _shareBlob();
+    const file = new File([b], _shareFileName(), { type: 'image/png' });
+    if(navigator.canShare && navigator.canShare({ files: [file] })) await navigator.share({ files: [file] });
+    else await downloadShareCard();
+  }catch(e){ /* kinansela ng tao — walang gagawin */ }
 }
 
 /* ---------- Trade page: CHARTS ----------

@@ -4776,6 +4776,28 @@ body.mobile-mode .tp-grid{grid-template-columns:minmax(0,1fr) !important;}
 .tp-notes p{margin:0 0 10px;white-space:pre-wrap;}
 .tp-note{margin-bottom:10px;white-space:pre-wrap;}
 .tp-note small{display:block;font-size:11px;color:var(--muted);font-family:'IBM Plex Mono',monospace;}
+/* Kaliwang box, maikli */
+.tp-det-head{display:flex;align-items:center;justify-content:space-between;gap:8px;}
+.tp-edit-link{background:none;border:1px solid var(--rule);border-radius:7px;padding:4px 12px;color:var(--accent);font:inherit;font-size:12.5px;font-weight:700;cursor:pointer;}
+.tp-edit-link:hover{border-color:var(--accent);}
+.tp-edit-link:focus-visible{outline:2px solid var(--accent);outline-offset:1px;}
+.tp-details .tp-pnl{margin-top:10px;}
+.tp-kpis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:14px;}
+.tp-kpis div{display:flex;flex-direction:column;gap:2px;padding:8px 9px;border-radius:9px;background:var(--surface-2);border:1px solid var(--rule);min-width:0;}
+.tp-kpis b{font-size:15px;font-variant-numeric:tabular-nums;white-space:nowrap;}
+.tp-kpis span{font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);}
+.tp-details .tp-trio{margin:14px 0 2px;}
+.tp-summary-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px;}
+.tp-summary{border:1px solid var(--rule);border-radius:10px;padding:14px 16px;background:var(--surface-2);font-size:13px;line-height:1.6;white-space:pre-wrap;}
+.tp-summary hr{border:0;border-top:1px solid var(--rule);margin:6px 0;}
+/* Share */
+.share-modal{max-width:min(94vw,820px) !important;width:100%;}
+.share-opts{display:flex;flex-wrap:wrap;gap:8px 18px;font-size:13px;margin-bottom:12px;}
+.share-opts label{display:inline-flex;align-items:center;gap:6px;cursor:pointer;}
+.share-canvas-wrap{border-radius:12px;overflow:hidden;border:1px solid var(--rule);}
+.share-canvas-wrap canvas{display:block;width:100%;height:auto;}
+.share-actions{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-top:14px;}
+
 /* Kanang box na may tabs */
 .tp-tabbed{padding-top:0;overflow:hidden;align-self:stretch;}
 .tp-tabs{display:flex;gap:2px;margin:0 -20px 16px;padding:0 20px;border-bottom:1px solid var(--rule);overflow-x:auto;}
