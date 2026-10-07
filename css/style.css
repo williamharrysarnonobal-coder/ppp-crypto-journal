@@ -4887,6 +4887,26 @@ body.mobile-mode .drawer.drawer-inline #drawerBody{grid-template-columns:minmax(
   background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%2393989F' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   background-repeat:no-repeat;background-position:right 10px center;}
 #view-trade .tp-multi-btn .tp-caret{display:none;}
+/* PANTAY-PANTAY: iisang lapad ng lahat ng dropdown at text box sa trade page,
+   para magkakahanay ang kaliwang gilid at dulo. Ang may maraming napili ay
+   puwedeng humaba. */
+#view-trade select.tp-inl,#view-trade input.tp-inl-text{width:220px;max-width:100%;}
+#view-trade .tp-multi-btn{min-width:220px;}
+/* Tuloy-tuloy na guhit sa ilalim ng bawat row: walang puwang sa gitna; ang
+   kanang hanay ang may sariling espasyo sa kaliwa. */
+#tpReview .tp-rv-grid{column-gap:0;}
+#tpReview .tp-rv-r{padding-left:28px;}
+#tpReview .tp-rv-mid > .tp-rv-k{align-self:center;padding-top:0;}
+/* Sa makitid na screen: isang hanay, at sakto sa lapad ang mga dropdown. */
+@media(max-width:700px){
+  #tpReview .tp-rv-grid{grid-template-columns:minmax(0,1fr);}
+  #tpReview .tp-rv-r{padding-left:0;}
+  #view-trade select.tp-inl,#view-trade input.tp-inl-text,#view-trade .tp-multi-btn{width:100%;min-width:0;max-width:100%;}
+}
+body.mobile-mode #tpReview .tp-rv-grid{grid-template-columns:minmax(0,1fr);}
+body.mobile-mode #tpReview .tp-rv-r{padding-left:0;}
+body.mobile-mode #view-trade select.tp-inl,body.mobile-mode #view-trade input.tp-inl-text,body.mobile-mode #view-trade .tp-multi-btn{width:100%;min-width:0;max-width:100%;}
+.tp-trio b .tp-lots{font-size:11.5px;font-weight:600;color:var(--muted);white-space:nowrap;}
 /* Daily Plan: ⓘ at ang lumulutang na paliwanag */
 .dp-info{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;margin-left:5px;border-radius:50%;
   border:1px solid var(--muted);color:var(--muted);font:700 10px/1 Georgia,serif;font-style:italic;cursor:help;vertical-align:1px;

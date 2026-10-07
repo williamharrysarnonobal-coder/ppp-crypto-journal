@@ -17684,7 +17684,7 @@ function _renderTradeDetails(row){
     <div class="tp-trio">
       <div><b>${escapeHtml(row.symbol || '—')}</b><span>Instrument</span></div>
       <div><b class="${/^long$/i.test(row.trade_type || '') ? 'pos' : /^short$/i.test(row.trade_type || '') ? 'neg' : ''}">${escapeHtml(row.trade_type || '—')}</b><span>Direction</span></div>
-      <div><b>${_tpNum(row.position_size)}</b><span title="${row._qtyLots ? `Saved as ${row._qtyLots} lots; worked out as units (1 lot = ${row._qtyLotSize}).` : ''}">Quantity${row._qtyLots ? ` · ${row._qtyLots} lots` : ''}</span></div>
+      <div title="${row._qtyLots ? `Saved as ${row._qtyLots} lots; worked out as units (1 lot = ${row._qtyLotSize}).` : ''}"><b>${_tpNum(row.position_size)}${row._qtyLots ? ` <small class="tp-lots">${row._qtyLots} lots</small>` : ''}</b><span>Quantity</span></div>
     </div>
     <div class="tp-sec">
       ${line('Date', d ? escapeHtml(d.toLocaleDateString(undefined, { weekday:'short', month:'short', day:'numeric', year:'numeric' })) : '')}
@@ -17726,7 +17726,7 @@ function _renderTradeReview(row){
         <div class="tp-rv-k">Rules followed?</div>
         <div>${_tpSelect('rules_followed', row) || (rf ? `<span class="tp-chip ${/^yes$/i.test(rf) ? 'win' : 'loss'}">${escapeHtml(rf)}</span>` : '<span class="tp-muted">Not answered</span>')}</div>
       </div>
-      <div class="tp-rv">
+      <div class="tp-rv tp-rv-r">
         <div class="tp-rv-k">Confluence</div>
         <div>${cd ? `<b class="${cd.state === 'pass' ? 'pos' : cd.state === 'near' ? 'tp-acc' : 'neg'}">${cd.pct}%</b> <span class="tp-muted">${Number(cd.done.toFixed(1))} of ${cd.total} · bar ${cd.bar}%</span>` : '<span class="tp-muted">Not filled in</span>'}</div>
       </div>
@@ -17742,7 +17742,7 @@ function _renderTradeReview(row){
         <div class="tp-rv-k">Entry emotion</div>
         <div>${_tpSelect('entry_emotion', row) || emo(row.entry_emotion)}</div>
       </div>
-      <div class="tp-rv">
+      <div class="tp-rv tp-rv-r">
         <div class="tp-rv-k">Exit emotion</div>
         <div>${_tpSelect('exit_emotion', row) || emo(row.exit_emotion)}</div>
       </div>
@@ -17750,11 +17750,11 @@ function _renderTradeReview(row){
         <div class="tp-rv-k">Trade management</div>
         ${_tpMulti('trade_management', row) || `<div class="tp-tags">${listOf(row.trade_management).length ? listOf(row.trade_management).map(m => `<span class="tp-tag">${escapeHtml(m)}</span>`).join('') : '<span class="tp-muted">—</span>'}</div>`}
       </div>
-      <div class="tp-rv">
+      <div class="tp-rv tp-rv-wide tp-rv-mid">
         <div class="tp-rv-k">Exit</div>
         <div>${_tpSelect('exit_type', row) || (row.exit_type ? escapeHtml(row.exit_type) : '<span class="tp-muted">—</span>')}</div>
       </div>
-      ${post ? `<div class="tp-rv"><div class="tp-rv-k">After the exit</div><div class="tp-tags">${post}</div></div>` : ''}
+      ${post ? `<div class="tp-rv tp-rv-wide tp-rv-mid"><div class="tp-rv-k">After the exit</div><div class="tp-tags">${post}</div></div>` : ''}
       <div class="tp-rv tp-rv-wide">
         <div class="tp-rv-k">Notes</div>
         <div class="tp-notes">${notesTxt ? `<p>${escapeHtml(notesTxt)}</p>` : ''}${log.map(e => `<div class="tp-note"><small>${escapeHtml(new Date(e.ts).toLocaleString(undefined, { dateStyle:'medium', timeStyle:'short' }))}${e.setup ? ' · from the setup' : ''}</small>${escapeHtml(String(e.text || '').trim())}</div>`).join('')}${!notesTxt && !log.length ? '<span class="tp-muted">No notes yet. Use Add note above.</span>' : ''}</div>
