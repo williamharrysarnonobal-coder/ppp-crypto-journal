@@ -17,7 +17,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<link rel="stylesheet" href="css/style.css?v=353">
+<link rel="stylesheet" href="css/style.css?v=354">
 </head>
 <body>
 
@@ -822,7 +822,7 @@
       </div>
       <div style="overflow-x:auto;">
         <table class="breakdown poscalc-table" id="pendingSetupsTable" style="display:none;">
-          <thead><tr><th style="width:34px;"><input type="checkbox" id="setupSelectAll" onclick="toggleAllSetupSelection(this.checked)"></th><th>Symbol</th><th>Date</th><th>Account</th><th>Leverage</th><th>Risk Amount ($)</th><th>Quantity</th><th>Entry Price</th><th>TP Price</th><th>SL Price</th><th>Confluence</th><th>Status</th><th></th></tr></thead>
+          <thead><tr><th style="width:34px;"><input type="checkbox" id="setupSelectAll" onclick="toggleAllSetupSelection(this.checked)"></th><th>Symbol</th><th>Date</th><th>Account</th><th>Leverage</th><th>Risk Amount ($)</th><th>Quantity</th><th>Entry Price</th><th>TP Price</th><th>SL Price</th><th>Confluence</th><th>Entry Emotion</th><th>Status</th><th></th></tr></thead>
           <tbody id="pendingSetupsBody"></tbody>
         </table>
       </div>
@@ -837,7 +837,7 @@
         <div class="empty-state" id="journaledSetupsEmptyState" style="display:none;">No journaled setups yet — click "Journal" on a pending setup once its trade is logged.</div>
         <div style="overflow-x:auto;">
           <table class="breakdown poscalc-table" id="journaledSetupsTable" style="display:none;">
-            <thead><tr><th>Symbol</th><th>Date</th><th>Account</th><th>Leverage</th><th>Risk Amount ($)</th><th>Quantity</th><th>Entry Price</th><th>TP Price</th><th>SL Price</th><th>Confluence</th><th>Status</th><th></th></tr></thead>
+            <thead><tr><th>Symbol</th><th>Date</th><th>Account</th><th>Leverage</th><th>Risk Amount ($)</th><th>Quantity</th><th>Entry Price</th><th>TP Price</th><th>SL Price</th><th>Confluence</th><th>Entry Emotion</th><th>Status</th><th></th></tr></thead>
             <tbody id="journaledSetupsBody"></tbody>
           </table>
         </div>
@@ -2724,6 +2724,6 @@
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=2"></script>
-<script src="js/dashboard.js?v=587"></script>
+<script src="js/dashboard.js?v=588"></script>
 </body>
 </html>

@@ -26503,6 +26503,45 @@ function _leverageTint(lev){
   return 'var(--loss)';
 }
 
+/* ENTRY EMOTION SA PENDING SETUPS — isang dropdown sa mismong hilera, nase-save
+   pagkapili. Ang parehong value na nasa Confluence window, kaya iisa ang
+   pinanggagalingan at walang doble. */
+function _setupEmotionSelect(s){
+  const cur = s.entry_emotion || '';
+  const opts = FIELD_OPTIONS.emotion.slice();
+  if(cur && !opts.includes(cur)) opts.unshift(cur);
+  return `<select class="ps-emo-sel${cur ? ' has' : ''}" aria-label="Entry emotion" onchange="setSetupEmotion(${Number(s.id)}, this)">
+    <option value="">— pick —</option>${opts.map(o => `<option value="${escapeHtml(o)}"${o === cur ? ' selected' : ''}>${escapeHtml(_optLabel('emotion', o))}</option>`).join('')}</select>`;
+}
+async function setSetupEmotion(id, sel){
+  const s = SAVED_SETUPS.find(x => x.id === id);
+  if(!s) return;
+  const v = sel.value || null;
+  const before = s.entry_emotion || null;
+  sel.disabled = true;
+  try{
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/position_setups?id=eq.${id}`, {
+      method: 'PATCH',
+      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}`,
+                 "Content-Type": "application/json", "Prefer": "return=minimal" },
+      body: JSON.stringify({ entry_emotion: v })
+    });
+    if(!res.ok){
+      const t = await res.text();
+      throw new Error(t.includes('entry_emotion')
+        ? 'The Entry Emotion column is not in the database yet. Run supabase_position_setups_entry_emotion.sql in Supabase.' : t);
+    }
+    s.entry_emotion = v;
+    sel.classList.toggle('has', !!v);
+    showToast(v ? `Entry emotion: ${_optLabel('emotion', v)}` : 'Entry emotion cleared');
+  }catch(e){
+    sel.value = before || '';
+    await customAlert("Couldn't save: " + e.message);
+  }finally{
+    sel.disabled = false;
+  }
+}
+
 function setupRowHTML(s, selectable){
   const riskAmount = Number(s.risk_amount);
   // Prices/quantity only exist on setups saved after the calculator became
@@ -26530,6 +26569,9 @@ function setupRowHTML(s, selectable){
     <!-- Kaparehong singsing at hover ng Trade Journals: may trade type,
          pattern at mga sagot din ang setup. -->
     <td onclick="event.stopPropagation();">${_journalColoredCell('confluence_score', s, '') || '<span style="color:var(--muted);">—</span>'}</td>
+    <!-- Entry Emotion: napapalitan agad sa Pending; basa lang sa Journaled. -->
+    <td onclick="event.stopPropagation();">${selectable ? _setupEmotionSelect(s)
+      : (s.entry_emotion ? escapeHtml(_optLabel('emotion', s.entry_emotion)) : '<span style="color:var(--muted);">—</span>')}</td>
     <td><span class="pill ${statusPillClass}">${escapeHtml(status)}</span></td>
     <!-- Isang "Actions" menu sa halip na hanay ng mga button. Sagot ang
          tinitingnan para sa Confluence, hindi Pattern Type — tingnan ang
