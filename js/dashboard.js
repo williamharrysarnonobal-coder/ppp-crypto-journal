@@ -427,7 +427,9 @@ const UI_PREF_LS_KEYS = {
   // Kung Rule o Note ang bawat Trade Tag — siya ang nagpapasya, sa Options.
   tag_kinds: 'ledger-tag-kinds',
   // Aling market sa Market Hours ang may 🔔 — sumusunod sa account.
-  market_hours_notify: 'tanaydana-mh-notify'
+  market_hours_notify: 'tanaydana-mh-notify',
+  // Notification 15 minuto bago ang High impact na balita.
+  econ_notify: 'tanaydana-econ-notify'
 };
 
 let _uiPrefsSyncTimer = null;
@@ -6378,7 +6380,9 @@ function _tzOffsetHours(tz, at){
   }).formatToParts(at).map(x => [x.type, x.value]));
   // Some engines render midnight as hour 24 under hour12:false.
   const asUTC = Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour % 24, +p.minute);
-  return Math.round((asUTC - at.getTime()) / 60000) / 60;
+  // Ang segundo ay wala sa asUTC — tanggalin din sa `at`, kung hindi ay
+  // nagiging 3:59 ang offset na 4:00 (isang minutong mali).
+  return Math.round((asUTC - Math.floor(at.getTime() / 60000) * 60000) / 60000) / 60;
 }
 
 // A session's window as [startUTC, endUTC) in decimal hours, wrapping allowed.
@@ -8957,6 +8961,8 @@ function _rmFired(){
   catch(e){ return { day: today, at: {} }; }
 }
 function _rmShow(key, title, body, go){
+  // Itinatala sa "Earlier today" ng floating 🔔.
+  if(typeof _notifLogPush === 'function') _notifLogPush(key, title, body);
   // Banner sa app (gamit ang banner ng Upscale), at system notification.
   if(typeof _upBanner === 'function'){
     const kind = key.split(':')[0];
@@ -18018,6 +18024,7 @@ function _shareBlob(canvasId){
   });
 }
 function _shareFileName(canvasId){
+  if(canvasId === 'mhShareCanvas') return `market-hours-${_mhDayIso(Date.now())}.png`;
   if(canvasId === 'calShareCanvas' && _calShareKind === 'year') return `year-${YEAR_OVERVIEW}.png`;
   if(canvasId === 'calShareCanvas'){
     return `calendar-${calMonth.getFullYear()}-${String(calMonth.getMonth() + 1).padStart(2, '0')}.png`;
@@ -31277,6 +31284,8 @@ function renderMarketHours(){
         }).join('');
         return `<div class="mh-row"><div class="mh-lab">${escapeHtml(m.name)}</div><div class="mh-track">${segs}<b class="mh-nowline" style="left:${pct(now)}%"></b></div></div>`;
       }).join('');
+    tl.dataset.dayStart = String(dayStart);
+    _mhAttachHover();
   }
 
   // Mga card
@@ -31314,6 +31323,7 @@ function _mhClockTick(){
 }
 function openMarketHours(){
   renderMarketHours();
+  renderMarketVolume();
   clearInterval(_mhTimer);
   _mhTick = 0;
   _mhTimer = setInterval(_mhClockTick, 1000);
@@ -31358,3 +31368,351 @@ function runMarketNotifications(){
 }
 setTimeout(runMarketNotifications, 10000);
 setInterval(runMarketNotifications, 30000);
+
+
+/* ---------- MARKET HOURS: hover sa timeline ----------
+   Itutok ang mouse (o daliri) sa timeline: lalabas ang eksaktong oras sa
+   puntong iyon at kung aling market ang bukas noon. */
+function _mhAttachHover(){
+  const tl = document.getElementById('mhTimeline');
+  if(!tl || tl.dataset.hover) return;
+  tl.dataset.hover = '1';
+  const hide = () => { const g = document.getElementById('mhHover'); if(g) g.hidden = true; };
+  tl.addEventListener('pointerleave', hide);
+  tl.addEventListener('pointermove', e => {
+    const track = tl.querySelector('.mh-row:not(.mh-axis) .mh-track');
+    if(!track) return;
+    const tb = track.getBoundingClientRect(), cb = tl.getBoundingClientRect();
+    const x = e.clientX - tb.left;
+    if(x < 0 || x > tb.width){ hide(); return; }
+    const dayStart = Number(tl.dataset.dayStart);
+    const at = dayStart + Math.round(x / tb.width * 1440 / 5) * 5 * 60000;   // bawat 5 minuto
+    let g = document.getElementById('mhHover');
+    if(!g){ g = document.createElement('div'); g.id = 'mhHover'; g.className = 'mh-hover'; g.innerHTML = '<i></i><span></span>'; tl.appendChild(g); }
+    g.hidden = false;
+    const left = tb.left - cb.left + x;
+    g.style.left = left + 'px';
+    const open = MARKET_HOURS.filter(m => !m.always && _mhIntervals(m, at - 86400000, at + 86400000).some(v => v[0] <= at && at < v[1])).map(m => m.name);
+    const label = g.querySelector('span');
+    label.innerHTML = `<b>${_mhTime(at)}</b>${open.length ? escapeHtml(open.join(' · ')) : 'Only crypto open'}`;
+    // Huwag lumabas sa gilid
+    label.style.transform = left > cb.width - 140 ? 'translateX(-100%)' : left < 140 ? 'translateX(0)' : 'translateX(-50%)';
+  });
+}
+
+/* ---------- MARKET HOURS: volume kada oras ----------
+   Karaniwang volume bawat oras (UAE time) sa huling ~30 araw, at kung gaano
+   kalakas ang huling buong oras kumpara sa karaniwan sa oras na iyon.
+   BTC: Binance BTCUSDT (USDT volume), direkta. Gold: COMEX gold futures sa
+   Worker (/api/volume). Naka-cache nang isang oras sa device. */
+let _mhVolSym = 'btc';
+const _mhVolData = {};
+async function _mhLoadVolume(sym){
+  const key = 'tanaydana-vol-' + sym;
+  try{ const c = JSON.parse(localStorage.getItem(key) || 'null'); if(c && Date.now() - c.at < 3600000 && c.bars && c.bars.length) return c.bars; }catch(e){}
+  let bars = [];
+  if(sym === 'btc'){
+    const res = await fetch('https://data-api.binance.vision/api/v3/klines?symbol=BTCUSDT&interval=1h&limit=720');
+    if(!res.ok) throw new Error('Binance ' + res.status);
+    bars = (await res.json()).map(k => [Number(k[0]), Number(k[7])]);   // oras ng bukas, USDT volume
+  }else{
+    const res = await fetch('/api/volume?symbol=gold');
+    if(!res.ok) throw new Error('Volume ' + res.status);
+    bars = (await res.json()).bars || [];
+  }
+  try{ localStorage.setItem(key, JSON.stringify({ at: Date.now(), bars })); }catch(e){}
+  return bars;
+}
+function _mhVolumeProfile(bars, now){
+  const hourStart = Math.floor(now / 3600000) * 3600000;
+  const uaeHour = t => new Date(t).toLocaleString('en-US', { timeZone:'Asia/Dubai', hour:'numeric', hourCycle:'h23' }) | 0;
+  const sum = Array(24).fill(0), n = Array(24).fill(0);
+  let last = null;
+  bars.forEach(([t, v]) => {
+    if(!(v > 0) || t >= hourStart) return;          // ang kasalukuyang oras ay hindi pa buo
+    const h = uaeHour(t); sum[h] += v; n[h]++;
+    if(!last || t > last[0]) last = [t, v];
+  });
+  const avg = sum.map((s, i) => n[i] ? s / n[i] : 0);
+  const lastRatio = last && avg[uaeHour(last[0])] ? last[1] / avg[uaeHour(last[0])] : null;
+  return { avg, last, lastRatio, lastHour: last ? uaeHour(last[0]) : null, days: Math.max(...n) };
+}
+function setMhVolume(sym){ _mhVolSym = sym; renderMarketVolume(); }
+async function renderMarketVolume(){
+  const el = document.getElementById('mhVolume');
+  if(!el) return;
+  document.querySelectorAll('.mh-vol-tab').forEach(b => b.classList.toggle('active', b.dataset.sym === _mhVolSym));
+  const sym = _mhVolSym;
+  if(!_mhVolData[sym]){
+    el.innerHTML = '<div class="tp-muted" style="padding:20px 0;">Loading volume…</div>';
+    try{ _mhVolData[sym] = await _mhLoadVolume(sym); }
+    catch(e){ el.innerHTML = `<div class="tp-muted" style="padding:20px 0;">Couldn't load ${sym === 'btc' ? 'BTC' : 'gold'} volume right now. Try again in a few minutes.</div>`; return; }
+    if(sym !== _mhVolSym) return;
+  }
+  const now = Date.now();
+  const p = _mhVolumeProfile(_mhVolData[sym], now);
+  const max = Math.max(...p.avg, 1);
+  const curH = new Date(now).toLocaleString('en-US', { timeZone:'Asia/Dubai', hour:'numeric', hourCycle:'h23' }) | 0;
+  const fmt = v => sym === 'btc' ? '$' + new Intl.NumberFormat('en-US', { notation:'compact', maximumFractionDigits:1 }).format(v)
+    : new Intl.NumberFormat('en-US', { notation:'compact', maximumFractionDigits:1 }).format(v) + ' contracts';
+  const top = p.avg.map((v, h) => [v, h]).sort((a, b) => b[0] - a[0]).slice(0, 3).map(x => x[1]).sort((a, b) => a - b);
+  const bars = p.avg.map((v, h) => `<div class="mh-vbar${h === curH ? ' now' : ''}${top.includes(h) ? ' top' : ''}" title="${_hr(h)}–${_hr(h + 1)}: ${fmt(v)} on average">
+      <i style="height:${Math.max(2, v / max * 100)}%"></i></div>`).join('');
+  const ticks = [0, 3, 6, 9, 12, 15, 18, 21].map(h => `<span style="left:${(h + 0.5) / 24 * 100}%">${_hr(h)}</span>`).join('');
+  const ratio = p.lastRatio;
+  const verdict = ratio === null ? '' : ratio >= 1.5 ? 'much busier than usual' : ratio >= 1.15 ? 'busier than usual' : ratio > 0.85 ? 'about normal' : ratio > 0.5 ? 'quieter than usual' : 'much quieter than usual';
+  el.innerHTML = `
+    <div class="mh-vchart">${bars}</div>
+    <div class="mh-vaxis">${ticks}</div>
+    <div class="mh-vnote">
+      ${ratio !== null ? `<div><span class="prof-k">Last hour · ${_hr(p.lastHour)}–${_hr(p.lastHour + 1)}</span><b class="${ratio >= 1.15 ? 'pos' : ratio <= 0.85 ? 'neg' : ''}">${ratio.toFixed(1)}× usual</b><span>${verdict}</span></div>` : ''}
+      <div><span class="prof-k">Busiest hours</span><b>${top.map(h => _hr(h)).join(' · ')}</b><span>your time, on average</span></div>
+    </div>
+    <div class="mh-vsrc">Average per hour over the last ${p.days} trading days. ${sym === 'btc' ? 'Source: Binance BTCUSDT.' : 'Source: COMEX gold futures, the closest public measure of gold volume (XAU/USD spot has no central volume).'}</div>`;
+}
+
+/* ---------- MGA NOTIFICATION NG CALENDAR ----------
+   15 minuto bago ang bawat High impact na balita. Kinukuha ang calendar sa
+   likod kahit hindi bukas ang page (bawat 30 min). Isang beses bawat balita. */
+const ECON_NOTIFY_KEY = 'tanaydana-econ-notify';
+const _econNotifyOn = () => { try{ return localStorage.getItem(ECON_NOTIFY_KEY) !== '0'; }catch(e){ return true; } };
+let _econBgAt = 0;
+function _runEconNotifications(){
+  if(typeof USER_ACCESS_TOKEN === 'undefined' || !USER_ACCESS_TOKEN || !_econNotifyOn()) return;
+  const now = Date.now();
+  if(now - _econBgAt > 30 * 60000 && currentView !== 'news' && typeof loadMarketNewsWidget === 'function'){
+    _econBgAt = now;
+    loadMarketNewsWidget().catch(() => {});
+  }
+  let fired = {};
+  try{ fired = JSON.parse(localStorage.getItem(MH_FIRED_KEY) || '{}') || {}; }catch(e){}
+  let changed = false;
+  _econUpcoming(now, 15 * 60000).forEach(e => {
+    const t = new Date(e.event_date).getTime();
+    const k = `econ:${e.title}|${t}`;
+    if(fired[k]) return;
+    fired[k] = now; changed = true;
+    const bits = [`At ${_mhTime(t)} your time`, e.forecast != null && e.forecast !== '' ? `Forecast ${e.forecast}` : '', e.previous != null && e.previous !== '' ? `Previous ${e.previous}` : ''].filter(Boolean);
+    _rmShow(`econ-${t}:pre`, `${e.country ? e.country + ' ' : ''}${e.title} in ${_mhLeft(t - now)}`, bits.join(' · '), () => switchView('news'));
+  });
+  if(changed){ try{ localStorage.setItem(MH_FIRED_KEY, JSON.stringify(fired)); }catch(e){} }
+}
+// High impact na balita sa loob ng susunod na `within` ms.
+function _econUpcoming(now, within){
+  return (typeof ECON_EVENTS !== 'undefined' ? ECON_EVENTS : []).filter(e => {
+    if(String(e.impact || '').toLowerCase() !== 'high') return false;
+    const t = new Date(e.event_date).getTime();
+    return t > now && t - now <= within;
+  });
+}
+setInterval(_runEconNotifications, 30000);
+setTimeout(_runEconNotifications, 12000);
+
+/* ---------- FLOATING 🔔 ----------
+   Coming up: mga susunod na mangyayari ngayong araw (market na naka-🔔 at
+   High impact na balita), may countdown. Earlier today: ang mga lumabas na.
+   Ang bilang ay ang mga hindi pa nakikita. */
+const NOTIF_LOG_KEY = 'tanaydana-notif-log', NOTIF_SEEN_KEY = 'tanaydana-notif-seen';
+function _notifLog(){ try{ const v = JSON.parse(localStorage.getItem(NOTIF_LOG_KEY) || '[]'); return Array.isArray(v) ? v : []; }catch(e){ return []; } }
+function _notifLogPush(key, title, body){
+  const log = _notifLog().filter(x => Date.now() - x.ts < 2 * 86400000);
+  log.push({ k: key, title, body, ts: Date.now() });
+  try{ localStorage.setItem(NOTIF_LOG_KEY, JSON.stringify(log.slice(-60))); }catch(e){}
+  _renderNotifFab();
+}
+function _notifViewOf(k){
+  const kind = String(k || '').split(':')[0];
+  if(kind.startsWith('mh-')) return 'hours';
+  if(kind.startsWith('econ')) return 'news';
+  return { setups:'calculator', plan:'plan', evening:'plan', morning:'plan', diary:'plan', backup:'config', journal:'journal' }[kind] || null;
+}
+function _notifUnseen(){
+  let seen = 0; try{ seen = Number(localStorage.getItem(NOTIF_SEEN_KEY)) || 0; }catch(e){}
+  return _notifLog().filter(x => x.ts > seen).length;
+}
+function _renderNotifFab(){
+  const b = document.getElementById('notifFabBadge');
+  if(!b) return;
+  const n = _notifUnseen();
+  b.textContent = n > 9 ? '9+' : String(n);
+  b.hidden = !n;
+}
+function _notifComingUp(now){
+  const items = [];
+  const on = _mhNotifySet();
+  MARKET_HOURS.filter(m => !m.always && on.has(m.id)).forEach(m => {
+    _mhIntervals(m, now, now + 24 * 3600000).forEach(([s, e]) => {
+      if(s > now) items.push({ t: s, title: `${m.name} opens`, kind: 'mh' });
+      if(e > now && e - now <= 24 * 3600000) items.push({ t: e, title: m.id === 'gold' ? 'Gold daily break / close' : `${m.name} closes`, kind: 'mh' });
+    });
+  });
+  _econUpcoming(now, 24 * 3600000).forEach(e => items.push({ t: new Date(e.event_date).getTime(), title: `${e.country ? e.country + ' ' : ''}${e.title}`, kind: 'econ', high: true }));
+  const seen = new Set();
+  return items.filter(x => { const k = x.title + x.t; if(seen.has(k)) return false; seen.add(k); return true; })
+    .sort((a, b) => a.t - b.t).slice(0, 8);
+}
+function renderNotifFabPanel(){
+  const p = document.getElementById('notifFabPanel');
+  if(!p) return;
+  const now = Date.now();
+  const today = _mhDayIso(now);
+  const up = _notifComingUp(now);
+  const earlier = _notifLog().filter(x => _mhDayIso(x.ts) === today).reverse();
+  const econOn = _econNotifyOn();
+  p.innerHTML = `
+    <div class="nf-head"><b>Notifications</b><button class="nf-x" onclick="toggleNotifFab(false)" aria-label="Close">✕</button></div>
+    <div class="nf-sec">Coming up</div>
+    ${up.length ? up.map(x => `<button class="nf-item" onclick="toggleNotifFab(false); switchView('${x.kind === 'econ' ? 'news' : 'hours'}')">
+        <span class="nf-dot ${x.kind === 'econ' ? 'hi' : ''}"></span><span class="nf-t"><b>${escapeHtml(x.title)}</b><small>${_mhTime(x.t, _mhDayIso(x.t) !== today)}${x.kind === 'econ' ? ' · High impact' : ''}</small></span>
+        <span class="nf-in">in ${_mhLeft(x.t - now)}</span></button>`).join('')
+      : '<div class="nf-empty">Nothing in the next 24 hours. Turn on 🔔 for a market in Market Hours.</div>'}
+    <div class="nf-sec">Earlier today</div>
+    ${earlier.length ? earlier.slice(0, 15).map(x => { const v = _notifViewOf(x.k); return `<button class="nf-item past" ${v ? `onclick="toggleNotifFab(false); switchView('${v}')"` : 'disabled'}>
+        <span class="nf-t"><b>${escapeHtml(x.title)}</b><small>${escapeHtml(_mhTime(x.ts))}${x.body ? ' · ' + escapeHtml(x.body) : ''}</small></span></button>`; }).join('')
+      : '<div class="nf-empty">No notifications yet today.</div>'}
+    <div class="nf-foot">
+      <button class="nf-toggle${econOn ? ' on' : ''}" onclick="toggleEconNotify()">${econOn ? '🔔' : '🔕'} High impact news, 15 min before: <b>${econOn ? 'On' : 'Off'}</b></button>
+      <button class="nf-link" onclick="toggleNotifFab(false); switchView('hours')">Market Hours →</button>
+    </div>`;
+}
+function toggleNotifFab(force){
+  const p = document.getElementById('notifFabPanel');
+  if(!p) return;
+  const open = force === undefined ? p.hidden : !!force;
+  p.hidden = !open;
+  document.getElementById('notifFab')?.setAttribute('aria-expanded', String(open));
+  if(open){
+    renderNotifFabPanel();
+    try{ localStorage.setItem(NOTIF_SEEN_KEY, String(Date.now())); }catch(e){}
+    _renderNotifFab();
+  }
+}
+function toggleEconNotify(){
+  const on = !_econNotifyOn();
+  try{ localStorage.setItem(ECON_NOTIFY_KEY, on ? '1' : '0'); }catch(e){}
+  if(typeof syncUIPrefsToProfile === 'function') syncUIPrefsToProfile();
+  try{ if(on && 'Notification' in window && Notification.permission === 'default') Notification.requestPermission(); }catch(e){}
+  renderNotifFabPanel();
+}
+document.addEventListener('click', e => {
+  const p = document.getElementById('notifFabPanel');
+  if(!p || p.hidden) return;
+  if(e.target.closest && (e.target.closest('#notifFabPanel') || e.target.closest('#notifFab'))) return;
+  p.hidden = true;
+});
+setInterval(() => { _renderNotifFab(); const p = document.getElementById('notifFabPanel'); if(p && !p.hidden) renderNotifFabPanel(); }, 30000);
+setTimeout(_renderNotifFab, 1000);
+
+/* ---------- SHARE: Market Hours ngayong araw ----------
+   Larawan (1200×1500) para sa friends, at text na puwedeng i-paste sa
+   WhatsApp o Discord. */
+const MH_SHARE_ROWS = ['tokyo', 'london', 'newyork', 'overlap', 'nyse', 'gold'];
+function _mhShareText(){
+  const now = Date.now();
+  const day = new Date(now).toLocaleDateString('en-US', { timeZone:'Asia/Dubai', weekday:'short', day:'numeric', month:'short' });
+  const first = (id, from) => _mhIntervals(_mhById(id), from, from + 86400000)[0];
+  const dayStart = Number(document.getElementById('mhTimeline')?.dataset.dayStart) || now;
+  const line = (emoji, label, id, onlyOpen) => { const iv = first(id, dayStart); return iv ? `${emoji} ${label}: ${_mhTime(iv[0])}${onlyOpen ? '' : ' – ' + _mhTime(iv[1])}` : null; };
+  const news = (typeof ECON_EVENTS !== 'undefined' ? ECON_EVENTS : []).filter(e => String(e.impact || '').toLowerCase() === 'high' && _mhDayIso(new Date(e.event_date).getTime()) === _mhDayIso(now))
+    .map(e => `• ${_mhTime(new Date(e.event_date).getTime())} ${e.country ? e.country + ' ' : ''}${e.title}`);
+  return [
+    `🕒 Market hours today (UAE time) · ${day}`,
+    line('🇯🇵', 'Tokyo', 'tokyo'), line('🇬🇧', 'London', 'london'), line('🇺🇸', 'New York', 'newyork'),
+    line('🔥', 'London + NY overlap', 'overlap'), line('📈', 'US stock market open', 'nyse', true),
+    news.length ? `\n📰 High impact news:\n${news.join('\n')}` : null,
+    '\nvia Tanaydana'
+  ].filter(Boolean).join('\n');
+}
+function drawMarketHoursShare(){
+  const cv = document.getElementById('mhShareCanvas');
+  if(!cv) return;
+  const ctx = cv.getContext('2d'), W = cv.width, H = cv.height;
+  const C = { bg:'#12141C', surf:'#1B1F2B', rule:'#2E3446', ink:'#F1EEE6', muted:'#93989F', win:'#2ECC71', loss:'#FF5C5C',
+              accent: getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#F0B429' };
+  const font = (w, s) => `${w} ${s}px "Public Sans", system-ui, sans-serif`;
+  const now = Date.now();
+  const dayStart = Number(document.getElementById('mhTimeline')?.dataset.dayStart) || now;
+  ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = C.accent; ctx.fillRect(0, 0, 10, H);
+  const L = 70;
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillStyle = C.ink; ctx.font = font(800, 64); ctx.fillText('Market Hours', L, 130);
+  ctx.fillStyle = C.muted; ctx.font = font(500, 28);
+  ctx.fillText(`${new Date(now).toLocaleDateString('en-US', { timeZone:'Asia/Dubai', weekday:'long', month:'long', day:'numeric' })} · UAE time`, L, 178);
+
+  // Timeline
+  const x0 = 340, x1 = W - L, top = 250, rowH = 62;
+  const X = t => x0 + (t - dayStart) / 86400000 * (x1 - x0);
+  ctx.font = font(500, 20); ctx.fillStyle = C.muted;
+  [0, 6, 12, 18, 24].forEach(h => { const x = x0 + h / 24 * (x1 - x0); ctx.textAlign = h === 0 ? 'left' : h === 24 ? 'right' : 'center'; ctx.fillText(h === 24 ? '12am' : _hr(h), x, top - 14); });
+  ctx.textAlign = 'left';
+  MH_SHARE_ROWS.forEach((id, i) => {
+    const m = _mhById(id), y = top + i * rowH;
+    ctx.fillStyle = C.ink; ctx.font = font(600, 24); ctx.fillText(m.name.replace(' (XAU/USD)', ''), L, y + 30);
+    ctx.fillStyle = C.surf; ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x0, y + 8, x1 - x0, 30, 8) : ctx.rect(x0, y + 8, x1 - x0, 30); ctx.fill();
+    _mhIntervals(m, dayStart, dayStart + 86400000).forEach(([s, e]) => {
+      const a = Math.max(X(s), x0), b = Math.min(X(e), x1);
+      if(b <= a) return;
+      ctx.fillStyle = id === 'overlap' ? C.win : C.accent;
+      ctx.beginPath(); ctx.roundRect ? ctx.roundRect(a, y + 8, b - a, 30, 8) : ctx.rect(a, y + 8, b - a, 30); ctx.fill();
+    });
+  });
+  // Mga pangunahing oras
+  let y = top + MH_SHARE_ROWS.length * rowH + 70;
+  ctx.fillStyle = C.muted; ctx.font = font(700, 20); ctx.fillText('KEY TIMES', L, y);
+  y += 16;
+  const first = id => _mhIntervals(_mhById(id), dayStart, dayStart + 86400000)[0];
+  const keys = [
+    ['London opens', first('london'), 0], ['New York opens', first('newyork'), 0], ['US stock market opens', first('nyse'), 0],
+    ['Overlap (busiest)', first('overlap'), 2]
+  ].filter(k => k[1]);
+  keys.forEach(([k, iv, mode]) => {
+    y += 48;
+    ctx.fillStyle = C.ink; ctx.font = font(600, 28); ctx.fillText(k, L, y);
+    ctx.textAlign = 'right'; ctx.fillStyle = C.accent; ctx.font = font(800, 28);
+    ctx.fillText(mode === 2 ? `${_mhTime(iv[0])} – ${_mhTime(iv[1])}` : _mhTime(iv[0]), W - L, y); ctx.textAlign = 'left';
+  });
+  // Balita
+  const news = (typeof ECON_EVENTS !== 'undefined' ? ECON_EVENTS : []).filter(e => String(e.impact || '').toLowerCase() === 'high' && _mhDayIso(new Date(e.event_date).getTime()) === _mhDayIso(now)).slice(0, 5);
+  y += 80;
+  ctx.fillStyle = C.muted; ctx.font = font(700, 20); ctx.fillText('HIGH IMPACT NEWS TODAY', L, y);
+  y += 16;
+  if(news.length) news.forEach(e => {
+    y += 46;
+    ctx.fillStyle = C.loss; ctx.font = font(800, 26); ctx.fillText(_mhTime(new Date(e.event_date).getTime()), L, y);
+    ctx.fillStyle = C.ink; ctx.font = font(600, 26);
+    let t = `${e.country ? e.country + ' ' : ''}${e.title}`;
+    while(ctx.measureText(t).width > W - L - 230 && t.length > 4) t = t.slice(0, -2);
+    if(t !== `${e.country ? e.country + ' ' : ''}${e.title}`) t = t.slice(0, -1) + '…';
+    ctx.fillText(t, L + 200, y);
+  });
+  else { y += 46; ctx.fillStyle = C.muted; ctx.font = font(500, 26); ctx.fillText('None scheduled.', L, y); }
+  // Paa
+  ctx.fillStyle = C.accent; ctx.font = font(800, 24); ctx.fillText('TANAYDANA', L, H - 50);
+  const bw = ctx.measureText('TANAYDANA').width;
+  ctx.fillStyle = C.muted; ctx.font = font(500, 20); ctx.fillText('trading journal', L + bw + 12, H - 50);
+}
+async function openShareMarketHours(){
+  // Isama ang balita ngayong araw kung hindi pa nakuha.
+  if((typeof ECON_EVENTS === 'undefined' || !ECON_EVENTS.length) && typeof loadMarketNewsWidget === 'function'){
+    try{ await loadMarketNewsWidget(); }catch(e){}
+  }
+  document.getElementById('mhShareText').value = _mhShareText();
+  document.getElementById('mhShareNativeBtn').style.display = (navigator.canShare && navigator.share) ? '' : 'none';
+  document.getElementById('mhShareModal').classList.add('open');
+  drawMarketHoursShare();
+}
+function closeShareMarketHours(){ document.getElementById('mhShareModal').classList.remove('open'); }
+async function copyMarketHoursText(){
+  try{ await navigator.clipboard.writeText(document.getElementById('mhShareText').value); showToast('Text copied — paste it in WhatsApp or Discord'); }
+  catch(e){ await customAlert("This browser can't copy text here. Select it and copy it by hand."); }
+}
+async function nativeShareMarketHours(){
+  try{
+    const b = await _shareBlob('mhShareCanvas');
+    const file = new File([b], _shareFileName('mhShareCanvas'), { type:'image/png' });
+    const text = document.getElementById('mhShareText').value;
+    if(navigator.canShare && navigator.canShare({ files:[file] })) await navigator.share({ files:[file], text });
+    else if(navigator.share) await navigator.share({ text });
+  }catch(e){ /* kinansela */ }
+}

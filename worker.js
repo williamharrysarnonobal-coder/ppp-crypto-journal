@@ -18,6 +18,7 @@ export default {
     const url = new URL(request.url);
     if (url.pathname === '/api/transcribe') return handleTranscribe(request, env);
     if (url.pathname === '/api/economic-events') return handleEconomicEvents(request);
+    if (url.pathname === '/api/volume') return handleVolume(request, url);
     const up = url.pathname.match(/^\/api\/upscale\/(check|link|unlink|quote|order|cancel|status|move_be)$/);
     if (up) return handleUpscale(request, env, up[1]);
     // Everything else is the site itself.
@@ -67,6 +68,39 @@ async function serveAsset(request, env) {
 const CALENDAR_URL = 'https://economic-calendar.tradingview.com/events';
 const CALENDAR_COUNTRIES = 'US,EU,GB,JP,CN,AU,CA,NZ,CH';
 const CALENDAR_IMPACT = { '0': 'Medium', '1': 'High' };
+
+/* VOLUME KADA ORAS para sa Market Hours. Ang Gold ay COMEX gold futures (GC=F)
+   mula sa Yahoo — walang CORS ang Yahoo kaya dito dumadaan. Ang BTC ay kinukuha
+   ng browser mismo sa Binance. Huling ~30 araw, 1 oras bawat bar; naka-cache
+   nang isang oras para iisang kuha lang ng lahat. */
+async function handleVolume(request, url) {
+  if (request.method !== 'GET') return json({ error: 'GET only.' }, 405);
+  const symbol = url.searchParams.get('symbol');
+  if (symbol !== 'gold') return json({ error: 'Unknown symbol.' }, 400);
+  const cache = caches.default;
+  const cacheKey = new Request(`https://cache.local/volume/gold/${new Date().toISOString().slice(0, 13)}`);
+  const hit = await cache.match(cacheKey);
+  if (hit) return hit;
+  let data;
+  try {
+    const res = await fetch('https://query1.finance.yahoo.com/v8/finance/chart/GC=F?interval=1h&range=1mo', {
+      headers: { 'User-Agent': 'Mozilla/5.0' }
+    });
+    if (!res.ok) return json({ error: `Volume source returned ${res.status}.` }, 502);
+    data = await res.json();
+  } catch {
+    return json({ error: 'Could not reach the volume source.' }, 502);
+  }
+  const r = data && data.chart && data.chart.result && data.chart.result[0];
+  const ts = (r && r.timestamp) || [];
+  const vol = (r && r.indicators && r.indicators.quote && r.indicators.quote[0] && r.indicators.quote[0].volume) || [];
+  const bars = [];
+  ts.forEach((t, i) => { const v = vol[i]; if (Number.isFinite(v) && v > 0) bars.push([t * 1000, v]); });
+  const out = json({ symbol: 'gold', source: 'COMEX gold futures (GC=F)', bars });
+  out.headers.set('Cache-Control', 'public, max-age=3600');
+  await cache.put(cacheKey, out.clone());
+  return out;
+}
 
 async function handleEconomicEvents(request) {
   if (request.method !== 'GET') return json({ error: 'GET only.' }, 405);
