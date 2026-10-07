@@ -17,7 +17,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<link rel="stylesheet" href="css/style.css?v=359">
+<link rel="stylesheet" href="css/style.css?v=360">
 </head>
 <body>
 
@@ -1056,6 +1056,13 @@
             <div class="rm-grid">
               <label>Morning plan at <input type="time" id="rmMorning" value="08:00" onchange="saveReminderSettings()"></label>
               <label>Evening review at <input type="time" id="rmEvening" value="21:00" onchange="saveReminderSettings()"></label>
+              <label>Until it is done, remind again every
+                <select id="rmRepeat" onchange="saveReminderSettings()">
+                  <option value="30">30 minutes</option>
+                  <option value="60" selected>1 hour</option>
+                  <option value="120">2 hours</option>
+                  <option value="0">Never (once a day)</option>
+                </select></label>
             </div>
             <div class="rm-list">
               <label><input type="checkbox" data-rm="plan" checked onchange="saveReminderSettings()"> Fill in today's plan <span>from the morning time, until you do</span></label>
@@ -1063,6 +1070,7 @@
               <label><input type="checkbox" data-rm="journal" checked onchange="saveReminderSettings()"> Closed Upscale trades to journal</label>
               <label><input type="checkbox" data-rm="incomplete" checked onchange="saveReminderSettings()"> Today's trades with blank fields</label>
               <label><input type="checkbox" data-rm="setups" checked onchange="saveReminderSettings()"> Pending setups without Confluence or Entry Emotion</label>
+              <label><input type="checkbox" data-rm="backup" checked onchange="saveReminderSettings()"> Back up your data <span>when the last backup is over 7 days old (once a day)</span></label>
             </div>
             <div class="rm-actions">
               <button class="drawer-secondary-btn" id="rmPermBtn" onclick="askReminderPermission()">Allow notifications</button>
@@ -1079,6 +1087,7 @@
           <div class="panel">
             <h2>Backup</h2>
             <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">Everything you have in Tanaydana, in one file you keep: trades (real and paper), setups, Daily Plans, diary, accounts, notes and finance. API keys are left out. Keep one somewhere safe, for example once a week.</div>
+            <div id="backupLast" class="backup-last"></div>
             <button class="ai-btn" id="backupBtn" onclick="downloadAllData()">Download all my data</button>
             <div id="backupState" class="sub" style="margin-top:10px;"></div>
           </div>
@@ -2797,6 +2806,6 @@
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=2"></script>
-<script src="js/dashboard.js?v=595"></script>
+<script src="js/dashboard.js?v=596"></script>
 </body>
 </html>

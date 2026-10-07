@@ -8840,6 +8840,7 @@ function switchConfigTab(tab){
   document.querySelectorAll('#view-config .subnav-panel').forEach(el => el.classList.toggle('active', el.id === 'configPanel-' + tab));
   if(tab === 'dbstatus') checkDatabaseStatus();
   if(tab === 'reminders') _fillReminderSettings();
+  if(tab === 'backup') _renderLastBackup();
 }
 
 /* ======================== REMINDERS ========================
@@ -8850,8 +8851,8 @@ function switchConfigTab(tab){
    isang system notification kapag pinayagan mo. */
 const _RM_KEY = 'tanaydana-reminders';
 const _RM_FIRED = 'tanaydana-reminders-fired';
-const RM_DEFAULTS = { enabled: false, morning: '08:00', evening: '21:00',
-  types: { plan: true, review: true, journal: true, incomplete: true, setups: true } };
+const RM_DEFAULTS = { enabled: false, morning: '08:00', evening: '21:00', repeat: 60,
+  types: { plan: true, review: true, journal: true, incomplete: true, setups: true, backup: true } };
 function _rmSettings(){
   try{ const s = JSON.parse(localStorage.getItem(_RM_KEY) || 'null'); return s ? { ...RM_DEFAULTS, ...s, types: { ...RM_DEFAULTS.types, ...(s.types || {}) } } : { ...RM_DEFAULTS }; }
   catch(e){ return { ...RM_DEFAULTS }; }
@@ -8863,6 +8864,7 @@ function _fillReminderSettings(){
   el('rmEnabled').checked = !!s.enabled;
   el('rmMorning').value = s.morning;
   el('rmEvening').value = s.evening;
+  if(el('rmRepeat')) el('rmRepeat').value = String(s.repeat ?? 60);
   document.querySelectorAll('[data-rm]').forEach(c => { c.checked = s.types[c.dataset.rm] !== false; });
   _renderReminderPerm();
   _renderReminderPending();
@@ -8872,6 +8874,7 @@ function saveReminderSettings(){
     enabled: document.getElementById('rmEnabled').checked,
     morning: document.getElementById('rmMorning').value || '08:00',
     evening: document.getElementById('rmEvening').value || '21:00',
+    repeat: Number(document.getElementById('rmRepeat')?.value ?? 60),
     types: Object.fromEntries([...document.querySelectorAll('[data-rm]')].map(c => [c.dataset.rm, c.checked]))
   };
   try{ localStorage.setItem(_RM_KEY, JSON.stringify(s)); }catch(e){}
@@ -8922,6 +8925,13 @@ function _rmDue(){
     if(inc.length) out.push({ key: 'incomplete', title: `${inc.length} of today's trades have blank fields`,
       body: 'Fill them in while you still remember.', go: () => { switchView('journal'); JOURNAL_INCOMPLETE_ONLY = true; renderJournalTable(); } });
   }
+  if(s.types.backup !== false){
+    const last = _lastBackupAt();
+    if(!last || Date.now() - last.getTime() > 7 * 86400000)
+      out.push({ key: 'backup', daily: true, title: last ? 'Time for a backup' : 'You have never backed up',
+        body: last ? `Your last backup was ${timeAgo(last)}.` : 'Keep a copy of your journal somewhere safe.',
+        go: () => { switchView('config'); switchConfigTab('backup'); } });
+  }
   if(s.types.setups && typeof SAVED_SETUPS !== 'undefined'){
     const live = SAVED_SETUPS.filter(x => ['Pending', 'Order Placed', 'In Position'].includes(x.status || 'Pending') && !x.is_paper);
     const need = live.filter(x => !_setupHasConfluence(x) || !x.entry_emotion);
@@ -8931,15 +8941,22 @@ function _rmDue(){
   }
   return out;
 }
+/* Kailan huling ipinakita ang bawat susi ngayong araw. Ang paalala ay UMUULIT
+   bawat "repeat" na minuto hanggang magawa mo (kapag nagawa na, wala na ito sa
+   _rmDue kaya tumitigil); ang "daily" ay isang beses lang bawat araw. */
 function _rmFired(){
-  try{ const f = JSON.parse(localStorage.getItem(_RM_FIRED) || '{}'); const today = _dpIso(new Date()); return f.day === today ? f : { day: today, keys: [] }; }
-  catch(e){ return { day: _dpIso(new Date()), keys: [] }; }
+  const today = _dpIso(new Date());
+  try{ const f = JSON.parse(localStorage.getItem(_RM_FIRED) || '{}'); return f.day === today && f.at ? f : { day: today, at: {} }; }
+  catch(e){ return { day: today, at: {} }; }
 }
 function _rmShow(key, title, body, go){
   // Banner sa app (gamit ang banner ng Upscale), at system notification.
   if(typeof _upBanner === 'function'){
+    const kind = key.split(':')[0];
+    document.querySelectorAll(`#upBannerWrap .up-banner[data-rm="${kind}"]`).forEach(x => x.remove());
     _upBanner(title, body, 'info');
     const b = document.querySelector('#upBannerWrap .up-banner:last-child');
+    if(b) b.dataset.rm = kind;
     if(b && go){
       const btn = b.querySelector('.up-banner-go');
       if(btn){ btn.textContent = 'Open'; btn.onclick = () => { b.remove(); go(); }; }
@@ -8956,11 +8973,12 @@ function runReminders(){
   const s = _rmSettings();
   if(!s.enabled || typeof USER_ACCESS_TOKEN === 'undefined' || !USER_ACCESS_TOKEN) return;
   const fired = _rmFired();
-  // Lumalabas lang kapag may susing hindi pa nailalabas ngayong araw. Ang Upscale ay may
-  // susi bawat order, kaya ang bagong sarang trade lang ang nagpapalabas ulit.
-  const due = _rmDue().filter(r => (r.fire || [r.key]).some(k => !fired.keys.includes(k)));
+  const every = (Number(s.repeat) || 0) * 60000;
+  const now = Date.now();
+  const ready = k => !fired.at[k] || (every > 0 && now - fired.at[k] >= every);
+  const due = _rmDue().filter(r => r.daily ? !fired.at[r.key] : (r.fire || [r.key]).some(ready));
   if(!due.length) return;
-  due.forEach(r => { _rmShow(r.key, r.title, r.body, r.go); (r.fire || [r.key]).forEach(k => { if(!fired.keys.includes(k)) fired.keys.push(k); }); });
+  due.forEach(r => { _rmShow(r.key, r.title, r.body, r.go); (r.fire || [r.key]).forEach(k => { fired.at[k] = now; }); });
   try{ localStorage.setItem(_RM_FIRED, JSON.stringify(fired)); }catch(e){}
 }
 function _renderReminderPending(){
@@ -8998,6 +9016,20 @@ async function _fetchAllRows(table){
   }
   return rows;
 }
+function _lastBackupAt(){
+  try{ const v = localStorage.getItem('tanaydana-last-backup'); const d = v ? new Date(v) : null; return d && !isNaN(d) ? d : null; }
+  catch(e){ return null; }
+}
+function _renderLastBackup(){
+  const el = document.getElementById('backupLast');
+  if(!el) return;
+  const d = _lastBackupAt();
+  const old = !d || Date.now() - d.getTime() > 7 * 86400000;
+  el.className = 'backup-last ' + (old ? 'old' : 'ok');
+  el.innerHTML = d
+    ? `Last backup: <b>${escapeHtml(d.toLocaleString(undefined, { dateStyle:'medium', timeStyle:'short' }))}</b> · ${escapeHtml(timeAgo(d))}${old ? ' · time for a new one' : ''}`
+    : 'No backup yet on this device.';
+}
 async function downloadAllData(){
   const btn = document.getElementById('backupBtn'), st = document.getElementById('backupState');
   btn.disabled = true; btn.textContent = 'Collecting…';
@@ -9018,6 +9050,8 @@ async function downloadAllData(){
   a.download = `tanaydana-backup-${_dpIso(new Date())}.json`;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+  try{ localStorage.setItem('tanaydana-last-backup', new Date().toISOString()); }catch(e){}
+  _renderLastBackup();
   st.innerHTML = `Saved <b>${escapeHtml(a.download)}</b>: ${escapeHtml(counts)}${skipped.length ? `<br>Skipped (not available): ${escapeHtml(skipped.join(', '))}` : ''}<br>Chart screenshots stay in Supabase Storage; the file lists where each one is.`;
   btn.disabled = false; btn.textContent = 'Download all my data';
 }
@@ -15084,8 +15118,15 @@ function toggleJournalNumbersOnly(){
   JOURNAL_NUMBERS_ONLY = !JOURNAL_NUMBERS_ONLY;
   renderJournalTable();
 }
+/* Ang mga lumang trade ay hindi na binabalikan, kaya hindi na sila
+   binabantayan: ang check ay para sa mga trade na naisulat MULA NGAYON. Ang
+   batayan ay kung kailan isinulat ang trade (created_at); kung wala iyon, ang
+   close date. */
+const NUMBER_CHECKS_FROM = new Date(2026, 9, 7);   // 7 Oct 2026, oras mo
 function _tradeNumberIssues(r){
   if(!r || r.is_paper === true || r.is_paper === 'true') return [];
+  const written = r.created_at ? new Date(r.created_at) : (r.close_date ? new Date(r.close_date) : null);
+  if(!written || isNaN(written) || written < NUMBER_CHECKS_FROM) return [];
   const out = [];
   const num = v => { const n = parseFloat(v); return Number.isFinite(n) ? n : null; };
   const gross = num(r.profit_loss), fee = num(r.fee);
