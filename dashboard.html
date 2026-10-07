@@ -17,7 +17,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<link rel="stylesheet" href="css/style.css?v=345">
+<link rel="stylesheet" href="css/style.css?v=346">
 </head>
 <body>
 
@@ -402,17 +402,24 @@
     <div id="tpIssues"></div>
     <div class="tp-grid">
       <aside class="panel tp-details" id="tpDetails"></aside>
-      <section class="panel tp-main">
-        <h2 class="tp-h2">Charts</h2>
-        <div class="tp-sub">Add or paste (Ctrl+V) a screenshot for each timeframe. Click a slot first, then paste.</div>
-        <div id="tpCharts" class="tp-charts"></div>
-        <input type="file" id="tpChartFile" accept="image/*" multiple style="display:none;" onchange="onTradeChartFiles(this)">
-        <h2 class="tp-h2" style="margin-top:26px;">Review</h2>
-        <div id="tpReview"></div>
-        <details class="tp-all">
-          <summary>All fields</summary>
+      <!-- Ang kanang box: isang tab lang ang nakikita, para hindi makalat. -->
+      <section class="panel tp-main tp-tabbed">
+        <div class="tp-tabs" role="tablist" aria-label="Trade sections">
+          <button type="button" role="tab" data-tp-tab="charts" onclick="setTradeTab('charts')">Charts</button>
+          <button type="button" role="tab" data-tp-tab="review" onclick="setTradeTab('review')">Review</button>
+          <button type="button" role="tab" data-tp-tab="all" onclick="setTradeTab('all')">All fields</button>
+        </div>
+        <div class="tp-pane" data-tp-pane="charts" role="tabpanel">
+          <div class="tp-sub">Add or paste (Ctrl+V) a screenshot for each timeframe. Click a slot first, then paste.</div>
+          <div id="tpCharts" class="tp-charts"></div>
+          <input type="file" id="tpChartFile" accept="image/*" multiple style="display:none;" onchange="onTradeChartFiles(this)">
+        </div>
+        <div class="tp-pane" data-tp-pane="review" role="tabpanel" hidden>
+          <div id="tpReview"></div>
+        </div>
+        <div class="tp-pane" data-tp-pane="all" role="tabpanel" hidden>
           <div id="tradeViewBody" class="trade-view-grid"></div>
-        </details>
+        </div>
       </section>
     </div>
   </div>
@@ -2637,6 +2644,6 @@
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=2"></script>
-<script src="js/dashboard.js?v=577"></script>
+<script src="js/dashboard.js?v=578"></script>
 </body>
 </html>

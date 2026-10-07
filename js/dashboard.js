@@ -16761,6 +16761,19 @@ let tradeViewIndex = -1;
    (view-trade) na may Trade details sa kaliwa at Charts + Review sa kanan.
    Ang ‹ Previous / Next › ay sumusunod sa listahan ng Trade Journals gaya ng
    dati, at ang "← Trade Journals" ay bumabalik sa pinanggalingan. */
+/* Ang tab sa kanang box ng trade page — naaalala sa device na ito. */
+let _tpTab = (() => { try{ return localStorage.getItem('tanaydana-trade-tab') || 'charts'; }catch(e){ return 'charts'; } })();
+function setTradeTab(tab){
+  if(!['charts', 'review', 'all'].includes(tab)) tab = 'charts';
+  _tpTab = tab;
+  try{ localStorage.setItem('tanaydana-trade-tab', tab); }catch(e){}
+  document.querySelectorAll('[data-tp-tab]').forEach(b => {
+    const on = b.dataset.tpTab === tab;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-selected', on ? 'true' : 'false');
+  });
+  document.querySelectorAll('[data-tp-pane]').forEach(p => { p.hidden = p.dataset.tpPane !== tab; });
+}
 let _tradePageFrom = 'journal';
 let _tpSetupsRequested = false;
 function openTradeViewModal(positionId){
@@ -16966,6 +16979,7 @@ function renderTradeViewModal(){
     _tpSetupsRequested = true;
     Promise.resolve(loadSavedSetups()).then(() => { if(currentView === 'trade') renderTradeViewModal(); }).catch(() => {});
   }
+  setTradeTab(_tpTab);
   try{ _renderTradeDetails(row); }catch(e){ console.error('Trade details failed:', e); }
   try{ _renderTradeReview(row); }catch(e){ console.error('Trade review failed:', e); }
   try{ _renderTradeCharts(row); }catch(e){ console.error('Trade charts failed:', e); }
