@@ -17371,8 +17371,7 @@ function _renderTradeDetails(row){
   const sess = computeSession(row) || row.session;
   const d = row.open_date ? new Date(row.open_date) : null;
   el.innerHTML = `
-    <div class="tp-det-head"><h2 class="tp-h2">Trade details</h2>
-      <button type="button" class="tp-edit-link" onclick="editFromTradeView('all')">Edit</button></div>
+    <div class="tp-det-head"><h2 class="tp-h2">Trade details</h2></div>
     <div class="tp-pnl ${net >= 0 ? 'pos' : 'neg'}">${_tpMoney(net)}</div>
     <div class="tp-pnl-k">Net P&amp;L${has(row.fee) && Number(row.fee) ? ` · fees ${escapeHtml(fmtMoney(-Math.abs(Number(row.fee))))}` : ''}</div>
     <div class="tp-kpis">
