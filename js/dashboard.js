@@ -23997,7 +23997,8 @@ function saveCalculatorDraft(){
     direction: document.getElementById('psDirection').value || null,
     entry: document.getElementById('psEntry').value || null,
     tp: document.getElementById('psTP').value || null,
-    sl: document.getElementById('psSL').value || null
+    sl: document.getElementById('psSL').value || null,
+    emotion: document.getElementById('psEmotion')?.value || null
   };
   const stateEl = document.getElementById('posCalcSaveState');
   try{
@@ -24171,17 +24172,32 @@ function clearCalculatorDraft(){
   document.getElementById('psEntry').value = '';
   document.getElementById('psTP').value = '';
   document.getElementById('psSL').value = '';
+  const es = document.getElementById('psEmotion'); if(es) es.value = '';
   renderPosSizeCalculator();
   showToast('Calculator cleared');
 }
 
 // Restores a saved draft once per session, then renders — called whenever
 // the accounts list changes too, since the table's rows come from it.
+// Ang listahan ng damdamin ay ang parehong nasa journal (FIELD_OPTIONS.emotion,
+// nae-edit sa Configuration), may emoji sa label.
+function _fillPsEmotion(){
+  const sel = document.getElementById('psEmotion');
+  if(!sel) return;
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">How do you feel right now?</option>'
+    + FIELD_OPTIONS.emotion.map(o => `<option value="${escapeHtml(o)}">${escapeHtml(_optLabel('emotion', o))}</option>`).join('');
+  if(cur) sel.value = cur;
+}
+const _psEmotion = () => (document.getElementById('psEmotion')?.value || '').trim() || null;
+
 function refreshPosSizeCalculator(){
   if(!document.getElementById('psEntry')) return;
+  _fillPsEmotion();
   if(!calcDraftLoaded){
     calcDraftLoaded = true;
     const draft = loadCalculatorDraft();
+    if(draft && draft.emotion){ const es = document.getElementById('psEmotion'); if(es) es.value = draft.emotion; }
     if(draft){
       if(draft.symbol) document.getElementById('psSymbol').value = draft.symbol;
       if(draft.direction) document.getElementById('psDirection').value = draft.direction;
@@ -24501,7 +24517,7 @@ async function confirmUpscaleOrders(){
          Setup sa parehong account at parehong presyo, makilala ito ng setup
          (Order Placed + Cancel Order). */
       _rememberPlacedOrder(r.acc.id, entry, sl, r.result.orderId,
-        { symbol, tp: Number.isFinite(tp) ? tp : null, qty: r.qty, lev: r.lev });
+        { symbol, tp: Number.isFinite(tp) ? tp : null, qty: r.qty, lev: r.lev, emotion: _psEmotion() });
     }catch(e){
       r.state = 'error'; r.note = e.message;
     }
@@ -24712,7 +24728,8 @@ function journalFromUpscaleClose(orderId){
     sl_price: plan.sl ?? undefined,
     tp_price: plan.tp ?? undefined,
     position_size: plan.qty ?? undefined,
-    leverage: plan.lev ?? undefined
+    leverage: plan.lev ?? undefined,
+    entry_emotion: plan.emotion || undefined
   };
   const up = {
     entry_price: r.entry ?? undefined,
@@ -24928,6 +24945,8 @@ async function tradeThisSetup(accountId, opts){
     quantity: c.qty,
     status: 'Pending'
   };
+  // Ang damdamin bago pumasok — dala hanggang sa journal.
+  if(_psEmotion()) payload.entry_emotion = _psEmotion();
 
   /* Ang setup na ginawa sa loob ng Paper Trade Journal ay isang PAPER na
      setup. Kapareho ng trade: sa PAGGAWA lang ito isinusulat, dahil ang
@@ -24953,14 +24972,15 @@ async function tradeThisSetup(accountId, opts){
       body: JSON.stringify(body)
     });
     let res = await post(payload);
-    // Kapag hindi pa naru-run ang supabase_position_setups_upscale_order.sql,
-    // ise-save pa rin ang setup — wala lang ang Cancel button para rito.
-    if(!res.ok && 'upscale_order_id' in payload){
+    // Kapag hindi pa naru-run ang SQL ng isang opsyonal na column
+    // (upscale_order_id, entry_emotion), ise-save pa rin ang setup nang wala ito.
+    for(const col of ['upscale_order_id', 'entry_emotion']){
+      if(res.ok || !(col in payload)) continue;
       const t = await res.clone().text();
-      if(t.includes('upscale_order_id')){
-        console.warn('Run supabase_position_setups_upscale_order.sql to enable Cancel Order.');
-        const { upscale_order_id, ...rest } = payload;
-        res = await post(rest);
+      if(t.includes(col)){
+        console.warn(`Column ${col} is not in position_setups yet; saved without it.`);
+        delete payload[col];
+        res = await post(payload);
       }
     }
     if(!res.ok) throw new Error(await res.text());
@@ -27077,7 +27097,9 @@ function _setupJournalPrefill(s){
     // TP/SL are the plan by definition and have no "actual" counterpart
     // beyond close_price.
     tp_price: s.tp_price != null ? Number(s.tp_price) : undefined,
-    sl_price: s.sl_price != null ? Number(s.sl_price) : undefined
+    sl_price: s.sl_price != null ? Number(s.sl_price) : undefined,
+    // Ang damdaming itinala sa Calculator bago pumasok.
+    entry_emotion: s.entry_emotion || undefined
   };
 }
 
