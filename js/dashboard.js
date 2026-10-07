@@ -24437,9 +24437,10 @@ function _upHabitWarnings(direction, accs){
   if(todayPlan && todayPlan.psych && todayPlan.psych.money === 'Yes')
     out.push('You said you <b>need to make money today</b>. That pressure is when rules get bent.');
   if(todayPlan && todayPlan.max_trades != null){
-    const taken = base.filter(t => t.close_date >= today).length;
+    // Kada account: ang mga account sa order na ito na naabot na ang max.
+    const full = accs.filter(a => base.filter(t => t.account === a.account_name && t.close_date >= today).length >= todayPlan.max_trades);
     if(todayPlan.max_trades === 0) out.push('Your plan today was to take <b>no trades</b>.');
-    else if(taken >= todayPlan.max_trades) out.push(`Your plan today was <b>${todayPlan.max_trades} trade${todayPlan.max_trades === 1 ? '' : 's'}</b>, and ${taken} already closed.`);
+    else if(full.length) out.push(`Your plan today was <b>${todayPlan.max_trades} trade${todayPlan.max_trades === 1 ? '' : 's'} per account</b>, and ${full.map(a => escapeHtml(a.account_name)).join(', ')} ${full.length === 1 ? 'has' : 'have'} already reached it.`);
   }
   if(todayPlan && todayPlan.bias === 'No trade') out.push('Your plan today was <b>No trade</b>.');
 
@@ -28655,6 +28656,19 @@ function _dpTradesOn(iso){
   return ALL_TRADES.filter(t => t.close_date && _dpIso(t.close_date) === iso
     && (typeof _isRealMoney !== 'function' || _isRealMoney(t)));
 }
+/* MAX TRADES AY KADA ACCOUNT. Ang bilang ng trade bawat account sa isang
+   araw, at ang account na may pinakamarami (iyon ang ikinukumpara sa max). */
+function _dpPerAccount(trades){
+  const m = {};
+  trades.forEach(t => { const a = t.account || '—'; m[a] = (m[a] || 0) + 1; });
+  return m;
+}
+function _dpBusiest(trades){
+  let acc = null, n = 0;
+  Object.entries(_dpPerAccount(trades)).forEach(([a, c]) => { if(c > n){ n = c; acc = a; } });
+  return { acc, n };
+}
+const _dpPerAccountText = trades => Object.entries(_dpPerAccount(trades)).map(([a, c]) => `${a}: ${c}`).join(' · ');
 const DP_BIAS_CLS = { 'Bullish':'bull', 'Bearish':'bear', 'Neutral':'neutral', 'No trade':'none' };
 const DP_FOLLOW = { 'Yes': ['✓', 'pos'], 'Partly': ['~', 'tp-acc'], 'No': ['✗', 'neg'] };
 
@@ -28675,7 +28689,9 @@ function renderPlanCalendar(){
     const p = byDate[iso];
     const tr = _dpTradesOn(iso);
     const net = tr.reduce((a, t) => a + netPnl(t), 0);
-    const over = p && p.max_trades != null && tr.length > p.max_trades;
+    // Max trades ay KADA ACCOUNT: lampas kapag may isang account na lumampas.
+    const busiest = _dpBusiest(tr);
+    const over = p && p.max_trades != null && busiest.n > p.max_trades;
     const noTradeBreak = p && p.bias === 'No trade' && tr.length > 0;
     const f = p && DP_FOLLOW[p.followed];
     html += `<div class="cal-cell dp-cell${iso === today ? ' today' : ''}${p ? ' has-plan' : ''}" onclick="openDailyPlan('${iso}')" tabindex="0"
@@ -28685,8 +28701,8 @@ function renderPlanCalendar(){
       ${p && p.bias ? `<div class="dp-bias"><i class="dp-dot ${DP_BIAS_CLS[p.bias] || ''}"></i>${escapeHtml(p.bias)}</div>` : ''}
       ${(() => { const me = _dpMoodEntry(iso); const mo = me && MOOD_OPTIONS.find(o => o.key === me.mood);
         return mo ? `<div class="dp-moodc" title="Diary: ${escapeHtml(mo.label)}">${mo.emoji}</div>` : ''; })()}
-      ${tr.length ? `<div class="dp-tr ${over || noTradeBreak ? 'over' : ''}" title="${tr.length} trade${tr.length === 1 ? '' : 's'}${p && p.max_trades != null ? ` of ${p.max_trades} planned` : ''}">
-          ${tr.length}${p && p.max_trades != null ? `/${p.max_trades}` : ''}T <span class="${net >= 0 ? 'pos' : 'neg'}">${net >= 0 ? '+' : '−'}$${Math.abs(net).toFixed(0)}</span></div>` : ''}
+      ${tr.length ? `<div class="dp-tr ${over || noTradeBreak ? 'over' : ''}" title="${escapeHtml(_dpPerAccountText(tr))}${p && p.max_trades != null ? ` · plan: ${p.max_trades} per account` : ''}">
+          ${p && p.max_trades != null ? `${busiest.n}/${p.max_trades}` : tr.length}T <span class="${net >= 0 ? 'pos' : 'neg'}">${net >= 0 ? '+' : '−'}$${Math.abs(net).toFixed(0)}</span></div>` : ''}
     </div>`;
   }
   const rem = (firstDow + days) % 7;
@@ -28712,7 +28728,7 @@ function renderPlanSummary(){
   const rateOn = arr => { const tr = arr.flatMap(p => _dpTradesOn(p.plan_date)); const s = _tagArmStats(tr); return { ...s }; };
   const fol = rateOn(reviewed.filter(p => p.followed === 'Yes'));
   const not = rateOn(reviewed.filter(p => p.followed !== 'Yes'));
-  const overDays = inMonth.filter(p => p.max_trades != null && _dpTradesOn(p.plan_date).length > p.max_trades).length;
+  const overDays = inMonth.filter(p => p.max_trades != null && _dpBusiest(_dpTradesOn(p.plan_date)).n > p.max_trades).length;
   const card = (k, v, s, tone) => `<div class="dp-sum ${tone || ''}"><span class="dp-sum-k">${k}</span><span class="dp-sum-v">${v}</span><span class="dp-sum-s">${s}</span></div>`;
   const pct = s => s.rate === null ? '—' : Math.round(s.rate) + '%';
   el.innerHTML = !_dpLoaded && !DAILY_PLANS.length
@@ -28756,7 +28772,7 @@ let _dpPsych = {};   // ang sagot na binabago sa modal
 const DP_INFO = {
   // Plan
   'Bias': 'Your expected direction for today, from your higher-timeframe read. Bullish = only looking for longs. Bearish = only shorts. Neutral = both, or a range. No trade = sitting out (news day, tired, already at your limit).',
-  'Max trades today': 'The most trades you will take today, decided before the session. Example: 2. Once you reach it you stop, win or lose.',
+  'Max trades today': 'The most trades you will take today on EACH account, decided before the session. Example: 2 means up to 2 trades on the 10K and up to 2 on the 50K. Once an account reaches it you stop there, win or lose.',
   'Key levels': 'The prices that matter to you today. Example: Prev day high 64,250 · Asia low 62,900 · 4H FVG 63,400–63,600.',
   "What I'm waiting for": 'The exact setup that would make you enter, written in advance so you are not making it up live. Example: Sweep of the Asia low into the 4H FVG, then a 15m bounce play. Nothing before London.',
   // Review
@@ -29017,7 +29033,8 @@ function openDailyPlan(iso){
   const broke = tr.filter(t => _brokenRuleTags(t.unfollowed_rules).length || /^no$/i.test(String(t.rules_followed || '').trim())).length;
   document.getElementById('dpTrades').innerHTML = !tr.length
     ? '<span class="tp-muted">No trades closed this day.</span>'
-    : `<div class="dp-tr-sum"><b>${tr.length}</b> trade${tr.length === 1 ? '' : 's'}${p.max_trades != null ? ` <span class="${tr.length > p.max_trades ? 'neg' : 'tp-muted'}">(plan: ${p.max_trades})</span>` : ''}
+    : `<div class="dp-tr-sum"><b>${tr.length}</b> trade${tr.length === 1 ? '' : 's'}
+        <span class="tp-muted">(${escapeHtml(_dpPerAccountText(tr))})</span>${p.max_trades != null ? ` <span class="${_dpBusiest(tr).n > p.max_trades ? 'neg' : 'tp-muted'}">plan: ${p.max_trades} per account${_dpBusiest(tr).n > p.max_trades ? `, ${escapeHtml(_dpBusiest(tr).acc)} went over` : ''}</span>` : ''}
         · ${tr.filter(_isWin).length}W ${tr.filter(_isLoss).length}L
         · <b class="${net >= 0 ? 'pos' : 'neg'}">${net >= 0 ? '+' : '−'}$${Math.abs(net).toFixed(2)}</b>
         · ${broke ? `<span class="neg">${broke} broke a rule</span>` : '<span class="pos">no rules broken</span>'}</div>
