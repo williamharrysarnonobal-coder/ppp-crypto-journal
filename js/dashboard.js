@@ -9025,6 +9025,7 @@ async function recordAppVisit(){
     if(got.ok) APP_VISITS = (await got.json()).map(r => r.visit_date);
     if(!APP_VISITS.includes(today)) APP_VISITS.push(today);
     if(typeof currentView !== 'undefined' && currentView === 'challenges' && typeof renderChallenges === 'function') renderChallenges();
+    if(typeof currentView !== 'undefined' && currentView === 'profile' && typeof renderProfile === 'function'){ COMPUTED_CHALLENGES = []; renderProfile(); }
   }catch(e){}
 }
 setTimeout(recordAppVisit, 3000);
@@ -22483,8 +22484,16 @@ async function renderProfile(){
     const rankIdx = CHALLENGE_RANKS.findIndex(r => r.label === currentRank.label);
     document.getElementById('profileRankIcon').innerHTML = challengeIconSVG(rankIcons[rankIdx] || 'star');
     document.getElementById('profileRankTitle').textContent = currentRank.label;
+    if(!COMPUTED_CHALLENGES.length) COMPUTED_CHALLENGES = challengesForRank;
+    renderProfileRank(challengesForRank);
   }catch(e){
     console.error("Couldn't compute rank for profile badge:", e);
+  }
+  try{ renderProfileSnapshot(); renderProfileGoals(); }catch(e){ console.error("Couldn't render profile summary:", e); }
+  // Ang goal sa Daily Plan ay kailangan ng mga plano — kunin kung wala pa.
+  if(typeof _dpLoaded !== 'undefined' && !_dpLoaded && !renderProfile._dpAsked){
+    renderProfile._dpAsked = true;
+    loadDailyPlans().then(() => { try{ renderProfileGoals(); }catch(e){} });
   }
 
   const fields = document.getElementById('profileFieldsPanel');
@@ -22559,8 +22568,150 @@ function renderProfileRules(rules){
 
   wrap.innerHTML = profileRulesArr.map((rule, i) => profileEditing
     ? `<div class="config-option-row"><span>${escapeHtml(textOf(rule))}</span><button onclick="removeProfileRule(${i})">✕</button></div>`
-    : `<div class="profile-rule-static">${escapeHtml(textOf(rule))}</div>`
+    : `<div class="profile-rule-static"><span>${escapeHtml(textOf(rule))}</span>${_ruleScoreHtml(textOf(rule))}</div>`
   ).join('');
+}
+
+/* ANG SCORE NG BAWAT RULE. Awtomatikong itinutugma ang salita ng rule sa
+   isang Trade Tag na paglabag ("No revenge trading" → Revenge Trade). Ang tugma
+   ay kapag LAHAT ng mahalagang salita ng tag ay nasa rule — kaya ang rule na
+   walang malinaw na katapat ay walang score, sa halip na isang maling bilang. */
+const _RULE_STOP = new Set(('no not never dont don t do does a an the my i to of on in for and or with be is are am when after '
+  + 'before more than only always trade trades trading rule rules without your you at per it just any one all same take '
+  + 'taking get stay keep must should will').split(' '));
+const _ruleWords = s => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').split(' ')
+  .filter(w => w && !_RULE_STOP.has(w))
+  .map(w => w.length > 3 ? w.replace(/(ing|ed|es|s|e)$/, '') : w);
+function _ruleMatchTag(ruleText){
+  const rw = new Set(_ruleWords(ruleText));
+  if(!rw.size) return null;
+  let best = null, bestN = 0;
+  UNFOLLOWED_RULES_OPTIONS.filter(t => _tagKind(t) === 'breach').forEach(t => {
+    const tw = [...new Set(_ruleWords(t))];
+    if(tw.length && tw.every(w => rw.has(w)) && tw.length > bestN){ best = t; bestN = tw.length; }
+  });
+  return best;
+}
+function _ruleScoreHtml(ruleText){
+  const tag = _ruleMatchTag(ruleText);
+  if(!tag) return '';
+  // Huling 30 tunay na trade na may sagot sa Rules followed o may Trade Tag.
+  const recent = (ALL_TRADES || []).filter(t => !t.is_paper && (t.rules_followed || t.unfollowed_rules))
+    .sort((a, b) => (b.close_date || 0) - (a.close_date || 0)).slice(0, 30);
+  if(!recent.length) return '';
+  const broke = recent.filter(t => _canonicalTags(t.unfollowed_rules).some(x => x.toLowerCase() === tag.toLowerCase())).length;
+  const kept = recent.length - broke;
+  const pct = kept / recent.length;
+  const cls = pct >= 0.9 ? 'ok' : pct >= 0.75 ? 'warn' : 'bad';
+  return `<span class="rule-score ${cls}" title="Matched to the Trade Tag “${escapeHtml(tag)}”. Of your last ${recent.length} trades, ${broke} had this tag.">Kept ${kept}/${recent.length}</span>`;
+}
+
+/* ---------- PROFILE: snapshot, monthly goals, rank & badges ---------- */
+const _profTrades = () => (ALL_TRADES || []).filter(t => !t.is_paper && t.close_date);
+
+function renderProfileSnapshot(){
+  const el = document.getElementById('profileSnapshot');
+  if(!el) return;
+  const trades = _profTrades();
+  const first = trades.reduce((m, t) => !m || t.close_date < m ? t.close_date : m, null);
+  let since = '—', sinceSub = '';
+  if(first){
+    since = first.toLocaleDateString(undefined, { month:'short', year:'numeric' });
+    const months = Math.max(0, (new Date().getFullYear() - first.getFullYear()) * 12 + new Date().getMonth() - first.getMonth());
+    sinceSub = months >= 12 ? `${Math.floor(months / 12)} yr ${months % 12} mo` : `${months} month${months === 1 ? '' : 's'}`;
+  }
+  const days = new Set(trades.map(t => _dpIso(t.close_date))).size;
+  // Pinakamagaling ayon sa win rate (bilang ng trade, hindi pera), kahit 5 na Win/Loss.
+  const bestBy = key => {
+    const m = {};
+    trades.forEach(t => {
+      const wl = String(t.win_loss || '').toLowerCase();
+      if(wl !== 'win' && wl !== 'loss' && wl !== 'liquidated') return;
+      const k = t[key]; if(!k || k === 'Unspecified') return;
+      (m[k] = m[k] || { w: 0, n: 0 }).n++; if(wl === 'win') m[k].w++;
+    });
+    let best = null;
+    Object.entries(m).forEach(([k, v]) => { if(v.n >= 5 && (!best || v.w / v.n > best.r || (v.w / v.n === best.r && v.n > best.n))) best = { k, r: v.w / v.n, n: v.n }; });
+    return best;
+  };
+  const bs = bestBy('trade_setup'), bss = bestBy('session');
+  const visits = typeof APP_VISITS !== 'undefined' ? APP_VISITS : [];
+  const ch = (COMPUTED_CHALLENGES || []).find(c => c.title === 'Daily Check-in Streak');
+  const tile = (k, v, sub) => `<div class="prof-tile"><span class="prof-k">${k}</span><b>${v}</b><small>${sub || '&nbsp;'}</small></div>`;
+  el.innerHTML = [
+    tile('Trading since', escapeHtml(since), escapeHtml(sinceSub)),
+    tile('Trades journaled', trades.length.toLocaleString(), `${days} trading day${days === 1 ? '' : 's'}`),
+    tile('Check-in streak', ch ? `${ch.current} day${ch.current === 1 ? '' : 's'}` : '—', ch ? escapeHtml(ch.statOverride.split('·')[1] || '').trim() : (visits.length ? '' : 'Starts after supabase_app_visits.sql')),
+    tile('Best setup', bs ? escapeHtml(bs.k) : '—', bs ? `${Math.round(bs.r * 100)}% wins · ${bs.n} trades` : 'Needs 5 trades of one setup'),
+    tile('Best session', bss ? escapeHtml(bss.k) : '—', bss ? `${Math.round(bss.r * 100)}% wins · ${bss.n} trades` : 'Needs 5 trades in one session')
+  ].join('');
+}
+
+/* MONTHLY GOALS — itinakda para sa iyo, walang kailangang i-set. Mga layunin
+   sa PROSESO at isang sapat na kita: kapag naabot, sapat na — hindi na
+   hinahabol pa. Pinagsama ang lahat ng account, walang paper trades. */
+const PROFILE_GOALS = { rulesPct: 80, planPct: 80, maxLossR: 1.2, monthR: 5 };
+function renderProfileGoals(){
+  const el = document.getElementById('profileGoals');
+  if(!el) return;
+  const now = new Date();
+  const mt = _profTrades().filter(t => t.close_date.getFullYear() === now.getFullYear() && t.close_date.getMonth() === now.getMonth());
+  const G = PROFILE_GOALS;
+  const bar = (ratio, tone) => `<div class="goal-bar"><i class="${tone}" style="width:${Math.max(0, Math.min(1, ratio)) * 100}%"></i></div>`;
+  const row = (name, info, value, ratio, tone, state) =>
+    `<div class="goal-row"><div class="goal-top"><span class="goal-name" title="${escapeHtml(info)}">${name}</span><span class="goal-state ${tone}">${state}</span></div>
+      ${bar(ratio, tone)}<div class="goal-val">${value}</div></div>`;
+  const out = [];
+
+  // 1. Rules followed
+  const ans = mt.filter(t => /^(yes|no)$/i.test(t.rules_followed));
+  const yes = ans.filter(t => /^yes$/i.test(t.rules_followed)).length;
+  const rp = ans.length ? yes / ans.length * 100 : 0;
+  out.push(row(`Rules followed ${G.rulesPct}%`, 'Of this month\'s trades with an answer to Rules followed, how many were Yes.',
+    ans.length ? `${Math.round(rp)}% · ${yes} of ${ans.length} trades` : 'No trades answered yet this month',
+    rp / G.rulesPct, !ans.length ? 'idle' : rp >= G.rulesPct ? 'ok' : 'warn', !ans.length ? '—' : rp >= G.rulesPct ? '✓ On target' : 'Below'));
+
+  // 2. Daily Plan on trading days
+  const tdays = [...new Set(mt.map(t => _dpIso(t.close_date)))];
+  const plans = typeof DAILY_PLANS !== 'undefined' ? DAILY_PLANS : [];
+  const planned = tdays.filter(d => plans.some(p => p.plan_date === d && (p.bias || p.max_trades != null || (p.psych && Object.keys(p.psych).length)))).length;
+  const pp = tdays.length ? planned / tdays.length * 100 : 0;
+  out.push(row(`Daily Plan on ${G.planPct}% of trading days`, 'Days you traded this month that had a Daily Plan (bias, max trades or the mindset check-in).',
+    tdays.length ? `${planned} of ${tdays.length} trading days` : 'No trading days yet this month',
+    pp / G.planPct, !tdays.length ? 'idle' : pp >= G.planPct ? 'ok' : 'warn', !tdays.length ? '—' : pp >= G.planPct ? '✓ On target' : 'Below'));
+
+  // 3. Losses kept to 1R
+  const losses = mt.map(t => _tradeR(t)).filter(r => r !== null && r < 0);
+  const big = losses.filter(r => r < -G.maxLossR).length;
+  out.push(row('Every loss kept to 1R', `A loss counts as kept when it is no bigger than ${G.maxLossR}R (a little room for slippage and fees).`,
+    losses.length ? (big ? `${big} of ${losses.length} losses went past 1R` : `All ${losses.length} losses within 1R`) : 'No losses with a known risk yet',
+    losses.length ? (losses.length - big) / losses.length : 0, !losses.length ? 'idle' : big ? 'bad' : 'ok', !losses.length ? '—' : big ? `${big} too big` : '✓ Clean'));
+
+  // 4. +5R — sapat na buwan
+  const rs = mt.map(t => _tradeR(t)).filter(r => r !== null);
+  const sumR = rs.reduce((s, r) => s + r, 0);
+  const done = sumR >= G.monthR;
+  out.push(row(`+${G.monthR}R for the month`, 'Total R of this month\'s trades. Reaching it is a good month: protect it, there is nothing more to chase.',
+    rs.length ? `${sumR >= 0 ? '+' : '−'}${Math.abs(sumR).toFixed(1)}R of +${G.monthR}R${done ? ' · a good month, protect it' : ''}` : 'No trades with a known risk yet',
+    sumR / G.monthR, !rs.length ? 'idle' : done ? 'ok' : sumR < 0 ? 'bad' : 'warn', !rs.length ? '—' : done ? '✓ Enough' : `${(G.monthR - sumR).toFixed(1)}R to go`));
+
+  el.innerHTML = `<div class="goal-month">${escapeHtml(now.toLocaleDateString(undefined, { month:'long', year:'numeric' }))} · all accounts</div>${out.join('')}`;
+}
+
+function renderProfileRank(challenges){
+  const el = document.getElementById('profileRankPanel');
+  if(!el) return;
+  const done = challenges.filter(c => c.done);
+  const pts = done.reduce((s, c) => s + c.points, 0);
+  const { current, next } = rankForPoints(pts);
+  const ratio = next ? (pts - current.min) / (next.min - current.min) : 1;
+  el.innerHTML = `
+    <div class="rank-line"><b>${escapeHtml(current.label)}</b><span>${pts.toLocaleString()} pts</span></div>
+    <div class="goal-bar rank-bar"><i class="acc" style="width:${Math.round(ratio * 100)}%"></i></div>
+    <div class="goal-val">${next ? `${(next.min - pts).toLocaleString()} pts to <b>${escapeHtml(next.label)}</b>` : 'Top rank reached'}</div>
+    <div class="prof-k" style="margin-top:14px;">Badges earned · ${done.length} of ${challenges.length}</div>
+    <div class="badge-grid">${done.length ? done.map(c => `<span class="prof-badge" title="${escapeHtml(c.title)} · +${c.points} pts">${challengeIconSVG(c.icon)}<small>${escapeHtml(c.title)}</small></span>`).join('')
+      : '<span class="tp-muted">No badges yet. Finish a challenge to earn your first.</span>'}</div>`;
 }
 
 function addProfileRule(){
