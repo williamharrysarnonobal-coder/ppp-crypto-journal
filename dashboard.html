@@ -17,7 +17,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<link rel="stylesheet" href="css/style.css?v=348">
+<link rel="stylesheet" href="css/style.css?v=349">
 </head>
 <body>
 
@@ -144,6 +144,7 @@
       <h2 class="cal-h2">Calendar<button type="button" class="panel-info-btn" title="How this is worked out" onclick="event.stopPropagation(); openPanelInfo('calendar')"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button><span id="calGoalBar"></span>
         <span class="cal-head-actions">
           <button class="poscalc-accent-btn" id="monthReviewBtn" onclick="openMonthReview()">Review trades</button>
+          <button class="poscalc-accent-btn" onclick="openShareCalendar()" title="Make an image of this month to share">Share</button>
           <span class="nav">
             <button onclick="shiftMonth(-1)">‹</button>
             <span id="calLabel">—</span>
@@ -2463,9 +2464,35 @@
     <div class="share-canvas-wrap"><canvas id="shareCanvas" width="1200" height="675"></canvas></div>
     <div class="sub" id="shareNote" style="margin-top:8px;"></div>
     <div class="share-actions">
-      <button class="tp-btn" onclick="copyShareCard()">Copy image</button>
-      <button class="tp-btn" id="shareNativeBtn" onclick="nativeShareCard()" style="display:none;">Share…</button>
-      <button class="ai-btn" onclick="downloadShareCard()">Download PNG</button>
+      <button class="tp-btn" onclick="copyShareCard('shareCanvas')">Copy image</button>
+      <button class="tp-btn" id="shareNativeBtn" onclick="nativeShareCard('shareCanvas')" style="display:none;">Share…</button>
+      <button class="ai-btn" onclick="downloadShareCard('shareCanvas')">Download PNG</button>
+    </div>
+  </div>
+</div>
+
+<!-- SHARE CALENDAR: ang buwang nakabukas sa Calendar, bilang larawan. -->
+<div class="modal-overlay" id="calShareModal" onclick="if(event.target===this) closeShareCalendar()">
+  <div class="modal-box share-modal" style="position:relative;">
+    <button class="modal-close" onclick="closeShareCalendar()">✕</button>
+    <h3 style="padding-right:24px;margin-bottom:12px;">Share <span id="calShareMonth">month</span></h3>
+    <div class="share-opts">
+      <label>Each day shows
+        <select id="calShareValue" onchange="drawCalendarShare()" style="margin-left:6px;">
+          <option value="r">R</option>
+          <option value="pct">% of account</option>
+          <option value="usd">$ amount</option>
+          <option value="wl">Wins / losses only</option>
+        </select>
+      </label>
+      <label><input type="checkbox" id="calShareTotals" checked onchange="drawCalendarShare()"> Month totals</label>
+      <label><input type="checkbox" id="calShareAccount" onchange="drawCalendarShare()"> Show account name</label>
+    </div>
+    <div class="share-canvas-wrap"><canvas id="calShareCanvas" width="1200" height="1080"></canvas></div>
+    <div class="share-actions">
+      <button class="tp-btn" onclick="copyShareCard('calShareCanvas')">Copy image</button>
+      <button class="tp-btn" id="calShareNativeBtn" onclick="nativeShareCard('calShareCanvas')" style="display:none;">Share…</button>
+      <button class="ai-btn" onclick="downloadShareCard('calShareCanvas')">Download PNG</button>
     </div>
   </div>
 </div>
@@ -2683,6 +2710,6 @@
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=2"></script>
-<script src="js/dashboard.js?v=580"></script>
+<script src="js/dashboard.js?v=581"></script>
 </body>
 </html>

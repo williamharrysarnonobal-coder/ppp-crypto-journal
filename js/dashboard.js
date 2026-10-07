@@ -17493,40 +17493,158 @@ function drawShareCard(){
       : '';
 }
 
-function _shareBlob(){
+function _shareBlob(canvasId){
   return new Promise((res, rej) => {
-    try{ document.getElementById('shareCanvas').toBlob(b => b ? res(b) : rej(new Error('empty')), 'image/png'); }
+    try{ document.getElementById(canvasId || 'shareCanvas').toBlob(b => b ? res(b) : rej(new Error('empty')), 'image/png'); }
     catch(e){ rej(e); }
   });
 }
-function _shareFileName(){
+function _shareFileName(canvasId){
+  if(canvasId === 'calShareCanvas'){
+    return `calendar-${calMonth.getFullYear()}-${String(calMonth.getMonth() + 1).padStart(2, '0')}.png`;
+  }
   const r = _shareRow || {};
   const d = r.close_date ? new Date(r.close_date) : new Date();
   return `trade-${String(r.symbol || 'trade').replace(/[^A-Za-z0-9]+/g, '')}-${_dpIso(d)}.png`;
 }
-async function downloadShareCard(){
+async function downloadShareCard(canvasId){
   try{
-    const b = await _shareBlob();
+    const b = await _shareBlob(canvasId);
     const a = document.createElement('a');
-    a.href = URL.createObjectURL(b); a.download = _shareFileName();
+    a.href = URL.createObjectURL(b); a.download = _shareFileName(canvasId);
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 2000);
   }catch(e){ await customAlert("Couldn't make the image. Try again without the chart."); }
 }
-async function copyShareCard(){
+async function copyShareCard(canvasId){
   try{
-    const b = await _shareBlob();
+    const b = await _shareBlob(canvasId);
     await navigator.clipboard.write([new ClipboardItem({ 'image/png': b })]);
     showToast('Image copied — paste it anywhere');
   }catch(e){ await customAlert("This browser can't copy images. Use Download PNG instead."); }
 }
-async function nativeShareCard(){
+async function nativeShareCard(canvasId){
   try{
-    const b = await _shareBlob();
-    const file = new File([b], _shareFileName(), { type: 'image/png' });
+    const b = await _shareBlob(canvasId);
+    const file = new File([b], _shareFileName(canvasId), { type: 'image/png' });
     if(navigator.canShare && navigator.canShare({ files: [file] })) await navigator.share({ files: [file] });
-    else await downloadShareCard();
+    else await downloadShareCard(canvasId);
   }catch(e){ /* kinansela ng tao — walang gagawin */ }
+}
+
+/* ---------- SHARE CALENDAR ----------
+   Ang buwang nakabukas sa Calendar ng Dashboard (sumusunod sa Account at Real
+   money only), bilang 1200×1080 na larawan. Ikaw ang pipili kung ano ang
+   nasa bawat araw: R, % ng account, $, o W–L lang. */
+function openShareCalendar(){
+  document.getElementById('calShareMonth').textContent = calMonth.toLocaleDateString('en-US', { month:'long', year:'numeric' });
+  document.getElementById('calShareNativeBtn').style.display = (navigator.canShare && navigator.share) ? '' : 'none';
+  document.getElementById('calShareModal').classList.add('open');
+  drawCalendarShare();
+}
+function closeShareCalendar(){
+  document.getElementById('calShareModal').classList.remove('open');
+}
+function drawCalendarShare(){
+  const cv = document.getElementById('calShareCanvas');
+  if(!cv) return;
+  const ctx = cv.getContext('2d');
+  const W = cv.width, H = cv.height;
+  const mode = document.getElementById('calShareValue').value;
+  const showTotals = document.getElementById('calShareTotals').checked;
+  const showAcc = document.getElementById('calShareAccount').checked;
+  const C = { bg:'#12141C', surf:'#1B1F2B', rule:'#2E3446', ink:'#F1EEE6', muted:'#93989F',
+              win:'#2ECC71', loss:'#FF5C5C', accent: cssVar('--accent') || '#F0B429' };
+  const font = (w, s) => `${w} ${s}px "Public Sans", system-ui, sans-serif`;
+  const rr = (x, y, w, h, r) => { ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x, y, w, h, r) : ctx.rect(x, y, w, h); };
+
+  const y0 = calMonth.getFullYear(), m0 = calMonth.getMonth();
+  const trades = FILTERED.filter(t => t.close_date && t.close_date.getFullYear() === y0 && t.close_date.getMonth() === m0);
+  const days = {};
+  trades.forEach(t => {
+    const d = t.close_date.getDate();
+    const s = days[d] = days[d] || { net: 0, R: 0, rN: 0, pct: 0, pN: 0, w: 0, l: 0, n: 0 };
+    s.net += netPnl(t); s.n++;
+    if(_isWin(t)) s.w++; else if(_isLoss(t)) s.l++;
+    const r = _tradeR(t); if(r !== null){ s.R += r; s.rN++; }
+    const raw = RAW_TRADES.find(x => x.position_id === t.position_id);
+    const p = raw ? _accountPct(raw) : null; if(p !== null){ s.pct += p; s.pN++; }
+  });
+  const sign = v => v >= 0 ? '+' : '−';
+  const val = s => mode === 'usd' ? `${sign(s.net)}$${Math.abs(s.net).toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+    : mode === 'r' ? (s.rN ? `${sign(s.R)}${Math.abs(s.R).toFixed(1)}R` : `${s.w}W ${s.l}L`)
+    : mode === 'pct' ? (s.pN ? `${sign(s.pct)}${Math.abs(s.pct).toFixed(2)}%` : `${s.w}W ${s.l}L`)
+    : `${s.w}W ${s.l}L`;
+
+  ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+  const L = 56;
+  ctx.fillStyle = C.ink; ctx.font = font(800, 52);
+  ctx.fillText(calMonth.toLocaleDateString('en-US', { month:'long', year:'numeric' }), L, 96);
+  const acct = document.getElementById('accountFilter')?.value;
+  ctx.fillStyle = C.muted; ctx.font = font(500, 22);
+  ctx.fillText(showAcc && acct && acct !== 'all' ? acct : 'Trading calendar', L, 134);
+
+  // Mga kabuuan ng buwan.
+  let gy = 170;
+  if(showTotals){
+    const all = Object.values(days);
+    const net = all.reduce((a, s) => a + s.net, 0);
+    const Rt = all.reduce((a, s) => a + s.R, 0), rN = all.reduce((a, s) => a + s.rN, 0);
+    const pT = all.reduce((a, s) => a + s.pct, 0), pN = all.reduce((a, s) => a + s.pN, 0);
+    const w = all.reduce((a, s) => a + s.w, 0), l = all.reduce((a, s) => a + s.l, 0);
+    const green = all.filter(s => s.net > 0).length;
+    const total = mode === 'usd' ? `${sign(net)}$${Math.abs(net).toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+      : mode === 'pct' ? (pN ? `${sign(pT)}${Math.abs(pT).toFixed(2)}%` : '—')
+      : mode === 'r' ? (rN ? `${sign(Rt)}${Math.abs(Rt).toFixed(1)}R` : '—') : `${w}W ${l}L`;
+    const boxes = [
+      [mode === 'wl' ? 'Result' : 'Month', total, mode === 'wl' ? C.ink : (net >= 0 ? C.win : C.loss)],
+      ['Win rate', (w + l) ? `${Math.round(w / (w + l) * 100)}%` : '—', C.ink],
+      ['Trades', String(trades.length), C.ink],
+      ['Green days', `${green} of ${all.length}`, C.ink]
+    ];
+    const bw = (W - L * 2 - 3 * 16) / 4;
+    boxes.forEach(([k, v, col], i) => {
+      const x = L + i * (bw + 16);
+      ctx.fillStyle = C.surf; rr(x, gy, bw, 96, 14); ctx.fill();
+      ctx.fillStyle = C.muted; ctx.font = font(700, 16); ctx.fillText(k.toUpperCase(), x + 20, gy + 34);
+      ctx.fillStyle = col; ctx.font = font(800, 32); ctx.fillText(v, x + 20, gy + 76);
+    });
+    gy += 122;
+  }
+
+  // Ang grid.
+  const dows = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const gw = W - L * 2, cw = (gw - 6 * 10) / 7;
+  ctx.fillStyle = C.muted; ctx.font = font(700, 16);
+  dows.forEach((d, i) => ctx.fillText(d.toUpperCase(), L + i * (cw + 10) + 10, gy + 18));
+  gy += 32;
+  const first = new Date(y0, m0, 1).getDay(), nDays = new Date(y0, m0 + 1, 0).getDate();
+  const rows = Math.ceil((first + nDays) / 7);
+  const ch = Math.min(130, (H - gy - 70 - (rows - 1) * 10) / rows);
+  for(let d = 1; d <= nDays; d++){
+    const idx = first + d - 1, x = L + (idx % 7) * (cw + 10), y = gy + Math.floor(idx / 7) * (ch + 10);
+    const s = days[d];
+    const up = s && (mode === 'wl' ? s.w >= s.l : s.net >= 0);
+    ctx.fillStyle = !s ? C.surf : up ? 'rgba(46,204,113,.18)' : 'rgba(255,92,92,.18)';
+    rr(x, y, cw, ch, 12); ctx.fill();
+    if(s){ ctx.strokeStyle = up ? 'rgba(46,204,113,.55)' : 'rgba(255,92,92,.55)'; ctx.lineWidth = 2; rr(x, y, cw, ch, 12); ctx.stroke(); }
+    ctx.fillStyle = s ? C.ink : C.muted; ctx.font = font(600, 18);
+    ctx.fillText(String(d), x + 12, y + 28);
+    if(s){
+      ctx.fillStyle = up ? C.win : C.loss; ctx.font = font(800, 24);
+      let t = val(s);
+      while(ctx.measureText(t).width > cw - 20 && t.length > 3) t = t.slice(0, -1);
+      ctx.fillText(t, x + 12, y + ch - 36);
+      ctx.fillStyle = C.muted; ctx.font = font(500, 15);
+      ctx.fillText(`${s.n} trade${s.n === 1 ? '' : 's'}`, x + 12, y + ch - 14);
+    }
+  }
+
+  ctx.fillStyle = C.accent; ctx.font = font(800, 22);
+  ctx.fillText('TANAYDANA', L, H - 30);
+  const bw2 = ctx.measureText('TANAYDANA').width;
+  ctx.fillStyle = C.muted; ctx.font = font(500, 18);
+  ctx.fillText('trading journal', L + bw2 + 12, H - 30);
 }
 
 /* ---------- Trade page: CHARTS ----------
