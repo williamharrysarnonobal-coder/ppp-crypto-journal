@@ -17905,7 +17905,7 @@ function drawShareCard(){
     ctx.strokeStyle = C.rule; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.roundRect ? ctx.roundRect(bx, by, bw, bh, 18) : ctx.rect(bx, by, bw, bh); ctx.stroke();
   } else {
-    _drawShareTradeMap(ctx, row, good, C, font, W);
+    _drawShareTrend(ctx, good, C, W);
   }
 
   // Paa: tatak.
@@ -17921,80 +17921,59 @@ function drawShareCard(){
       : '';
 }
 
-/* TRADE MAP sa kanang itaas ng Share Trade — parang position tool ng
-   TradingView: berdeng zone Entry→TP, pulang zone Entry→SL, at ang linya
-   mula Entry papunta sa totoong exit. Win: berdeng linya; Loss: pula. Galing
-   lahat sa totoong presyo ng trade; walang ipinapakita kapag kulang ang
-   Entry o Exit. */
-function _drawShareTradeMap(ctx, row, good, C, font, W){
-  const num = v => { const x = parseFloat(v); return Number.isFinite(x) && x > 0 ? x : null; };
-  const e = num(row.entry_price), x = num(row.close_price);
-  if(e === null || x === null) return;
-  // Hindi iginuguhit ang TP/SL na nasa maling panig (hal. SL na inilipat na
-  // sa kita) o higit 25% ang layo — mali o luma na ang ganoong numero.
-  const side = /^short$/i.test(String(row.trade_type || '').trim()) ? -1 : 1;
-  const sane = (v, s) => v !== null && (v - e) * side * s > 0 && Math.abs(v - e) / e <= 0.25 ? v : null;
-  const tp = sane(num(row.tp_price), 1), sl = sane(num(row.sl_price), -1);
-  const bx = 760, by = 72, bw = W - bx - 56, bh = 250;
-  const zx0 = bx, zx1 = bx + bw - 150;                 // ang zone; sa kanan ang mga presyo
-  const levels = [e, x, tp, sl].filter(v => v !== null);
-  let lo = Math.min(...levels), hi = Math.max(...levels);
-  const pad = (hi - lo || e * 0.002) * 0.14;
-  lo -= pad; hi += pad;
-  const Y = p => by + (hi - p) / (hi - lo) * bh;
+/* LARAWAN sa kanang itaas ng Share Trade — palamuti lang, hindi datos:
+   Win, pataas na linya at arrow na berde; Loss, pababa at pula. */
+function _drawShareTrend(ctx, good, C, W){
+  const bx = 776, by = 64, bw = W - bx - 56, bh = 290;
   const tone = good ? C.win : C.loss;
+  const rgb = good ? '46,204,113' : '255,92,92';
+  const up = [0.06, 0.22, 0.27, 0.31, 0.48, 0.60, 0.68, 0.58, 0.72, 0.75, 0.92];
+  const vals = good ? up : up.map(v => 1 - v);
+  const x0 = bx + 22, x1 = bx + bw - 44, base = by + bh;
+  const yTop = by + 70, yBot = base - 16;
+  const pts = vals.map((v, i) => [x0 + (x1 - x0) * i / (vals.length - 1), yBot - (yBot - yTop) * v]);
 
-  // Mga zone
-  const zone = (a, b, fill, line) => {
-    const y1 = Math.min(Y(a), Y(b)), y2 = Math.max(Y(a), Y(b));
-    ctx.fillStyle = fill; ctx.fillRect(zx0, y1, zx1 - zx0, y2 - y1);
-    ctx.strokeStyle = line; ctx.lineWidth = 2; ctx.setLineDash([8, 6]);
-    ctx.beginPath(); ctx.moveTo(zx0, Y(b)); ctx.lineTo(zx1, Y(b)); ctx.stroke();
-    ctx.setLineDash([]);
-  };
-  if(tp !== null) zone(e, tp, 'rgba(46,204,113,.13)', 'rgba(46,204,113,.7)');
-  if(sl !== null) zone(e, sl, 'rgba(255,92,92,.13)', 'rgba(255,92,92,.7)');
-  ctx.strokeStyle = C.muted; ctx.lineWidth = 2;
-  ctx.beginPath(); ctx.moveTo(zx0, Y(e)); ctx.lineTo(zx1, Y(e)); ctx.stroke();
+  // Mahinang grid at mga axis
+  ctx.strokeStyle = 'rgba(255,255,255,.05)'; ctx.lineWidth = 1;
+  for(let gx = bx + 32; gx < bx + bw; gx += 32){ ctx.beginPath(); ctx.moveTo(gx, by); ctx.lineTo(gx, base); ctx.stroke(); }
+  for(let gy = base - 32; gy > by; gy -= 32){ ctx.beginPath(); ctx.moveTo(bx, gy); ctx.lineTo(bx + bw, gy); ctx.stroke(); }
+  ctx.strokeStyle = tone; ctx.lineWidth = 3; ctx.lineCap = 'butt';
+  ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(bx, base); ctx.lineTo(bx + bw, base); ctx.stroke();
 
-  // Ang daan mula Entry hanggang Exit
-  const sx = zx0 + 18, sy = Y(e), ex = zx1 - 22, ey = Y(x), w = ex - sx;
-  ctx.strokeStyle = tone; ctx.lineWidth = 4; ctx.lineCap = 'round';
-  ctx.beginPath(); ctx.moveTo(sx, sy);
-  ctx.bezierCurveTo(sx + w * 0.4, sy + (sy - ey) * 0.22, sx + w * 0.62, ey, ex, ey);
-  ctx.stroke();
-  ctx.fillStyle = C.ink; ctx.beginPath(); ctx.arc(sx, sy, 6, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = good ? 'rgba(46,204,113,.28)' : 'rgba(255,92,92,.28)';
-  ctx.beginPath(); ctx.arc(ex, ey, 16, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = tone; ctx.beginPath(); ctx.arc(ex, ey, 8, 0, Math.PI * 2); ctx.fill();
+  // Area na may gradient
+  const g = ctx.createLinearGradient(0, yTop, 0, base);
+  g.addColorStop(0, `rgba(${rgb},.38)`); g.addColorStop(1, `rgba(${rgb},.02)`);
+  ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(pts[0][0], base);
+  pts.forEach(p => ctx.lineTo(p[0], p[1])); ctx.lineTo(pts[pts.length - 1][0], base); ctx.closePath(); ctx.fill();
 
-  // Mga presyo sa kanan — itinutulak palayo sa isa't isa para hindi magpatong.
-  const dec = Math.max(...levels) >= 1000 ? 2 : Math.max(...levels) >= 1 ? 4 : 6;
-  const fmt = v => v.toLocaleString('en-US', { maximumFractionDigits: dec });
-  const labels = [
-    tp !== null ? { k:'TP', v:tp, c:C.win } : null,
-    { k:'Entry', v:e, c:C.ink },
-    sl !== null ? { k:'SL', v:sl, c:C.loss } : null,
-    { k:'Exit', v:x, c:tone }
-  ].filter(Boolean).map(l => ({ ...l, y: Y(l.v) })).sort((a, b) => a.y - b.y);
-  for(let i = 1; i < labels.length; i++) if(labels[i].y - labels[i - 1].y < 26) labels[i].y = labels[i - 1].y + 26;
-  const over = labels[labels.length - 1].y - (by + bh + 4);
-  if(over > 0) labels.forEach(l => l.y -= over);
-  const lx = zx1 + 18;
-  labels.forEach(l => {
-    ctx.fillStyle = l.c; ctx.font = font(700, 16);
-    ctx.fillText(l.k.toUpperCase(), lx, l.y + 6);
-    ctx.fillStyle = l.k === 'Exit' ? tone : C.ink; ctx.font = font(l.k === 'Exit' ? 800 : 600, 18);
-    ctx.textAlign = 'right'; ctx.fillText(fmt(l.v), bx + bw, l.y + 6); ctx.textAlign = 'left';
+  // Mga putol-putol na guhit pababa
+  ctx.strokeStyle = `rgba(${rgb},.45)`; ctx.lineWidth = 1.5; ctx.setLineDash([4, 4]);
+  pts.forEach(p => { ctx.beginPath(); ctx.moveTo(p[0], p[1]); ctx.lineTo(p[0], base); ctx.stroke(); });
+  ctx.setLineDash([]);
+
+  // Ang linya at mga tuldok
+  ctx.strokeStyle = tone; ctx.lineWidth = 2.5; ctx.lineJoin = 'round';
+  ctx.beginPath(); pts.forEach((p, i) => i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])); ctx.stroke();
+  pts.forEach(p => {
+    ctx.fillStyle = C.bg; ctx.beginPath(); ctx.arc(p[0], p[1], 5, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = tone; ctx.lineWidth = 2; ctx.stroke();
   });
 
-  // Maikling paliwanag sa ilalim
-  const near = (a, b, ref) => b !== null && Math.abs(a - b) <= Math.abs(ref) * 0.12;
-  const cap = good
-    ? (tp !== null && near(x, tp, tp - e) ? 'Hit take profit' : 'Closed in profit')
-    : (sl === null ? 'Closed at a loss' : near(x, sl, sl - e) ? 'Stopped out' : 'Closed before the stop');
-  ctx.fillStyle = tone; ctx.font = font(700, 18);
-  ctx.fillText(`${good ? '✓' : '✕'}  ${cap}`, zx0, by + bh + 36);
+  // Ang makapal na arrow sa itaas ng linya
+  const off = 46;
+  const ap = pts.map(p => [p[0], p[1] - off]);
+  const [px, py] = ap[ap.length - 2], [lx, ly] = ap[ap.length - 1];
+  const ang = Math.atan2(ly - py, lx - px);
+  const tipX = lx + Math.cos(ang) * 30, tipY = ly + Math.sin(ang) * 30;
+  ctx.strokeStyle = tone; ctx.lineWidth = 12; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+  ctx.beginPath(); ap.forEach((p, i) => i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0] - 6, p[1])); ctx.stroke();
+  ctx.lineCap = 'butt';
+  const hl = 40, hw = 24;
+  ctx.fillStyle = tone; ctx.beginPath();
+  ctx.moveTo(tipX + Math.cos(ang) * 6, tipY + Math.sin(ang) * 6);
+  ctx.lineTo(tipX - Math.cos(ang) * hl + Math.cos(ang + Math.PI / 2) * hw, tipY - Math.sin(ang) * hl + Math.sin(ang + Math.PI / 2) * hw);
+  ctx.lineTo(tipX - Math.cos(ang) * hl - Math.cos(ang + Math.PI / 2) * hw, tipY - Math.sin(ang) * hl - Math.sin(ang + Math.PI / 2) * hw);
+  ctx.closePath(); ctx.fill();
 }
 
 function _shareBlob(canvasId){
