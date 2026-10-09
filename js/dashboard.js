@@ -429,7 +429,9 @@ const UI_PREF_LS_KEYS = {
   // Aling market sa Market Hours ang may 🔔 — sumusunod sa account.
   market_hours_notify: 'tanaydana-mh-notify',
   // Notification 15 minuto bago ang High impact na balita.
-  econ_notify: 'tanaydana-econ-notify'
+  econ_notify: 'tanaydana-econ-notify',
+  // Aling klase ng notification ang naka-off (⚙ sa 🔔).
+  notif_muted: 'tanaydana-nf-muted'
 };
 
 let _uiPrefsSyncTimer = null;
@@ -8970,6 +8972,11 @@ function _rmFired(){
   catch(e){ return { day: today, at: {} }; }
 }
 function _rmShow(key, title, body, go){
+  // Naka-off ang klaseng ito (⚙ sa 🔔): itinatala lang, walang popup.
+  if(typeof _nfIsMuted === 'function' && _nfIsMuted(_nfTypeOf(key))){
+    if(typeof _notifLogPush === 'function') _notifLogPush(key, title, body, true);
+    return;
+  }
   // Itinatala sa "Earlier today" ng floating 🔔.
   if(typeof _notifLogPush === 'function') _notifLogPush(key, title, body);
   // Banner sa app (gamit ang banner ng Upscale), at system notification.
@@ -31561,9 +31568,9 @@ setTimeout(_runEconNotifications, 12000);
    Ang bilang ay ang mga hindi pa nakikita. */
 const NOTIF_LOG_KEY = 'tanaydana-notif-log', NOTIF_SEEN_KEY = 'tanaydana-notif-seen';
 function _notifLog(){ try{ const v = JSON.parse(localStorage.getItem(NOTIF_LOG_KEY) || '[]'); return Array.isArray(v) ? v : []; }catch(e){ return []; } }
-function _notifLogPush(key, title, body){
+function _notifLogPush(key, title, body, muted){
   const log = _notifLog().filter(x => Date.now() - x.ts < 2 * 86400000);
-  log.push({ k: key, title, body, ts: Date.now() });
+  log.push({ k: key, title, body, ts: Date.now(), ...(muted ? { muted: true } : {}) });
   try{ localStorage.setItem(NOTIF_LOG_KEY, JSON.stringify(log.slice(-60))); }catch(e){}
   _renderNotifFab();
 }
@@ -31578,7 +31585,7 @@ function _notifViewOf(k){
 }
 function _notifUnseen(){
   let seen = 0; try{ seen = Number(localStorage.getItem(NOTIF_SEEN_KEY)) || 0; }catch(e){}
-  return _notifLog().filter(x => x.ts > seen).length;
+  return _notifLog().filter(x => x.ts > seen && !x.muted).length;
 }
 function _renderNotifFab(){
   const b = document.getElementById('notifFabBadge');
@@ -31601,6 +31608,47 @@ function _notifComingUp(now){
   return items.filter(x => { const k = x.title + x.t; if(seen.has(k)) return false; seen.add(k); return true; })
     .sort((a, b) => a.t - b.t).slice(0, 8);
 }
+/* ⚙ ON/OFF BAWAT KLASE. Ang naka-off ay walang popup at walang phone
+   notification, pero nasa listahan pa rin ng 🔔 (hindi binibilang). Ang News
+   ay ang dating "High impact news" na switch; ang Market, News at Reminders
+   ay sumasabay sa phone push. */
+const NF_MUTE_KEY = 'tanaydana-nf-muted';
+const NF_SETTINGS = [
+  ['market', 'Market Hours', 'Opens and closes for the markets with 🔔'],
+  ['news', 'High impact news', '15 minutes before'],
+  ['alerts', 'Trade Alerts', 'New signals'],
+  ['challenges', 'Challenges', 'A challenge finished or a new level'],
+  ['reminders', 'Reminders', 'Daily Plan, evening review and things you forget']
+];
+let _nfSettingsOpen = false;
+function _nfMutedSet(){ try{ const v = JSON.parse(localStorage.getItem(NF_MUTE_KEY) || '[]'); return new Set(Array.isArray(v) ? v : []); }catch(e){ return new Set(); } }
+function _nfIsMuted(type){ return type === 'news' ? !_econNotifyOn() : _nfMutedSet().has(type); }
+function setNfCategory(type, on){
+  if(type === 'news'){
+    try{ localStorage.setItem(ECON_NOTIFY_KEY, on ? '1' : '0'); }catch(e){}
+  }else{
+    const s = _nfMutedSet();
+    if(on) s.delete(type); else s.add(type);
+    try{ localStorage.setItem(NF_MUTE_KEY, JSON.stringify([...s])); }catch(e){}
+  }
+  if(typeof syncUIPrefsToProfile === 'function') syncUIPrefsToProfile();
+  if(['market', 'news', 'reminders'].includes(type) && typeof setPushType === 'function') setPushType(type, on);
+  try{ if(on && 'Notification' in window && Notification.permission === 'default') Notification.requestPermission(); }catch(e){}
+  _renderNotifFab();
+  renderNotifFabPanel();
+}
+function toggleNfSettings(){ _nfSettingsOpen = !_nfSettingsOpen; renderNotifFabPanel(); }
+function _nfSettingsHtml(){
+  return `<div class="nf-settings">
+    <div class="nf-set-k">Notify me about</div>
+    ${NF_SETTINGS.map(([k, label, hint]) => `<label class="nf-set-row"><span><b>${label}</b><small>${hint}</small></span>
+      <input type="checkbox" class="nf-switch" ${_nfIsMuted(k) ? '' : 'checked'} onchange="setNfCategory('${k}', this.checked)"></label>`).join('')}
+    <div class="nf-set-row"><span><b>📱 Phone notifications</b><small>On this device, even when Tanaydana is closed</small></span>
+      <button class="nf-toggle" id="nfPushBtn" onclick="togglePush()">…</button></div>
+    <div class="nf-set-note">Off means no popup and no phone notification. It still appears in the list, without counting on the 🔔.</div>
+  </div>`;
+}
+
 /* ANG 🔔 BILANG ISANG TABLE. Isang listahan: ang paparating sa itaas ("in
    2h"), ang mga gagawin (trade na kulang), tapos ang lumabas na ngayong araw.
    May filter ayon sa klase at "Only new" (ang hindi pa nakita bago mo binuksan
@@ -31644,13 +31692,14 @@ function renderNotifFabPanel(){
   _notifLog().filter(x => _mhDayIso(x.ts) === today && !String(x.k || '').startsWith('alertsbatch:')).reverse().forEach(x => {
     const v = _notifViewOf(x.k);
     rows.push({ type: _nfTypeOf(x.k), title: String(x.title).replace(/^New trade alert:\s*/, ''), detail: x.body || '',
-      when: '', time: _mhTime(x.ts), go: v ? `switchView('${v}')` : '', isNew: x.ts > _nfPrevSeen });
+      when: x.muted ? 'muted' : '', time: _mhTime(x.ts), go: v ? `switchView('${v}')` : '', isNew: x.ts > _nfPrevSeen && !x.muted, muted: !!x.muted });
   });
   const shown = rows.filter(r => (f.type === 'all' || r.type === f.type) && (!f.onlyNew || r.isNew));
   const counts = {}; rows.forEach(r => { counts[r.type] = (counts[r.type] || 0) + 1; });
   const econOn = _econNotifyOn();
   p.innerHTML = `
-    <div class="nf-head"><b>Notifications</b><span class="nf-head-r">${rows.some(r => r.isNew) ? `<button class="nf-markall" onclick="markAllNotifRead()">Mark all read</button>` : ''}<button class="nf-x" onclick="toggleNotifFab(false)" aria-label="Close">✕</button></span></div>
+    <div class="nf-head"><b>Notifications</b><span class="nf-head-r"><button class="nf-gear${_nfSettingsOpen ? ' on' : ''}" onclick="toggleNfSettings()" title="Notification settings" aria-pressed="${_nfSettingsOpen}">⚙</button>${!_nfSettingsOpen && rows.some(r => r.isNew) ? `<button class="nf-markall" onclick="markAllNotifRead()">Mark all read</button>` : ''}<button class="nf-x" onclick="toggleNotifFab(false)" aria-label="Close">✕</button></span></div>
+    ${_nfSettingsOpen ? _nfSettingsHtml() : `
     <div class="nf-filters">
       <select class="nf-select" aria-label="Show" onchange="setNfFilter('type', this.value)">
         ${NF_TYPES.map(([k, l]) => `<option value="${k}" ${f.type === k ? 'selected' : ''}>${l}${k === 'all' ? ` (${rows.length})` : counts[k] ? ` (${counts[k]})` : ''}</option>`).join('')}
@@ -31659,21 +31708,19 @@ function renderNotifFabPanel(){
     </div>
     <div class="nf-table-wrap">${shown.length ? `<table class="nf-table nf-main">
       <thead><tr><th>Time</th><th>Type</th><th>Notification</th></tr></thead>
-      <tbody>${shown.slice(0, 60).map(r => `<tr class="${r.up ? 'up' : ''}${r.todo ? ' todo' : ''}${r.isNew ? ' new' : ''}" ${r.go ? `onclick="toggleNotifFab(false); ${r.go}"` : ''}>
+      <tbody>${shown.slice(0, 60).map(r => `<tr class="${r.up ? 'up' : ''}${r.todo ? ' todo' : ''}${r.isNew ? ' new' : ''}${r.muted ? ' muted' : ''}" ${r.go ? `onclick="toggleNotifFab(false); ${r.go}"` : ''}>
         <td>${escapeHtml(r.time)}${r.when ? `<small class="nf-when">${escapeHtml(r.when)}</small>` : ''}</td>
         <td><span class="nf-type t-${r.type}">${NF_TYPE_LABEL[r.type]}</span></td>
         <td><b>${escapeHtml(r.title)}</b>${r.detail ? `<small>${escapeHtml(r.detail)}</small>` : ''}</td></tr>`).join('')}</tbody>
-    </table>` : `<div class="nf-empty">${f.onlyNew ? 'Nothing new.' : 'Nothing here today.'}</div>`}</div>
+    </table>` : `<div class="nf-empty">${f.onlyNew ? 'Nothing new.' : 'Nothing here today.'}</div>`}</div>`}
     <div class="nf-foot">
-      <button class="nf-toggle" id="nfPushBtn" onclick="togglePush()">📱 Phone notifications: <b>…</b></button>
-      <button class="nf-toggle${econOn ? ' on' : ''}" onclick="toggleEconNotify()">${econOn ? '🔔' : '🔕'} High impact news, 15 min before: <b>${econOn ? 'On' : 'Off'}</b></button>
       <button class="nf-link" onclick="toggleNotifFab(false); switchView('hours')">Market Hours →</button>
     </div>`;
   if(typeof _pushCurrent === 'function') _pushCurrent().then(sub => {
     const btn = document.getElementById('nfPushBtn');
     if(!btn) return;
     btn.classList.toggle('on', !!sub);
-    btn.innerHTML = `📱 Phone notifications: <b>${sub ? 'On' : 'Off'}</b>`;
+    btn.innerHTML = sub ? '<b>On</b>' : '<b>Off</b>';
   });
 }
 // Lahat ay "nabasa na": nawawala ang bilang sa 🔔 at ang tanda ng bago.
