@@ -8530,6 +8530,7 @@ const ALL_DRAWER_FIELDS = [
   // drift out of step with the prices.
   {key:'risk_amount', label:'Risk Amount ($)', widget:'text', editable:false, realOnly:true},
   {key:'win_loss', label:'Win/Loss', widget:'select', editable:true, options:FIELD_OPTIONS.win_loss, realOnly:true},
+  {key:'entry_area', label:'Entry Area', widget:'text', editable:true, suggest:'history', realOnly:true, placeholder:'e.g. 15m FVG, Retest of Asia high, Below the LH'},
   {key:'tp_area', label:'TP Area', widget:'text', editable:true, suggest:'history', realOnly:true, placeholder:'e.g. Prev day high, 4H FVG, Weekly open'},
   {key:'sl_area', label:'SL Area', widget:'text', editable:true, suggest:'history', realOnly:true, placeholder:'e.g. Below Asia low, Below the HL'},
   {key:'trade_type', label:'Trade Type', widget:'select', editable:true, options:FIELD_OPTIONS.trade_type},
@@ -8603,8 +8604,15 @@ function loadFormFieldConfig(){
 
   if(saved && Array.isArray(saved) && saved.length){
     const savedKeys = new Set(saved.map(c => c.key));
-    const extra = ALL_DRAWER_FIELDS.filter(c => !savedKeys.has(c.key)).map(c => ({key:c.key, visible:true}));
-    FORM_FIELD_CONFIG = [...saved.filter(c => ALL_DRAWER_FIELDS.some(m => m.key === c.key)), ...extra];
+    FORM_FIELD_CONFIG = saved.filter(c => ALL_DRAWER_FIELDS.some(m => m.key === c.key));
+    // Ang bagong field ay inilalagay sa tabi ng kasunod nito sa listahan (hal.
+    // Entry Area bago ang TP Area), hindi sa dulo ng form.
+    ALL_DRAWER_FIELDS.forEach((c, i) => {
+      if(savedKeys.has(c.key)) return;
+      const next = ALL_DRAWER_FIELDS.slice(i + 1).find(n => FORM_FIELD_CONFIG.some(x => x.key === n.key));
+      const at = next ? FORM_FIELD_CONFIG.findIndex(x => x.key === next.key) : FORM_FIELD_CONFIG.length;
+      FORM_FIELD_CONFIG.splice(at, 0, {key:c.key, visible:true});
+    });
   }else{
     FORM_FIELD_CONFIG = ALL_DRAWER_FIELDS.map(c => ({key:c.key, visible:true}));
   }
@@ -8681,6 +8689,7 @@ const ALL_JOURNAL_COLUMNS = [
   {key:'post_be_result', label:'Post-BE Result'},
   {key:'post_cutloss_result', label:'Post-Cutloss Result'},
   {key:'post_stop_profit_result', label:'Post-Stop Profit'},
+  {key:'entry_area', label:'Entry Area'},
   {key:'tp_area', label:'TP Area'},
   {key:'sl_area', label:'SL Area'},
   {key:'mistakes', label:'Mistakes'},
@@ -9108,6 +9117,7 @@ const DB_CHECKS = [
   { file:'supabase_trading_journal_review_fields.sql', what:'Mistakes, Entry/Exit Emotion, Trade Management on trades', table:'trading_journal', col:'mistakes,entry_emotion,exit_emotion,trade_management' },
   { file:'supabase_position_setups_entry_emotion.sql', what:'Entry Emotion on Pending Setups', table:'position_setups', col:'entry_emotion' },
   { file:'supabase_trading_journal_tp_sl_area.sql', what:'TP Area and SL Area on trades', table:'trading_journal', col:'tp_area,sl_area' },
+  { file:'supabase_trading_journal_entry_area.sql', what:'Entry Area on trades', table:'trading_journal', col:'entry_area' },
   { file:'supabase_trading_journal_chart_shots.sql', what:'Chart screenshots (Higher / Setup / Entry TF)', table:'trading_journal', col:'chart_shots', also:{ table:'position_setups', col:'chart_shots' } },
   { file:'supabase_daily_plans.sql', what:'Daily Plan and the psychology check-in', table:'daily_plans', col:'psych' },
   { file:'supabase_app_visits.sql', what:'Daily Check-in Streak (days you opened the app)', table:'app_visits', col:'visit_date' },
@@ -15221,7 +15231,7 @@ function warnIconSVG(){
    sabihin nito ay WALANG trade na mase-save. Kaya: kapag tinanggihan dahil sa
    isa sa mga ito, alisin ito at subukan ulit, at huwag na itong ipadala sa
    natitirang session. Ang tanging nawawala ay ang sagot sa bagong field. */
-const _OPTIONAL_JOURNAL_COLS = ['post_stop_profit_result', 'mistakes', 'entry_emotion', 'exit_emotion', 'trade_management', 'tp_area', 'sl_area'];
+const _OPTIONAL_JOURNAL_COLS = ['post_stop_profit_result', 'mistakes', 'entry_emotion', 'exit_emotion', 'trade_management', 'entry_area', 'tp_area', 'sl_area'];
 const _missingJournalCols = new Set();
 async function _journalSend(url, method, body){
   const strip = b => {
@@ -17188,7 +17198,7 @@ const JOURNAL_FIELD_GROUPS = [
                               'no_trade_reason','paper_outcome','planned_rr'] },
   { title: 'Result', keys: ['win_loss','profit_loss','pnl_percent','rr','fee','entry_price','close_price','tp_price','sl_price','position_size','leverage','risk_amount'] },
   { title: 'Account', keys: ['account','account_type','session','day_of_week'] },
-  { title: 'Setup & Strategy', keys: ['trade_type','trade_setup','pattern_type','execution_tf','aof_phase','tp_area','sl_area'] },
+  { title: 'Setup & Strategy', keys: ['trade_type','trade_setup','pattern_type','execution_tf','aof_phase','entry_area','tp_area','sl_area'] },
   { title: 'Discipline', keys: ['rules_followed','unfollowed_rules','mistakes','entry_emotion','exit_emotion','trade_management','exit_type','post_be_result','post_cutloss_result','post_stop_profit_result'] },
 ];
 const JOURNAL_FIELD_GROUPS_PRE_CONFLUENCE_COUNT = 4; // Overview, Result, Account, Setup & Strategy
@@ -17630,7 +17640,7 @@ async function saveTradeInline(){
   btn.disabled = true; btn.textContent = 'Saving…';
   const patch = { ..._tpDirty };
   // TP/SL Area: ang dating baybay ang ginagamit, gaya sa Edit form.
-  ['tp_area', 'sl_area'].forEach(k => { if(k in patch) patch[k] = _canonicalHistoryValue(k, patch[k]); });
+  ALL_DRAWER_FIELDS.filter(f => f.suggest === 'history').forEach(f => { if(f.key in patch) patch[f.key] = _canonicalHistoryValue(f.key, patch[f.key]); });
   try{
     const res = await _journalSend(`${SUPABASE_URL}/rest/v1/${TABLE_NAME}?position_id=eq.${encodeURIComponent(row.position_id)}`, 'PATCH', patch);
     if(!res.ok) throw new Error(await res.text());
