@@ -17148,6 +17148,8 @@ function setTradeTab(tab){
     b.setAttribute('aria-selected', on ? 'true' : 'false');
   });
   document.querySelectorAll('[data-tp-pane]').forEach(p => { p.hidden = p.dataset.tpPane !== tab; });
+  // Ang taas ng notes ay masusukat lang kapag nakikita na ang tab.
+  if(tab === 'review' && typeof _clipTpNotes === 'function') _clipTpNotes();
 }
 let _tradePageFrom = 'journal';
 let _tpSetupsRequested = false;
@@ -17799,9 +17801,43 @@ function _renderTradeReview(row){
       ${post ? `<div class="tp-rv tp-rv-wide tp-rv-mid"><div class="tp-rv-k">After the exit</div><div class="tp-tags">${post}</div></div>` : ''}
       <div class="tp-rv tp-rv-wide">
         <div class="tp-rv-k">Notes</div>
-        <div class="tp-notes">${notesTxt ? `<p>${escapeHtml(notesTxt)}</p>` : ''}${log.map(e => `<div class="tp-note"><small>${escapeHtml(new Date(e.ts).toLocaleString(undefined, { dateStyle:'medium', timeStyle:'short' }))}${e.setup ? ' · from the setup' : ''}</small>${escapeHtml(String(e.text || '').trim())}</div>`).join('')}${!notesTxt && !log.length ? '<span class="tp-muted">No notes yet. Use Add note above.</span>' : ''}</div>
+        <div class="tp-notes-wrap"><div class="tp-notes" id="tpNotesBox">${notesTxt ? _tpNotesHtml(notesTxt) : ''}${log.map(e => `<div class="tp-note"><small>${escapeHtml(new Date(e.ts).toLocaleString(undefined, { dateStyle:'medium', timeStyle:'short' }))}${e.setup ? ' · from the setup' : ''}</small>${escapeHtml(String(e.text || '').trim())}</div>`).join('')}${!notesTxt && !log.length ? '<span class="tp-muted">No notes yet. Use Add note above.</span>' : ''}</div>
+        <button type="button" class="tp-seemore" id="tpNotesMore" hidden onclick="toggleTpNotes()">See more</button></div>
       </div>
     </div>`;
+  _clipTpNotes();
+}
+
+/* ANG NOTES: ang petsa ay grey at maliit, ang sulat ay normal. Ang notes na
+   galing sa setup ay nakopya bilang "Oct 5, 2026, 5:34 PM" + bagong linya +
+   sulat — binabasa ang unang linya ng bawat talata at, kung petsa iyon,
+   ipinapakita na parang tala ng Add note. */
+const _TP_DATE_LINE = /^[A-Z][a-z]{2,8}\.? \d{1,2}, \d{4},? \d{1,2}:\d{2}(\s?[AP]M)?$|^\d{1,2}\/\d{1,2}\/\d{2,4},? \d{1,2}:\d{2}(:\d{2})?(\s?[AP]M)?$/i;
+function _tpNotesHtml(text){
+  return String(text).split(/\n\s*\n/).map(block => {
+    const lines = block.split('\n');
+    const first = lines[0].trim();
+    if(lines.length > 1 && _TP_DATE_LINE.test(first))
+      return `<div class="tp-note"><small>${escapeHtml(first)}</small>${escapeHtml(lines.slice(1).join('\n').trim())}</div>`;
+    return `<p>${escapeHtml(block.trim())}</p>`;
+  }).join('');
+}
+// Mahabang notes: hanggang ~6 na linya muna, may See more.
+function _clipTpNotes(){
+  const box = document.getElementById('tpNotesBox'), btn = document.getElementById('tpNotesMore');
+  if(!box || !btn) return;
+  box.classList.remove('clipped', 'open');
+  const long = box.scrollHeight > 170;
+  btn.hidden = !long;
+  if(long){ box.classList.add('clipped'); btn.textContent = 'See more'; }
+}
+function toggleTpNotes(){
+  const box = document.getElementById('tpNotesBox'), btn = document.getElementById('tpNotesMore');
+  if(!box || !btn) return;
+  const open = !box.classList.contains('open');
+  box.classList.toggle('open', open);
+  box.classList.toggle('clipped', !open);
+  btn.textContent = open ? 'See less' : 'See more';
 }
 
 // Reuses deleteDrawer()'s confirm+delete+balance-adjust logic without
@@ -31604,7 +31640,7 @@ function renderNotifFabPanel(){
   const counts = {}; rows.forEach(r => { counts[r.type] = (counts[r.type] || 0) + 1; });
   const econOn = _econNotifyOn();
   p.innerHTML = `
-    <div class="nf-head"><b>Notifications</b><button class="nf-x" onclick="toggleNotifFab(false)" aria-label="Close">✕</button></div>
+    <div class="nf-head"><b>Notifications</b><span class="nf-head-r">${rows.some(r => r.isNew) ? `<button class="nf-markall" onclick="markAllNotifRead()">Mark all read</button>` : ''}<button class="nf-x" onclick="toggleNotifFab(false)" aria-label="Close">✕</button></span></div>
     <div class="nf-filters">
       <select class="nf-select" aria-label="Show" onchange="setNfFilter('type', this.value)">
         ${NF_TYPES.map(([k, l]) => `<option value="${k}" ${f.type === k ? 'selected' : ''}>${l}${k === 'all' ? ` (${rows.length})` : counts[k] ? ` (${counts[k]})` : ''}</option>`).join('')}
@@ -31629,6 +31665,14 @@ function renderNotifFabPanel(){
     btn.classList.toggle('on', !!sub);
     btn.innerHTML = `📱 Phone notifications: <b>${sub ? 'On' : 'Off'}</b>`;
   });
+}
+// Lahat ay "nabasa na": nawawala ang bilang sa 🔔 at ang tanda ng bago.
+function markAllNotifRead(){
+  const now = Date.now();
+  _nfPrevSeen = now;
+  try{ localStorage.setItem(NOTIF_SEEN_KEY, String(now)); }catch(e){}
+  _renderNotifFab();
+  renderNotifFabPanel();
 }
 function toggleNotifFab(force){
   const p = document.getElementById('notifFabPanel');
