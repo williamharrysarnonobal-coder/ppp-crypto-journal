@@ -5417,4 +5417,21 @@ button.nf-sec:hover{color:var(--ink);}
 .nf-table td:nth-child(2){font-weight:600;white-space:nowrap;}
 .nf-table td:last-child{color:var(--muted);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .nf-table tbody tr{cursor:pointer;}
-.nf-table tbody tr:hover td{background:var(--surface-2);}
+.nf-table tbody tr:hover td{background:var(--surface-2);}/* 🔔 table na may filter */
+.nf-filters{display:flex;align-items:center;gap:12px;padding:4px 16px 10px;}
+.nf-select{flex:1;min-width:0;font:inherit;font-size:12.5px;padding:6px 28px 6px 10px;border-radius:8px;border:1px solid var(--rule);background-color:var(--surface-2);color:var(--ink);cursor:pointer;
+  -webkit-appearance:none;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%2393989F' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;}
+.nf-only{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--ink);white-space:nowrap;cursor:pointer;}
+.nf-main td{white-space:normal !important;max-width:none !important;overflow:visible !important;}
+.nf-main td:first-child{width:70px;}
+.nf-main td:nth-child(2){width:1%;}
+.nf-main td b{display:block;font-size:12.5px;font-weight:600;color:var(--ink);}
+.nf-main td small{display:block;font-size:11px;color:var(--muted);margin-top:1px;}
+.nf-main .nf-when{color:var(--accent);font-weight:700;}
+.nf-main tr.todo .nf-when{color:var(--info, #5B8DEF);}
+.nf-main tr.new td:first-child{box-shadow:inset 3px 0 0 var(--accent);}
+.nf-type{display:inline-block;font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:99px;background:var(--surface-2);color:var(--muted);white-space:nowrap;}
+.nf-type.t-market{color:var(--accent);} .nf-type.t-news{color:var(--loss);} .nf-type.t-alerts{color:var(--win);}
+.nf-type.t-challenges{color:var(--accent);} .nf-type.t-trades{color:var(--info, #5B8DEF);}.notif-fab-panel{width:min(450px, calc(100vw - 32px));}
+.nf-main td:first-child{white-space:nowrap !important;width:auto;}
+.nf-main .nf-when{white-space:nowrap;}

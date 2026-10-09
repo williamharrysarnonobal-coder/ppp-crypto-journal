@@ -31555,64 +31555,79 @@ function _notifComingUp(now){
   return items.filter(x => { const k = x.title + x.t; if(seen.has(k)) return false; seen.add(k); return true; })
     .sort((a, b) => a.t - b.t).slice(0, 8);
 }
-/* Bawat seksyon ay puwedeng i-collapse (▾/▸); naaalala sa device. */
-const NF_COLLAPSE_KEY = 'tanaydana-nf-collapsed';
-function _nfCollapsed(){ try{ return JSON.parse(localStorage.getItem(NF_COLLAPSE_KEY) || '{}') || {}; }catch(e){ return {}; } }
-function toggleNfSection(id){
-  const c = _nfCollapsed(); c[id] = !c[id];
-  try{ localStorage.setItem(NF_COLLAPSE_KEY, JSON.stringify(c)); }catch(e){}
+/* ANG 🔔 BILANG ISANG TABLE. Isang listahan: ang paparating sa itaas ("in
+   2h"), ang mga gagawin (trade na kulang), tapos ang lumabas na ngayong araw.
+   May filter ayon sa klase at "Only new" (ang hindi pa nakita bago mo binuksan
+   ang panel). Naaalala ang pinili sa device. */
+const NF_FILTER_KEY = 'tanaydana-nf-filter';
+const NF_TYPES = [['all', 'All'], ['market', 'Market Hours'], ['news', 'News'], ['alerts', 'Trade Alerts'],
+  ['challenges', 'Challenges'], ['reminders', 'Reminders'], ['trades', 'Trades to finish']];
+let _nfPrevSeen = 0;
+function _nfFilter(){ try{ return { type: 'all', onlyNew: false, ...(JSON.parse(localStorage.getItem(NF_FILTER_KEY) || '{}') || {}) }; }catch(e){ return { type: 'all', onlyNew: false }; } }
+function setNfFilter(k, v){
+  const f = _nfFilter(); f[k] = v;
+  try{ localStorage.setItem(NF_FILTER_KEY, JSON.stringify(f)); }catch(e){}
   renderNotifFabPanel();
 }
+function _nfTypeOf(k){
+  const kind = String(k || '').split(':')[0];
+  if(kind.startsWith('mh-')) return 'market';
+  if(kind.startsWith('econ')) return 'news';
+  if(kind === 'alerts' || kind === 'alertsbatch') return 'alerts';
+  if(kind === 'challenge') return 'challenges';
+  if(kind === 'journal-incomplete') return 'trades';
+  return 'reminders';
+}
+const NF_TYPE_LABEL = { market: 'Market', news: 'News', alerts: 'Alert', challenges: 'Challenge', reminders: 'Reminder', trades: 'Trade' };
 function renderNotifFabPanel(){
   const p = document.getElementById('notifFabPanel');
   if(!p) return;
   const now = Date.now();
   const today = _mhDayIso(now);
-  const up = _notifComingUp(now);
-  const todays = _notifLog().filter(x => _mhDayIso(x.ts) === today).reverse();
-  // Ang Trade Alerts ay sariling grupo (table); ang "N new trade alerts" na
-  // popup ay hindi na inuulit dito.
-  const isAlert = x => String(x.k || '').startsWith('alerts:');
-  const alerts = todays.filter(isAlert);
-  const earlier = todays.filter(x => !isAlert(x) && !String(x.k || '').startsWith('alertsbatch:'));
-  const inc = typeof getIncompleteTrades === 'function' ? getIncompleteTrades() : [];
+  const f = _nfFilter();
+  const rows = [];
+  // Paparating
+  _notifComingUp(now).forEach(x => rows.push({ type: x.kind === 'econ' ? 'news' : 'market', title: x.title,
+    detail: x.kind === 'econ' ? 'High impact' : '', when: `in ${_mhLeft(x.t - now)}`, time: _mhTime(x.t, _mhDayIso(x.t) !== today),
+    go: `switchView('${x.kind === 'econ' ? 'news' : 'hours'}')`, up: true, isNew: false }));
+  // Mga gagawin
+  (typeof getIncompleteTrades === 'function' ? getIncompleteTrades() : []).forEach(t => rows.push({ type: 'trades',
+    title: `${t.symbol || 'Trade'} needs details`, detail: (getMissingFieldLabels(t) || []).join(', '), when: 'To do', time: '—',
+    go: `goToTradeFromNotif(${JSON.stringify(t.position_id).replace(/"/g, '&quot;')})`, todo: true, isNew: false }));
+  // Lumabas na ngayong araw (ang "N new trade alerts" na popup ay buod lang — ang bawat alert ay may sariling hilera)
+  _notifLog().filter(x => _mhDayIso(x.ts) === today && !String(x.k || '').startsWith('alertsbatch:')).reverse().forEach(x => {
+    const v = _notifViewOf(x.k);
+    rows.push({ type: _nfTypeOf(x.k), title: String(x.title).replace(/^New trade alert:\s*/, ''), detail: x.body || '',
+      when: '', time: _mhTime(x.ts), go: v ? `switchView('${v}')` : '', isNew: x.ts > _nfPrevSeen });
+  });
+  const shown = rows.filter(r => (f.type === 'all' || r.type === f.type) && (!f.onlyNew || r.isNew));
+  const counts = {}; rows.forEach(r => { counts[r.type] = (counts[r.type] || 0) + 1; });
   const econOn = _econNotifyOn();
-  const col = _nfCollapsed();
-  const sec = (id, label, count, body) => `
-    <button class="nf-sec" onclick="toggleNfSection('${id}')" aria-expanded="${!col[id]}">
-      <span class="nf-caret">${col[id] ? '▸' : '▾'}</span>${label}${count ? ` <span class="nf-count">${count}</span>` : ''}</button>
-    ${col[id] ? '' : body}`;
   p.innerHTML = `
     <div class="nf-head"><b>Notifications</b><button class="nf-x" onclick="toggleNotifFab(false)" aria-label="Close">✕</button></div>
-    ${sec('up', 'Coming up', up.length, up.length ? up.map(x => `<button class="nf-item" onclick="toggleNotifFab(false); switchView('${x.kind === 'econ' ? 'news' : 'hours'}')">
-        <span class="nf-dot ${x.kind === 'econ' ? 'hi' : ''}"></span><span class="nf-t"><b>${escapeHtml(x.title)}</b><small>${_mhTime(x.t, _mhDayIso(x.t) !== today)}${x.kind === 'econ' ? ' · High impact' : ''}</small></span>
-        <span class="nf-in">in ${_mhLeft(x.t - now)}</span></button>`).join('')
-      : '<div class="nf-empty">Nothing in the next 24 hours. Turn on 🔔 for a market in Market Hours.</div>')}
-    ${inc.length ? sec('inc', 'Needs attention', inc.length, `
-        ${inc.slice(0, 4).map(t => `<button class="nf-item" onclick='toggleNotifFab(false); goToTradeFromNotif(${JSON.stringify(t.position_id)})'>
-          <span class="nf-dot warn"></span><span class="nf-t"><b>${escapeHtml(t.symbol || 'Trade')} needs details</b><small>${escapeHtml((getMissingFieldLabels(t) || []).join(', '))}</small></span></button>`).join('')}
-        ${inc.length > 4 ? `<button class="nf-item" onclick="toggleNotifFab(false); switchView('journal')"><span class="nf-t"><small>+${inc.length - 4} more in Trade Journals →</small></span></button>` : ''}`) : ''}
-    ${alerts.length ? sec('alerts', 'Trade alerts today', alerts.length, `
-      <div class="nf-table-wrap"><table class="nf-table">
-        <thead><tr><th>Time</th><th>Setup</th><th>Detail</th></tr></thead>
-        <tbody>${alerts.slice(0, 30).map(x => `<tr onclick="toggleNotifFab(false); switchView('alerts')">
-          <td>${escapeHtml(_mhTime(x.ts))}</td><td>${escapeHtml(String(x.title).replace(/^New trade alert:\s*/, ''))}</td><td>${escapeHtml(x.body || '')}</td></tr>`).join('')}</tbody>
-      </table></div>
-      ${alerts.length > 30 ? `<button class="nf-item" onclick="toggleNotifFab(false); switchView('alerts')"><span class="nf-t"><small>+${alerts.length - 30} more in Trade Alerts →</small></span></button>` : ''}`) : ''}
-    ${sec('earlier', 'Earlier today', earlier.length, earlier.length ? earlier.slice(0, 15).map(x => { const v = _notifViewOf(x.k); return `<button class="nf-item past" ${v ? `onclick="toggleNotifFab(false); switchView('${v}')"` : 'disabled'}>
-        <span class="nf-t"><b>${escapeHtml(x.title)}</b><small>${escapeHtml(_mhTime(x.ts))}${x.body ? ' · ' + escapeHtml(x.body) : ''}</small></span></button>`; }).join('')
-      : '<div class="nf-empty">No notifications yet today.</div>')}
+    <div class="nf-filters">
+      <select class="nf-select" aria-label="Show" onchange="setNfFilter('type', this.value)">
+        ${NF_TYPES.map(([k, l]) => `<option value="${k}" ${f.type === k ? 'selected' : ''}>${l}${k === 'all' ? ` (${rows.length})` : counts[k] ? ` (${counts[k]})` : ''}</option>`).join('')}
+      </select>
+      <label class="nf-only"><input type="checkbox" ${f.onlyNew ? 'checked' : ''} onchange="setNfFilter('onlyNew', this.checked)"> Only new</label>
+    </div>
+    <div class="nf-table-wrap">${shown.length ? `<table class="nf-table nf-main">
+      <thead><tr><th>Time</th><th>Type</th><th>Notification</th></tr></thead>
+      <tbody>${shown.slice(0, 60).map(r => `<tr class="${r.up ? 'up' : ''}${r.todo ? ' todo' : ''}${r.isNew ? ' new' : ''}" ${r.go ? `onclick="toggleNotifFab(false); ${r.go}"` : ''}>
+        <td>${escapeHtml(r.time)}${r.when ? `<small class="nf-when">${escapeHtml(r.when)}</small>` : ''}</td>
+        <td><span class="nf-type t-${r.type}">${NF_TYPE_LABEL[r.type]}</span></td>
+        <td><b>${escapeHtml(r.title)}</b>${r.detail ? `<small>${escapeHtml(r.detail)}</small>` : ''}</td></tr>`).join('')}</tbody>
+    </table>` : `<div class="nf-empty">${f.onlyNew ? 'Nothing new.' : 'Nothing here today.'}</div>`}</div>
     <div class="nf-foot">
       <button class="nf-toggle" id="nfPushBtn" onclick="togglePush()">📱 Phone notifications: <b>…</b></button>
       <button class="nf-toggle${econOn ? ' on' : ''}" onclick="toggleEconNotify()">${econOn ? '🔔' : '🔕'} High impact news, 15 min before: <b>${econOn ? 'On' : 'Off'}</b></button>
       <button class="nf-link" onclick="toggleNotifFab(false); switchView('hours')">Market Hours →</button>
     </div>`;
-  // Ang estado ng phone push ay galing sa service worker (async).
   if(typeof _pushCurrent === 'function') _pushCurrent().then(sub => {
-    const b = document.getElementById('nfPushBtn');
-    if(!b) return;
-    b.classList.toggle('on', !!sub);
-    b.innerHTML = `📱 Phone notifications: <b>${sub ? 'On' : 'Off'}</b>`;
+    const btn = document.getElementById('nfPushBtn');
+    if(!btn) return;
+    btn.classList.toggle('on', !!sub);
+    btn.innerHTML = `📱 Phone notifications: <b>${sub ? 'On' : 'Off'}</b>`;
   });
 }
 function toggleNotifFab(force){
@@ -31622,6 +31637,7 @@ function toggleNotifFab(force){
   p.hidden = !open;
   document.getElementById('notifFab')?.setAttribute('aria-expanded', String(open));
   if(open){
+    try{ _nfPrevSeen = Number(localStorage.getItem(NOTIF_SEEN_KEY)) || 0; }catch(e){ _nfPrevSeen = 0; }
     renderNotifFabPanel();
     try{ localStorage.setItem(NOTIF_SEEN_KEY, String(Date.now())); }catch(e){}
     _renderNotifFab();
@@ -31637,6 +31653,8 @@ function toggleEconNotify(){
 document.addEventListener('click', e => {
   const p = document.getElementById('notifFabPanel');
   if(!p || p.hidden) return;
+  // Ang pinindot na napalitan na ng bagong render ay wala na sa page — hindi iyon click sa labas.
+  if(!e.target.isConnected) return;
   if(e.target.closest && (e.target.closest('#notifFabPanel') || e.target.closest('#notifFab'))) return;
   p.hidden = true;
 });
