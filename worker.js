@@ -19,10 +19,15 @@ export default {
     if (url.pathname === '/api/transcribe') return handleTranscribe(request, env);
     if (url.pathname === '/api/economic-events') return handleEconomicEvents(request);
     if (url.pathname === '/api/volume') return handleVolume(request, url);
+    if (url.pathname === '/api/push-test') return handlePushTest(request, env);
     const up = url.pathname.match(/^\/api\/upscale\/(check|link|unlink|quote|order|cancel|status|move_be)$/);
     if (up) return handleUpscale(request, env, up[1]);
     // Everything else is the site itself.
     return serveAsset(request, env);
+  },
+  // Bawat minuto (wrangler.toml → [triggers]): ang phone push na takdang oras na.
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(runPushCron(env, event.scheduledTime).catch(e => console.error('push cron', e)));
   }
 };
 
@@ -652,5 +657,229 @@ function json(body, status = 200) {
       // A transcript is one-off and personal; nothing should cache it.
       'Cache-Control': 'no-store'
     }
+  });
+}
+
+
+/* ======================== PHONE PUSH ========================
+   Ang notification na dumarating sa phone kahit sarado ang Tanaydana.
+
+   Ang bawat device na nag-on ay may hilera sa push_subscriptions (isinulat
+   ng browser mismo, may RLS). Bawat minuto, binabasa ng cron na ito ang lahat
+   gamit ang SUPABASE_SERVICE_ROLE_KEY at ipinapadala ang takdang oras na:
+     - market na naka-🔔: 30 minuto bago bumukas, at pagsara
+     - High impact news: 15 minuto bago
+     - Daily Plan sa umaga at review sa gabi, kapag hindi pa nagagawa
+   Ang mensahe ay naka-encrypt para sa device lang (RFC 8291) at pirmado ng
+   VAPID key (RFC 8292). Ang device na wala na (404/410) ay binubura.
+
+   Cloudflare → Workers → ppp-crypto-journal → Settings → Variables and Secrets:
+     SUPABASE_SERVICE_ROLE_KEY   (Supabase → Project Settings → API → service_role)
+     VAPID_PRIVATE_KEY           (ang JWK na ibinigay kasama ng feature na ito)
+   Ang public key ay nasa VAPID_PUBLIC sa ibaba at sa dashboard.js — pampubliko
+   ito ayon sa disenyo. */
+const VAPID_PUBLIC = 'BIM-dsB8ahQUIqnmz8PMvOrVh1_MgeGiKCkc4TVnD74PlJc11ZmVJXfQtPcIQvs_SHGmKDSlDP8Cdq9cBfA7ruk';
+const VAPID_SUBJECT = 'mailto:support@tanaydana.com';
+
+// Kapareho ng MARKET_HOURS sa dashboard.js (oras sa sariling orasan ng market).
+const PUSH_MARKETS = {
+  sydney:  { name: 'Sydney',              tz: 'Australia/Sydney', from: 7,   dur: 9,   days: [1, 2, 3, 4, 5] },
+  tokyo:   { name: 'Tokyo · Asia',        tz: 'Asia/Tokyo',       from: 9,   dur: 9,   days: [1, 2, 3, 4, 5] },
+  london:  { name: 'London',              tz: 'Europe/London',    from: 8,   dur: 9,   days: [1, 2, 3, 4, 5] },
+  newyork: { name: 'New York',            tz: 'America/New_York', from: 8,   dur: 9,   days: [1, 2, 3, 4, 5] },
+  overlap: { name: 'London + NY Overlap', overlap: ['london', 'newyork'] },
+  nyse:    { name: 'US stock market',     tz: 'America/New_York', from: 9.5, dur: 6.5, days: [1, 2, 3, 4, 5] },
+  gold:    { name: 'Gold (XAU/USD)',      tz: 'America/New_York', from: 18,  dur: 23,  days: [0, 1, 2, 3, 4] }
+};
+const _WD = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+
+function _pzOffset(tz, at) {
+  const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', {
+    timeZone: tz, hour12: false, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'
+  }).formatToParts(at).map(x => [x.type, x.value]));
+  const asUTC = Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour % 24, +p.minute);
+  return Math.round((asUTC - Math.floor(at.getTime() / 60000) * 60000) / 60000) / 60;
+}
+function _pzLocalToUtc(tz, y, mo, d, hours) {
+  const guess = Date.UTC(y, mo, d) + hours * 3600000;
+  const off = _pzOffset(tz, new Date(guess));
+  let t = guess - off * 3600000;
+  const off2 = _pzOffset(tz, new Date(t));
+  if (off2 !== off) t = guess - off2 * 3600000;
+  return t;
+}
+function pushMarketIntervals(id, fromMs, toMs) {
+  const m = PUSH_MARKETS[id];
+  if (!m) return [];
+  if (m.overlap) {
+    const a = pushMarketIntervals(m.overlap[0], fromMs, toMs), b = pushMarketIntervals(m.overlap[1], fromMs, toMs);
+    const out = [];
+    a.forEach(x => b.forEach(y => { const s = Math.max(x[0], y[0]), e = Math.min(x[1], y[1]); if (e > s) out.push([s, e]); }));
+    return out;
+  }
+  const fmt = new Intl.DateTimeFormat('en-US', { timeZone: m.tz, year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'short' });
+  const seen = new Set(), out = [];
+  for (let t = fromMs - 2 * 86400000; t < toMs + 86400000; t += 86400000) {
+    const p = Object.fromEntries(fmt.formatToParts(new Date(t)).map(x => [x.type, x.value]));
+    const key = `${p.year}-${p.month}-${p.day}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    if (!m.days.includes(_WD[p.weekday])) continue;
+    const s = _pzLocalToUtc(m.tz, +p.year, +p.month - 1, +p.day, m.from), e = s + m.dur * 3600000;
+    if (e > fromMs && s < toMs) out.push([s, e]);
+  }
+  return out.sort((x, y) => x[0] - y[0]);
+}
+const _pzTime = (ms, tz) => new Date(ms).toLocaleTimeString('en-US', { timeZone: tz || 'Asia/Dubai', hour: 'numeric', minute: '2-digit' });
+
+// Ano ang dapat ipadala sa minutong ito [minute, minute + 60s) para sa isang device.
+function pushMarketMessages(prefs, minute) {
+  if (prefs.market === false) return [];
+  const tz = prefs.tz || 'Asia/Dubai';
+  const out = [];
+  (prefs.markets || []).forEach(id => {
+    const m = PUSH_MARKETS[id];
+    if (!m) return;
+    pushMarketIntervals(id, minute - 86400000, minute + 86400000).forEach(([s, e]) => {
+      const pre = s - 30 * 60000;
+      if (pre >= minute && pre < minute + 60000)
+        out.push({ title: `${m.name} opens in 30 min`, body: `At ${_pzTime(s, tz)} your time.`, tag: `mh-${id}-pre`, url: 'dashboard.html#view=hours' });
+      if (e >= minute && e < minute + 60000)
+        out.push({ title: id === 'gold' ? 'Gold: daily break / close' : `${m.name} is now closed`, body: `Closed at ${_pzTime(e, tz)} your time.`, tag: `mh-${id}-close`, url: 'dashboard.html#view=hours' });
+    });
+  });
+  return out;
+}
+function pushNewsMessages(prefs, events, minute) {
+  if (prefs.news === false) return [];
+  const tz = prefs.tz || 'Asia/Dubai';
+  return events.filter(e => {
+    if (String(e.impact || '').toLowerCase() !== 'high') return false;
+    const pre = new Date(e.event_date).getTime() - 15 * 60000;
+    return pre >= minute && pre < minute + 60000;
+  }).map(e => {
+    const t = new Date(e.event_date).getTime();
+    const bits = [`At ${_pzTime(t, tz)} your time`, e.forecast != null && e.forecast !== '' ? `Forecast ${e.forecast}` : '', e.previous != null && e.previous !== '' ? `Previous ${e.previous}` : ''].filter(Boolean);
+    return { title: `${e.country ? e.country + ' ' : ''}${e.title} in 15 min`, body: bits.join(' · '), tag: `econ-${t}`, url: 'dashboard.html#view=news' };
+  });
+}
+// Ang lokal na oras na "HH:MM" at petsa ng device sa sarili nitong timezone.
+function _pzLocalClock(minute, tz) {
+  const p = Object.fromEntries(new Intl.DateTimeFormat('en-CA', {
+    timeZone: tz, hour12: false, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'
+  }).formatToParts(new Date(minute)).map(x => [x.type, x.value]));
+  return { hm: `${String(+p.hour % 24).padStart(2, '0')}:${p.minute}`, date: `${p.year}-${p.month}-${p.day}` };
+}
+
+async function runPushCron(env, scheduledTime) {
+  if (!env.SUPABASE_SERVICE_ROLE_KEY || !env.VAPID_PRIVATE_KEY) return;
+  const minute = Math.floor((scheduledTime || Date.now()) / 60000) * 60000;
+  const sb = (path, init = {}) => fetch(`${SB_URL}/rest/v1/${path}`, {
+    ...init, headers: { apikey: env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`, 'Content-Type': 'application/json', ...(init.headers || {}) }
+  });
+  const res = await sb('push_subscriptions?select=*');
+  if (!res.ok) return;
+  const subs = await res.json();
+  if (!subs.length) return;
+
+  let events = null;
+  const getEvents = async () => {
+    if (events) return events;
+    try { const r = await handleEconomicEvents(new Request('https://local/api/economic-events')); events = r.ok ? ((await r.json()).events || []) : []; }
+    catch { events = []; }
+    return events;
+  };
+
+  const sends = [];
+  for (const s of subs) {
+    const prefs = s.prefs || {};
+    const msgs = pushMarketMessages(prefs, minute);
+    if (prefs.news !== false) msgs.push(...pushNewsMessages(prefs, await getEvents(), minute));
+    if (prefs.reminders !== false) {
+      const tz = prefs.tz || 'Asia/Dubai';
+      const clock = _pzLocalClock(minute, tz);
+      const wantMorning = prefs.plan !== false && clock.hm === (prefs.morning || '08:00');
+      const wantEvening = prefs.review !== false && clock.hm === (prefs.evening || '21:00');
+      if (wantMorning || wantEvening) {
+        const r = await sb(`daily_plans?user_id=eq.${s.user_id}&plan_date=eq.${clock.date}&select=bias,max_trades,psych,followed,went_well,improve`);
+        const plan = r.ok ? (await r.json())[0] : null;
+        const planned = plan && (plan.bias || plan.max_trades != null || (plan.psych && Object.keys(plan.psych).length));
+        const reviewed = plan && (plan.followed || plan.went_well || plan.improve);
+        if (wantMorning && !planned) msgs.push({ title: 'Plan your day', body: 'Bias, max trades and a quick mindset check before your first trade.', tag: 'rm-plan', url: 'dashboard.html#view=plan' });
+        if (wantEvening && planned && !reviewed) msgs.push({ title: 'Review your day', body: 'Did you follow the plan? Two minutes now saves the lesson.', tag: 'rm-review', url: 'dashboard.html#view=plan' });
+      }
+    }
+    msgs.forEach(m => sends.push(sendWebPush(s, m, env).then(async r => {
+      if (r.status === 404 || r.status === 410) await sb(`push_subscriptions?id=eq.${s.id}`, { method: 'DELETE' });
+    }).catch(e => console.error('push send', e))));
+  }
+  await Promise.all(sends);
+}
+
+// Pagsubok mula sa Configuration: ipinapadala sa lahat ng device ng NAKA-LOGIN na user.
+async function handlePushTest(request, env) {
+  if (request.method !== 'POST') return json({ error: 'POST only.' }, 405);
+  if (!env.SUPABASE_SERVICE_ROLE_KEY || !env.VAPID_PRIVATE_KEY) return json({ error: 'not_configured' }, 503);
+  const auth = request.headers.get('Authorization') || '';
+  const who = await fetch(`${SB_URL}/auth/v1/user`, { headers: { apikey: SB_ANON, Authorization: auth } });
+  if (!who.ok) return json({ error: 'Not signed in.' }, 401);
+  const user = await who.json();
+  const res = await fetch(`${SB_URL}/rest/v1/push_subscriptions?user_id=eq.${user.id}&select=*`, {
+    headers: { apikey: env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}` }
+  });
+  if (!res.ok) return json({ error: 'Could not read devices.' }, 502);
+  const subs = await res.json();
+  const results = await Promise.all(subs.map(s => sendWebPush(s, {
+    title: 'Tanaydana test', body: 'Phone notifications work on this device.', tag: 'test', url: 'dashboard.html#view=hours'
+  }, env).then(r => r.status).catch(() => 0)));
+  return json({ devices: subs.length, sent: results.filter(s => s >= 200 && s < 300).length, statuses: results });
+}
+
+/* ---- Web Push: VAPID (RFC 8292) + aes128gcm (RFC 8291), WebCrypto lang ---- */
+const _b64uDec = s => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((s.length + 3) % 4)), c => c.charCodeAt(0));
+const _b64uEnc = b => btoa(String.fromCharCode(...new Uint8Array(b))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+const _cat = (...arrs) => { const out = new Uint8Array(arrs.reduce((n, a) => n + a.length, 0)); let o = 0; arrs.forEach(a => { out.set(a, o); o += a.length; }); return out; };
+const _utf8 = s => new TextEncoder().encode(s);
+
+async function _hkdf(salt, ikm, info, len) {
+  const key = await crypto.subtle.importKey('raw', ikm, 'HKDF', false, ['deriveBits']);
+  return new Uint8Array(await crypto.subtle.deriveBits({ name: 'HKDF', hash: 'SHA-256', salt, info }, key, len * 8));
+}
+async function vapidJwt(audience, privateJwk) {
+  const header = _b64uEnc(_utf8(JSON.stringify({ typ: 'JWT', alg: 'ES256' })));
+  const claims = _b64uEnc(_utf8(JSON.stringify({ aud: audience, exp: Math.floor(Date.now() / 1000) + 12 * 3600, sub: VAPID_SUBJECT })));
+  const key = await crypto.subtle.importKey('jwk', privateJwk, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']);
+  const sig = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, key, _utf8(`${header}.${claims}`));
+  return `${header}.${claims}.${_b64uEnc(sig)}`;
+}
+async function encryptPushPayload(p256dh, authSecret, plaintext) {
+  const uaPublic = _b64uDec(p256dh), auth = _b64uDec(authSecret);
+  const as = await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits']);
+  const asPublic = new Uint8Array(await crypto.subtle.exportKey('raw', as.publicKey));
+  const uaKey = await crypto.subtle.importKey('raw', uaPublic, { name: 'ECDH', namedCurve: 'P-256' }, false, []);
+  const shared = new Uint8Array(await crypto.subtle.deriveBits({ name: 'ECDH', public: uaKey }, as.privateKey, 256));
+  const ikm = await _hkdf(auth, shared, _cat(_utf8('WebPush: info\0'), uaPublic, asPublic), 32);
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const cek = await _hkdf(salt, ikm, _utf8('Content-Encoding: aes128gcm\0'), 16);
+  const nonce = await _hkdf(salt, ikm, _utf8('Content-Encoding: nonce\0'), 12);
+  const aes = await crypto.subtle.importKey('raw', cek, 'AES-GCM', false, ['encrypt']);
+  const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv: nonce }, aes, _cat(plaintext, new Uint8Array([2]))));
+  const rs = new Uint8Array([0, 0, 16, 0]);   // 4096
+  return _cat(salt, rs, new Uint8Array([asPublic.length]), asPublic, ct);
+}
+async function sendWebPush(sub, message, env) {
+  const jwk = typeof env.VAPID_PRIVATE_KEY === 'string' ? JSON.parse(env.VAPID_PRIVATE_KEY) : env.VAPID_PRIVATE_KEY;
+  const jwt = await vapidJwt(new URL(sub.endpoint).origin, jwk);
+  const body = await encryptPushPayload(sub.p256dh, sub.auth, _utf8(JSON.stringify(message)));
+  return fetch(sub.endpoint, {
+    method: 'POST',
+    headers: {
+      Authorization: `vapid t=${jwt}, k=${VAPID_PUBLIC}`,
+      'Content-Encoding': 'aes128gcm',
+      'Content-Type': 'application/octet-stream',
+      TTL: '3600',
+      Urgency: 'high'
+    },
+    body
   });
 }

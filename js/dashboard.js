@@ -8850,7 +8850,7 @@ function switchConfigTab(tab){
   document.querySelectorAll('#view-config .subnav-item').forEach(el => el.classList.toggle('active', el.dataset.tab === tab));
   document.querySelectorAll('#view-config .subnav-panel').forEach(el => el.classList.toggle('active', el.id === 'configPanel-' + tab));
   if(tab === 'dbstatus') checkDatabaseStatus();
-  if(tab === 'reminders') _fillReminderSettings();
+  if(tab === 'reminders'){ _fillReminderSettings(); if(typeof renderPushSettings === 'function') renderPushSettings(); }
   if(tab === 'backup') _renderLastBackup();
 }
 
@@ -9111,6 +9111,7 @@ const DB_CHECKS = [
   { file:'supabase_trading_journal_chart_shots.sql', what:'Chart screenshots (Higher / Setup / Entry TF)', table:'trading_journal', col:'chart_shots', also:{ table:'position_setups', col:'chart_shots' } },
   { file:'supabase_daily_plans.sql', what:'Daily Plan and the psychology check-in', table:'daily_plans', col:'psych' },
   { file:'supabase_app_visits.sql', what:'Daily Check-in Streak (days you opened the app)', table:'app_visits', col:'visit_date' },
+  { file:'supabase_push_subscriptions.sql', what:'Phone notifications (push)', table:'push_subscriptions', col:'endpoint,prefs' },
   { file:'supabase_trading_journal_add_post_stop_profit.sql', what:'Post-Stop Profit on trades', table:'trading_journal', col:'post_stop_profit_result' },
   { file:'supabase_position_setups_upscale_order.sql', what:'Upscale order on a setup (Order Placed, Cancel)', table:'position_setups', col:'upscale_order_id' },
   { file:'supabase_trading_accounts_upscale_api.sql', what:'Upscale API key on My Accounts', table:'trading_accounts', col:'upscale_account_id,upscale_account_label' }
@@ -31554,37 +31555,65 @@ function _notifComingUp(now){
   return items.filter(x => { const k = x.title + x.t; if(seen.has(k)) return false; seen.add(k); return true; })
     .sort((a, b) => a.t - b.t).slice(0, 8);
 }
+/* Bawat seksyon ay puwedeng i-collapse (▾/▸); naaalala sa device. */
+const NF_COLLAPSE_KEY = 'tanaydana-nf-collapsed';
+function _nfCollapsed(){ try{ return JSON.parse(localStorage.getItem(NF_COLLAPSE_KEY) || '{}') || {}; }catch(e){ return {}; } }
+function toggleNfSection(id){
+  const c = _nfCollapsed(); c[id] = !c[id];
+  try{ localStorage.setItem(NF_COLLAPSE_KEY, JSON.stringify(c)); }catch(e){}
+  renderNotifFabPanel();
+}
 function renderNotifFabPanel(){
   const p = document.getElementById('notifFabPanel');
   if(!p) return;
   const now = Date.now();
   const today = _mhDayIso(now);
   const up = _notifComingUp(now);
-  const earlier = _notifLog().filter(x => _mhDayIso(x.ts) === today).reverse();
+  const todays = _notifLog().filter(x => _mhDayIso(x.ts) === today).reverse();
+  // Ang Trade Alerts ay sariling grupo (table); ang "N new trade alerts" na
+  // popup ay hindi na inuulit dito.
+  const isAlert = x => String(x.k || '').startsWith('alerts:');
+  const alerts = todays.filter(isAlert);
+  const earlier = todays.filter(x => !isAlert(x) && !String(x.k || '').startsWith('alertsbatch:'));
+  const inc = typeof getIncompleteTrades === 'function' ? getIncompleteTrades() : [];
   const econOn = _econNotifyOn();
+  const col = _nfCollapsed();
+  const sec = (id, label, count, body) => `
+    <button class="nf-sec" onclick="toggleNfSection('${id}')" aria-expanded="${!col[id]}">
+      <span class="nf-caret">${col[id] ? '▸' : '▾'}</span>${label}${count ? ` <span class="nf-count">${count}</span>` : ''}</button>
+    ${col[id] ? '' : body}`;
   p.innerHTML = `
     <div class="nf-head"><b>Notifications</b><button class="nf-x" onclick="toggleNotifFab(false)" aria-label="Close">✕</button></div>
-    <div class="nf-sec">Coming up</div>
-    ${up.length ? up.map(x => `<button class="nf-item" onclick="toggleNotifFab(false); switchView('${x.kind === 'econ' ? 'news' : 'hours'}')">
+    ${sec('up', 'Coming up', up.length, up.length ? up.map(x => `<button class="nf-item" onclick="toggleNotifFab(false); switchView('${x.kind === 'econ' ? 'news' : 'hours'}')">
         <span class="nf-dot ${x.kind === 'econ' ? 'hi' : ''}"></span><span class="nf-t"><b>${escapeHtml(x.title)}</b><small>${_mhTime(x.t, _mhDayIso(x.t) !== today)}${x.kind === 'econ' ? ' · High impact' : ''}</small></span>
         <span class="nf-in">in ${_mhLeft(x.t - now)}</span></button>`).join('')
-      : '<div class="nf-empty">Nothing in the next 24 hours. Turn on 🔔 for a market in Market Hours.</div>'}
-    ${(() => {
-      const inc = typeof getIncompleteTrades === 'function' ? getIncompleteTrades() : [];
-      if(!inc.length) return '';
-      return `<div class="nf-sec">Needs attention</div>
+      : '<div class="nf-empty">Nothing in the next 24 hours. Turn on 🔔 for a market in Market Hours.</div>')}
+    ${inc.length ? sec('inc', 'Needs attention', inc.length, `
         ${inc.slice(0, 4).map(t => `<button class="nf-item" onclick='toggleNotifFab(false); goToTradeFromNotif(${JSON.stringify(t.position_id)})'>
           <span class="nf-dot warn"></span><span class="nf-t"><b>${escapeHtml(t.symbol || 'Trade')} needs details</b><small>${escapeHtml((getMissingFieldLabels(t) || []).join(', '))}</small></span></button>`).join('')}
-        ${inc.length > 4 ? `<button class="nf-item" onclick="toggleNotifFab(false); switchView('journal')"><span class="nf-t"><small>+${inc.length - 4} more in Trade Journals →</small></span></button>` : ''}`;
-    })()}
-    <div class="nf-sec">Earlier today</div>
-    ${earlier.length ? earlier.slice(0, 15).map(x => { const v = _notifViewOf(x.k); return `<button class="nf-item past" ${v ? `onclick="toggleNotifFab(false); switchView('${v}')"` : 'disabled'}>
+        ${inc.length > 4 ? `<button class="nf-item" onclick="toggleNotifFab(false); switchView('journal')"><span class="nf-t"><small>+${inc.length - 4} more in Trade Journals →</small></span></button>` : ''}`) : ''}
+    ${alerts.length ? sec('alerts', 'Trade alerts today', alerts.length, `
+      <div class="nf-table-wrap"><table class="nf-table">
+        <thead><tr><th>Time</th><th>Setup</th><th>Detail</th></tr></thead>
+        <tbody>${alerts.slice(0, 30).map(x => `<tr onclick="toggleNotifFab(false); switchView('alerts')">
+          <td>${escapeHtml(_mhTime(x.ts))}</td><td>${escapeHtml(String(x.title).replace(/^New trade alert:\s*/, ''))}</td><td>${escapeHtml(x.body || '')}</td></tr>`).join('')}</tbody>
+      </table></div>
+      ${alerts.length > 30 ? `<button class="nf-item" onclick="toggleNotifFab(false); switchView('alerts')"><span class="nf-t"><small>+${alerts.length - 30} more in Trade Alerts →</small></span></button>` : ''}`) : ''}
+    ${sec('earlier', 'Earlier today', earlier.length, earlier.length ? earlier.slice(0, 15).map(x => { const v = _notifViewOf(x.k); return `<button class="nf-item past" ${v ? `onclick="toggleNotifFab(false); switchView('${v}')"` : 'disabled'}>
         <span class="nf-t"><b>${escapeHtml(x.title)}</b><small>${escapeHtml(_mhTime(x.ts))}${x.body ? ' · ' + escapeHtml(x.body) : ''}</small></span></button>`; }).join('')
-      : '<div class="nf-empty">No notifications yet today.</div>'}
+      : '<div class="nf-empty">No notifications yet today.</div>')}
     <div class="nf-foot">
+      <button class="nf-toggle" id="nfPushBtn" onclick="togglePush()">📱 Phone notifications: <b>…</b></button>
       <button class="nf-toggle${econOn ? ' on' : ''}" onclick="toggleEconNotify()">${econOn ? '🔔' : '🔕'} High impact news, 15 min before: <b>${econOn ? 'On' : 'Off'}</b></button>
       <button class="nf-link" onclick="toggleNotifFab(false); switchView('hours')">Market Hours →</button>
     </div>`;
+  // Ang estado ng phone push ay galing sa service worker (async).
+  if(typeof _pushCurrent === 'function') _pushCurrent().then(sub => {
+    const b = document.getElementById('nfPushBtn');
+    if(!b) return;
+    b.classList.toggle('on', !!sub);
+    b.innerHTML = `📱 Phone notifications: <b>${sub ? 'On' : 'Off'}</b>`;
+  });
 }
 function toggleNotifFab(force){
   const p = document.getElementById('notifFabPanel');
@@ -31764,9 +31793,14 @@ async function _nfCheckAlerts(known){
   const ids = _nfAlerts.map(a => a.id);
   if(!known.alerts){ known.alerts = ids; return; }
   const seen = new Set(known.alerts);
-  _nfAlerts.filter(a => !seen.has(a.id) && !a.seen).reverse().forEach(a => {
-    const first = String(a.message || '').split('\n').find(Boolean) || '';
-    _rmShow(`alerts:${a.id}`, `New trade alert: ${a.setup || a.symbol || 'signal'}`, first.slice(0, 140), () => switchView('alerts'));
+  const fresh = _nfAlerts.filter(a => !seen.has(a.id) && !a.seen).reverse();
+  const firstLine = a => (String(a.message || '').split('\n').find(Boolean) || '').slice(0, 140);
+  if(fresh.length > 2){
+    // Marami nang sabay: bawat isa ay nasa table ng 🔔, pero ISANG popup lang.
+    fresh.forEach(a => _notifLogPush(`alerts:${a.id}`, `New trade alert: ${a.setup || a.symbol || 'signal'}`, firstLine(a)));
+    _rmShow(`alertsbatch:${Date.now()}`, `${fresh.length} new trade alerts`, fresh.slice(-3).map(a => a.setup || a.symbol).filter(Boolean).join(' · '), () => switchView('alerts'));
+  }else fresh.forEach(a => {
+    _rmShow(`alerts:${a.id}`, `New trade alert: ${a.setup || a.symbol || 'signal'}`, firstLine(a), () => switchView('alerts'));
   });
   known.alerts = [...new Set([...ids, ...known.alerts])].slice(0, 300);
 }
@@ -31812,3 +31846,160 @@ try{
     localStorage.setItem('tanaydana-rm-autoon', '1');
   }
 }catch(e){}
+
+
+/* ======================== PHONE PUSH (browser) ========================
+   Kapag naka-on, nagrerehistro ang device sa sw.js at isinusulat ang sarili
+   nitong hilera sa push_subscriptions (endpoint + keys + kung ano ang gusto).
+   Ang Worker (cron, bawat minuto) ang nagpapadala — kahit sarado ang app.
+   Ang iPhone ay kailangang naka-"Add to Home Screen" (iOS 16.4+). */
+const PUSH_VAPID_PUBLIC = 'BIM-dsB8ahQUIqnmz8PMvOrVh1_MgeGiKCkc4TVnD74PlJc11ZmVJXfQtPcIQvs_SHGmKDSlDP8Cdq9cBfA7ruk';
+const PUSH_TYPES_KEY = 'tanaydana-push-types';
+const _pushSupported = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+const _isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const _isStandalone = () => (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
+function _pushTypes(){
+  try{ return { market: true, news: true, reminders: true, ...(JSON.parse(localStorage.getItem(PUSH_TYPES_KEY) || '{}') || {}) }; }
+  catch(e){ return { market: true, news: true, reminders: true }; }
+}
+function _pushPrefs(){
+  const rm = typeof _rmSettings === 'function' ? _rmSettings() : {};
+  return { ..._pushTypes(), markets: [..._mhNotifySet()], morning: rm.morning || '08:00', evening: rm.evening || '21:00',
+    plan: !(rm.types && rm.types.plan === false), review: !(rm.types && rm.types.review === false),
+    tz: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Dubai' };
+}
+const _u8 = b64u => Uint8Array.from(atob(b64u.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((b64u.length + 3) % 4)), c => c.charCodeAt(0));
+async function _pushRegistration(){
+  return navigator.serviceWorker.register('sw.js');
+}
+async function _pushCurrent(){
+  if(!_pushSupported()) return null;
+  try{ const reg = await navigator.serviceWorker.getRegistration('sw.js') || await navigator.serviceWorker.getRegistration(); return reg ? await reg.pushManager.getSubscription() : null; }
+  catch(e){ return null; }
+}
+async function _pushSaveRow(sub){
+  const j = sub.toJSON();
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/push_subscriptions?on_conflict=endpoint`, {
+    method: 'POST',
+    headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}`, "Content-Type": "application/json",
+               "Prefer": "return=minimal,resolution=merge-duplicates" },
+    body: JSON.stringify({ endpoint: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth, prefs: _pushPrefs(),
+      user_agent: navigator.userAgent.slice(0, 200), updated_at: new Date().toISOString() })
+  });
+  if(!res.ok) throw new Error(await res.text());
+}
+async function enablePush(){
+  if(!_pushSupported()){
+    if(_isIOS() && !_isStandalone()) return showPushIosHelp();
+    return customAlert("This browser can't receive push notifications. On Android use Chrome; on iPhone add Tanaydana to your Home Screen first.");
+  }
+  if(_isIOS() && !_isStandalone()) return showPushIosHelp();
+  const perm = await Notification.requestPermission();
+  if(perm !== 'granted') return customAlert('Notifications are blocked for Tanaydana. Allow them in your browser or phone settings, then try again.');
+  try{
+    const reg = await _pushRegistration();
+    await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.getSubscription() || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: _u8(PUSH_VAPID_PUBLIC) });
+    await _pushSaveRow(sub);
+    showToast('Phone notifications on for this device');
+  }catch(e){
+    console.error('push enable', e);
+    const msg = String(e && e.message || e);
+    await customAlert(/push_subscriptions|relation|does not exist|PGRST/i.test(msg)
+      ? 'Run supabase_push_subscriptions.sql in Supabase first (Configuration → Database status shows it).'
+      : "Couldn't turn on phone notifications: " + msg);
+  }
+  renderPushSettings(); if(typeof renderNotifFabPanel === 'function') renderNotifFabPanel();
+}
+async function disablePush(){
+  const sub = await _pushCurrent();
+  if(sub){
+    try{
+      await fetch(`${SUPABASE_URL}/rest/v1/push_subscriptions?endpoint=eq.${encodeURIComponent(sub.endpoint)}`, {
+        method: 'DELETE', headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}` }
+      });
+    }catch(e){}
+    try{ await sub.unsubscribe(); }catch(e){}
+  }
+  showToast('Phone notifications off for this device');
+  renderPushSettings(); if(typeof renderNotifFabPanel === 'function') renderNotifFabPanel();
+}
+async function togglePush(){ (await _pushCurrent()) ? disablePush() : enablePush(); }
+// Kapag nagbago ang 🔔 ng market, ang oras ng Reminders, o ang mga klase.
+let _pushSyncTimer = null;
+function syncPushPrefs(){
+  clearTimeout(_pushSyncTimer);
+  _pushSyncTimer = setTimeout(async () => {
+    const sub = await _pushCurrent();
+    if(!sub || !USER_ACCESS_TOKEN) return;
+    try{
+      await fetch(`${SUPABASE_URL}/rest/v1/push_subscriptions?endpoint=eq.${encodeURIComponent(sub.endpoint)}`, {
+        method: 'PATCH', headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}`, "Content-Type": "application/json", "Prefer": "return=minimal" },
+        body: JSON.stringify({ prefs: _pushPrefs(), updated_at: new Date().toISOString() })
+      });
+    }catch(e){}
+  }, 600);
+}
+function setPushType(k, on){
+  const t = _pushTypes(); t[k] = !!on;
+  try{ localStorage.setItem(PUSH_TYPES_KEY, JSON.stringify(t)); }catch(e){}
+  syncPushPrefs();
+}
+async function sendPushTest(){
+  const btn = document.getElementById('pushTestBtn');
+  if(btn){ btn.disabled = true; btn.textContent = 'Sending…'; }
+  try{
+    const res = await fetch('/api/push-test', { method: 'POST', headers: { Authorization: `Bearer ${USER_ACCESS_TOKEN}` } });
+    const j = await res.json().catch(() => ({}));
+    if(res.status === 503) await customAlert('Phone push is not set up on the server yet: add SUPABASE_SERVICE_ROLE_KEY and VAPID_PRIVATE_KEY in Cloudflare (see the setup note).');
+    else if(!res.ok) await customAlert("Couldn't send the test: " + (j.error || res.status));
+    else if(!j.devices) await customAlert('No device has phone notifications on yet. Turn them on first.');
+    else showToast(`Test sent to ${j.sent} of ${j.devices} device${j.devices === 1 ? '' : 's'}`);
+  }catch(e){ await customAlert("Couldn't send the test: " + (e.message || e)); }
+  if(btn){ btn.disabled = false; btn.textContent = 'Send a test to my phone'; }
+}
+function showPushIosHelp(){
+  showNotifDetail('Add Tanaydana to your Home Screen',
+    `<p style="margin:0 0 8px;">iPhone only sends notifications to web apps on the Home Screen (iOS 16.4 or newer):</p>
+     <ol style="margin:0;padding-left:18px;line-height:1.7;"><li>Open tanaydana.com in <b>Safari</b>.</li><li>Tap <b>Share</b> (the square with the arrow).</li>
+     <li>Tap <b>Add to Home Screen</b>, then <b>Add</b>.</li><li>Open Tanaydana from the new icon and log in.</li>
+     <li>Turn on <b>Phone notifications</b> again and tap <b>Allow</b>.</li></ol>`, null, 'Got it');
+}
+async function renderPushSettings(){
+  const el = document.getElementById('pushSettings');
+  if(!el) return;
+  const sub = await _pushCurrent();
+  const t = _pushTypes();
+  const status = !_pushSupported() && !(_isIOS() && !_isStandalone()) ? "This browser can't receive push notifications."
+    : _isIOS() && !_isStandalone() ? 'On iPhone, add Tanaydana to your Home Screen first.'
+    : sub ? 'On for this device. Arrives even when Tanaydana is closed.' : 'Off for this device.';
+  el.innerHTML = `
+    <div class="push-row"><span class="push-state ${sub ? 'on' : ''}">${sub ? '● On' : '○ Off'}</span><span class="push-msg">${escapeHtml(status)}</span>
+      <button class="${sub ? 'drawer-secondary-btn' : 'ai-btn'}" onclick="togglePush()">${sub ? 'Turn off on this device' : 'Turn on for this device'}</button></div>
+    <div class="rm-list">
+      <label><input type="checkbox" ${t.market ? 'checked' : ''} onchange="setPushType('market', this.checked)"> Market open and close <span>the markets with 🔔 in Market Hours: 30 min before it opens and when it closes</span></label>
+      <label><input type="checkbox" ${t.news ? 'checked' : ''} onchange="setPushType('news', this.checked)"> High impact news <span>15 min before</span></label>
+      <label><input type="checkbox" ${t.reminders ? 'checked' : ''} onchange="setPushType('reminders', this.checked)"> Daily Plan and evening review <span>at your morning and evening times above, only if not done yet</span></label>
+    </div>
+    <div class="rm-actions">${sub ? '<button class="drawer-secondary-btn" id="pushTestBtn" onclick="sendPushTest()">Send a test to my phone</button>' : ''}
+      ${_isIOS() && !_isStandalone() ? '<button class="drawer-secondary-btn" onclick="showPushIosHelp()">How to add to Home Screen</button>' : ''}</div>`;
+}
+// Ang mga dating setting ay nagpapaalam din sa server.
+(() => {
+  const wrap = name => { const f = window[name]; if(typeof f !== 'function') return; window[name] = function(){ const r = f.apply(this, arguments); try{ syncPushPrefs(); }catch(e){} return r; }; };
+  wrap('toggleMarketNotify'); wrap('saveReminderSettings');
+})();
+// Ang pagpindot sa notification ay nagbubukas ng tamang page (#view=hours).
+function _openFromHash(){
+  const m = /^#view=([a-z]+)$/.exec(location.hash || '');
+  if(!m) return;
+  try{ localStorage.setItem('ledger-last-view', m[1]); }catch(e){}
+  history.replaceState(null, '', location.pathname + location.search);
+  if(typeof switchView === 'function' && document.getElementById('view-' + m[1]) && typeof USER_ACCESS_TOKEN !== 'undefined' && USER_ACCESS_TOKEN) switchView(m[1]);
+}
+_openFromHash();
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.addEventListener('message', e => {
+    if(e.data && e.data.type === 'open'){ const u = new URL(e.data.url, location.href); if(u.hash){ location.hash = u.hash; _openFromHash(); } }
+  });
+}

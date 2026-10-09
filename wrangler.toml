@@ -6,3 +6,7 @@ compatibility_date = "2026-07-18"
 directory = "./"
 # Lets worker.js hand every non-API request straight back to the static site.
 binding = "ASSETS"
+
+# Phone push: bawat minuto, ipinapadala ang takdang oras na (worker.js -> scheduled).
+[triggers]
+crons = ["* * * * *"]
