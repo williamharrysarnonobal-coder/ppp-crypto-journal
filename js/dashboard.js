@@ -18078,6 +18078,7 @@ function _shareBlob(canvasId){
   });
 }
 function _shareFileName(canvasId){
+  if(canvasId === 'nfShareCanvas') return `tanaydana-${(_nfShareRow && _nfShareRow.type) || 'notification'}-${_mhDayIso(Date.now())}.png`;
   if(canvasId === 'mhShareCanvas') return `market-hours-${_mhDayIso(Date.now())}.png`;
   if(canvasId === 'calShareCanvas' && _calShareKind === 'year') return `year-${YEAR_OVERVIEW}.png`;
   if(canvasId === 'calShareCanvas'){
@@ -31657,6 +31658,7 @@ const NF_FILTER_KEY = 'tanaydana-nf-filter';
 const NF_TYPES = [['all', 'All'], ['market', 'Market Hours'], ['news', 'News'], ['alerts', 'Trade Alerts'],
   ['challenges', 'Challenges'], ['reminders', 'Reminders'], ['trades', 'Trades to finish']];
 let _nfPrevSeen = 0;
+let _nfShown = [];
 function _nfFilter(){ try{ return { type: 'all', onlyNew: false, ...(JSON.parse(localStorage.getItem(NF_FILTER_KEY) || '{}') || {}) }; }catch(e){ return { type: 'all', onlyNew: false }; } }
 function setNfFilter(k, v){
   const f = _nfFilter(); f[k] = v;
@@ -31695,6 +31697,7 @@ function renderNotifFabPanel(){
       when: x.muted ? 'muted' : '', time: _mhTime(x.ts), go: v ? `switchView('${v}')` : '', isNew: x.ts > _nfPrevSeen && !x.muted, muted: !!x.muted });
   });
   const shown = rows.filter(r => (f.type === 'all' || r.type === f.type) && (!f.onlyNew || r.isNew));
+  _nfShown = shown.slice(0, 60);
   const counts = {}; rows.forEach(r => { counts[r.type] = (counts[r.type] || 0) + 1; });
   const econOn = _econNotifyOn();
   p.innerHTML = `
@@ -31707,11 +31710,12 @@ function renderNotifFabPanel(){
       <label class="nf-only"><input type="checkbox" ${f.onlyNew ? 'checked' : ''} onchange="setNfFilter('onlyNew', this.checked)"> Only new</label>
     </div>
     <div class="nf-table-wrap">${shown.length ? `<table class="nf-table nf-main">
-      <thead><tr><th>Time</th><th>Type</th><th>Notification</th></tr></thead>
+      <thead><tr><th>Time</th><th>Type</th><th>Notification</th><th aria-label="Share"></th></tr></thead>
       <tbody>${shown.slice(0, 60).map(r => `<tr class="${r.up ? 'up' : ''}${r.todo ? ' todo' : ''}${r.isNew ? ' new' : ''}${r.muted ? ' muted' : ''}" ${r.go ? `onclick="toggleNotifFab(false); ${r.go}"` : ''}>
         <td>${escapeHtml(r.time)}${r.when ? `<small class="nf-when">${escapeHtml(r.when)}</small>` : ''}</td>
         <td><span class="nf-type t-${r.type}">${NF_TYPE_LABEL[r.type]}</span></td>
-        <td><b>${escapeHtml(r.title)}</b>${r.detail ? `<small>${escapeHtml(r.detail)}</small>` : ''}</td></tr>`).join('')}</tbody>
+        <td><b>${escapeHtml(r.title)}</b>${r.detail ? `<small>${escapeHtml(r.detail)}</small>` : ''}</td>
+        <td class="nf-share-td"><button class="nf-share" title="Share as an image" aria-label="Share" onclick="event.stopPropagation(); openNotifShare(${_nfShown.indexOf(r)})"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg></button></td></tr>`).join('')}</tbody>
     </table>` : `<div class="nf-empty">${f.onlyNew ? 'Nothing new.' : 'Nothing here today.'}</div>`}</div>`}
     <div class="nf-foot">
       <button class="nf-link" onclick="toggleNotifFab(false); switchView('hours')">Market Hours →</button>
@@ -32121,4 +32125,98 @@ if('serviceWorker' in navigator){
   navigator.serviceWorker.addEventListener('message', e => {
     if(e.data && e.data.type === 'open'){ const u = new URL(e.data.url, location.href); if(u.hash){ location.hash = u.hash; _openFromHash(); } }
   });
+}
+
+
+/* ---------- SHARE NG ISANG NOTIFICATION ----------
+   Larawan (1200×630, bagay sa chat) ng isang hilera sa 🔔, at text na
+   puwedeng i-paste. Iba ang kulay at icon ng bawat klase. */
+let _nfShareRow = null;
+const NF_SHARE_STYLE = {
+  market:     { label: 'Market Hours', emoji: '🕒', color: '#F0B429' },
+  news:       { label: 'High impact news', emoji: '📰', color: '#FF5C5C' },
+  alerts:     { label: 'Trade alert', emoji: '⚡', color: '#2ECC71' },
+  challenges: { label: 'Challenge', emoji: '🏆', color: '#F0B429' },
+  reminders:  { label: 'Reminder', emoji: '📝', color: '#93989F' },
+  trades:     { label: 'Trade to finish', emoji: '📈', color: '#5B8DEF' }
+};
+function _nfShareText(r){
+  const st = NF_SHARE_STYLE[r.type] || NF_SHARE_STYLE.reminders;
+  return [`${st.emoji} ${st.label}: ${r.title}`, r.detail || null,
+    `${r.time}${r.when && r.when !== 'muted' ? ' · ' + r.when : ''} (UAE time)`, 'via Tanaydana'].filter(Boolean).join('\n');
+}
+function _wrapCanvasText(ctx, text, maxW, maxLines){
+  const words = String(text).split(/\s+/), lines = [];
+  let cur = '';
+  words.forEach(w => {
+    const t = cur ? cur + ' ' + w : w;
+    if(ctx.measureText(t).width > maxW && cur){ lines.push(cur); cur = w; } else cur = t;
+  });
+  if(cur) lines.push(cur);
+  if(lines.length > maxLines){
+    lines.length = maxLines;
+    let last = lines[maxLines - 1];
+    while(ctx.measureText(last + '…').width > maxW && last.length > 1) last = last.slice(0, -1);
+    lines[maxLines - 1] = last + '…';
+  }
+  return lines;
+}
+function drawNotifShare(){
+  const cv = document.getElementById('nfShareCanvas'), r = _nfShareRow;
+  if(!cv || !r) return;
+  const ctx = cv.getContext('2d'), W = cv.width, H = cv.height;
+  const st = NF_SHARE_STYLE[r.type] || NF_SHARE_STYLE.reminders;
+  const C = { bg:'#12141C', surf:'#1B1F2B', ink:'#F1EEE6', muted:'#93989F' };
+  const font = (w, s) => `${w} ${s}px "Public Sans", system-ui, sans-serif`;
+  ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = st.color; ctx.fillRect(0, 0, 12, H);
+  // Malaking icon sa kanang itaas, may bilog na kulay ng klase
+  ctx.globalAlpha = 0.14; ctx.fillStyle = st.color;
+  ctx.beginPath(); ctx.arc(W - 150, 150, 96, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1;
+  ctx.font = '96px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(st.emoji, W - 150, 154);
+  ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  const L = 72;
+  ctx.fillStyle = st.color; ctx.font = font(800, 26);
+  ctx.fillText(st.label.toUpperCase(), L, 96);
+  ctx.fillStyle = C.muted; ctx.font = font(600, 26);
+  ctx.fillText(`${r.time}${r.when && r.when !== 'muted' ? '  ·  ' + r.when : ''}`, L, 136);
+  ctx.fillStyle = C.ink; ctx.font = font(800, 60);
+  const tl = _wrapCanvasText(ctx, r.title, W - L - 300, 3);
+  tl.forEach((line, i) => ctx.fillText(line, L, 240 + i * 72));
+  let y = 240 + tl.length * 72 + 8;
+  if(r.detail){
+    ctx.fillStyle = C.muted; ctx.font = font(500, 32);
+    _wrapCanvasText(ctx, r.detail, W - L * 2, 2).forEach((line, i) => ctx.fillText(line, L, y + i * 44));
+  }
+  ctx.fillStyle = C.muted; ctx.font = font(500, 22);
+  ctx.fillText(`${new Date().toLocaleDateString('en-US', { timeZone:'Asia/Dubai', weekday:'short', month:'short', day:'numeric', year:'numeric' })} · UAE time`, L, H - 56);
+  ctx.textAlign = 'right'; ctx.fillStyle = '#F0B429'; ctx.font = font(800, 24);
+  ctx.fillText('TANAYDANA', W - L, H - 56);
+  ctx.textAlign = 'left';
+}
+function openNotifShare(i){
+  const r = _nfShown[i];
+  if(!r) return;
+  // Ang emoji sa umpisa ng title (hal. 🏆) ay nasa icon na ng larawan.
+  _nfShareRow = { ...r, title: String(r.title).replace(/^\p{Extended_Pictographic}\uFE0F?\s*/u, '') };
+  toggleNotifFab(false);
+  document.getElementById('nfShareText').value = _nfShareText(_nfShareRow);
+  document.getElementById('nfShareNativeBtn').style.display = (navigator.canShare && navigator.share) ? '' : 'none';
+  document.getElementById('nfShareModal').classList.add('open');
+  drawNotifShare();
+}
+function closeNotifShare(){ document.getElementById('nfShareModal').classList.remove('open'); }
+async function copyNotifShareText(){
+  try{ await navigator.clipboard.writeText(document.getElementById('nfShareText').value); showToast('Text copied'); }
+  catch(e){ await customAlert("This browser can't copy text here. Select it and copy it by hand."); }
+}
+async function nativeShareNotif(){
+  try{
+    const b = await _shareBlob('nfShareCanvas');
+    const file = new File([b], _shareFileName('nfShareCanvas'), { type: 'image/png' });
+    const text = document.getElementById('nfShareText').value;
+    if(navigator.canShare && navigator.canShare({ files: [file] })) await navigator.share({ files: [file], text });
+    else if(navigator.share) await navigator.share({ text });
+  }catch(e){ /* kinansela */ }
 }
