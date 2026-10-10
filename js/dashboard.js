@@ -20359,6 +20359,7 @@ async function deleteOldAlerts(){
 
 function renderAlertsTables(){
   renderAlertsTableFor('bitcoin');
+  renderAlertsTableFor('gold');
   renderAlertsTableFor('altcoin');
   const label = document.getElementById('alertsCountLabel');
   if(label){
