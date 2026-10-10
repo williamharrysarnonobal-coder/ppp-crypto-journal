@@ -831,6 +831,7 @@ function switchView(view){
   }
   if(view === 'leaderboard') renderLeaderboard();
   if(view === 'hours') openMarketHours();
+  if(view === 'dashboard' && typeof addPanelShareButtons === 'function') setTimeout(() => addPanelShareButtons(document.getElementById('view-dashboard')), 300);
   if(view === 'finance') renderFinance();
   if(view === 'salary'){
     fillSalaryInputs();
@@ -18078,6 +18079,7 @@ function _shareBlob(canvasId){
   });
 }
 function _shareFileName(canvasId){
+  if(canvasId === 'panelShareCanvas') return `tanaydana-${String(_panelShareTitle || 'panel').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}-${_mhDayIso(Date.now())}.png`;
   if(canvasId === 'profShareCanvas') return `tanaydana-trader-card-${_mhDayIso(Date.now())}.png`;
   if(canvasId === 'nfShareCanvas') return `tanaydana-${(_nfShareRow && _nfShareRow.type) || 'notification'}-${_mhDayIso(Date.now())}.png`;
   if(canvasId === 'mhShareCanvas') return `market-hours-${_mhDayIso(Date.now())}.png`;
@@ -32387,3 +32389,82 @@ async function nativeShareProfile(){
     else await downloadShareCard('profShareCanvas');
   }catch(e){ /* kinansela */ }
 }
+
+
+/* ---------- SHARE NG ANUMANG BOX SA DASHBOARD ----------
+   Bawat panel na may title ay may share icon. Kinukunan ng larawan ang mismong
+   box (kasama ang chart) gamit ang html-to-image — kinukuha lang ito sa unang
+   pindot — at nilalagyan ng TANAYDANA at petsa sa ibaba. */
+const PANEL_SHARE_LIB = 'https://cdn.jsdelivr.net/npm/html-to-image@1.11.11/dist/html-to-image.js';
+let _h2iLoading = null, _panelShareTitle = '';
+function _loadHtmlToImage(){
+  if(window.htmlToImage) return Promise.resolve();
+  if(!_h2iLoading) _h2iLoading = new Promise((res, rej) => {
+    const s = document.createElement('script');
+    s.src = PANEL_SHARE_LIB; s.async = true;
+    s.onload = () => res(); s.onerror = () => { _h2iLoading = null; rej(new Error('Could not load the image tool. Check your connection.')); };
+    document.head.appendChild(s);
+  });
+  return _h2iLoading;
+}
+const PANEL_SHARE_ICON = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>';
+function addPanelShareButtons(root){
+  (root || document).querySelectorAll('.panel').forEach(p => {
+    if(p.closest('.panel .panel') && p.parentElement.closest('.panel')) return;   // ang panlabas na box lang
+    const h = p.querySelector('h2');
+    if(!h || h.querySelector('.panel-share') || !h.textContent.trim()) return;
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'panel-share'; b.title = 'Share as an image'; b.setAttribute('aria-label', 'Share ' + h.textContent.trim());
+    b.innerHTML = PANEL_SHARE_ICON;
+    b.onclick = e => { e.preventDefault(); e.stopPropagation(); sharePanel(p, h); };
+    h.appendChild(b);
+  });
+}
+async function sharePanel(panel, h){
+  const title = (h.childNodes[0] && h.childNodes[0].textContent || h.textContent).trim();
+  _panelShareTitle = title;
+  const modal = document.getElementById('panelShareModal'), cv = document.getElementById('panelShareCanvas'), st = document.getElementById('panelShareState');
+  document.getElementById('panelShareName').textContent = title;
+  document.getElementById('panelShareNativeBtn').style.display = (navigator.canShare && navigator.share) ? '' : 'none';
+  st.textContent = 'Making the image…'; st.hidden = false; cv.style.visibility = 'hidden';
+  modal.classList.add('open');
+  try{
+    await _loadHtmlToImage();
+    const css = getComputedStyle(panel);
+    const pageBg = getComputedStyle(document.body).backgroundColor || '#12141C';
+    const shot = await window.htmlToImage.toCanvas(panel, {
+      pixelRatio: 2, cacheBust: true,
+      backgroundColor: css.backgroundColor && css.backgroundColor !== 'rgba(0, 0, 0, 0)' ? css.backgroundColor : pageBg,
+      filter: n => !(n.classList && (n.classList.contains('panel-share') || n.classList.contains('dash-gear')))
+    });
+    const pad = 48, foot = 84;
+    cv.width = shot.width + pad * 2; cv.height = shot.height + pad + foot;
+    const ctx = cv.getContext('2d');
+    ctx.fillStyle = pageBg; ctx.fillRect(0, 0, cv.width, cv.height);
+    ctx.drawImage(shot, pad, pad);
+    const ink = getComputedStyle(document.body).color || '#F1EEE6';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#F0B429'; ctx.font = '800 30px "Public Sans", system-ui, sans-serif';
+    ctx.fillText('TANAYDANA', pad, cv.height - foot / 2);
+    const bw = ctx.measureText('TANAYDANA').width;
+    ctx.fillStyle = ink; ctx.globalAlpha = .6; ctx.font = '500 24px "Public Sans", system-ui, sans-serif';
+    ctx.fillText('trading journal', pad + bw + 14, cv.height - foot / 2);
+    ctx.textAlign = 'right';
+    ctx.fillText(new Date().toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric', year:'numeric' }), cv.width - pad, cv.height - foot / 2);
+    ctx.textAlign = 'left'; ctx.globalAlpha = 1;
+    st.hidden = true; cv.style.visibility = '';
+  }catch(e){
+    console.error('panel share', e);
+    st.textContent = "Couldn't make the image: " + (e && e.message || e);
+  }
+}
+function closePanelShare(){ document.getElementById('panelShareModal').classList.remove('open'); }
+async function nativeSharePanel(){
+  try{
+    const b = await _shareBlob('panelShareCanvas');
+    const file = new File([b], _shareFileName('panelShareCanvas'), { type: 'image/png' });
+    if(navigator.canShare && navigator.canShare({ files: [file] })) await navigator.share({ files: [file] });
+    else await downloadShareCard('panelShareCanvas');
+  }catch(e){ /* kinansela */ }
+}
+setTimeout(() => addPanelShareButtons(document.getElementById('view-dashboard')), 1500);

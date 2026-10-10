@@ -5517,3 +5517,7 @@ body.mobile-mode #dpCalGrid .cal-cell{min-height:54px;}
 .pi-dd-i:last-child{border-bottom:0;}
 @media(max-width:700px){.pi-dd{grid-template-columns:1fr;gap:12px;}}
 body.mobile-mode .pi-dd{grid-template-columns:1fr;gap:12px;}
+/* Share icon sa bawat box ng Dashboard */
+.panel h2 .panel-share{display:inline-flex;align-items:center;justify-content:center;vertical-align:middle;margin-left:8px;width:26px;height:26px;border-radius:7px;border:1px solid transparent;background:none;color:var(--muted);cursor:pointer;padding:0;opacity:.7;}
+.panel h2 .panel-share:hover,.panel h2 .panel-share:focus-visible{opacity:1;color:var(--accent);border-color:var(--rule);background:var(--surface-2);outline:none;}
+#panelShareCanvas{max-width:100%;height:auto;}
