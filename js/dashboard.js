@@ -13415,9 +13415,21 @@ function _finRecStartedBy(r, monthDate){
 // Recurring items on an account that are live for the given month. Every
 // caller passes the month explicitly — a default would quietly bill the wrong
 // one, which is the bug this parameter exists to fix.
+/* At natatapos ito sa huling bill nito: ang installment na 12 bayad na unang
+   nag-bill noong Oct 2025 ay nasa mga statement hanggang Sep 2026 lang. Dati,
+   ang batayan lang ay kung ilang "Paid" na ang napindot — kaya habang hindi pa
+   nababayaran ang September bill (11/12 pa), napupunta rin ang iPhone sa
+   October bill kahit tapos na ang iskedyul nito. */
+function _finRecEndedBefore(r, monthDate){
+  if(r.kind !== 'Installment' || !r.first_bill) return false;
+  const d = new Date(r.first_bill + 'T00:00:00');
+  if(isNaN(d.getTime())) return false;
+  const lastIdx = d.getFullYear() * 12 + d.getMonth() + Math.max(1, Number(r.total_payments) || 1) - 1;
+  return (monthDate.getFullYear() * 12 + monthDate.getMonth()) > lastIdx;
+}
 function _finRecDueIn(accountId, monthDate){
   return FIN_RECURRING.filter(r =>
-    r.account_id === accountId && !_finRecIsFullyPaid(r) && _finRecStartedBy(r, monthDate)
+    r.account_id === accountId && !_finRecIsFullyPaid(r) && _finRecStartedBy(r, monthDate) && !_finRecEndedBefore(r, monthDate)
   );
 }
 
