@@ -5525,3 +5525,7 @@ body.mobile-mode .pi-dd{grid-template-columns:1fr;gap:12px;}
 .mh-card.flash{animation:mhFlash 1.6s ease;}
 @keyframes mhFlash{0%,40%{box-shadow:0 0 0 2px var(--accent);}100%{box-shadow:0 0 0 0 transparent;}}
 @media(prefers-reduced-motion:reduce){.mh-card.flash{animation:none;outline:2px solid var(--accent);}}
+
+/* Trade alert detail: TradingView at Share */
+.alert-actions{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:16px;flex-wrap:wrap;}
+.alert-share-btn{display:inline-flex;align-items:center;gap:6px;}

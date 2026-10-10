@@ -1099,6 +1099,8 @@ async function initApp(){
     if(savedView && savedView !== 'profile' && document.getElementById('view-' + savedView)){
       switchView(savedView);
     }
+    // Ang pinindot na notification sa phone: buksan na ngayong handa ang app.
+    if(typeof _runPendingNotifOpen === 'function') _runPendingNotifOpen();
 
   }catch(e){
     setLoading(100);
@@ -20617,7 +20619,10 @@ function openAlertDetail(id){
   document.getElementById('modalBody').innerHTML = `
     <div style="margin-bottom:14px;white-space:pre-line;">${escapeHtml(s.message) || '—'}</div>
     <div style="margin-bottom:14px;"><strong>Volume:</strong> ${fmtSignalVolume(s.volume)}</div>
-    ${s.tradingview_url ? `<div style="margin-top:16px;"><a href="${s.tradingview_url}" target="_blank" style="color:var(--accent);">View on TradingView →</a></div>` : ''}
+    <div class="alert-actions">
+      ${s.tradingview_url ? `<a href="${s.tradingview_url}" target="_blank" rel="noopener" style="color:var(--accent);">View on TradingView →</a>` : '<span></span>'}
+      <button type="button" class="tp-btn alert-share-btn" onclick="openAlertShare(${s.id})">${PANEL_SHARE_ICON} Share</button>
+    </div>
     ${outcomeBlock}
   `;
   document.getElementById('tradeModal').classList.add('open');
@@ -32132,29 +32137,37 @@ async function renderPushSettings(){
   wrap('toggleMarketNotify'); wrap('saveReminderSettings');
 })();
 // Ang pagpindot sa notification ay nagbubukas ng tamang page (#view=hours).
-function _openFromHash(){
-  const o = /^#open=(.+)$/.exec(location.hash || '');
-  if(o){
-    const key = decodeURIComponent(o[1]);
-    history.replaceState(null, '', location.pathname + location.search);
-    // Hintayin ang login at ang unang render bago buksan.
-    (async () => { const end = Date.now() + 20000;
-      while(Date.now() < end && !(typeof USER_ACCESS_TOKEN !== 'undefined' && USER_ACCESS_TOKEN)) await new Promise(r => setTimeout(r, 300));
-      await new Promise(r => setTimeout(r, 1500));
-      if(typeof openNotifTarget === 'function') openNotifTarget(key);
-    })();
-    return;
-  }
-  const m = /^#view=([a-z]+)$/.exec(location.hash || '');
-  if(!m) return;
+/* PAGBUKAS MULA SA PHONE NOTIFICATION. Ang item (hal. "alerts:77") ay
+   itinatabi at binubuksan PAGKATAPOS mag-load ang app — kung hindi, ang
+   pagbalik ng app sa huling page na binuksan mo ang mananaig. Kapag bukas na
+   ang app, binubuksan agad. */
+let _pendingNotifOpen = null, _appBooted = false;
+function _queueNotifOpen(key){
+  if(_appBooted && typeof USER_ACCESS_TOKEN !== 'undefined' && USER_ACCESS_TOKEN){ openNotifTarget(key); return; }
+  _pendingNotifOpen = key;
+  const v = typeof _notifViewOf === 'function' ? _notifViewOf(key) : null;
+  if(v){ try{ localStorage.setItem('ledger-last-view', v); }catch(e){} }
+}
+function _runPendingNotifOpen(){
+  _appBooted = true;
+  const k = _pendingNotifOpen;
+  _pendingNotifOpen = null;
+  if(k) setTimeout(() => openNotifTarget(k), 300);
+}
+function _openFromHash(hash){
+  hash = hash || location.hash || '';
+  const o = /^#open=(.+)$/.exec(hash);
+  const m = /^#view=([a-z]+)$/.exec(hash);
+  if(!o && !m) return;
+  if(hash === location.hash) history.replaceState(null, '', location.pathname + location.search);
+  if(o){ _queueNotifOpen(decodeURIComponent(o[1])); return; }
   try{ localStorage.setItem('ledger-last-view', m[1]); }catch(e){}
-  history.replaceState(null, '', location.pathname + location.search);
-  if(typeof switchView === 'function' && document.getElementById('view-' + m[1]) && typeof USER_ACCESS_TOKEN !== 'undefined' && USER_ACCESS_TOKEN) switchView(m[1]);
+  if(_appBooted && document.getElementById('view-' + m[1])) switchView(m[1]);
 }
 _openFromHash();
 if('serviceWorker' in navigator){
   navigator.serviceWorker.addEventListener('message', e => {
-    if(e.data && e.data.type === 'open'){ const u = new URL(e.data.url, location.href); if(u.hash){ location.hash = u.hash; _openFromHash(); } }
+    if(e.data && e.data.type === 'open'){ try{ _openFromHash(new URL(e.data.url, location.href).hash); }catch(err){} }
   });
 }
 
@@ -32561,4 +32574,29 @@ async function openNotifTarget(key){
   if(kind === 'backup'){ switchView('config'); switchConfigTab('backup'); return; }
   if(kind === 'setups'){ switchView('calculator'); return; }
   if(kind === 'journal' || kind === 'incomplete'){ switchView('journal'); return; }
+}
+
+
+/* SHARE NG ISANG TRADE ALERT — kaparehong larawan ng share sa 🔔: ang setup,
+   ang presyo at ang bias, at text na puwedeng i-paste. */
+function openAlertShare(id){
+  const s = (SIGNAL_ALERTS || []).find(x => x.id === id);
+  if(!s) return;
+  const lines = String(s.message || '').split('\n').map(x => x.trim()).filter(Boolean);
+  const price = (lines.find(l => /^price:/i.test(l)) || '').replace(/^price:\s*/i, '');
+  const bias = lines.filter(l => /12H|4H|1H/.test(l) && /[🟢🔴]/u.test(l)).join(' ');
+  _nfShareRow = { type: 'alerts', title: `${s.symbol ? s.symbol + ' · ' : ''}${s.setup || 'Trade alert'}`,
+    detail: [price ? 'Price ' + price : '', bias].filter(Boolean).join('   ·   '),
+    time: s.alert_at ? new Date(s.alert_at).toLocaleString('en-US', { timeZone: 'Asia/Dubai', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '', when: '' };
+  document.getElementById('tradeModal').classList.remove('open');
+  document.getElementById('nfShareText').value = _nfShareText(_nfShareRow) + (s.tradingview_url ? '\n' + s.tradingview_url : '');
+  document.getElementById('nfShareNativeBtn').style.display = (navigator.canShare && navigator.share) ? '' : 'none';
+  document.getElementById('nfShareModal').classList.add('open');
+  drawNotifShare();
+}
+
+// Kunin ang bagong sw.js tuwing bubuksan ang app (ang luma ay pinapalitan
+// agad: skipWaiting sa sw.js), para gumana sa phone ang mga ayos sa pagpindot.
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.getRegistration().then(reg => { if(reg) reg.update().catch(() => {}); }).catch(() => {});
 }

@@ -1,6 +1,6 @@
 // Service worker para sa phone push notifications. Ipinapakita ang ipinadala
-// ng Worker (cron) kahit sarado ang Tanaydana, at binubuksan ang tamang page
-// kapag pinindot.
+// ng Worker (cron) kahit sarado ang Tanaydana, at binubuksan ang mismong bagay
+// (hal. ang alert) kapag pinindot.
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));
 
@@ -20,9 +20,16 @@ self.addEventListener('notificationclick', e => {
   e.notification.close();
   const url = new URL(e.notification.data && e.notification.data.url || 'dashboard.html', self.location.origin).href;
   e.waitUntil((async () => {
+    // Anumang bukas na window ng Tanaydana (ang address ay maaaring
+    // /dashboard o /dashboard.html, o ang app sa Home Screen).
     const all = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
-    const open = all.find(c => c.url.includes('/dashboard.html'));
-    if (open) { await open.focus(); open.postMessage({ type: 'open', url }); return; }
+    const open = all.find(c => new URL(c.url).origin === self.location.origin && /\/dashboard/.test(new URL(c.url).pathname))
+      || all.find(c => new URL(c.url).origin === self.location.origin);
+    if (open) {
+      await open.focus();
+      open.postMessage({ type: 'open', url });
+      return;
+    }
     await self.clients.openWindow(url);
   })());
 });
