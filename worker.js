@@ -743,9 +743,9 @@ function pushMarketMessages(prefs, minute) {
     pushMarketIntervals(id, minute - 86400000, minute + 86400000).forEach(([s, e]) => {
       const pre = s - 30 * 60000;
       if (pre >= minute && pre < minute + 60000)
-        out.push({ title: `${m.name} opens in 30 min`, body: `At ${_pzTime(s, tz)} your time.`, tag: `mh-${id}-pre`, url: 'dashboard.html#view=hours' });
+        out.push({ title: `${m.name} opens in 30 min`, body: `At ${_pzTime(s, tz)} your time.`, tag: `mh-${id}-pre`, url: `dashboard.html#open=mh-${id}:pre` });
       if (e >= minute && e < minute + 60000)
-        out.push({ title: id === 'gold' ? 'Gold: daily break / close' : `${m.name} is now closed`, body: `Closed at ${_pzTime(e, tz)} your time.`, tag: `mh-${id}-close`, url: 'dashboard.html#view=hours' });
+        out.push({ title: id === 'gold' ? 'Gold: daily break / close' : `${m.name} is now closed`, body: `Closed at ${_pzTime(e, tz)} your time.`, tag: `mh-${id}-close`, url: `dashboard.html#open=mh-${id}:close` });
     });
   });
   return out;
@@ -760,7 +760,7 @@ function pushNewsMessages(prefs, events, minute) {
   }).map(e => {
     const t = new Date(e.event_date).getTime();
     const bits = [`At ${_pzTime(t, tz)} your time`, e.forecast != null && e.forecast !== '' ? `Forecast ${e.forecast}` : '', e.previous != null && e.previous !== '' ? `Previous ${e.previous}` : ''].filter(Boolean);
-    return { title: `${e.country ? e.country + ' ' : ''}${e.title} in 15 min`, body: bits.join(' · '), tag: `econ-${t}`, url: 'dashboard.html#view=news' };
+    return { title: `${e.country ? e.country + ' ' : ''}${e.title} in 15 min`, body: bits.join(' · '), tag: `econ-${t}`, url: `dashboard.html#open=econ-${t}:pre` };
   });
 }
 // Ang lokal na oras na "HH:MM" at petsa ng device sa sarili nitong timezone.
@@ -790,10 +790,34 @@ async function runPushCron(env, scheduledTime) {
     return events;
   };
 
+  // Bagong Trade Alerts sa nakaraang minuto (isinusulat ng BTC bot sa
+  // signal_alerts). Isang beses kinukuha para sa lahat ng device.
+  let alertMsgs = null;
+  const getAlertMsgs = async () => {
+    if (alertMsgs) return alertMsgs;
+    alertMsgs = [];
+    try {
+      const from = new Date(minute - 60000).toISOString(), to = new Date(minute).toISOString();
+      const r = await sb(`signal_alerts?select=id,symbol,setup,message,alert_at&alert_at=gte.${from}&alert_at=lt.${to}&order=alert_at.asc`);
+      const rows = r.ok ? await r.json() : [];
+      if (rows.length > 2) {
+        alertMsgs = [{ title: `${rows.length} new trade alerts`, body: rows.slice(-3).map(a => a.setup || a.symbol).filter(Boolean).join(' · '), tag: 'alerts', url: 'dashboard.html#view=alerts' }];
+      } else {
+        alertMsgs = rows.map(a => ({
+          title: `Trade alert: ${a.setup || a.symbol || 'signal'}`,
+          body: (String(a.message || '').split('\n').find(Boolean) || '').slice(0, 140),
+          tag: `alert-${a.id}`, url: `dashboard.html#open=alerts:${a.id}`
+        }));
+      }
+    } catch { alertMsgs = []; }
+    return alertMsgs;
+  };
+
   const sends = [];
   for (const s of subs) {
     const prefs = s.prefs || {};
     const msgs = pushMarketMessages(prefs, minute);
+    if (prefs.alerts !== false) msgs.push(...await getAlertMsgs());
     if (prefs.news !== false) msgs.push(...pushNewsMessages(prefs, await getEvents(), minute));
     if (prefs.reminders !== false) {
       const tz = prefs.tz || 'Asia/Dubai';
@@ -805,8 +829,8 @@ async function runPushCron(env, scheduledTime) {
         const plan = r.ok ? (await r.json())[0] : null;
         const planned = plan && (plan.bias || plan.max_trades != null || (plan.psych && Object.keys(plan.psych).length));
         const reviewed = plan && (plan.followed || plan.went_well || plan.improve);
-        if (wantMorning && !planned) msgs.push({ title: 'Plan your day', body: 'Bias, max trades and a quick mindset check before your first trade.', tag: 'rm-plan', url: 'dashboard.html#view=plan' });
-        if (wantEvening && planned && !reviewed) msgs.push({ title: 'Review your day', body: 'Did you follow the plan? Two minutes now saves the lesson.', tag: 'rm-review', url: 'dashboard.html#view=plan' });
+        if (wantMorning && !planned) msgs.push({ title: 'Plan your day', body: 'Bias, max trades and a quick mindset check before your first trade.', tag: 'rm-plan', url: 'dashboard.html#open=plan' });
+        if (wantEvening && planned && !reviewed) msgs.push({ title: 'Review your day', body: 'Did you follow the plan? Two minutes now saves the lesson.', tag: 'rm-review', url: 'dashboard.html#open=review' });
       }
     }
     msgs.forEach(m => sends.push(sendWebPush(s, m, env).then(async r => {

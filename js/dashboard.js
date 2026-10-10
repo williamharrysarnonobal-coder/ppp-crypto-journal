@@ -31651,7 +31651,7 @@ function setNfCategory(type, on){
     try{ localStorage.setItem(NF_MUTE_KEY, JSON.stringify([...s])); }catch(e){}
   }
   if(typeof syncUIPrefsToProfile === 'function') syncUIPrefsToProfile();
-  if(['market', 'news', 'reminders'].includes(type) && typeof setPushType === 'function') setPushType(type, on);
+  if(['market', 'news', 'reminders', 'alerts'].includes(type) && typeof setPushType === 'function') setPushType(type, on);
   try{ if(on && 'Notification' in window && Notification.permission === 'default') Notification.requestPermission(); }catch(e){}
   _renderNotifFab();
   renderNotifFabPanel();
@@ -32000,8 +32000,8 @@ const _pushSupported = () => 'serviceWorker' in navigator && 'PushManager' in wi
 const _isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const _isStandalone = () => (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
 function _pushTypes(){
-  try{ return { market: true, news: true, reminders: true, ...(JSON.parse(localStorage.getItem(PUSH_TYPES_KEY) || '{}') || {}) }; }
-  catch(e){ return { market: true, news: true, reminders: true }; }
+  try{ return { market: true, news: true, reminders: true, alerts: true, ...(JSON.parse(localStorage.getItem(PUSH_TYPES_KEY) || '{}') || {}) }; }
+  catch(e){ return { market: true, news: true, reminders: true, alerts: true }; }
 }
 function _pushPrefs(){
   const rm = typeof _rmSettings === 'function' ? _rmSettings() : {};
@@ -32120,6 +32120,7 @@ async function renderPushSettings(){
     <div class="rm-list">
       <label><input type="checkbox" ${t.market ? 'checked' : ''} onchange="setPushType('market', this.checked)"> Market open and close <span>the markets with 🔔 in Market Hours: 30 min before it opens and when it closes</span></label>
       <label><input type="checkbox" ${t.news ? 'checked' : ''} onchange="setPushType('news', this.checked)"> High impact news <span>15 min before</span></label>
+      <label><input type="checkbox" ${t.alerts ? 'checked' : ''} onchange="setPushType('alerts', this.checked)"> Trade Alerts <span>each new signal from the BTC bot; several at once come as one</span></label>
       <label><input type="checkbox" ${t.reminders ? 'checked' : ''} onchange="setPushType('reminders', this.checked)"> Daily Plan and evening review <span>at your morning and evening times above, only if not done yet</span></label>
     </div>
     <div class="rm-actions">${sub ? '<button class="drawer-secondary-btn" id="pushTestBtn" onclick="sendPushTest()">Send a test to my phone</button>' : ''}
@@ -32132,6 +32133,18 @@ async function renderPushSettings(){
 })();
 // Ang pagpindot sa notification ay nagbubukas ng tamang page (#view=hours).
 function _openFromHash(){
+  const o = /^#open=(.+)$/.exec(location.hash || '');
+  if(o){
+    const key = decodeURIComponent(o[1]);
+    history.replaceState(null, '', location.pathname + location.search);
+    // Hintayin ang login at ang unang render bago buksan.
+    (async () => { const end = Date.now() + 20000;
+      while(Date.now() < end && !(typeof USER_ACCESS_TOKEN !== 'undefined' && USER_ACCESS_TOKEN)) await new Promise(r => setTimeout(r, 300));
+      await new Promise(r => setTimeout(r, 1500));
+      if(typeof openNotifTarget === 'function') openNotifTarget(key);
+    })();
+    return;
+  }
   const m = /^#view=([a-z]+)$/.exec(location.hash || '');
   if(!m) return;
   try{ localStorage.setItem('ledger-last-view', m[1]); }catch(e){}
