@@ -5464,3 +5464,38 @@ button.nf-sec:hover{color:var(--ink);}
 .nf-share{border:0;background:none;color:var(--muted);padding:4px;border-radius:6px;cursor:pointer;display:flex;align-items:center;justify-content:center;}
 .nf-share:hover{color:var(--accent);background:var(--surface-2);}
 .nf-share:focus-visible{outline:2px solid var(--accent);outline-offset:1px;}
+/* 🔔 SA PHONE: nasa itaas katabi ng ☰, hindi lumulutang. Ang panel ay
+   bumubukas mula sa itaas. Sa computer, floating pa rin sa kanang ibaba. */
+.notif-top-btn{display:none;}
+.notif-top-btn .notif-fab-badge{top:-6px;right:-6px;min-width:18px;height:18px;font-size:10px;}
+body.mobile-mode .notif-top-btn{display:flex;}
+body.mobile-mode .notif-fab{display:none;}
+body.mobile-mode .notif-fab-panel{top:calc(62px + env(safe-area-inset-top, 0px));bottom:auto;right:12px;width:calc(100vw - 24px);max-height:calc(100vh - 90px);}
+body.mobile-mode .up-banner-wrap{bottom:calc(16px + env(safe-area-inset-bottom, 0px));}
+@media(max-width:700px){
+  .notif-top-btn{display:flex;}
+  .notif-fab{display:none;}
+  .notif-fab-panel{top:calc(62px + env(safe-area-inset-top, 0px));bottom:auto;right:12px;width:calc(100vw - 24px);max-height:calc(100vh - 90px);}
+  .up-banner-wrap{bottom:calc(16px + env(safe-area-inset-bottom, 0px));}
+}
+/* PLAN CALENDAR SA PHONE: simple lang ang bawat araw — numero at ✓/~/✗,
+   kulay na tuldok para sa bias, at maliit na bilang ng trades. Ang salita ng
+   bias, readiness, mood at $ ay nasa loob ng araw kapag binuksan. */
+body.mobile-mode .dp-cell .dp-bias-t,body.mobile-mode .dp-cell .dp-rd,body.mobile-mode .dp-cell .dp-moodc,body.mobile-mode .dp-cell .dp-tr-usd{display:none;}
+body.mobile-mode .dp-cell{display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:4px;padding:6px 2px;overflow:hidden;}
+body.mobile-mode .dp-cell .d{display:flex;align-items:center;gap:2px;font-size:11px;}
+body.mobile-mode .dp-cell .dp-f{font-size:11px;}
+body.mobile-mode .dp-cell .dp-bias{display:flex;justify-content:center;margin:0;}
+body.mobile-mode .dp-cell .dp-dot{width:9px;height:9px;margin:0;}
+body.mobile-mode .dp-cell .dp-tr{font-size:10px;line-height:1.1;text-align:center;white-space:nowrap;}
+@media(max-width:700px){
+  .dp-cell .dp-bias-t,.dp-cell .dp-rd,.dp-cell .dp-moodc,.dp-cell .dp-tr-usd{display:none;}
+  .dp-cell{display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:4px;padding:6px 2px;overflow:hidden;}
+  .dp-cell .d{display:flex;align-items:center;gap:2px;font-size:11px;}
+  .dp-cell .dp-f{font-size:11px;}
+  .dp-cell .dp-bias{display:flex;justify-content:center;margin:0;}
+  .dp-cell .dp-dot{width:9px;height:9px;margin:0;}
+  .dp-cell .dp-tr{font-size:10px;line-height:1.1;text-align:center;white-space:nowrap;}
+}body.mobile-mode #dpCalGrid{grid-auto-rows:auto;}
+body.mobile-mode #dpCalGrid .cal-cell{min-height:54px;}
+@media(max-width:700px){ #dpCalGrid{grid-auto-rows:auto;} #dpCalGrid .cal-cell{min-height:54px;} }

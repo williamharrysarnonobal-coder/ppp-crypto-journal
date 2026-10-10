@@ -29520,11 +29520,11 @@ function renderPlanCalendar(){
         onkeydown="if(event.key==='Enter') openDailyPlan('${iso}')">
       <div class="d">${d}${f ? `<b class="dp-f ${f[1]}" title="Followed the plan: ${p.followed}">${f[0]}</b>` : ''}</div>
       ${(() => { const r = p ? _psychReadiness(p.psych) : null; return r === null ? '' : `<div class="dp-rd ${_readyTone(r)}" title="Readiness ${r}/100">◉ ${r}</div>`; })()}
-      ${p && p.bias ? `<div class="dp-bias"><i class="dp-dot ${DP_BIAS_CLS[p.bias] || ''}"></i>${escapeHtml(p.bias)}</div>` : ''}
+      ${p && p.bias ? `<div class="dp-bias"><i class="dp-dot ${DP_BIAS_CLS[p.bias] || ''}"></i><span class="dp-bias-t">${escapeHtml(p.bias)}</span></div>` : ''}
       ${(() => { const me = _dpMoodEntry(iso); const mo = me && MOOD_OPTIONS.find(o => o.key === me.mood);
         return mo ? `<div class="dp-moodc" title="Diary: ${escapeHtml(mo.label)}">${mo.emoji}</div>` : ''; })()}
       ${tr.length ? `<div class="dp-tr ${over || noTradeBreak ? 'over' : ''}" title="${escapeHtml(_dpPerAccountText(tr))}${p && p.max_trades != null ? ` · plan: ${p.max_trades} per account` : ''}">
-          ${p && p.max_trades != null ? `${busiest.n}/${p.max_trades}` : tr.length}T <span class="${net >= 0 ? 'pos' : 'neg'}">${net >= 0 ? '+' : '−'}$${Math.abs(net).toFixed(0)}</span></div>` : ''}
+          ${p && p.max_trades != null ? `${busiest.n}/${p.max_trades}` : tr.length}T <span class="dp-tr-usd ${net >= 0 ? 'pos' : 'neg'}">${net >= 0 ? '+' : '−'}$${Math.abs(net).toFixed(0)}</span></div>` : ''}
     </div>`;
   }
   const rem = (firstDow + days) % 7;
@@ -31589,11 +31589,13 @@ function _notifUnseen(){
   return _notifLog().filter(x => x.ts > seen && !x.muted).length;
 }
 function _renderNotifFab(){
-  const b = document.getElementById('notifFabBadge');
-  if(!b) return;
   const n = _notifUnseen();
-  b.textContent = n > 9 ? '9+' : String(n);
-  b.hidden = !n;
+  ['notifFabBadge', 'notifTopBadge'].forEach(id => {
+    const b = document.getElementById(id);
+    if(!b) return;
+    b.textContent = n > 9 ? '9+' : String(n);
+    b.hidden = !n;
+  });
 }
 function _notifComingUp(now){
   const items = [];
@@ -31760,7 +31762,7 @@ document.addEventListener('click', e => {
   if(!p || p.hidden) return;
   // Ang pinindot na napalitan na ng bagong render ay wala na sa page — hindi iyon click sa labas.
   if(!e.target.isConnected) return;
-  if(e.target.closest && (e.target.closest('#notifFabPanel') || e.target.closest('#notifFab'))) return;
+  if(e.target.closest && (e.target.closest('#notifFabPanel') || e.target.closest('#notifFab') || e.target.closest('#notifTopBtn'))) return;
   p.hidden = true;
 });
 setInterval(() => { _renderNotifFab(); const p = document.getElementById('notifFabPanel'); if(p && !p.hidden) renderNotifFabPanel(); }, 30000);
