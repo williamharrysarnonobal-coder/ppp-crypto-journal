@@ -4,7 +4,6 @@ btc_live_bot.py
 crypto_live_bot.py
 economic_calendar_bot.py
 screener_bot.py
-gold_live_bot.py
 *.env
 
 # The bots write their own console output here when run with a redirect
