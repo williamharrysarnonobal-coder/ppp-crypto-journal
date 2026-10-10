@@ -18078,6 +18078,7 @@ function _shareBlob(canvasId){
   });
 }
 function _shareFileName(canvasId){
+  if(canvasId === 'profShareCanvas') return `tanaydana-trader-card-${_mhDayIso(Date.now())}.png`;
   if(canvasId === 'nfShareCanvas') return `tanaydana-${(_nfShareRow && _nfShareRow.type) || 'notification'}-${_mhDayIso(Date.now())}.png`;
   if(canvasId === 'mhShareCanvas') return `market-hours-${_mhDayIso(Date.now())}.png`;
   if(canvasId === 'calShareCanvas' && _calShareKind === 'year') return `year-${YEAR_OVERVIEW}.png`;
@@ -22581,7 +22582,7 @@ async function renderProfile(){
   }catch(e){
     console.error("Couldn't compute rank for profile badge:", e);
   }
-  try{ renderProfileSnapshot(); renderProfileGoals(); }catch(e){ console.error("Couldn't render profile summary:", e); }
+  try{ renderProfileSnapshot(); renderProfileGoals(); renderProfileInsights(); }catch(e){ console.error("Couldn't render profile summary:", e); }
   // Ang goal sa Daily Plan ay kailangan ng mga plano — kunin kung wala pa.
   if(typeof _dpLoaded !== 'undefined' && !_dpLoaded && !renderProfile._dpAsked){
     renderProfile._dpAsked = true;
@@ -32220,5 +32221,169 @@ async function nativeShareNotif(){
     const text = document.getElementById('nfShareText').value;
     if(navigator.canShare && navigator.canShare({ files: [file] })) await navigator.share({ files: [file], text });
     else if(navigator.share) await navigator.share({ text });
+  }catch(e){ /* kinansela */ }
+}
+
+
+/* ---------- PROFILE: ANG SINASABI NG MGA NUMERO ----------
+   Biggest leaks, My edge, at Do / Don't — kinukuwenta nang live mula sa mga
+   tunay na trade. R at bilang ng trade ang batayan, hindi pera (iba-iba ang
+   laki ng account). May pinakamaliit na bilang ang bawat grupo para hindi
+   maging konklusyon ang dalawang trade. */
+const PROF_MIN = 8;
+function _profStats(rows){
+  const dec = rows.filter(t => /^(win|loss|liquidated)$/i.test(String(t.win_loss || '').trim()));
+  const w = dec.filter(t => /^win$/i.test(String(t.win_loss).trim())).length;
+  const Rs = rows.map(t => _tradeR(t)).filter(x => x !== null && x !== undefined && isFinite(x));
+  return { n: rows.length, w, l: dec.length - w, wr: dec.length ? w / dec.length : null,
+    avgR: Rs.length ? Rs.reduce((a, b) => a + b, 0) / Rs.length : null, sumR: Rs.reduce((a, b) => a + b, 0), nR: Rs.length };
+}
+const _profR = v => v === null ? '—' : `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(2)}R`;
+const _profWR = s => s.wr === null ? '—' : `${Math.round(s.wr * 100)}%`;
+const PROF_HOUR_BANDS = [
+  ['before 11am', h => h < 11], ['11am–4pm (London)', h => h >= 11 && h < 16], ['4–5pm (NY open, US news)', h => h >= 16 && h < 17],
+  ['5–8pm (overlap)', h => h >= 17 && h < 20], ['after 8pm (late NY)', h => h >= 20]
+];
+function _profInsights(){
+  const trades = _profTrades();
+  const group = (keyFn) => { const m = {}; trades.forEach(t => { const k = keyFn(t); if(k == null || k === '' || k === 'Unspecified') return; (Array.isArray(k) ? k : [k]).forEach(x => (m[x] = m[x] || []).push(t)); }); return m; };
+  const ranked = (m, min) => Object.entries(m).map(([k, v]) => [k, _profStats(v)]).filter(([, s]) => s.n >= min && s.avgR !== null);
+  // Leaks: ang bawat tag (Rule man o Note) na may pinakamalaking R na nawala.
+  // Hindi kasama ang "Rules Followed" at ang mga tag na kumikita.
+  const leaks = ranked(group(t => _canonicalTags(t.unfollowed_rules).filter(x => _tagKind(x) !== 'sentinel')), 5)
+    .filter(([, s]) => s.sumR < 0).sort((a, b) => a[1].sumR - b[1].sumR).slice(0, 3);
+  const kept = _profStats(trades.filter(t => /^yes$/i.test(t.rules_followed)));
+  const broken = _profStats(trades.filter(t => /^no$/i.test(t.rules_followed)));
+  const sessions = ranked(group(t => t.session), PROF_MIN).sort((a, b) => b[1].avgR - a[1].avgR);
+  const patterns = ranked(group(t => t.pattern_type), PROF_MIN).sort((a, b) => b[1].avgR - a[1].avgR);
+  const hours = ranked(group(t => { const d = t.open_date || t.close_date; if(!d) return null; const h = d.getHours(); const b = PROF_HOUR_BANDS.find(x => x[1](h)); return b ? b[0] : null; }), PROF_MIN).sort((a, b) => b[1].avgR - a[1].avgR);
+  const days = ranked(group(t => (t.open_date || t.close_date) ? (t.open_date || t.close_date).toLocaleDateString('en-US', { weekday: 'long' }) : null), PROF_MIN).sort((a, b) => b[1].avgR - a[1].avgR);
+  return { n: trades.length, leaks, kept, broken, sessions, patterns, hours, days };
+}
+function renderProfileInsights(){
+  const L = document.getElementById('profileLeaks'), E = document.getElementById('profileEdge'), D = document.getElementById('profileDoDont');
+  if(!L || !E || !D) return;
+  const x = _profInsights();
+  if(x.n < 20){
+    const msg = `<div class="tp-muted">Needs at least 20 trades (you have ${x.n}).</div>`;
+    L.innerHTML = E.innerHTML = D.innerHTML = msg; return;
+  }
+  // Biggest leaks
+  L.innerHTML = x.leaks.length ? x.leaks.map(([tag, s], i) => `<div class="pi-row">
+      <span class="pi-rank">${i + 1}</span>
+      <span class="pi-main"><b>${escapeHtml(tag)}</b><small>${s.n} trades · ${s.w} won · ${_profR(s.avgR)} per trade</small></span>
+      <span class="pi-val neg">${_profR(s.sumR)}</span></div>`).join('') + '<div class="pi-note">Total R lost on trades with this tag. Fix the top one first.</div>'
+    : '<div class="tp-muted">No tag has cost you R yet (5+ trades). Keep it that way.</div>';
+  // My edge
+  const best = (arr, label) => arr.length && arr[0][1].avgR > 0 ? `<div class="pi-row"><span class="pi-main"><small>${label}</small><b>${escapeHtml(arr[0][0])}</b></span>
+      <span class="pi-val pos">${_profWR(arr[0][1])} · ${_profR(arr[0][1].avgR)}</span></div>` : '';
+  E.innerHTML = `
+    ${x.kept.n && x.broken.n ? `<div class="pi-row"><span class="pi-main"><small>When you follow your rules</small><b>${_profWR(x.kept)} win rate · ${_profR(x.kept.avgR)}</b></span>
+      <span class="pi-vs">vs ${_profWR(x.broken)} · ${_profR(x.broken.avgR)} when you don't</span></div>` : ''}
+    ${best(x.hours, 'Best time of day (your time)')}${best(x.sessions, 'Best session')}${best(x.patterns, 'Best pattern')}${best(x.days, 'Best day')}
+    <div class="pi-note">From ${x.n} trades. Groups need ${PROF_MIN}+ trades.</div>`;
+  // Do / Don't
+  const dos = [], donts = [];
+  if(x.kept.avgR !== null && x.broken.avgR !== null && x.kept.avgR > x.broken.avgR)
+    dos.push(`Follow your rules: ${_profR(x.kept.avgR)} per trade when you do, ${_profR(x.broken.avgR)} when you don't (${Math.round(x.broken.n / (x.kept.n + x.broken.n) * 100)}% of trades broke a rule).`);
+  const pos = (arr, label, k = 1) => arr.filter(([, s]) => s.avgR >= 0.2).slice(0, k).forEach(([n, s]) => dos.push(`${label} ${n} (${_profWR(s)} wins, ${_profR(s.avgR)}).`));
+  const neg = (arr, label, k = 1) => arr.slice().reverse().filter(([, s]) => s.avgR <= -0.3).slice(0, k).forEach(([n, s]) => donts.push(`${label} ${n} (${_profWR(s)} wins, ${_profR(s.avgR)}).`));
+  pos(x.hours, 'Trade'); pos(x.patterns, 'Prefer');
+  neg(x.hours, 'Avoid', 2); neg(x.days, 'Sit out or size down on'); neg(x.patterns, 'Skip');
+  x.leaks.slice(0, 2).forEach(([tag, s]) => donts.push(`${tag}: ${s.n} trades, ${s.w} won.`));
+  D.innerHTML = `<div class="pi-dd"><div><div class="pi-dd-h do">Do</div>${dos.length ? dos.map(t => `<div class="pi-dd-i">✓ ${escapeHtml(t)}</div>`).join('') : '<div class="tp-muted">Not enough data yet.</div>'}</div>
+    <div><div class="pi-dd-h dont">Don't</div>${donts.length ? donts.map(t => `<div class="pi-dd-i">✕ ${escapeHtml(t)}</div>`).join('') : '<div class="tp-muted">Nothing stands out as a clear loser.</div>'}</div></div>`;
+}
+
+/* ---------- SHARE: TRADER CARD ----------
+   Larawan (1200×630) ng profile: pangalan, rank, badges, at mga numerong
+   walang pera — ligtas i-share. */
+async function openShareProfile(){
+  document.getElementById('profShareNativeBtn').style.display = (navigator.canShare && navigator.share) ? '' : 'none';
+  document.getElementById('profShareModal').classList.add('open');
+  await drawProfileShare();
+}
+function closeShareProfile(){ document.getElementById('profShareModal').classList.remove('open'); }
+async function drawProfileShare(){
+  const cv = document.getElementById('profShareCanvas');
+  if(!cv) return;
+  const ctx = cv.getContext('2d'), W = cv.width, H = cv.height;
+  const p = PROFILE_DATA || {};
+  const C = { bg:'#12141C', surf:'#1B1F2B', rule:'#2E3446', ink:'#F1EEE6', muted:'#93989F', win:'#2ECC71', acc:'#F0B429' };
+  const font = (w, s) => `${w} ${s}px "Public Sans", system-ui, sans-serif`;
+  const trades = _profTrades();
+  const ch = (COMPUTED_CHALLENGES || []);
+  const done = ch.filter(c => c.done), pts = done.reduce((s, c) => s + c.points, 0);
+  const { current } = rankForPoints(pts);
+  const ans = trades.filter(t => /^(yes|no)$/i.test(t.rules_followed)), yes = ans.filter(t => /^yes$/i.test(t.rules_followed)).length;
+  const x = trades.length >= 20 ? _profInsights() : null;
+  const first = trades.reduce((m, t) => !m || t.close_date < m ? t.close_date : m, null);
+  const streak = ch.find(c => c.title === 'Daily Check-in Streak');
+  ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = C.acc; ctx.fillRect(0, 0, 12, H);
+  // Avatar
+  const ax = 140, ay = 150, ar = 70;
+  ctx.fillStyle = C.acc; ctx.beginPath(); ctx.arc(ax, ay, ar, 0, Math.PI * 2); ctx.fill();
+  let drewImg = false;
+  const img = document.getElementById('profileAvatarImg');
+  if(img && img.src && img.style.display !== 'none'){
+    try{
+      const im = await new Promise((res, rej) => { const i = new Image(); i.crossOrigin = 'anonymous'; i.onload = () => res(i); i.onerror = rej; i.src = img.src; });
+      ctx.save(); ctx.beginPath(); ctx.arc(ax, ay, ar, 0, Math.PI * 2); ctx.clip();
+      const s = Math.max(ar * 2 / im.width, ar * 2 / im.height);
+      ctx.drawImage(im, ax - im.width * s / 2, ay - im.height * s / 2, im.width * s, im.height * s); ctx.restore();
+      cv.toDataURL();   // susubukan kung "tainted" — kapag oo, babalik sa letra
+      drewImg = true;
+    }catch(e){ ctx.restore && ctx.restore(); ctx.fillStyle = C.acc; ctx.beginPath(); ctx.arc(ax, ay, ar, 0, Math.PI * 2); ctx.fill(); drewImg = false; }
+  }
+  if(!drewImg){
+    ctx.fillStyle = '#12141C'; ctx.font = font(800, 64); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText((p.display_name || '?').trim().charAt(0).toUpperCase() || '?', ax, ay + 4);
+    ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  }
+  // Pangalan at mga pill
+  const L = 240;
+  ctx.fillStyle = C.ink; ctx.font = font(800, 54);
+  let name = p.display_name || 'Trader';
+  while(ctx.measureText(name).width > W - L - 290 && name.length > 3) name = name.slice(0, -1);
+  ctx.fillText(name, L, 140);
+  ctx.fillStyle = C.muted; ctx.font = font(500, 26);
+  ctx.fillText([p.nickname ? '@' + p.nickname : '', p.trading_style, p.primary_market].filter(Boolean).join('  ·  '), L, 184);
+  // Rank badge sa kanan
+  const bx = W - 260, by = 80, bw = 200, bh = 140;
+  ctx.fillStyle = C.surf; ctx.beginPath(); ctx.roundRect ? ctx.roundRect(bx, by, bw, bh, 18) : ctx.rect(bx, by, bw, bh); ctx.fill();
+  ctx.strokeStyle = C.acc; ctx.lineWidth = 2; ctx.stroke();
+  ctx.textAlign = 'center'; ctx.fillStyle = C.acc; ctx.font = font(800, 30); ctx.fillText(current.label, bx + bw / 2, by + 62);
+  ctx.fillStyle = C.muted; ctx.font = font(600, 20); ctx.fillText(`${pts.toLocaleString()} pts · ${done.length} badges`, bx + bw / 2, by + 100);
+  ctx.textAlign = 'left';
+  // Mga numero (walang pera)
+  const tiles = [
+    ['TRADING SINCE', first ? first.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : '—'],
+    ['TRADES JOURNALED', trades.length.toLocaleString()],
+    ['RULES FOLLOWED', ans.length ? Math.round(yes / ans.length * 100) + '%' : '—'],
+    ['CHECK-IN STREAK', streak ? `${streak.current} day${streak.current === 1 ? '' : 's'}` : '—'],
+    ['BEST SESSION', x && x.sessions.length && x.sessions[0][1].avgR > 0 ? x.sessions[0][0] : '—'],
+    ['BEST PATTERN', x && x.patterns.length && x.patterns[0][1].avgR > 0 ? x.patterns[0][0] : '—']
+  ];
+  const tx = 72, ty = 290, tw = (W - tx * 2 - 40) / 3, th = 120;
+  tiles.forEach(([k, v], i) => {
+    const cx = tx + (i % 3) * (tw + 20), cy = ty + Math.floor(i / 3) * (th + 20);
+    ctx.fillStyle = C.surf; ctx.beginPath(); ctx.roundRect ? ctx.roundRect(cx, cy, tw, th, 14) : ctx.rect(cx, cy, tw, th); ctx.fill();
+    ctx.fillStyle = C.muted; ctx.font = font(700, 18); ctx.fillText(k, cx + 22, cy + 40);
+    ctx.fillStyle = C.ink; ctx.font = font(800, 34);
+    let val = String(v); while(ctx.measureText(val).width > tw - 44 && val.length > 3) val = val.slice(0, -1);
+    if(val !== String(v)) val = val.slice(0, -1) + '…';
+    ctx.fillText(val, cx + 22, cy + 88);
+  });
+  ctx.fillStyle = C.acc; ctx.font = font(800, 24); ctx.fillText('TANAYDANA', tx, H - 30);
+  const bw2 = ctx.measureText('TANAYDANA').width;
+  ctx.fillStyle = C.muted; ctx.font = font(500, 20); ctx.fillText('trading journal', tx + bw2 + 12, H - 30);
+}
+async function nativeShareProfile(){
+  try{
+    const b = await _shareBlob('profShareCanvas');
+    const file = new File([b], _shareFileName('profShareCanvas'), { type: 'image/png' });
+    if(navigator.canShare && navigator.canShare({ files: [file] })) await navigator.share({ files: [file] });
+    else await downloadShareCard('profShareCanvas');
   }catch(e){ /* kinansela */ }
 }
