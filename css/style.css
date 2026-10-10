@@ -5521,3 +5521,7 @@ body.mobile-mode .pi-dd{grid-template-columns:1fr;gap:12px;}
 .panel h2 .panel-share{display:inline-flex;align-items:center;justify-content:center;vertical-align:middle;margin-left:8px;width:26px;height:26px;border-radius:7px;border:1px solid transparent;background:none;color:var(--muted);cursor:pointer;padding:0;opacity:.7;}
 .panel h2 .panel-share:hover,.panel h2 .panel-share:focus-visible{opacity:1;color:var(--accent);border-color:var(--rule);background:var(--surface-2);outline:none;}
 #panelShareCanvas{max-width:100%;height:auto;}
+/* Card ng market na binuksan mula sa notification */
+.mh-card.flash{animation:mhFlash 1.6s ease;}
+@keyframes mhFlash{0%,40%{box-shadow:0 0 0 2px var(--accent);}100%{box-shadow:0 0 0 0 transparent;}}
+@media(prefers-reduced-motion:reduce){.mh-card.flash{animation:none;outline:2px solid var(--accent);}}

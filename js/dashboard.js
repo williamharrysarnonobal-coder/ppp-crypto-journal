@@ -8973,6 +8973,7 @@ function _rmFired(){
   catch(e){ return { day: today, at: {} }; }
 }
 function _rmShow(key, title, body, go){
+  if(typeof _notifCanOpen === 'function' && _notifCanOpen(key)) go = () => openNotifTarget(key);
   // Naka-off ang klaseng ito (⚙ sa 🔔): itinatala lang, walang popup.
   if(typeof _nfIsMuted === 'function' && _nfIsMuted(_nfTypeOf(key))){
     if(typeof _notifLogPush === 'function') _notifLogPush(key, title, body, true);
@@ -31363,7 +31364,7 @@ function renderMarketHours(){
       const bell = m.always ? '' : `<button type="button" class="mh-bell${notify.has(m.id) ? ' on' : ''}" onclick="toggleMarketNotify('${m.id}')"
           title="${notify.has(m.id) ? 'Notifying you 30 min before it opens and when it closes. Click to turn off.' : 'Get a notification 30 min before it opens and when it closes.'}"
           aria-pressed="${notify.has(m.id)}">${notify.has(m.id) ? '🔔 On' : '🔕 Off'}</button>`;
-      return `<div class="mh-card${st.open ? ' is-open' : ''}">
+      return `<div class="mh-card${st.open ? ' is-open' : ''}" id="mhCard-${m.id}">
         <div class="mh-card-top"><b>${escapeHtml(m.name)}</b>${pill}</div>
         <div class="mh-line">${line}</div>
         <div class="mh-hours">${escapeHtml(hours)}${!st.always ? ' <small>your time</small>' : ''}</div>
@@ -31605,11 +31606,11 @@ function _notifComingUp(now){
   const on = _mhNotifySet();
   MARKET_HOURS.filter(m => !m.always && on.has(m.id)).forEach(m => {
     _mhIntervals(m, now, now + 24 * 3600000).forEach(([s, e]) => {
-      if(s > now) items.push({ t: s, title: `${m.name} opens`, kind: 'mh' });
-      if(e > now && e - now <= 24 * 3600000) items.push({ t: e, title: m.id === 'gold' ? 'Gold daily break / close' : `${m.name} closes`, kind: 'mh' });
+      if(s > now) items.push({ t: s, title: `${m.name} opens`, kind: 'mh', key: `mh-${m.id}:up` });
+      if(e > now && e - now <= 24 * 3600000) items.push({ t: e, title: m.id === 'gold' ? 'Gold daily break / close' : `${m.name} closes`, kind: 'mh', key: `mh-${m.id}:up` });
     });
   });
-  _econUpcoming(now, 24 * 3600000).forEach(e => items.push({ t: new Date(e.event_date).getTime(), title: `${e.country ? e.country + ' ' : ''}${e.title}`, kind: 'econ', high: true }));
+  _econUpcoming(now, 24 * 3600000).forEach(e => items.push({ t: new Date(e.event_date).getTime(), title: `${e.country ? e.country + ' ' : ''}${e.title}`, kind: 'econ', high: true, key: `econid:${e.id}` }));
   const seen = new Set();
   return items.filter(x => { const k = x.title + x.t; if(seen.has(k)) return false; seen.add(k); return true; })
     .sort((a, b) => a.t - b.t).slice(0, 8);
@@ -31690,7 +31691,7 @@ function renderNotifFabPanel(){
   // Paparating
   _notifComingUp(now).forEach(x => rows.push({ type: x.kind === 'econ' ? 'news' : 'market', title: x.title,
     detail: x.kind === 'econ' ? 'High impact' : '', when: `in ${_mhLeft(x.t - now)}`, time: _mhTime(x.t, _mhDayIso(x.t) !== today),
-    go: `switchView('${x.kind === 'econ' ? 'news' : 'hours'}')`, up: true, isNew: false }));
+    go: `openNotifTarget('${x.key}')`, up: true, isNew: false }));
   // Mga gagawin
   (typeof getIncompleteTrades === 'function' ? getIncompleteTrades() : []).forEach(t => rows.push({ type: 'trades',
     title: `${t.symbol || 'Trade'} needs details`, detail: (getMissingFieldLabels(t) || []).join(', '), when: 'To do', time: '—',
@@ -31699,7 +31700,7 @@ function renderNotifFabPanel(){
   _notifLog().filter(x => _mhDayIso(x.ts) === today && !String(x.k || '').startsWith('alertsbatch:')).reverse().forEach(x => {
     const v = _notifViewOf(x.k);
     rows.push({ type: _nfTypeOf(x.k), title: String(x.title).replace(/^New trade alert:\s*/, ''), detail: x.body || '',
-      when: x.muted ? 'muted' : '', time: _mhTime(x.ts), go: v ? `switchView('${v}')` : '', isNew: x.ts > _nfPrevSeen && !x.muted, muted: !!x.muted });
+      when: x.muted ? 'muted' : '', time: _mhTime(x.ts), go: v ? `openNotifTarget(${JSON.stringify(x.k).replace(/"/g, '&quot;')})` : '', isNew: x.ts > _nfPrevSeen && !x.muted, muted: !!x.muted });
   });
   const shown = rows.filter(r => (f.type === 'all' || r.type === f.type) && (!f.onlyNew || r.isNew));
   _nfShown = shown.slice(0, 60);
@@ -32474,3 +32475,65 @@ async function nativeSharePanel(){
   }catch(e){ /* kinansela */ }
 }
 setTimeout(() => addPanelShareButtons(document.getElementById('view-dashboard')), 1500);
+
+
+/* ---------- PAGPINDOT SA NOTIFICATION: BUKSAN ANG MISMONG BAGAY ----------
+   Hindi lang ang page: ang alert mismo, ang balita, ang challenge, ang trade,
+   ang Daily Plan ngayong araw, o ang card ng market na naka-highlight. Ginagamit
+   ng mga row sa 🔔, ng "Open" sa popup, at ng system notification. */
+function _notifCanOpen(key){
+  const kind = String(key || '').split(':')[0];
+  return /^(alerts|challenge|journal-incomplete|econid)$/.test(kind) || kind.startsWith('mh-') || kind.startsWith('econ-')
+    || ['plan', 'morning', 'evening', 'review', 'diary', 'backup'].includes(kind);   // journal/incomplete/setups: may sariling aksiyon ang reminder
+}
+const _waitFor = async (test, ms = 6000) => { const end = Date.now() + ms; while(Date.now() < end){ try{ const v = test(); if(v) return v; }catch(e){} await new Promise(r => setTimeout(r, 150)); } return null; };
+async function openNotifTarget(key){
+  const parts = String(key || '').split(':');
+  const kind = parts[0];
+  try{ if(typeof toggleNotifFab === 'function') toggleNotifFab(false); }catch(e){}
+  // Trade alert: ang tamang tab, tapos ang detalye.
+  if(kind === 'alerts'){
+    const id = Number(parts[1]);
+    switchView('alerts');
+    const s = await _waitFor(() => (SIGNAL_ALERTS || []).find(x => x.id === id));
+    if(!s){
+      const cached = (typeof _nfAlerts !== 'undefined' ? _nfAlerts : []).find(x => x.id === id);
+      if(cached){ SIGNAL_ALERTS = [...(SIGNAL_ALERTS || []), cached]; }
+    }
+    const a = (SIGNAL_ALERTS || []).find(x => x.id === id);
+    if(a){ if(a.category && document.getElementById('alertsPanel-' + a.category)) switchAlertsTab(a.category); openAlertDetail(id); }
+    else showToast('That alert is no longer there.');
+    return;
+  }
+  if(kind === 'alertsbatch'){ switchView('alerts'); return; }
+  // Challenge: buksan ang detalye nito.
+  if(kind === 'challenge'){ goToChallengeFromNotif(parts.slice(1, -1).join(':') || parts[1]); return; }
+  // Trade na kulang ang detalye: ang pahina ng trade.
+  if(kind === 'journal-incomplete'){ goToTradeFromNotif(parts.slice(1).join(':')); return; }
+  // Balita: ang event mismo sa Calendar.
+  if(kind.startsWith('econ')){
+    switchView('news');
+    const byId = kind === 'econid' ? Number(parts[1]) : null;
+    const t = kind.startsWith('econ-') ? Number(kind.slice(5)) : null;
+    const ev = await _waitFor(() => (ECON_EVENTS || []).find(e => byId !== null ? e.id === byId : new Date(e.event_date).getTime() === t && String(e.impact || '').toLowerCase() === 'high'));
+    if(ev) openEconEventModal(ev.id);
+    return;
+  }
+  // Market: ang card nito sa Market Hours, naka-highlight.
+  if(kind.startsWith('mh-')){
+    switchView('hours');
+    const card = await _waitFor(() => document.getElementById('mhCard-' + kind.slice(3)), 2000);
+    if(card){ card.scrollIntoView({ behavior: 'smooth', block: 'center' }); card.classList.remove('flash'); void card.offsetWidth; card.classList.add('flash'); }
+    return;
+  }
+  // Reminders
+  if(['plan', 'morning', 'evening', 'review', 'diary'].includes(kind)){
+    switchView('plan');
+    if(typeof loadDailyPlans === 'function' && typeof _dpLoaded !== 'undefined' && !_dpLoaded) await loadDailyPlans();
+    openDailyPlan(_dpIso(new Date()));
+    return;
+  }
+  if(kind === 'backup'){ switchView('config'); switchConfigTab('backup'); return; }
+  if(kind === 'setups'){ switchView('calculator'); return; }
+  if(kind === 'journal' || kind === 'incomplete'){ switchView('journal'); return; }
+}
