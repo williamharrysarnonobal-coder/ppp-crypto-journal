@@ -32413,6 +32413,8 @@ function addPanelShareButtons(root){
     if(p.closest('.panel .panel') && p.parentElement.closest('.panel')) return;   // ang panlabas na box lang
     const h = p.querySelector('h2');
     if(!h || h.querySelector('.panel-share') || !h.textContent.trim()) return;
+    // May sarili nang Share ang box (hal. Calendar): walang pangalawa.
+    if(p.querySelector('[onclick*="openShare"]')) return;
     const b = document.createElement('button');
     b.type = 'button'; b.className = 'panel-share'; b.title = 'Share as an image'; b.setAttribute('aria-label', 'Share ' + h.textContent.trim());
     b.innerHTML = PANEL_SHARE_ICON;
@@ -32433,15 +32435,19 @@ async function sharePanel(panel, h){
     const css = getComputedStyle(panel);
     const pageBg = getComputedStyle(document.body).backgroundColor || '#12141C';
     const shot = await window.htmlToImage.toCanvas(panel, {
-      pixelRatio: 2, cacheBust: true,
+      // Hindi bababa sa ~1200px ang lapad ng larawan, kahit makitid ang box.
+      pixelRatio: Math.max(2, Math.min(4, 1200 / Math.max(1, panel.getBoundingClientRect().width))), cacheBust: true,
       backgroundColor: css.backgroundColor && css.backgroundColor !== 'rgba(0, 0, 0, 0)' ? css.backgroundColor : pageBg,
       filter: n => !(n.classList && (n.classList.contains('panel-share') || n.classList.contains('dash-gear')))
     });
     const pad = 48, foot = 84;
-    cv.width = shot.width + pad * 2; cv.height = shot.height + pad + foot;
+    // Ang mababang box (hal. Discipline) ay hindi nagiging manipis na guhit:
+    // hindi bababa sa ~2:1 ang larawan, nasa gitna ang box.
+    cv.width = shot.width + pad * 2;
+    cv.height = Math.max(shot.height + pad + foot, Math.round(cv.width * 0.5));
     const ctx = cv.getContext('2d');
     ctx.fillStyle = pageBg; ctx.fillRect(0, 0, cv.width, cv.height);
-    ctx.drawImage(shot, pad, pad);
+    ctx.drawImage(shot, pad, Math.max(pad, Math.round((cv.height - foot - shot.height) / 2)));
     const ink = getComputedStyle(document.body).color || '#F1EEE6';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = '#F0B429'; ctx.font = '800 30px "Public Sans", system-ui, sans-serif';
