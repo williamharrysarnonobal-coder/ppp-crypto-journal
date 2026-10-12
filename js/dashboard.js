@@ -32977,14 +32977,14 @@ function _pbRegisterPattern(p, setup){
     if(!m.includes(p)) m.push(p);
   }
 }
-const PB_UI = ['toggle', 'radio', 'dropdown', 'checkbox', 'text', 'textarea', 'date'];
+const PB_UI = ['toggle', 'radio', 'dropdown', 'checkbox', 'text', 'textarea'];
 const PB_TYPES = [
   ['yn', 'Yes / No'], ['almost', 'Yes / Almost / No'], ['toggle', 'Toggle (On / Off)'],
   ['choice', 'Buttons (pick one)'], ['radio', 'Radio (pick one)'], ['dropdown', 'Dropdown (pick one)'],
   ['checkbox', 'Checkbox (pick many)'],
-  ['text', 'Text (record only)'], ['textarea', 'Long text (record only)'], ['date', 'Date (record only)']
+  ['text', 'Text (record only)'], ['textarea', 'Long text (record only)']
 ];
-const PB_RECORD_ONLY = ['text', 'textarea', 'date'];
+const PB_RECORD_ONLY = ['text', 'textarea'];
 const PB_PICK = ['choice', 'radio', 'dropdown', 'checkbox'];
 function _pbCleanItem(it){
   const o = { ...it, tag: _pbClean(it.tag, 60), text: _pbClean(it.text, 200) };
@@ -33026,8 +33026,6 @@ function _renderCflCustomRow(it, i, ans, fn){
     ctl = `<input type="text" class="cfl-input" maxlength="300" value="${escapeHtml(ans || '')}" placeholder="Type your answer…" onchange="setCflValue('${fn}', ${i}, this.value, true)">`;
   }else if(it.ui === 'textarea'){
     ctl = `<textarea class="cfl-input" rows="3" maxlength="2000" placeholder="Type your answer…" onchange="setCflValue('${fn}', ${i}, this.value, true)">${escapeHtml(ans || '')}</textarea>`;
-  }else if(it.ui === 'date'){
-    ctl = `<input type="date" class="cfl-input cfl-date" value="${escapeHtml(ans || '')}" onchange="setCflValue('${fn}', ${i}, this.value, true)">`;
   }
   return `<div class="cfl-yn-item cfl-custom-item ${it.exec ? 'cfl-execution' : ''} ${blank && !it.noScore ? 'cfl-unanswered' : ''} ${['text', 'textarea'].includes(it.ui) ? 'cfl-wide' : ''}">${label}<span class="cfl-custom-ctl">${ctl}</span></div>`;
 }
