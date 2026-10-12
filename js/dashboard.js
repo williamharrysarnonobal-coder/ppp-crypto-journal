@@ -9128,6 +9128,7 @@ async function downloadAllData(){
 const DB_CHECKS = [
   { file:'supabase_trading_journal_review_fields.sql', what:'Mistakes, Entry/Exit Emotion, Trade Management on trades', table:'trading_journal', col:'mistakes,entry_emotion,exit_emotion,trade_management' },
   { file:'supabase_position_setups_entry_emotion.sql', what:'Entry Emotion on Pending Setups', table:'position_setups', col:'entry_emotion' },
+  { file:'supabase_position_setups_areas_exit_emotion.sql', what:'Areas & Emotions on Pending Setups (Entry/SL/TP Area, Exit Emotion)', table:'position_setups', col:'entry_area,sl_area,tp_area,exit_emotion' },
   { file:'supabase_trading_journal_tp_sl_area.sql', what:'TP Area and SL Area on trades', table:'trading_journal', col:'tp_area,sl_area' },
   { file:'supabase_trading_journal_entry_area.sql', what:'Entry Area on trades', table:'trading_journal', col:'entry_area' },
   { file:'supabase_trading_journal_chart_shots.sql', what:'Chart screenshots (Higher / Setup / Entry TF)', table:'trading_journal', col:'chart_shots', also:{ table:'position_setups', col:'chart_shots' } },
@@ -27479,6 +27480,7 @@ function setupRowHTML(s, selectable){
           onclick="toggleRowActions(this, event)">Actions ▾</button>
         <div class="row-actions-menu" role="menu" hidden>
           <button type="button" role="menuitem" onclick="closeRowActions(); openConfluenceModal(${s.id})">${_setupHasConfluence(s) ? 'Edit Confluence' : 'Confluence'}</button>
+          <button type="button" role="menuitem" onclick="closeRowActions(); openSetupDetailsModal([${s.id}])">Areas &amp; Emotions</button>
           ${status !== 'Journaled'
             ? `<button type="button" role="menuitem" ${!_setupHasConfluence(s) ? 'disabled title="Fill in Confluence first"' : ''} onclick="closeRowActions(); journalFromSetup(${s.id})">Journal${!_setupHasConfluence(s) ? ' <span class="ra-hint">— fill in Confluence first</span>' : ''}</button>`
             : `<button type="button" role="menuitem" onclick="closeRowActions(); setSetupStatus(${s.id}, 'Pending')">Revert to Pending</button>`}
@@ -28044,7 +28046,12 @@ function _setupJournalPrefill(s){
     tp_price: s.tp_price != null ? Number(s.tp_price) : undefined,
     sl_price: s.sl_price != null ? Number(s.sl_price) : undefined,
     // Ang Entry Emotion na itinala sa Confluence ng setup.
-    entry_emotion: s.entry_emotion || undefined
+    entry_emotion: s.entry_emotion || undefined,
+    // Areas & Emotions ng setup (Calculator > Pending Setups).
+    exit_emotion: s.exit_emotion || undefined,
+    entry_area: s.entry_area || undefined,
+    sl_area: s.sl_area || undefined,
+    tp_area: s.tp_area || undefined
   };
 }
 
@@ -32678,4 +32685,96 @@ function openAlertShare(id){
 // agad: skipWaiting sa sw.js), para gumana sa phone ang mga ayos sa pagpindot.
 if('serviceWorker' in navigator){
   navigator.serviceWorker.getRegistration().then(reg => { if(reg) reg.update().catch(() => {}); }).catch(() => {});
+}
+
+/* ---------- AREAS & EMOTIONS SA PENDING SETUPS ----------
+   Isang window para sa Entry Area, SL Area, TP Area, Entry Emotion at Exit
+   Emotion — sa isang setup (Actions) o sa lahat ng naka-tick (bulk bar).
+   Ang naiba lang ang nase-save; ang magkakaiba sa mga napili ay "keep each"
+   hangga't hindi mo pinapalitan. Dinadala ang lahat sa trade pag-journal. */
+const SETUP_DETAIL_FIELDS = [
+  { k: 'entry_area', label: 'Entry Area', type: 'area', ph: 'e.g. 15m FVG, Retest of Asia high' },
+  { k: 'sl_area', label: 'SL Area', type: 'area', ph: 'e.g. Below Asia low, Below the HL' },
+  { k: 'tp_area', label: 'TP Area', type: 'area', ph: 'e.g. Prev day high, 4H FVG' },
+  { k: 'entry_emotion', label: 'Entry Emotion', type: 'emotion' },
+  { k: 'exit_emotion', label: 'Exit Emotion', type: 'emotion' }
+];
+let _setupDetailIds = [];
+function openSetupDetailsModal(ids){
+  ids = (ids && ids.length ? ids : [...SELECTED_SETUP_IDS]).map(Number);
+  const rows = ids.map(id => SAVED_SETUPS.find(s => s.id === id)).filter(Boolean);
+  if(!rows.length) return;
+  _setupDetailIds = rows.map(s => s.id);
+  document.getElementById('setupDetailsError').textContent = '';
+  document.getElementById('setupDetailsCount').textContent = rows.length === 1
+    ? (rows[0].account_name || 'Setup') + (rows[0].symbol ? ' · ' + rows[0].symbol : '')
+    : `Goes to ${rows.length} setups:`;
+  document.getElementById('setupDetailsTargets').innerHTML = rows.length === 1 ? ''
+    : rows.map(s => `<span class="bulk-note-chip">${escapeHtml(s.account_name || 'No account')}</span>`).join('');
+  const hist = k => (typeof _historyValues === 'function' ? _historyValues(k) : []);
+  document.getElementById('setupDetailsBody').innerHTML = SETUP_DETAIL_FIELDS.map(f => {
+    const vals = [...new Set(rows.map(s => String(s[f.k] || '').trim()))];
+    const same = vals.length === 1, cur = same ? vals[0] : '';
+    const mixed = same ? '' : ` <em class="jb-mixed">${vals.length} different</em>`;
+    if(f.type === 'emotion'){
+      const opts = FIELD_OPTIONS.emotion.slice();
+      if(cur && !opts.includes(cur)) opts.unshift(cur);
+      return `<div class="field-row"><label for="sd-${f.k}">${f.label}${mixed}</label>
+        <select id="sd-${f.k}" data-k="${f.k}" data-initial="${escapeHtml(same ? cur : '__keep')}" class="ps-emo-sel">
+          ${same ? '' : '<option value="__keep" selected>Mixed — keep each</option>'}
+          <option value=""${same && !cur ? ' selected' : ''}>— none —</option>
+          ${opts.map(o => `<option value="${escapeHtml(o)}"${same && o === cur ? ' selected' : ''}>${escapeHtml(_optLabel('emotion', o))}</option>`).join('')}
+        </select></div>`;
+    }
+    const list = 'sd-dl-' + f.k;
+    return `<div class="field-row"><label for="sd-${f.k}">${f.label}${mixed}</label>
+      <input id="sd-${f.k}" data-k="${f.k}" data-initial="${escapeHtml(cur)}" data-mixed="${same ? '' : '1'}" list="${list}" autocomplete="off"
+        value="${escapeHtml(cur)}" placeholder="${same ? f.ph : 'Mixed — keep each'}">
+      <datalist id="${list}">${hist(f.k).map(v => `<option value="${escapeHtml(v)}"></option>`).join('')}</datalist></div>`;
+  }).join('');
+  document.getElementById('setupDetailsModal').classList.add('open');
+}
+function closeSetupDetailsModal(){ document.getElementById('setupDetailsModal').classList.remove('open'); }
+async function saveSetupDetails(){
+  const errEl = document.getElementById('setupDetailsError');
+  errEl.textContent = '';
+  const patch = {};
+  document.querySelectorAll('#setupDetailsBody [data-k]').forEach(el => {
+    const k = el.dataset.k, initial = el.dataset.initial ?? '';
+    if(el.tagName === 'SELECT'){
+      if(el.value === '__keep' || el.value === initial) return;
+      patch[k] = el.value || null;
+    }else{
+      let v = el.value.trim().replace(/\s+/g, ' ');
+      if(v === initial) return;
+      if(v === '' && el.dataset.mixed === '1') return;   // magkakaiba at iniwang blangko
+      // Ang dating baybay ang gamit, gaya ng TP/SL Area sa trade.
+      if(v && typeof _canonicalHistoryValue === 'function') v = _canonicalHistoryValue(k, v);
+      patch[k] = v || null;
+    }
+  });
+  if(!Object.keys(patch).length){ errEl.textContent = 'Nothing changed yet.'; return; }
+  const btn = document.getElementById('setupDetailsSaveBtn');
+  btn.disabled = true; btn.textContent = 'Saving…';
+  try{
+    const ids = _setupDetailIds;
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/position_setups?id=in.(${ids.join(',')})`, {
+      method: 'PATCH',
+      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}`, "Content-Type": "application/json", "Prefer": "return=minimal" },
+      body: JSON.stringify(patch)
+    });
+    if(!res.ok){
+      const t = await res.text();
+      throw new Error(/entry_area|sl_area|tp_area|exit_emotion/.test(t)
+        ? 'Run supabase_position_setups_areas_exit_emotion.sql in Supabase first (Configuration → Database status shows it).' : t);
+    }
+    SAVED_SETUPS.forEach(s => { if(ids.includes(s.id)) Object.assign(s, patch); });
+    closeSetupDetailsModal();
+    if(typeof renderSavedSetups === 'function') renderSavedSetups();
+    showToast(`Saved on ${ids.length} setup${ids.length === 1 ? '' : 's'}`);
+  }catch(e){
+    errEl.textContent = "Couldn't save: " + (e.message || e);
+  }finally{
+    btn.disabled = false; btn.textContent = 'Save';
+  }
 }
