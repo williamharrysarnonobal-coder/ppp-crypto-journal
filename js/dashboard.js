@@ -25137,7 +25137,7 @@ async function _renderUpscaleNewsWarning(){
    Lumalabas lang kapag ang grupo ay talagang mas mahina sa average mo
    (EM_MIN_GAP na puntos, sa EM_MIN_N o higit pang trade). Babala lang. */
 function _upHabitWarnings(direction, accs){
-  const base = ALL_TRADES.filter(t => t.close_date && (typeof _isRealMoney !== 'function' || _isRealMoney(t)));
+  const base = ALL_TRADES.filter(t => t.close_date && (typeof _countsAsMoney !== 'function' || _countsAsMoney(t)));
   const avg = _tagArmStats(base).rate;
   if(avg === null) return [];
   const weak = arr => {
@@ -29536,7 +29536,7 @@ const _dpIso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '
 // Ang mga tunay na trade na nagsara sa araw na iyon (oras mo).
 function _dpTradesOn(iso){
   return ALL_TRADES.filter(t => t.close_date && _dpIso(t.close_date) === iso
-    && (typeof _isRealMoney !== 'function' || _isRealMoney(t)));
+    && (typeof _countsAsMoney !== 'function' || _countsAsMoney(t)));
 }
 /* MAX TRADES AY KADA ACCOUNT. Ang bilang ng trade bawat account sa isang
    araw, at ang account na may pinakamarami (iyon ang ikinukumpara sa max). */
@@ -29605,7 +29605,7 @@ function renderPlanSummary(){
   const reviewed = inMonth.filter(p => p.followed);
   const yes = reviewed.filter(p => p.followed === 'Yes').length;
   const daysTraded = new Set(ALL_TRADES.filter(t => t.close_date && t.close_date.getFullYear() === y && t.close_date.getMonth() === m
-    && (typeof _isRealMoney !== 'function' || _isRealMoney(t))).map(t => _dpIso(t.close_date)));
+    && (typeof _countsAsMoney !== 'function' || _countsAsMoney(t))).map(t => _dpIso(t.close_date)));
   const tradedNoPlan = [...daysTraded].filter(iso => !inMonth.some(p => p.plan_date === iso)).length;
   const rateOn = arr => { const tr = arr.flatMap(p => _dpTradesOn(p.plan_date)); const s = _tagArmStats(tr); return { ...s }; };
   const fol = rateOn(reviewed.filter(p => p.followed === 'Yes'));
