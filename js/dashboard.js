@@ -32778,3 +32778,98 @@ async function saveSetupDetails(){
     btn.disabled = false; btn.textContent = 'Save';
   }
 }
+
+
+/* ---------- SYMBOL: MUNGKAHI HABANG NAGTA-TYPE (parang Google) ----------
+   Ang mga symbol na natrade mo na (journal at mga setup), una ang nagsisimula
+   sa itinype mo, tapos ang madalas, tapos ang pinakabago. Walang itinype =
+   ang pinakamadalas. ↑ ↓ para pumili, Enter para kunin, Esc para isara. */
+function _symbolStats(){
+  const m = {};
+  const add = (sym, when) => {
+    const s = String(sym || '').trim();
+    if(!s || s === '—') return;
+    const k = s.toUpperCase();
+    const e = m[k] = m[k] || { sym: s, n: 0, last: 0 };
+    e.n++;
+    const t = when ? new Date(when).getTime() : 0;
+    if(t > e.last) e.last = t;
+  };
+  (RAW_TRADES || []).forEach(r => add(r.symbol, r.close_date || r.open_date));
+  (typeof SAVED_SETUPS !== 'undefined' ? SAVED_SETUPS : []).forEach(s => add(s.symbol, s.created_at));
+  return Object.values(m);
+}
+function _symbolMatches(q){
+  const norm = s => s.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const nq = norm(q || '');
+  const all = _symbolStats();
+  const scored = all.map(e => {
+    const ns = norm(e.sym);
+    const base = ns.replace(/(USDT|USDC|USD|PERP)$/, '');
+    const rank = !nq ? 1 : ns.startsWith(nq) || base.startsWith(nq) ? 0 : ns.includes(nq) ? 1 : -1;
+    return { ...e, rank };
+  }).filter(e => e.rank >= 0);
+  return scored.sort((a, b) => a.rank - b.rank || b.n - a.n || b.last - a.last).slice(0, 8);
+}
+function attachSymbolSuggest(inputId){
+  const inp = document.getElementById(inputId);
+  if(!inp || inp.dataset.suggest) return;
+  inp.dataset.suggest = '1';
+  inp.setAttribute('autocomplete', 'off');
+  inp.setAttribute('role', 'combobox');
+  inp.setAttribute('aria-autocomplete', 'list');
+  const wrap = document.createElement('div');
+  wrap.className = 'sym-suggest-wrap';
+  inp.parentNode.insertBefore(wrap, inp);
+  wrap.appendChild(inp);
+  const list = document.createElement('div');
+  list.className = 'sym-suggest';
+  list.id = inputId + '-suggest';
+  list.setAttribute('role', 'listbox');
+  list.hidden = true;
+  wrap.appendChild(list);
+  inp.setAttribute('aria-controls', list.id);
+  let items = [], active = -1;
+  const close = () => { list.hidden = true; active = -1; inp.setAttribute('aria-expanded', 'false'); };
+  const pick = i => {
+    const it = items[i];
+    if(!it) return;
+    inp.value = it.sym;
+    close();
+    inp.dispatchEvent(new Event('input', { bubbles: true }));
+  };
+  const paint = () => {
+    [...list.children].forEach((el, i) => { el.classList.toggle('active', i === active); el.setAttribute('aria-selected', String(i === active)); });
+  };
+  const render = () => {
+    items = _symbolMatches(inp.value);
+    const q = inp.value.trim();
+    // Kapag eksaktong tugma na at iisa lang, hindi na kailangan ang listahan.
+    if(!items.length || (items.length === 1 && items[0].sym.toUpperCase() === q.toUpperCase())){ close(); return; }
+    const mark = s => {
+      if(!q) return escapeHtml(s);
+      const i = s.toUpperCase().indexOf(q.toUpperCase());
+      return i < 0 ? escapeHtml(s) : escapeHtml(s.slice(0, i)) + '<b>' + escapeHtml(s.slice(i, i + q.length)) + '</b>' + escapeHtml(s.slice(i + q.length));
+    };
+    list.innerHTML = items.map((it, i) => `<div class="sym-opt" role="option" data-i="${i}">
+      <span class="sym-name">${mark(it.sym)}</span>
+      <span class="sym-meta">${it.n} trade${it.n === 1 ? '' : 's'}${it.last ? ' · ' + new Date(it.last).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : ''}</span></div>`).join('');
+    active = -1;
+    list.hidden = false;
+    inp.setAttribute('aria-expanded', 'true');
+  };
+  // mousedown: kunin bago mawala ang focus sa input.
+  list.addEventListener('mousedown', e => { const el = e.target.closest('.sym-opt'); if(el){ e.preventDefault(); pick(Number(el.dataset.i)); } });
+  inp.addEventListener('input', e => { if(e.isTrusted) render(); });
+  inp.addEventListener('focus', render);
+  // Isinasara lang kung talagang umalis ang cursor (hindi kapag bumalik agad).
+  inp.addEventListener('blur', () => setTimeout(() => { if(document.activeElement !== inp) close(); }, 120));
+  inp.addEventListener('keydown', e => {
+    if(list.hidden){ if(e.key === 'ArrowDown'){ render(); e.preventDefault(); } return; }
+    if(e.key === 'ArrowDown'){ active = Math.min(items.length - 1, active + 1); paint(); e.preventDefault(); }
+    else if(e.key === 'ArrowUp'){ active = Math.max(0, active - 1); paint(); e.preventDefault(); }
+    else if(e.key === 'Enter' && active >= 0){ pick(active); e.preventDefault(); }
+    else if(e.key === 'Escape'){ close(); }
+  });
+}
+setTimeout(() => attachSymbolSuggest('psSymbol'), 500);
