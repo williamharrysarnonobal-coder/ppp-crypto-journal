@@ -3,3 +3,5 @@
 worker.js
 wrangler.toml
 .assetsignore
+# Notes for Claude Code sessions: internal, not part of the site.
+CLAUDE.md
