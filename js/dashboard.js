@@ -25467,7 +25467,9 @@ function _upClosedRecord(orderId){
 }
 function _upRememberClosed(orderId, acc, st, rec, setup, placedMap){
   const c = _upClosedAll();
-  if(c[orderId]) return;
+  // Ang naitabi na ay hindi pinapalitan, maliban kung kulang ito ng fee at
+  // may fee na ang bagong kuha (naitabi bago kinuha ang fee mula sa position).
+  if(c[orderId] && !(c[orderId].fee == null && st.fee != null)) return;
   // Ang SL at entry ng plano ay nasa susi ng calculator: "accId|entry|sl".
   const key = Object.keys(placedMap || {}).find(k => placedMap[k].orderId === orderId);
   const [, pEntry, pSl] = key ? key.split('|') : [];
@@ -27940,7 +27942,8 @@ async function journalFromSetup(id){
      walang paste. Kung hindi pa naitatabi ng app ang pagsara (sarado ang app
      noon, o ibang device), kinukuha ito ngayon din. Ang "journaled" na tanda
      ay hindi hadlang: ang drawer na binuksan at kinansela ay hindi pa journal. */
-  if(s.upscale_order_id && !_upClosedAll()[s.upscale_order_id]){
+  // Kinukuha rin ulit kapag walang fee ang naitabi (naitabi bago kinuha ang fee).
+  if(s.upscale_order_id && (!_upClosedAll()[s.upscale_order_id] || _upClosedAll()[s.upscale_order_id].fee == null)){
     showToast('Getting the trade from Upscale…');
     await _upFetchClosed(s);
   }

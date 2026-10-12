@@ -440,12 +440,24 @@ async function handleUpscale(request, env, action) {
           }
         }
         // Para sa auto-journal: ang exit at ang oras ng fill at ng pagsara.
-        // Fee kung ibinibigay ng Upscale (hindi tiyak ang pangalan ng field).
-        const feeOf = o => o ? fromFp9(o.fee ?? o.commission ?? o.tradingFee ?? o.fees) : null;
-        const fees = [feeOf(h), feeOf(closer)].filter(v => v != null && isFinite(v));
-        states[id] = { state: 'Closed', how, pnl, entry, fee: fees.length ? Math.abs(fees.reduce((x, y) => x + y, 0)) : null,
+        /* Ang fee ay wala sa order — nasa POSITION (ayon sa Upscale API spec:
+           PositionResponse.fee = "trading fees charged over the life of the
+           position"). Ang close order ay may positionId; ang position ang
+           pinagkukunan ng Pnl at Fee, gaya ng "Pnl:" at "Fee:" sa position card
+           na idinidikit sa Easy Add. */
+        let pos = null;
+        const posId = closer && closer.positionId != null ? String(Array.isArray(closer.positionId) ? closer.positionId[0] : closer.positionId) : null;
+        if (posId && /^[\w-]{1,80}$/.test(posId)) {
+          try { pos = await upscale(key, 'GET', `/positions/${encodeURIComponent(posId)}`); } catch { pos = null; }
+          if (pos && (pos.data || pos.item)) pos = pos.data || pos.item;
+        }
+        const posFee = pos ? fromFp9(pos.fee) : null;
+        const posPnl = pos ? fromFp9(pos.pnl) : null;
+        states[id] = { state: 'Closed', how, pnl: posPnl ?? pnl, entry,
+          fee: posFee != null && isFinite(posFee) ? Math.abs(posFee) : null,
+          funding: pos ? fromFp9(pos.funding) : null,
           exit: closer ? entryOf(closer) : null,
-          openedAt: tsOf(h), closedAt: closer ? tsOf(closer) : null };
+          openedAt: (pos && tsOf({ executedAt: pos.openedAt })) || tsOf(h), closedAt: (pos && tsOf({ executedAt: pos.closedAt })) || (closer ? tsOf(closer) : null) };
       }
       return json({ states });
     }
