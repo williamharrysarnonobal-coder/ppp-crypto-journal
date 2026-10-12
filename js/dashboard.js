@@ -31749,7 +31749,14 @@ setTimeout(_runEconNotifications, 12000);
    High impact na balita), may countdown. Earlier today: ang mga lumabas na.
    Ang bilang ay ang mga hindi pa nakikita. */
 const NOTIF_LOG_KEY = 'tanaydana-notif-log', NOTIF_SEEN_KEY = 'tanaydana-notif-seen';
-function _notifLog(){ try{ const v = JSON.parse(localStorage.getItem(NOTIF_LOG_KEY) || '[]'); return Array.isArray(v) ? v : []; }catch(e){ return []; } }
+// Ang Trade Alert ay 6 na oras lang (ALERT_TTL_HOURS): pagkalipas noon ay
+// nabura na ito sa database, kaya inaalis din sa 🔔.
+function _notifExpired(x){
+  const kind = String(x && x.k || '').split(':')[0];
+  const ttl = (typeof ALERT_TTL_HOURS !== 'undefined' ? ALERT_TTL_HOURS : 6) * 3600000;
+  return (kind === 'alerts' || kind === 'alertsbatch') && Date.now() - (x.ts || 0) >= ttl;
+}
+function _notifLog(){ try{ const v = JSON.parse(localStorage.getItem(NOTIF_LOG_KEY) || '[]'); return Array.isArray(v) ? v.filter(x => !_notifExpired(x)) : []; }catch(e){ return []; } }
 function _notifLogPush(key, title, body, muted){
   const log = _notifLog().filter(x => Date.now() - x.ts < 2 * 86400000);
   log.push({ k: key, title, body, ts: Date.now(), ...(muted ? { muted: true } : {}) });
@@ -32694,13 +32701,14 @@ async function openNotifTarget(key){
     const id = Number(parts[1]);
     switchView('alerts');
     const s = await _waitFor(() => (SIGNAL_ALERTS || []).find(x => x.id === id));
+    const fresh = x => x && Date.now() - new Date(x.alert_at).getTime() < ALERT_TTL_HOURS * 3600000;
     if(!s){
       const cached = (typeof _nfAlerts !== 'undefined' ? _nfAlerts : []).find(x => x.id === id);
-      if(cached){ SIGNAL_ALERTS = [...(SIGNAL_ALERTS || []), cached]; }
+      if(fresh(cached)){ SIGNAL_ALERTS = [...(SIGNAL_ALERTS || []), cached]; }
     }
     const a = (SIGNAL_ALERTS || []).find(x => x.id === id);
-    if(a){ if(a.category && document.getElementById('alertsPanel-' + a.category)) switchAlertsTab(a.category); openAlertDetail(id); }
-    else showToast('That alert is no longer there.');
+    if(a && fresh(a)){ if(a.category && document.getElementById('alertsPanel-' + a.category)) switchAlertsTab(a.category); openAlertDetail(id); }
+    else showToast(`This alert has expired. Trade alerts are kept for ${ALERT_TTL_HOURS} hours.`);
     return;
   }
   if(kind === 'alertsbatch'){ switchView('alerts'); return; }
@@ -33007,6 +33015,15 @@ const PB_TYPES = [
   ['text', 'Text (record only)'], ['textarea', 'Long text (record only)']
 ];
 const PB_RECORD_ONLY = ['text', 'textarea'];
+/* Ang eksaktong mga tanong na binabasa ng _autoUnfollowedRules (byText).
+   Kapag may idinagdag doon, idagdag din dito. */
+const PB_AUTO_RULE_TEXTS = [
+  'Did 3min MACD Breakdown?', 'Did 3min MACD Breakout?',
+  'Did MACD cross the zero line downward when your order triggered?', 'Did MACD cross the zero line upward when your order triggered?',
+  '1H MACD in Bear Territory (Red Histogram)?', '1H MACD in Bull Territory (Green Histogram)?',
+  '4H MACD in Bear Territory (Red Histogram)?', '4H MACD in Bull Territory (Green Histogram)?',
+  'Left Hand Present?', 'Right Hand Present?'
+];
 const PB_PICK = ['choice', 'radio', 'dropdown', 'checkbox'];
 function _pbCleanItem(it){
   const o = { ...it, tag: _pbClean(it.tag, 60), text: _pbClean(it.text, 200) };
@@ -33392,7 +33409,8 @@ function editPlaybook(){
   _pbOpenEditor({ isNew: false, key, isBuiltin: !cfg.custom, name: cfg.name || '', direction: dir, trade_setup: _pbSetupOf(key),
     pattern_type: pattern, min_pct: Number.isFinite(cfg.minConfluencePct) ? cfg.minConfluencePct : DEFAULT_MIN_CONFLUENCE_PCT,
     no_auto_rules: !!cfg.noAutoRules, chart_patterns: (cfg.patterns || []).slice(), notes: cfg.notes || '',
-    archived: !!cfg.archived, items: JSON.parse(JSON.stringify(cfg.items)), savedLen: cfg.items.length });
+    archived: !!cfg.archived, items: JSON.parse(JSON.stringify(cfg.items)), savedLen: cfg.items.length,
+    origText: cfg.items.map(it => it.text) });
 }
 function _pbFreshItems(cfg){
   return _cflList(cfg, {}).map(({ it }) => {
@@ -33455,6 +33473,7 @@ function _pbRenderEditor(){
           </span>
         </div>
         <input class="pb-qtext" type="text" maxlength="200" placeholder="The question, e.g. 1H MACD in Bull Territory?" value="${escapeHtml(it.text || '')}" oninput="_pbDraft.items[${i}].text=this.value">
+        ${d.origText && PB_AUTO_RULE_TEXTS.includes(d.origText[i]) ? '<div class="pb-auto-note">⚙ Auto-rule question: the app reads this exact wording to mark broken rules. Rewording or removing it turns that check off.</div>' : ''}
         <div class="pb-qopts">
           <label class="pb-type"><span>Answer type</span>
             <select onchange="setPbQuestionType(${i},this.value)">
@@ -33593,8 +33612,12 @@ async function savePlaybook(){
   if(live.some(it => !it.text)){ err.textContent = 'Every question needs its wording. Remove the empty one or fill it in.'; return; }
   if(live.some(it => it.select && it.select.length < 2)){ err.textContent = 'A Buttons, Radio, Dropdown or Checkbox question needs at least two options.'; return; }
   if(live.some(it => it.select && new Set(it.select).size !== it.select.length)){ err.textContent = 'Two options in one question have the same name.'; return; }
-  if(live.length && live.every(it => it.noScore)){ err.textContent = 'Add at least one question that scores (not only Text or Date).'; return; }
+  if(live.length && live.every(it => it.noScore)){ err.textContent = 'Add at least one question that scores (not only Text).'; return; }
   items.forEach(it => { Object.keys(it).forEach(k => { if(it[k] === undefined) delete it[k]; }); });
+  // Binago o inalis ang isang tanong na binabasa ng auto-rules: itanong muna.
+  const lostRules = (d.origText || []).map((t, i) => (PB_AUTO_RULE_TEXTS.includes(t) && (!items[i] || items[i].archived || items[i].text !== t)) ? t : null).filter(Boolean);
+  if(lostRules.length && !d.no_auto_rules
+     && !(await customConfirm(`You changed or removed ${lostRules.length === 1 ? 'a question' : lostRules.length + ' questions'} the app reads to mark broken rules automatically (“${lostRules[0]}”${lostRules.length > 1 ? ' and more' : ''}). That automatic check will stop for this playbook. Save anyway?`, 'Save anyway'))) return;
   const pct = Math.max(0, Math.min(100, Math.round(Number(d.min_pct))));
   const row = {
     user_id: CURRENT_USER_ID, key, name: _pbClean(d.name, 80) || null, direction, trade_setup: setup || null, pattern_type: pattern,

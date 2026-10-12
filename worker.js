@@ -845,10 +845,33 @@ async function runPushCron(env, scheduledTime) {
     return alertMsgs;
   };
 
+  /* BANTAY SA BTC BOT. Ang bot ay nag-a-update ng trading_signals.heartbeat_at
+     bawat takbo (ilang minuto). Kapag 2 oras nang walang bago — natulog o
+     nag-battery ang laptop, o nag-crash — sasabihan ang admin (siya ang may-ari
+     ng bot), at muli sa 8 oras. Hindi sa 12AM–7AM UAE; kung offline pa rin
+     pagsapit ng 7:00, doon ipinapadala. */
+  let botMsgs = [], admins = new Set();
+  try {
+    const r = await sb('trading_signals?symbol=eq.BTC&select=heartbeat_at');
+    const hb = r.ok ? ((await r.json())[0] || {}).heartbeat_at : null;
+    if (hb) {
+      const age = Math.floor((minute - Date.parse(hb)) / 60000);
+      const hm = _pzLocalClock(minute, 'Asia/Dubai').hm, quiet = hm < '07:00';
+      const due = (!quiet && (age === 120 || age === 480)) || (hm === '07:00' && age >= 120);
+      if (due) {
+        const h = Math.floor(age / 60);
+        botMsgs = [{ title: 'BTC Bot is offline', body: `No update from the bot for ${h} hour${h === 1 ? '' : 's'}. Check the office laptop: plugged in, awake, and the BTC Bot task running.`, tag: 'bot-offline', url: 'dashboard.html#view=alerts' }];
+        const a = await sb('user_access?role=eq.admin&select=user_id');
+        if (a.ok) (await a.json()).forEach(x => admins.add(x.user_id));
+      }
+    }
+  } catch { botMsgs = []; }
+
   const sends = [];
   for (const s of subs) {
     const prefs = s.prefs || {};
     const msgs = pushMarketMessages(prefs, minute);
+    if (botMsgs.length && admins.has(s.user_id)) msgs.push(...botMsgs);
     if (prefs.alerts !== false) msgs.push(...await getAlertMsgs());
     if (prefs.news !== false) msgs.push(...pushNewsMessages(prefs, await getEvents(), minute));
     if (prefs.reminders !== false) {

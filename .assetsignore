@@ -5,3 +5,8 @@ wrangler.toml
 .assetsignore
 # Notes for Claude Code sessions: internal, not part of the site.
 CLAUDE.md
+# Database migrations: run by hand in Supabase, never needed by a browser,
+# and they describe the whole schema and its RLS.
+supabase_*.sql
+# Test harness (probes + sims), local tooling only.
+tests

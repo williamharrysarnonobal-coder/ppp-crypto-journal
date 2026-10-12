@@ -38,9 +38,13 @@ commit**. Remove anything that stops being true. Never put secrets here.
 
 1. `node -c js/dashboard.js` (and `node -c worker.js` if touched).
 2. CSS `{`/`}` counts match; HTML open/close tag counts match.
-3. Exercise the change in a real browser (desktop and 390px mobile). On the
-   office laptop there are headless-Chrome probes and ~100 regression sims in
-   the session scratchpad; elsewhere, test by hand in the browser.
+3. Run the test harness in `tests/` (see `tests/README.md`):
+   `node tests/runall.js` (~100 sims, must print "lahat pumasa") and
+   `node tests/probe-mobile.js` (headless Chrome at 390px, fake Supabase).
+   For a one-off browser check of a new feature, write it in
+   `tests/mid-dbg.txt`, then `node tests/mk-dbg.js && node tests/probe-dbg.js`.
+   When a change alters text a sim greps for, update the sim in the same
+   commit. Also check the feature by hand in the browser.
 4. Bump the cache-busting `?v=N` on `js/dashboard.js` and/or `css/style.css`
    in **every** `*.html` that loads them (the app is heavily cached; a missed
    bump looks like "walang nagbago").
@@ -86,6 +90,9 @@ find/replace, try the LF form, then the CRLF form.
   `[triggers]`) that sends phone push notifications.
 - `sw.js`: service worker for web push; a tap opens the exact item via a
   `#open=KEY` deep link.
+- `.assetsignore` keeps non-site files off tanaydana.com: `worker.js`,
+  `wrangler.toml`, `CLAUDE.md`, `supabase_*.sql`, `tests/`. Add any new
+  internal file there.
 - `supabase_*.sql`: one file per feature, run **by the owner** in the Supabase
   SQL Editor. Settings › Database status (`DB_CHECKS` in dashboard.js) shows
   which ones are still missing. Add every new SQL file to `DB_CHECKS`, and
@@ -109,15 +116,24 @@ find/replace, try the LF form, then the CRLF form.
   **Alerts expire after 6 hours**: the Worker cron (`expireTradeAlerts`)
   deletes older rows every minute (a real delete, by the owner's choice), and
   the dashboard only fetches the last 6 hours (`ALERT_TTL_HOURS` in both
-  `worker.js` and `dashboard.js`; keep them equal).
+  `worker.js` and `dashboard.js`; keep them equal). Expired alerts also drop
+  out of the 🔔 list, and opening one says it expired.
 - **`trading_signals`**: older "current state per symbol" table, upserted
   every bot cycle. Still written by the bots for their own heartbeat; **not**
   read by the dashboard. Don't reintroduce a UI dependency on it.
-- Bots run locally on the office laptop via Task Scheduler (they stop when
-  the laptop sleeps or runs on battery). The ALTS bot (`crypto_live_bot.py`)
-  is deliberately disabled; only the BTC bot posts alerts (symbol `BTC`).
-  Code edits need a bot restart. The owner's default for bots is "check, don't
-  change" unless they ask.
+- Bots run locally on the office laptop via Task Scheduler. The ALTS bot
+  (`crypto_live_bot.py`) is deliberately disabled, and BTC was removed from
+  its coin list so re-enabling it can't double BTC alerts; only the BTC bot
+  posts BTC alerts (symbol `BTC`). Code edits need a bot restart
+  (Stop/Start-ScheduledTask 'BTC Bot'). The owner's default for bots is
+  "check, don't change" unless they ask.
+- **BTC bot watchdog**: the bot writes `trading_signals.heartbeat_at` every
+  cycle. The Worker cron pushes "BTC Bot is offline" to admins' phones at 2h
+  and 8h without a heartbeat (not between 12AM and 7AM UAE; sent at 7:00
+  instead).
+- BTC 1H HL / LH conditions (owner's rules, 2026-10-12): 4H MACD+hist on the
+  trend side, 1H MACD trend side with 1H hist pulling back, 30M MACD still on
+  the trend side, 15M MACD+hist pulling back. 12H is not required.
 
 ## Confluence checklists = Playbooks
 
@@ -141,7 +157,11 @@ find/replace, try the LF form, then the CRLF form.
   `_selectCredit`, `_ynCredit`; keep the tooltip, trade page, stats and
   win-rate review consistent with them.
 - Auto-rules (`_autoUnfollowedRules`) match questions by **exact text**:
-  rewording a question can switch an auto-rule off.
+  rewording a question can switch an auto-rule off. The editor flags those
+  questions and asks before saving a rewording; the list is
+  `PB_AUTO_RULE_TEXTS`, which must match the `byText(...)` calls.
+- The Confluence window keeps its Yes/Almost/No/Other buttons look (owner's
+  choice); "Radio" is only how the editor describes those questions.
 
 ## UI conventions
 

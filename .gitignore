@@ -13,3 +13,9 @@ screener_bot.py
 # Python bytecode cache
 __pycache__/
 *.pyc
+
+# Test harness output (tests/ is committed, its by-products are not)
+tests/*.png
+tests/probe-dbg.js
+tests/mid-dbg.txt
+tests/*.json
