@@ -18155,6 +18155,7 @@ function _shareFileName(canvasId){
   if(canvasId === 'profShareCanvas') return `tanaydana-trader-card-${_mhDayIso(Date.now())}.png`;
   if(canvasId === 'nfShareCanvas') return `tanaydana-${(_nfShareRow && _nfShareRow.type) || 'notification'}-${_mhDayIso(Date.now())}.png`;
   if(canvasId === 'mhShareCanvas') return `market-hours-${_mhDayIso(Date.now())}.png`;
+  if(canvasId === 'econShareCanvas' && typeof _econShareName === 'function') return _econShareName();
   if(canvasId === 'calShareCanvas' && _calShareKind === 'year') return `year-${YEAR_OVERVIEW}.png`;
   if(canvasId === 'calShareCanvas'){
     return `calendar-${calMonth.getFullYear()}-${String(calMonth.getMonth() + 1).padStart(2, '0')}.png`;
@@ -21141,7 +21142,8 @@ function renderEconCalDetail(){
     filteredEconEvents().filter(e => new Date(e.event_date).toDateString() === selectedEconDate)
   );
 
-  titleEl.textContent = new Date(selectedEconDate).toLocaleDateString('en-US',{weekday:'long', month:'long', day:'numeric'});
+  titleEl.innerHTML = `<span>${escapeHtml(new Date(selectedEconDate).toLocaleDateString('en-US',{weekday:'long', month:'long', day:'numeric'}))}</span>`
+    + (dayEvents.length ? `<button type="button" class="econ-share-btn" title="Share this day as an image" aria-label="Share this day" onclick="openEconShare('day')"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.6 13.5 6.8 4"/><path d="m15.4 6.5-6.8 4"/></svg><span>Share day</span></button>` : '');
 
   bodyEl.innerHTML = dayEvents.map(e => {
     const time = new Date(e.event_date).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'});
@@ -21160,6 +21162,7 @@ function renderEconCalDetail(){
           ${values ? `<div class="econ-event-values">${values}</div>` : ''}
         </div>
         <span class="pill ${impactClass}">${escapeHtml(e.impact || '—')}</span>
+        <button type="button" class="econ-row-share" title="Share this news as an image" aria-label="Share this news" onclick="event.stopPropagation();openEconShare('event', ${Number(e.id)})"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.6 13.5 6.8 4"/><path d="m15.4 6.5-6.8 4"/></svg></button>
       </div>
     `;
   }).join('') || `<div class="empty-state">No events this day.</div>`;
@@ -33701,3 +33704,169 @@ async function playbookCodeAction(){
   if(_pbSplitKey(`${dir}|${pattern}`).pattern !== _pbClean(obj.p, 40))
     document.getElementById('pbEditError').textContent = `You already have a ${dir} “${_pbClean(obj.p, 40)}” playbook, so this one is named “${pattern}”. Change it if you like.`;
 }
+
+
+/* ---------- SHARE: Calendar (news) ----------
+   Larawan lang. Tatlong uri: ang napiling araw, ang linggo nito (Lunes–
+   Linggo), at isang news. Sumusunod sa impact filter at US Only ng Calendar —
+   kung ano ang nakikita mo, iyon ang nasa larawan. */
+let _econShare = null;   // { kind, id? }
+const ECON_SHARE_COLOR = { high:'#FF5C5C', medium:'#FFA53B', low:'#93989F', holiday:'#3B9EFF' };
+function _econShareFilterLabel(){
+  const all = ECON_IMPACT_LEVELS.every(l => activeEconImpactFilters.has(l));
+  const lv = all ? 'All impact' : ECON_IMPACT_LEVELS.filter(l => activeEconImpactFilters.has(l)).join(' · ') + ' impact';
+  return lv + (econUSOnly ? ' · US only' : '');
+}
+function _econWeekRange(dateStr){
+  const d = new Date(dateStr || new Date().toDateString());
+  const start = new Date(d.getFullYear(), d.getMonth(), d.getDate() - ((d.getDay() + 6) % 7));
+  const end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 7);
+  return { start, end };
+}
+function _econShareEvents(){
+  const s = _econShare;
+  if(!s) return [];
+  if(s.kind === 'event') return ECON_EVENTS.filter(e => e.id === s.id);
+  if(s.kind === 'day') return sortEconEventsByImpact(filteredEconEvents().filter(e => new Date(e.event_date).toDateString() === selectedEconDate))
+    .slice().sort((a, b) => new Date(a.event_date) - new Date(b.event_date));
+  const { start, end } = _econWeekRange(selectedEconDate);
+  return filteredEconEvents().filter(e => { const t = new Date(e.event_date); return t >= start && t < end; })
+    .sort((a, b) => new Date(a.event_date) - new Date(b.event_date));
+}
+function _econShareName(){
+  const s = _econShare || {};
+  const iso = d => _dpIso(new Date(d));
+  if(s.kind === 'event'){ const e = ECON_EVENTS.find(x => x.id === s.id); return `news-${String(e && e.title || 'event').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40)}-${iso(e ? e.event_date : Date.now())}.png`; }
+  if(s.kind === 'week') return `news-week-${iso(_econWeekRange(selectedEconDate).start)}.png`;
+  return `news-${iso(selectedEconDate || Date.now())}.png`;
+}
+function _econFit(ctx, text, maxW){
+  let t = String(text || '');
+  if(ctx.measureText(t).width <= maxW) return t;
+  while(t.length > 1 && ctx.measureText(t + '…').width > maxW) t = t.slice(0, -1);
+  return t + '…';
+}
+function _econPill(ctx, x, y, label, color, font){
+  ctx.font = font; const w = ctx.measureText(label).width + 28;
+  ctx.globalAlpha = 0.16; ctx.fillStyle = color;
+  ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x - w, y - 30, w, 40, 20) : ctx.rect(x - w, y - 30, w, 40); ctx.fill();
+  ctx.globalAlpha = 1; ctx.fillStyle = color; ctx.textAlign = 'center'; ctx.fillText(label, x - w / 2, y - 3); ctx.textAlign = 'left';
+  return w;
+}
+function drawEconShare(){
+  const cv = document.getElementById('econShareCanvas');
+  if(!cv || !_econShare) return;
+  const C = { bg:'#12141C', surf:'#1B1F2B', rule:'#2E3446', ink:'#F1EEE6', muted:'#93989F', accent:'#F0B429' };
+  const font = (w, s) => `${w} ${s}px "Public Sans", system-ui, sans-serif`;
+  const W = 1200, L = 72;
+  const time = d => new Date(d).toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit' });
+  const imp = e => String(e.impact || '').toLowerCase();
+  const values = e => [['Forecast', e.forecast], ['Previous', e.previous], ['Actual', e.actual]].filter(v => v[1]);
+  const events = _econShareEvents();
+  const ctx = cv.getContext('2d');
+
+  if(_econShare.kind === 'event'){
+    const e = events[0];
+    if(!e) return;
+    const g = typeof findEconGlossaryEntry === 'function' ? findEconGlossaryEntry(e.title) : null;
+    cv.width = W; cv.height = g ? 1100 : 900;
+    const H = cv.height, col = ECON_SHARE_COLOR[imp(e)] || C.muted;
+    ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = col; ctx.fillRect(0, 0, 12, H);
+    ctx.fillStyle = col; ctx.font = font(800, 26); ctx.fillText(`${(e.impact || 'News').toUpperCase()} IMPACT NEWS`, L, 100);
+    ctx.fillStyle = C.muted; ctx.font = font(600, 28);
+    ctx.fillText(`${new Date(e.event_date).toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric' })} · ${time(e.event_date)} UAE`, L, 146);
+    ctx.fillStyle = C.ink; ctx.font = font(800, 62);
+    const tl = _wrapCanvasText(ctx, e.title, W - L * 2, 3);
+    tl.forEach((line, i) => ctx.fillText(line, L, 250 + i * 74));
+    let y = 250 + tl.length * 74 + 4;
+    if(e.country){ ctx.fillStyle = C.muted; ctx.font = font(600, 30); ctx.fillText(e.country, L, y); y += 30; }
+    const vs = values(e);
+    if(vs.length){
+      y += 40;
+      const bw = (W - L * 2 - 20 * (vs.length - 1)) / vs.length;
+      vs.forEach(([k, v], i) => {
+        const x = L + i * (bw + 20);
+        ctx.fillStyle = C.surf; ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x, y, bw, 130, 14) : ctx.rect(x, y, bw, 130); ctx.fill();
+        ctx.fillStyle = C.muted; ctx.font = font(700, 20); ctx.fillText(k.toUpperCase(), x + 24, y + 44);
+        ctx.fillStyle = k === 'Actual' ? C.accent : C.ink; ctx.font = font(800, 42); ctx.fillText(_econFit(ctx, v, bw - 48), x + 24, y + 100);
+      });
+      y += 130;
+    }
+    if(g){
+      y += 70;
+      ctx.fillStyle = C.muted; ctx.font = font(700, 20); ctx.fillText('WHAT IS THIS?', L, y);
+      ctx.fillStyle = C.ink; ctx.font = font(500, 28);
+      _wrapCanvasText(ctx, g.en, W - L * 2, 4).forEach((line, i) => ctx.fillText(line, L, y + 48 + i * 40));
+    }
+    ctx.fillStyle = C.muted; ctx.font = font(500, 22); ctx.fillText('Economic Calendar · UAE time', L, H - 56);
+    ctx.textAlign = 'right'; ctx.fillStyle = C.accent; ctx.font = font(800, 24); ctx.fillText('TANAYDANA', W - L, H - 56); ctx.textAlign = 'left';
+    return;
+  }
+
+  // Araw o linggo: listahan, nakapangkat kada araw.
+  const MAX = _econShare.kind === 'week' ? 36 : 24;
+  const shown = events.slice(0, MAX);
+  const groups = [];
+  shown.forEach(e => {
+    const k = new Date(e.event_date).toDateString();
+    let gp = groups.find(x => x.k === k);
+    if(!gp){ gp = { k, list: [] }; groups.push(gp); }
+    gp.list.push(e);
+  });
+  const ROW = 92, DAYH = 76;
+  const listH = shown.length ? groups.length * DAYH + shown.length * ROW : 120;
+  cv.width = W; cv.height = Math.max(900, 300 + listH + (events.length > MAX ? 60 : 0) + 140);
+  const H = cv.height;
+  ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = C.accent; ctx.fillRect(0, 0, 12, H);
+  ctx.fillStyle = C.ink; ctx.font = font(800, 64);
+  ctx.fillText(_econShare.kind === 'week' ? 'News this week'
+    : selectedEconDate === new Date().toDateString() ? 'News today' : 'Economic news', L, 130);
+  ctx.fillStyle = C.muted; ctx.font = font(500, 28);
+  let sub;
+  if(_econShare.kind === 'week'){
+    const { start, end } = _econWeekRange(selectedEconDate);
+    const last = new Date(end.getTime() - 86400000);
+    const f = d => d.toLocaleDateString('en-US', { month:'short', day:'numeric' });
+    sub = `${f(start)} – ${f(last)}`;
+  }else sub = new Date(selectedEconDate).toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric' });
+  ctx.fillText(`${sub} · UAE time · ${_econShareFilterLabel()}`, L, 180);
+  let y = 250;
+  if(!shown.length){ ctx.fillStyle = C.muted; ctx.font = font(500, 30); ctx.fillText('No news with this filter.', L, y + 40); }
+  groups.forEach(gp => {
+    if(_econShare.kind === 'week'){
+      y += 56;
+      ctx.fillStyle = C.accent; ctx.font = font(800, 24);
+      ctx.fillText(new Date(gp.k).toLocaleDateString('en-US', { weekday:'long', month:'short', day:'numeric' }).toUpperCase(), L, y);
+      y += 20;
+    }else y += 10;
+    gp.list.forEach(e => {
+      const col = ECON_SHARE_COLOR[imp(e)] || C.muted;
+      ctx.fillStyle = C.rule; ctx.fillRect(L, y, W - L * 2, 1);
+      const base = y + 48;
+      ctx.fillStyle = col; ctx.beginPath(); ctx.arc(L + 8, base - 9, 7, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = C.ink; ctx.font = font(700, 28); ctx.fillText(time(e.event_date), L + 28, base);
+      const pw = _econPill(ctx, W - L, base, (e.impact || '—'), col, font(700, 20));
+      ctx.fillStyle = C.ink; ctx.font = font(600, 28);
+      const title = `${e.country ? e.country + ' · ' : ''}${e.title}`;
+      ctx.fillText(_econFit(ctx, title, W - L - 200 - pw - L - 16), L + 200, base);
+      const vs = values(e);
+      if(vs.length){ ctx.fillStyle = C.muted; ctx.font = font(500, 22); ctx.fillText(_econFit(ctx, vs.map(([k, v]) => `${k} ${v}`).join('   ·   '), W - L - 200 - L), L + 200, base + 32); }
+      y += ROW;
+    });
+  });
+  if(events.length > MAX){ y += 50; ctx.fillStyle = C.muted; ctx.font = font(600, 24); ctx.fillText(`+ ${events.length - MAX} more in the app`, L, y); }
+  ctx.fillStyle = C.muted; ctx.font = font(500, 22); ctx.fillText('Economic Calendar', L, H - 56);
+  ctx.textAlign = 'right'; ctx.fillStyle = C.accent; ctx.font = font(800, 24); ctx.fillText('TANAYDANA', W - L, H - 56); ctx.textAlign = 'left';
+}
+function openEconShare(kind, id){
+  if(kind !== 'event' && !selectedEconDate) selectedEconDate = new Date().toDateString();
+  _econShare = { kind, id };
+  const title = kind === 'event' ? 'Share this news' : kind === 'week' ? 'Share this week’s news' : 'Share this day’s news';
+  document.getElementById('econShareTitle').textContent = title;
+  document.getElementById('econShareNativeBtn').style.display = (navigator.canShare && navigator.share) ? '' : 'none';
+  document.getElementById('econShareModal').classList.add('open');
+  drawEconShare();
+}
+function closeEconShare(){ document.getElementById('econShareModal').classList.remove('open'); }
