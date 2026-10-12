@@ -4728,11 +4728,11 @@ const WR_MIN_HIST = 5;
 // 3rd orange, 4th/5th red).
 function _wrAnswerMet(it, ans){
   const _ansKey = a => (typeof a === 'string' && a.startsWith('other:')) ? 'almost' : a;
-  if(ans === undefined || ans === null) return null;
+  if(ans === undefined || ans === null || it.noScore) return null;
   if(it.select){
-    const idx = it.select.indexOf(ans);
-    if(idx < 0) return null;
-    return idx <= 1 ? 'met' : (idx === 2 ? 'partial' : 'missed');
+    if(!Array.isArray(ans) && !it.select.includes(ans)) return null;
+    const c = _selectCredit(it, ans);
+    return c >= 1 ? 'met' : (c > 0 ? 'partial' : 'missed');
   }
   ans = _ansKey(ans);
   if(it.invert) return ans === 'no' ? 'met' : (ans === 'almost' ? 'partial' : 'missed');
@@ -4747,7 +4747,7 @@ function _wrConfluenceRows(closed, periodIds){
     if(!cfg || !t.confluence_answers) return;
     cfg.items.forEach((it, i) => {
       const ans = t.confluence_answers[i];
-      if(ans === undefined) return;
+      if(ans === undefined || it.noScore) return;
       const id = `${key}|${i}|${ans}`;
       if(!seen[id]) seen[id] = { key, i, ans, it, now: [], hist: [] };
       seen[id].now.push(t);
@@ -4760,7 +4760,7 @@ function _wrConfluenceRows(closed, periodIds){
     if(!t.close_date || periodIds.has(t.id) || !t.confluence_answers) return;
     const key = `${t.trade_type}|${t.pattern_type}`;
     entries.forEach(e => {
-      if(e.key === key && t.confluence_answers[e.i] === e.ans) e.hist.push(t);
+      if(e.key === key && JSON.stringify(t.confluence_answers[e.i]) === JSON.stringify(e.ans)) e.hist.push(t);
     });
   });
 
@@ -4771,7 +4771,7 @@ function _wrConfluenceRows(closed, periodIds){
   // there isn't.
   return entries.map(e => ({
     met: _wrAnswerMet(e.it, e.ans),
-    answer: e.it.select ? e.ans : (labelFor[e.ans] || e.ans),
+    answer: Array.isArray(e.ans) ? e.ans.join(', ') : e.it.select ? e.ans : (labelFor[e.ans] || e.ans),
     // Kept so the review can group mistakes under the pattern they happened
     // on — "5 mins HL" behaves nothing like "1 hour LH".
     pattern: e.key.split('|')[1] || e.key,
@@ -6360,7 +6360,7 @@ function _confluenceItemAnswer(t, pick){
   const i = cfg.items.findIndex(pick);
   if(i === -1) return null;
   const it = cfg.items[i], ans = _ansKey(t.confluence_answers[i]);
-  if(!ans || it.select) return null;
+  if(!ans || it.select || it.noScore) return null;
   const credit = it.invert
     ? (ans === 'no' ? 1 : ans === 'almost' ? 0.5 : 0)
     : ((ans === 'yes' || ans === 'retest') ? 1 : ans === 'almost' ? 0.5 : 0);
@@ -6795,7 +6795,7 @@ function _recDimensions(trades){
   // accept, and a value the question could never have produced is treated as
   // stale rather than shown as data.
   const answerBy = _confluenceAnswerAt;
-  dims.push({ label:'Sequence position', groups: _recGroupBy(trades, t => answerBy(t, it => it.select)) });
+  dims.push({ label:'Sequence position', groups: _recGroupBy(trades, t => answerBy(t, it => it.select && !it.ui)) });
   dims.push({ label:'Entry trigger', groups: _recGroupBy(trades, t => {
     // A retest item is a yes/no/almost question, plus "retest" itself — not a
     // select, so its allowed answers are named here.
@@ -7017,8 +7017,9 @@ function _staleConfluenceItems(t){
   const YESNO = ['yes','no','almost','retest'];
   return cfg.items.map((it, i) => {
     const a = t.confluence_answers[i];
-    if(!a) return null;
+    if(!a || it.noScore) return null;
     const valid = it.select || YESNO;
+    if(Array.isArray(a)) return a.every(x => valid.includes(x)) ? null : { i, tag: it.tag, got: a.join(', '), expected: valid };
     return valid.includes(a) ? null : { i, tag: it.tag, got: a, expected: valid };
   }).filter(Boolean);
 }
@@ -14683,6 +14684,9 @@ function _confluenceTooltipRows(row){
     const raw = ans[i];
     const label = it.tag || it.text || `Q${i+1}`;
     if(raw === undefined) return { label, state:'blank', answer:'—' };
+    if(it.noScore) return { label, state:'blank', answer: String(raw).slice(0, 40) };
+    if(Array.isArray(raw)) return { label, answer: raw.join(', ') || '—',
+      state: (c => c >= 1 ? 'met' : (c > 0 ? 'half' : 'missed'))(_selectCredit(it, raw)) };
     const a = it.select ? raw : _ansKey(raw);
     let credit;
     if(it.select) credit = _selectCredit(it, a);
@@ -17385,14 +17389,19 @@ function _renderTradeViewConfluenceGroup(row){
     }
     // "Sequence"-style items (select) store the literal chosen option
     // (e.g. "3rd") as the answer, not a yes/retest/almost/no value.
-    const display = item.select ? escapeHtml(ans)
+    const display = Array.isArray(ans) ? escapeHtml(ans.join(', ') || '—')
+      : item.noScore ? escapeHtml(String(ans))
+      : item.select ? escapeHtml(ans)
       : _isOtherAns(ans) ? escapeHtml(_fmtAns(ans)) : (answerLabel[ans] || ans);
     // Left/Right Hand Present are inverted on purpose (No is the good
     // outcome there) — flip which color "yes"/"no" map to for those items.
     const invertedColor = { yes:'var(--loss)', no:'var(--win)', retest:answerColor.retest, almost:answerColor.almost };
     // Sequence picks (1st..5th) get the same tiered tint as the live chip
     // picker instead of plain white — position in the list drives the color.
-    const color = item.select ? _sequenceTint(item.select.indexOf(ans)) : ((item.invert ? invertedColor : answerColor)[_ansKey(ans)] || 'var(--ink)');
+    const creditTint = c => c >= 1 ? 'var(--win)' : (c > 0 ? 'var(--accent)' : 'var(--loss)');
+    const color = item.noScore ? 'var(--ink)'
+      : (item.select && (item.points || Array.isArray(ans))) ? creditTint(_selectCredit(item, ans))
+      : item.select ? _sequenceTint(item.select.indexOf(ans)) : ((item.invert ? invertedColor : answerColor)[_ansKey(ans)] || 'var(--ink)');
     return `<div class="field-row"><label>${escapeHtml(item.text)}</label><div class="field-static" style="color:${color};">${display}</div></div>`;
   }).join('') : '';
 
@@ -26310,6 +26319,9 @@ function _sequenceTint(idx){
 // so Yes/No/Retest/Almost items and multi-choice "Sequence" items (select)
 // render identically in both places.
 function _renderConfluenceItemRow(it, i, ans, setAnswerFn){
+  // Ang mga uri ng sagot na pinili sa Playbook (Radio, Dropdown, Checkbox,
+  // Toggle, Text, Long text, Date).
+  if(it.ui && typeof _renderCflCustomRow === 'function') return _renderCflCustomRow(it, i, ans, setAnswerFn);
   if(it.select){
     // Later position in the sequence = more red (a 4th/5th HL/LH is further
     // into an already-extended move than a 1st/2nd) — same tint used for
@@ -26318,7 +26330,9 @@ function _renderConfluenceItemRow(it, i, ans, setAnswerFn){
       // Pantay ang bawat sagot sa isang allGood na tanong, kaya pantay din ang
       // kulay — ang pulang ikalimang chip ay magsasabing may mali sa isang
       // sagot na tama naman.
-      const tint = it.allGood ? 'var(--win)' : _sequenceTint(idx);
+      const tint = it.allGood ? 'var(--win)'
+        : it.points ? (c => c >= 1 ? 'var(--win)' : (c > 0 ? 'var(--warn)' : 'var(--loss)'))(_selectCredit(it, opt))
+        : _sequenceTint(idx);
       const isActive = ans === opt;
       const style = isActive ? `border-color:${tint};background:${tint};color:#fff;` : `border-color:${tint};color:${tint};`;
       return `<span class="cfl-pattern-chip ${isActive?'active':''}" style="${style}" onclick="${setAnswerFn}(${i},'${opt}')">${opt}</span>`;
@@ -26453,6 +26467,13 @@ function clearCflAnswer(fnName, i){
 }
 
 function _selectCredit(it, ans){
+  /* Playbook: ikaw ang nagtakda ng puntos kada option (Buo / Kalahati / Wala).
+     Checkbox: nagdaragdag ang mga tsek, hanggang isang buong puntos. */
+  if(Array.isArray(ans)){
+    if(!it.points) return ans.length ? 1 : 0;
+    return Math.min(1, ans.reduce((s, o) => s + (Number(it.points[o]) || 0), 0));
+  }
+  if(it.points && Object.prototype.hasOwnProperty.call(it.points, ans)) return Number(it.points[ans]) || 0;
   const idx = it.select.indexOf(ans);
   if(idx < 0) return 0;
   if(it.allGood) return 1;
@@ -26469,6 +26490,7 @@ function _confluenceProgress(items, answers, chartPatternPresent, since){
   let counted = 0, open = 0;
   items.forEach((it, i) => {
     const ans = it.select ? answers[i] : _ansKey(answers[i]);
+    if(it.noScore) return;                         // Text / Date: record lang, walang puntos
     if(it.archived && ans === undefined) return;   // retired at hindi sinagot: wala sa bilang
     if(ans === undefined && it.addedAt && since && String(since) < it.addedAt) return;   // wala pa ang tanong noon
     counted++;
@@ -29055,7 +29077,7 @@ function _bbWarningSignsHtml(key, cfg, done, total, answers){
   const answerLabel = { yes:'Yes', no:'No', retest:'Retest', almost:'Almost' };
   cfg.items.forEach((it, i) => {
     const ans = answers[i];
-    if(ans === undefined || all.winRate === null) return;
+    if(ans === undefined || all.winRate === null || it.noScore || Array.isArray(ans)) return;
     const matching = sameSetup.filter(t => t.confluence_answers && t.confluence_answers[i] === ans);
     if(matching.length < BB_MIN_ANSWER_SAMPLE) return;
     const s = _bbStats(matching);
@@ -32955,10 +32977,77 @@ function _pbRegisterPattern(p, setup){
     if(!m.includes(p)) m.push(p);
   }
 }
+const PB_UI = ['toggle', 'radio', 'dropdown', 'checkbox', 'text', 'textarea', 'date'];
+const PB_TYPES = [
+  ['yn', 'Yes / No'], ['almost', 'Yes / Almost / No'], ['toggle', 'Toggle (On / Off)'],
+  ['choice', 'Buttons (pick one)'], ['radio', 'Radio (pick one)'], ['dropdown', 'Dropdown (pick one)'],
+  ['checkbox', 'Checkbox (pick many)'],
+  ['text', 'Text (record only)'], ['textarea', 'Long text (record only)'], ['date', 'Date (record only)']
+];
+const PB_RECORD_ONLY = ['text', 'textarea', 'date'];
+const PB_PICK = ['choice', 'radio', 'dropdown', 'checkbox'];
 function _pbCleanItem(it){
   const o = { ...it, tag: _pbClean(it.tag, 60), text: _pbClean(it.text, 200) };
   if(Array.isArray(it.select)) o.select = it.select.map(s => _pbClean(s, 40)).filter(Boolean);
+  if(o.ui && !PB_UI.includes(o.ui)) delete o.ui;
+  if(it.points && typeof it.points === 'object'){
+    const p = {};
+    Object.entries(it.points).forEach(([k, v]) => { const kk = _pbClean(k, 40); const n = Number(v); if(kk) p[kk] = n >= 1 ? 1 : (n >= 0.5 ? 0.5 : 0); });
+    o.points = p;
+  }else delete o.points;
+  if(PB_RECORD_ONLY.includes(o.ui)){ o.noScore = true; delete o.select; delete o.points; } else delete o.noScore;
+  if(o.ui === 'checkbox') o.multi = true; else delete o.multi;
+  if(o.ui && !['toggle', ...PB_RECORD_ONLY].includes(o.ui) && !Array.isArray(o.select)) o.select = [];
   return o;
+}
+
+/* ---- ang kontrol sa checklist para sa bawat uri ng sagot ---- */
+function _cflPointTint(it, opt){ const c = _selectCredit(it, opt); return c >= 1 ? 'var(--win)' : (c > 0 ? 'var(--warn)' : 'var(--loss)'); }
+function _renderCflCustomRow(it, i, ans, fn){
+  const label = `<span class="cfl-yn-label"><span class="cfl-yn-tag">${escapeHtml(it.tag || '')}</span>${escapeHtml(it.text)}${it.noScore ? ' <span class="cfl-note-tag">record only</span>' : ''}</span>`;
+  const blank = ans === undefined || (Array.isArray(ans) && !ans.length);
+  const opts = it.select || [];
+  let ctl = '';
+  if(it.ui === 'toggle'){
+    const on = ans === 'yes', off = ans === 'no';
+    ctl = `<button type="button" class="cfl-switch ${on ? 'on' : ''} ${off ? 'off' : ''} ${it.invert ? 'inv' : ''}" role="switch" aria-checked="${on}" aria-label="${escapeHtml(it.text)}"
+        onclick="setCflValue('${fn}', ${i}, '${on ? 'no' : 'yes'}')"><span class="cfl-switch-knob"></span></button>
+      <span class="cfl-switch-label">${on ? 'On' : off ? 'Off' : 'Not set'}</span>`;
+  }else if(it.ui === 'radio'){
+    ctl = `<span class="cfl-pick-list">${opts.map(o => `<label class="cfl-pick"><input type="radio" name="cflr-${fn}-${i}" ${ans === o ? 'checked' : ''}
+        onclick="setCflValue('${fn}', ${i}, '${o}')"><span class="cfl-pick-dot" style="--t:${_cflPointTint(it, o)}"></span>${escapeHtml(o)}</label>`).join('')}</span>`;
+  }else if(it.ui === 'dropdown'){
+    ctl = `<select class="cfl-input" onchange="setCflValue('${fn}', ${i}, this.value)"><option value="">— choose —</option>${opts.map(o => `<option ${ans === o ? 'selected' : ''}>${escapeHtml(o)}</option>`).join('')}</select>`;
+  }else if(it.ui === 'checkbox'){
+    const set = Array.isArray(ans) ? ans : [];
+    ctl = `<span class="cfl-pick-list">${opts.map(o => `<label class="cfl-pick"><input type="checkbox" ${set.includes(o) ? 'checked' : ''}
+        onchange="toggleCflMulti('${fn}', ${i}, '${o}')">${escapeHtml(o)}</label>`).join('')}</span>`;
+  }else if(it.ui === 'text'){
+    ctl = `<input type="text" class="cfl-input" maxlength="300" value="${escapeHtml(ans || '')}" placeholder="Type your answer…" onchange="setCflValue('${fn}', ${i}, this.value, true)">`;
+  }else if(it.ui === 'textarea'){
+    ctl = `<textarea class="cfl-input" rows="3" maxlength="2000" placeholder="Type your answer…" onchange="setCflValue('${fn}', ${i}, this.value, true)">${escapeHtml(ans || '')}</textarea>`;
+  }else if(it.ui === 'date'){
+    ctl = `<input type="date" class="cfl-input cfl-date" value="${escapeHtml(ans || '')}" onchange="setCflValue('${fn}', ${i}, this.value, true)">`;
+  }
+  return `<div class="cfl-yn-item cfl-custom-item ${it.exec ? 'cfl-execution' : ''} ${blank && !it.noScore ? 'cfl-unanswered' : ''} ${['text', 'textarea'].includes(it.ui) ? 'cfl-wide' : ''}">${label}<span class="cfl-custom-ctl">${ctl}</span></div>`;
+}
+function _cflAnsMap(fn){ return fn === 'setBbAnswer' ? bbAnswers : confluenceAnswers; }
+function _cflRerender(fn){ if(fn === 'setBbAnswer') renderBbChecklist(); else renderConfluenceChecklist(); }
+// Itinatakda ang sagot (hindi toggle). Ang Text / Date ay hindi nagre-render:
+// walang puntos ang mga iyon, at mawawala ang focus sa susunod mong pinindot.
+function setCflValue(fn, i, val, noRender){
+  const m = _cflAnsMap(fn);
+  const v = typeof val === 'string' ? val.trim() : val;
+  if(v === '' || v === null || v === undefined) delete m[i]; else m[i] = v;
+  if(!noRender) _cflRerender(fn);
+}
+function toggleCflMulti(fn, i, opt){
+  const m = _cflAnsMap(fn);
+  const set = Array.isArray(m[i]) ? m[i].slice() : [];
+  const k = set.indexOf(opt);
+  if(k > -1) set.splice(k, 1); else set.push(opt);
+  if(set.length) m[i] = set; else delete m[i];
+  _cflRerender(fn);
 }
 function applyPlaybooks(rows){
   (rows || []).forEach(r => {
@@ -33014,7 +33103,7 @@ function _pbSummary(trades){
            avgR: rs.length ? rs.reduce((a, b) => a + b, 0) / rs.length : null };
 }
 function _pbItemCredit(it, raw){
-  if(raw === undefined) return null;
+  if(raw === undefined || it.noScore) return null;
   if(it.select) return _selectCredit(it, raw);
   const a = _ansKey(raw);
   if(it.invert) return a === 'no' ? 1 : (a === 'almost' ? 0.5 : 0);
@@ -33029,7 +33118,7 @@ function _pbStats(key){
   const scored = trades.map(t => ({ t, c: _confluenceCellData(t) })).filter(x => x.c);
   const pass = _pbSummary(scored.filter(x => x.c.state === 'pass').map(x => x.t));
   const fail = _pbSummary(scored.filter(x => x.c.state !== 'pass').map(x => x.t));
-  const questions = _cflList(cfg, {}).map(({ it, i }) => {
+  const questions = _cflList(cfg, {}).filter(({ it }) => !it.noScore).map(({ it, i }) => {
     const met = [], missed = [];
     trades.forEach(t => {
       const ans = t.confluence_answers;
@@ -33087,8 +33176,9 @@ function setPlaybookTab(tab){ _pbTab = tab; renderPlaybookDetail(); }
 
 function _pbQuestionChips(it){
   const c = [];
-  if(it.select) c.push(`Choice: ${it.select.map(escapeHtml).join(' · ')}${it.allGood ? ' (all count)' : ''}`);
-  else c.push(it.almost ? 'Yes / Almost / No' : 'Yes / No');
+  const t = PB_TYPES.find(x => x[0] === _pbTypeOf(it));
+  c.push(t ? t[1] : 'Yes / No');
+  if(it.select) c.push(it.select.map(o => `${escapeHtml(o)} <span class="pb-pts">${({ 1: 'full', 0.5: 'half', 0: '0' })[_selectCredit(it, o)]}</span>`).join(' · '));
   if(it.invert) c.push('No is good');
   if(it.exec) c.push('Execution');
   if(it.retest) c.push('Retest');
@@ -33193,7 +33283,42 @@ function renderPlaybookDetail(){
 }
 
 /* ---------- Editor ---------- */
-function _pbTypeOf(it){ return it.select ? 'choice' : (it.almost ? 'almost' : 'yn'); }
+function _pbTypeOf(it){ return it.ui || (it.select ? 'choice' : (it.almost ? 'almost' : 'yn')); }
+// Ang built-in na tanong ay walang naka-save na puntos (ayon sa posisyon ito):
+// isinusulat ang kasalukuyang puntos bago baguhin ang alinman.
+function _pbMaterialize(it){
+  if(!it.points) it.points = Object.fromEntries((it.select || []).map(o => [o, _selectCredit(it, o)]));
+  delete it.allGood;
+}
+function setPbOption(i, j, val){
+  const it = _pbDraft.items[i], v = _pbClean(val, 40), old = it.select[j];
+  if(!v || (v !== old && it.select.includes(v))){ _pbRenderEditor(); return; }
+  _pbMaterialize(it);
+  it.points[v] = it.points[old] ?? 1;
+  if(v !== old) delete it.points[old];
+  it.select[j] = v;
+  _pbRenderEditor();
+}
+function setPbPoints(i, j, val){
+  const it = _pbDraft.items[i];
+  _pbMaterialize(it);
+  it.points[it.select[j]] = Number(val);
+}
+function addPbOption(i){
+  const it = _pbDraft.items[i];
+  _pbMaterialize(it);
+  let n = it.select.length + 1, name = 'Option ' + n;
+  while(it.select.includes(name)) name = 'Option ' + (++n);
+  it.select.push(name); it.points[name] = 1;
+  _pbRenderEditor();
+}
+function removePbOption(i, j){
+  const it = _pbDraft.items[i];
+  _pbMaterialize(it);
+  delete it.points[it.select[j]];
+  it.select.splice(j, 1);
+  _pbRenderEditor();
+}
 function _pbOpenEditor(draft){
   _pbDraft = draft;
   document.getElementById('pbEditTitle').textContent = draft.isNew ? 'New playbook' : 'Edit playbook';
@@ -33281,18 +33406,26 @@ function _pbRenderEditor(){
         </div>
         <input class="pb-qtext" type="text" maxlength="200" placeholder="The question, e.g. 1H MACD in Bull Territory?" value="${escapeHtml(it.text || '')}" oninput="_pbDraft.items[${i}].text=this.value">
         <div class="pb-qopts">
-          <select onchange="setPbQuestionType(${i},this.value)">
-            <option value="yn" ${type === 'yn' ? 'selected' : ''}>Yes / No</option>
-            <option value="almost" ${type === 'almost' ? 'selected' : ''}>Yes / Almost / No</option>
-            <option value="choice" ${type === 'choice' ? 'selected' : ''}>Choice</option>
-          </select>
-          ${type === 'choice' ? `
-            <input class="pb-qchoices" type="text" placeholder="Choices, comma-separated: 1st, 2nd, 3rd" value="${escapeHtml((it.select || []).join(', '))}" oninput="_pbDraft.items[${i}].select=this.value.split(',').map(s=>s.trim()).filter(Boolean)">
-            <label class="pb-check" title="Off: the first two choices score full, the third half, the rest zero (like Sequence)."><input type="checkbox" ${it.allGood ? 'checked' : ''} onchange="_pbDraft.items[${i}].allGood=this.checked||undefined"> All choices count</label>`
-          : `<label class="pb-check" title="For questions where No is the good answer, e.g. Left Hand Present?"><input type="checkbox" ${it.invert ? 'checked' : ''} onchange="_pbDraft.items[${i}].invert=this.checked||undefined"> No is good</label>
-             <label class="pb-check"><input type="checkbox" ${it.retest ? 'checked' : ''} onchange="_pbDraft.items[${i}].retest=this.checked||undefined"> Retest answer</label>`}
-          <label class="pb-check"><input type="checkbox" ${it.exec ? 'checked' : ''} onchange="_pbDraft.items[${i}].exec=this.checked||undefined"> Execution</label>
+          <label class="pb-type"><span>Answer type</span>
+            <select onchange="setPbQuestionType(${i},this.value)">
+              ${PB_TYPES.map(([v, l]) => `<option value="${v}" ${type === v ? 'selected' : ''}>${l}</option>`).join('')}
+            </select></label>
+          ${['yn', 'almost', 'toggle'].includes(type) ? `<label class="pb-check" title="For questions where No is the good answer, e.g. Left Hand Present?"><input type="checkbox" ${it.invert ? 'checked' : ''} onchange="_pbDraft.items[${i}].invert=this.checked||undefined"> ${type === 'toggle' ? 'Off is good' : 'No is good'}</label>` : ''}
+          ${['yn', 'almost'].includes(type) ? `<label class="pb-check"><input type="checkbox" ${it.retest ? 'checked' : ''} onchange="_pbDraft.items[${i}].retest=this.checked||undefined"> Retest answer</label>` : ''}
+          ${PB_RECORD_ONLY.includes(type) ? '<span class="pb-dim">Saved with the trade; not part of the score.</span>'
+            : `<label class="pb-check"><input type="checkbox" ${it.exec ? 'checked' : ''} onchange="_pbDraft.items[${i}].exec=this.checked||undefined"> Execution</label>`}
         </div>
+        ${PB_PICK.includes(type) ? `<div class="pb-opts">
+          ${(it.select || []).map((o, j) => `<div class="pb-opt">
+            <input type="text" maxlength="40" value="${escapeHtml(o)}" aria-label="Option ${j + 1}" onchange="setPbOption(${i},${j},this.value)">
+            <select aria-label="Points for ${escapeHtml(o)}" onchange="setPbPoints(${i},${j},this.value)">
+              ${[['1', 'Full point'], ['0.5', 'Half point'], ['0', 'No point']].map(([v, l]) => `<option value="${v}" ${String(_selectCredit(it, o)) === v ? 'selected' : ''}>${l}</option>`).join('')}
+            </select>
+            <button type="button" class="pb-opt-del" title="Remove option" onclick="removePbOption(${i},${j})">✕</button>
+          </div>`).join('')}
+          <button type="button" class="pb-opt-add" onclick="addPbOption(${i})">+ Add option</button>
+          <div class="pb-hint">${type === 'checkbox' ? 'Checked options add up, to at most one point. ' : ''}Old trades store the option’s name, so renaming or removing one stops them matching it.</div>
+        </div>` : ''}
       </div>`;
     }).join('')}</div>
     <button type="button" class="drawer-secondary-btn pb-add" onclick="addPbQuestion()">+ Add question</button>
@@ -33331,9 +33464,18 @@ function removePbQuestion(i){
 }
 function setPbQuestionType(i, type){
   const it = _pbDraft.items[i];
-  delete it.almost; delete it.allGood;
-  if(type === 'choice'){ it.select = it.select && it.select.length ? it.select : ['1st', '2nd', '3rd']; delete it.invert; delete it.retest; }
-  else { delete it.select; if(type === 'almost') it.almost = true; }
+  const keep = Array.isArray(it.select) && it.select.length ? it.select.slice() : null;
+  const keepPts = keep ? Object.fromEntries(keep.map(o => [o, _selectCredit(it, o)])) : null;
+  ['ui', 'select', 'multi', 'points', 'allGood', 'almost', 'noScore', 'invert', 'retest'].forEach(k => delete it[k]);
+  if(type === 'almost') it.almost = true;
+  if(type === 'toggle') it.ui = 'toggle';
+  if(PB_PICK.includes(type)){
+    it.select = keep || ['Option 1', 'Option 2'];
+    it.points = keepPts || Object.fromEntries(it.select.map(o => [o, 1]));
+    if(type !== 'choice') it.ui = type;
+    if(type === 'checkbox') it.multi = true;
+  }
+  if(PB_RECORD_ONLY.includes(type)){ it.ui = type; it.noScore = true; delete it.exec; }
   _pbRenderEditor();
 }
 async function _pbUpsert(row){
@@ -33378,7 +33520,9 @@ async function savePlaybook(){
   const live = items.filter(it => !it.archived);
   if(!live.length){ err.textContent = 'Add at least one question.'; return; }
   if(live.some(it => !it.text)){ err.textContent = 'Every question needs its wording. Remove the empty one or fill it in.'; return; }
-  if(live.some(it => it.select && it.select.length < 2)){ err.textContent = 'A Choice question needs at least two choices.'; return; }
+  if(live.some(it => it.select && it.select.length < 2)){ err.textContent = 'A Buttons, Radio, Dropdown or Checkbox question needs at least two options.'; return; }
+  if(live.some(it => it.select && new Set(it.select).size !== it.select.length)){ err.textContent = 'Two options in one question have the same name.'; return; }
+  if(live.length && live.every(it => it.noScore)){ err.textContent = 'Add at least one question that scores (not only Text or Date).'; return; }
   items.forEach(it => { Object.keys(it).forEach(k => { if(it[k] === undefined) delete it[k]; }); });
   const pct = Math.max(0, Math.min(100, Math.round(Number(d.min_pct))));
   const row = {
@@ -33488,7 +33632,7 @@ async function playbookCodeAction(){
     while(CONFLUENCE_SETUPS[`${dir}|${pattern} (${n})`]) n++;
     pattern = `${pattern} (${n})`;
   }
-  const allowed = ['tag', 'text', 'invert', 'almost', 'select', 'allGood', 'exec', 'retest', 'id', 'impliesWhenYes'];
+  const allowed = ['tag', 'text', 'invert', 'almost', 'select', 'allGood', 'exec', 'retest', 'id', 'impliesWhenYes', 'ui', 'multi', 'points', 'noScore'];
   const items = obj.q.slice(0, 40).map(q => {
     const it = {};
     allowed.forEach(k => { if(q && q[k] !== undefined) it[k] = q[k]; });
