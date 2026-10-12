@@ -440,7 +440,10 @@ async function handleUpscale(request, env, action) {
           }
         }
         // Para sa auto-journal: ang exit at ang oras ng fill at ng pagsara.
-        states[id] = { state: 'Closed', how, pnl, entry,
+        // Fee kung ibinibigay ng Upscale (hindi tiyak ang pangalan ng field).
+        const feeOf = o => o ? fromFp9(o.fee ?? o.commission ?? o.tradingFee ?? o.fees) : null;
+        const fees = [feeOf(h), feeOf(closer)].filter(v => v != null && isFinite(v));
+        states[id] = { state: 'Closed', how, pnl, entry, fee: fees.length ? Math.abs(fees.reduce((x, y) => x + y, 0)) : null,
           exit: closer ? entryOf(closer) : null,
           openedAt: tsOf(h), closedAt: closer ? tsOf(closer) : null };
       }

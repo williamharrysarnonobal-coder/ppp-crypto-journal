@@ -25473,7 +25473,7 @@ function _upRememberClosed(orderId, acc, st, rec, setup, placedMap){
   const [, pEntry, pSl] = key ? key.split('|') : [];
   c[orderId] = {
     at: Date.now(), accId: acc.id, account: acc.account_name, setupId: setup ? setup.id : null,
-    how: st.how || null, pnl: st.pnl ?? null, entry: st.entry ?? null, exit: st.exit ?? null,
+    how: st.how || null, pnl: st.pnl ?? null, entry: st.entry ?? null, exit: st.exit ?? null, fee: st.fee ?? null,
     openedAt: st.openedAt || (rec && rec.filledSeenAt ? new Date(rec.filledSeenAt).toISOString() : null),
     closedAt: st.closedAt || new Date().toISOString(),
     plan: { ...(rec && rec.info || {}),
@@ -25495,26 +25495,23 @@ function _localIso(iso){
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
 }
 
-function journalFromUpscaleClose(orderId){
+/* Ang hilerang puno na mula sa Upscale (plano ng setup + tunay na mga numero).
+   Ginagamit ng isahang Journal at ng multi-account na pag-journal. */
+function _upParsedFor(orderId){
   const r = _upClosedAll()[orderId];
-  if(!r){ customAlert('The closed trade details are no longer here. Use Easy Add instead.'); return; }
+  if(!r) return null;
   const setup = (SAVED_SETUPS || []).find(s => s.upscale_order_id === orderId)
     || (r.setupId != null ? (SAVED_SETUPS || []).find(s => String(s.id) === String(r.setupId)) : null);
   const plan = r.plan || {};
   const entryForDir = r.entry ?? plan.entry;
   const base = setup ? _setupJournalPrefill(setup) : {
-    account: r.account || undefined,
-    symbol: plan.symbol || undefined,
+    account: r.account || undefined, symbol: plan.symbol || undefined,
     trade_type: (entryForDir != null && plan.sl != null) ? (entryForDir > plan.sl ? 'Long' : 'Short') : undefined,
-    sl_price: plan.sl ?? undefined,
-    tp_price: plan.tp ?? undefined,
-    position_size: plan.qty ?? undefined,
-    leverage: plan.lev ?? undefined
+    sl_price: plan.sl ?? undefined, tp_price: plan.tp ?? undefined,
+    position_size: plan.qty ?? undefined, leverage: plan.lev ?? undefined
   };
   const up = {
-    entry_price: r.entry ?? undefined,
-    close_price: r.exit ?? undefined,
-    profit_loss: r.pnl ?? undefined,
+    entry_price: r.entry ?? undefined, close_price: r.exit ?? undefined, profit_loss: r.pnl ?? undefined, fee: r.fee ?? undefined,
     win_loss: r.pnl == null ? undefined : r.pnl > 0 ? 'Win' : r.pnl < 0 ? 'Loss' : 'Breakeven',
     exit_type: r.how || undefined,
     open_date: r.openedAt ? _localIso(r.openedAt) : undefined,
@@ -25522,6 +25519,30 @@ function journalFromUpscaleClose(orderId){
   };
   const parsed = { ...base };
   Object.entries(up).forEach(([k, v]) => { if(v !== undefined && v !== null) parsed[k] = v; });
+  return { parsed, setup };
+}
+/* Kunin sa Upscale ngayon din ang sarado nang order — para hindi umasa sa
+   kung bukas ang app (sa device na ito) nang magsara ang trade. */
+async function _upFetchClosed(s){
+  if(!s || !s.upscale_order_id) return false;
+  const acc = (TRADING_ACCOUNTS || []).find(a => String(a.id) === String(s.account_id))
+    || (TRADING_ACCOUNTS || []).find(a => a.account_name === s.account_name);
+  if(!acc || !acc.upscale_account_id) return false;
+  try{
+    const { states } = await _upscaleCall('status', { tradingAccountId: acc.id, symbol: s.symbol, orderIds: [s.upscale_order_id] });
+    const st = states && states[s.upscale_order_id];
+    if(!st || st.state !== 'Closed') return false;
+    let m = {}; try{ m = JSON.parse(localStorage.getItem(_UP_PLACED_KEY) || '{}'); }catch(e){}
+    const rec = Object.values(m).find(v => v.orderId === s.upscale_order_id);
+    _upRememberClosed(s.upscale_order_id, acc, st, rec, s, m);
+    return true;
+  }catch(e){ console.warn('Upscale fetch for journal failed:', e.message); return false; }
+}
+
+function journalFromUpscaleClose(orderId){
+  const row = _upParsedFor(orderId);
+  if(!row){ customAlert('The closed trade details are no longer here. Use Easy Add instead.'); return; }
+  const { parsed, setup } = row;
   if(setup) _mergeSetupFieldsIntoPrefill(parsed, setup.id);
   drawerJournalSetupId = setup ? setup.id : null;
   pendingJournalPrefill = null;
@@ -27912,13 +27933,28 @@ async function saveTradeNote(){
 // same create-drawer Easy Add prefills — the timestamped log gets flattened
 // into Timestamp/Comment blocks since the Trade Journal's Notes field is
 // plain text.
-function journalFromSetup(id){
+async function journalFromSetup(id){
   const s = SAVED_SETUPS.find(x => x.id === id);
   if(!s) return;
-  /* Ang setup na nagsara na sa Upscale at alam na ang mga numero: diretso sa
-     drawer na puno na, walang paste. Hindi sa gitna ng multi-account na
-     pagjo-journal — may sarili iyong daloy. */
-  if(!journalQueue.length && s.upscale_order_id && _upClosedRecord(s.upscale_order_id)){
+  /* Ang setup na naka-link sa Upscale: ang mga numero ay galing sa Upscale,
+     walang paste. Kung hindi pa naitatabi ng app ang pagsara (sarado ang app
+     noon, o ibang device), kinukuha ito ngayon din. Ang "journaled" na tanda
+     ay hindi hadlang: ang drawer na binuksan at kinansela ay hindi pa journal. */
+  if(s.upscale_order_id && !_upClosedAll()[s.upscale_order_id]){
+    showToast('Getting the trade from Upscale…');
+    await _upFetchClosed(s);
+  }
+  const upRow = s.upscale_order_id ? _upParsedFor(s.upscale_order_id) : null;
+  if(upRow){
+    if(journalQueue.length){
+      // Multi-account: ang account na ito ay tapos na nang walang paste.
+      if(upRow.setup) _mergeSetupFieldsIntoPrefill(upRow.parsed, upRow.setup.id);
+      journalBulkPastes.push({ setupId: id, parsed: upRow.parsed });
+      journalQueue.shift();
+      if(journalQueue.length) journalFromSetup(journalQueue[0]);
+      else _openBulkJournalDrawer();
+      return;
+    }
     journalFromUpscaleClose(s.upscale_order_id);
     return;
   }
