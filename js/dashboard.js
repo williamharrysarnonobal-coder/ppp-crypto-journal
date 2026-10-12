@@ -15,6 +15,7 @@ const GATEABLE_FEATURES = [
   { key: 'calculator', label: 'Calculator' },
   { key: 'alerts', label: 'Trade Alerts' },
   { key: 'notebook', label: 'Notebook' },
+  { key: 'playbooks', label: 'Playbooks' },
   { key: 'achievements', label: 'Achievements' },
   { key: 'challenges', label: 'Challenges' },
   { key: 'news', label: 'Calendar' },
@@ -852,6 +853,7 @@ function switchView(view){
   if(view === 'calculator'){ refreshPosSizeCalculator(); loadSavedSetups(); refreshUpscaleOrderStates(true); }
   if(view === 'settings') renderSettingsPage();
   if(view === 'notebook') loadNotes();
+  if(view === 'playbooks') renderPlaybooks();
   if(view === 'mood') loadMoodEntries();
   if(view === 'plan') loadDailyPlans();
   if(view === 'reports'){
@@ -1034,6 +1036,8 @@ async function initApp(){
   loadOptionsConfig();
   loadFormFieldConfig();
   loadAccounts();
+  // Ang sarili mong mga playbook ang pumapalit sa mga checklist sa code.
+  if(typeof loadPlaybooks === 'function') loadPlaybooks();
 
   setLoading(30);
 
@@ -6979,7 +6983,7 @@ function _confluenceScoreFor(t){
   if(!t.confluence_answers || !Object.keys(t.confluence_answers).length) return null;
   const cfg = CONFLUENCE_SETUPS[`${t.trade_type}|${t.pattern_type}`];
   if(!cfg) return null;
-  const { total, done } = _confluenceProgress(cfg.items, t.confluence_answers, !!t.chart_pattern);
+  const { total, done } = _confluenceProgress(cfg.items, t.confluence_answers, !!t.chart_pattern, t.created_at);
   return total ? done / total : null;
 }
 
@@ -9066,7 +9070,7 @@ setTimeout(recordAppVisit, 3000);
    na API key ay inaalis — hindi ito kailangan sa isang backup at hindi dapat
    nakakalat sa isang file. */
 const BACKUP_TABLES = [TABLE_NAME, 'position_setups', 'trading_accounts', 'daily_plans', 'mood_entries',
-  'notebook_entries', 'finance_accounts', 'finance_transactions', 'finance_budgets', 'finance_recurring', 'achievements', 'user_profile', 'app_visits'];
+  'notebook_entries', 'finance_accounts', 'finance_transactions', 'finance_budgets', 'finance_recurring', 'achievements', 'user_profile', 'app_visits', 'playbooks'];
 async function _fetchAllRows(table){
   const rows = [];
   const page = 1000;
@@ -9135,6 +9139,7 @@ const DB_CHECKS = [
   { file:'supabase_daily_plans.sql', what:'Daily Plan and the psychology check-in', table:'daily_plans', col:'psych' },
   { file:'supabase_app_visits.sql', what:'Daily Check-in Streak (days you opened the app)', table:'app_visits', col:'visit_date' },
   { file:'supabase_push_subscriptions.sql', what:'Phone notifications (push)', table:'push_subscriptions', col:'endpoint,prefs' },
+  { file:'supabase_playbooks.sql', what:'Playbooks (your own confluence checklists)', table:'playbooks', col:'key,items' },
   { file:'supabase_trading_journal_add_post_stop_profit.sql', what:'Post-Stop Profit on trades', table:'trading_journal', col:'post_stop_profit_result' },
   { file:'supabase_position_setups_upscale_order.sql', what:'Upscale order on a setup (Order Placed, Cancel)', table:'position_setups', col:'upscale_order_id' },
   { file:'supabase_trading_accounts_upscale_api.sql', what:'Upscale API key on My Accounts', table:'trading_accounts', col:'upscale_account_id,upscale_account_label' }
@@ -14650,7 +14655,7 @@ function _confluenceCellData(row){
   const cfg = CONFLUENCE_SETUPS[`${row.trade_type}|${row.pattern_type}`];
   const ans = row.confluence_answers;
   if(!cfg || !ans || typeof ans !== 'object' || !Object.keys(ans).length) return null;
-  const { total, done } = _confluenceProgress(cfg.items, ans, !!row.chart_pattern);
+  const { total, done } = _confluenceProgress(cfg.items, ans, !!row.chart_pattern, row.created_at);
   if(!total) return null;
   const pct = Math.round(done / total * 100);
   const bar = Number.isFinite(cfg.minConfluencePct) ? cfg.minConfluencePct : DEFAULT_MIN_CONFLUENCE_PCT;
@@ -14674,7 +14679,7 @@ function _confluenceTooltipRows(row){
   const cfg = CONFLUENCE_SETUPS[`${row.trade_type}|${row.pattern_type}`];
   const ans = row.confluence_answers;
   if(!cfg || !ans || typeof ans !== 'object' || !Object.keys(ans).length) return null;
-  const out = cfg.items.map((it, i) => {
+  const out = (typeof _cflList === 'function' ? _cflList(cfg, ans) : cfg.items.map((it, i) => ({ it, i }))).map(({ it, i }) => {
     const raw = ans[i];
     const label = it.tag || it.text || `Q${i+1}`;
     if(raw === undefined) return { label, state:'blank', answer:'—' };
@@ -17373,7 +17378,7 @@ function _renderTradeViewConfluenceGroup(row){
   // still gets a row (as "Not answered") so you can see what was skipped
   // instead of it silently vanishing from the list.
   const answers = row.confluence_answers || {};
-  const rows = cfg ? cfg.items.map((item, i) => {
+  const rows = cfg ? (typeof _cflList === 'function' ? _cflList(cfg, answers) : cfg.items.map((it, i) => ({ it, i }))).map(({ it: item, i }) => {
     const ans = answers[i];
     if(ans === undefined){
       return `<div class="field-row"><label>${escapeHtml(item.text)}</label><div class="field-static" style="color:var(--muted);">Not answered</div></div>`;
@@ -21784,7 +21789,7 @@ function computeChallenges(trades, achRows){
     const cfg = CONFLUENCE_SETUPS[`${t.trade_type}|${t.pattern_type}`];
     if(!cfg) return null;   // no checklist defined for this setup — not applicable
     const answers = t.confluence_answers || {};
-    const { unanswered } = _confluenceProgress(cfg.items, answers, !!t.chart_pattern);
+    const { unanswered } = _confluenceProgress(cfg.items, answers, !!t.chart_pattern, t.created_at);
     return unanswered === 0 && !!t.chart_pattern;
   };
   for(const t of recentFirst){
@@ -26234,6 +26239,21 @@ const CONFLUENCE_SETUPS = {
                'Fib .382', 'Fib .5', 'Fib .618', 'SnR Flip']
   },
 };
+/* PLAYBOOKS: ang mga checklist sa itaas ang mga panimulang playbook. Kapag
+   in-edit mo ang isa (Playbooks page), ang bersyon mo sa database ang
+   pumapalit dito — tingnan ang applyPlaybooks. Itinatabi ang orihinal. */
+const CONFLUENCE_DEFAULTS = JSON.parse(JSON.stringify(CONFLUENCE_SETUPS));
+/* ANG MGA TANONG NA IPAPAKITA, sa ayos na pinili mo. Ang POSISYON (i) ng
+   bawat tanong ay hindi kailanman nagbabago — doon nakatali ang mga sagot ng
+   bawat trade. Ang "retired" na tanong ay itinatago sa bagong checklist pero
+   nananatili sa trade na sumagot dito, para hindi magbago ang score nito. */
+function _cflList(cfg, answers){
+  const a = answers || {};
+  return (cfg && cfg.items ? cfg.items : [])
+    .map((it, i) => ({ it, i }))
+    .filter(({ it, i }) => !it.archived || a[i] !== undefined)
+    .sort((x, y) => (x.it.order ?? x.i) - (y.it.order ?? y.i) || x.i - y.i);
+}
 
 /* MARAMING CHART PATTERN SA IISANG TRADE.
 
@@ -26439,13 +26459,20 @@ function _selectCredit(it, ans){
   return idx <= 1 ? 1 : (idx === 2 ? 0.5 : 0);
 }
 
-function _confluenceProgress(items, answers, chartPatternPresent){
+/* `since` (opsyonal): kailan ginawa ang trade. Ang tanong na idinagdag mo sa
+   playbook PAGKATAPOS noon ay hindi pa umiiral nang sagutan ito — kaya kung
+   blangko, hindi ito ibinibilang laban sa trade. */
+function _confluenceProgress(items, answers, chartPatternPresent, since){
   const _ansKey = a => (typeof a === 'string' && a.startsWith('other:')) ? 'almost' : a;
   const answeredValues = Object.values(answers);
   let done = chartPatternPresent ? 1 : 0;
+  let counted = 0, open = 0;
   items.forEach((it, i) => {
     const ans = it.select ? answers[i] : _ansKey(answers[i]);
-    if(ans === undefined) return;
+    if(it.archived && ans === undefined) return;   // retired at hindi sinagot: wala sa bilang
+    if(ans === undefined && it.addedAt && since && String(since) < it.addedAt) return;   // wala pa ang tanong noon
+    counted++;
+    if(ans === undefined){ open++; return; }
     if(it.select){ done += _selectCredit(it, ans); return; }
     if(it.invert){
       if(ans === 'no') done += 1;
@@ -26455,7 +26482,8 @@ function _confluenceProgress(items, answers, chartPatternPresent){
     if(ans === 'yes' || ans === 'retest') done += 1;
     else if(ans === 'almost') done += 0.5;
   });
-  return { total: items.length + 1, done, unanswered: items.length - answeredValues.length };
+  void answeredValues;
+  return { total: counted + 1, done, unanswered: open };
 }
 
 // Auto-detects rule violations straight from the confluence checklist so
@@ -26574,8 +26602,10 @@ let confluenceChartPattern = null;
 // LH ones (plus the same shared one) — filtering the dropdown down makes
 // the right option faster to find instead of scrolling all 9.
 function _patternTypesForTradeType(tt){
-  if(tt === 'Long') return FIELD_OPTIONS.pattern_type.filter(p => p.includes('HL') || p === '30 mins Invalidation Play');
-  if(tt === 'Short') return FIELD_OPTIONS.pattern_type.filter(p => p.includes('LH') || p === '30 mins Invalidation Play');
+  // Kasama ang sarili mong playbook para sa direksyong ito, anuman ang pangalan.
+  const own = p => { const c = CONFLUENCE_SETUPS[`${tt}|${p}`]; return !!(c && c.custom && !c.archived); };
+  if(tt === 'Long') return FIELD_OPTIONS.pattern_type.filter(p => p.includes('HL') || p === '30 mins Invalidation Play' || own(p));
+  if(tt === 'Short') return FIELD_OPTIONS.pattern_type.filter(p => p.includes('LH') || p === '30 mins Invalidation Play' || own(p));
   return FIELD_OPTIONS.pattern_type;
 }
 
@@ -26697,7 +26727,7 @@ function renderConfluenceChecklist(){
 
   const { total, done, unanswered } = _confluenceProgress(cfg.items, confluenceAnswers, !!confluenceChartPattern);
 
-  const itemsHtml = cfg.items.map((it, i) =>
+  const itemsHtml = (typeof _cflList === 'function' ? _cflList(cfg, confluenceAnswers) : cfg.items.map((it, i) => ({ it, i }))).map(({ it, i }) =>
     _renderConfluenceItemRow(it, i, confluenceAnswers[i], 'setConfluenceAnswer')
   ).join('');
 
@@ -28913,7 +28943,7 @@ function _bbRenderChecklist({ ttId, ptId, bodyId, answers, chartPattern, setAnsw
 
   const { total, done, unanswered } = _confluenceProgress(cfg.items, answers, !!chartPattern);
 
-  const itemsHtml = cfg.items.map((it, i) =>
+  const itemsHtml = (typeof _cflList === 'function' ? _cflList(cfg, answers) : cfg.items.map((it, i) => ({ it, i }))).map(({ it, i }) =>
     _renderConfluenceItemRow(it, i, answers[i], setAnswerFn)
   ).join('');
 
@@ -32873,3 +32903,603 @@ function attachSymbolSuggest(inputId){
   });
 }
 setTimeout(() => attachSymbolSuggest('psSymbol'), 500);
+
+/* ======================== PLAYBOOKS ========================
+   Ang mga confluence checklist, bilang mga playbook na ikaw mismo ang
+   nag-e-edit. Bawat playbook ay isang Direction + Pattern Type — iyon din ang
+   susi ng CONFLUENCE_SETUPS, kaya kusa itong bumubukas sa Confluence kapag
+   tumugma ang setup. Walang bagong lohika ng pagbibilang: ang naka-save na
+   bersyon ay pumapalit lang sa nakasulat sa code (applyPlaybooks).
+
+   ANG POSISYON NG TANONG AY HINDI GINAGALAW. Ang mga sagot ng bawat trade ay
+   nakatali sa posisyon; kaya ang inalis na tanong ay "retired" (archived) at
+   ang bagong tanong ay idinudugtong sa dulo. Ang ayos na nakikita mo ay nasa
+   `order`. */
+let PLAYBOOK_ROWS = [];
+let PLAYBOOKS_TABLE_OK = null;   // true · false (wala pa ang table) · null (hindi alam)
+let _pbSelKey = null;
+let _pbTab = 'checklist';
+let _pbShowArchived = false;
+let _pbKeyList = [];
+let _pbDraft = null;
+
+// Ang tekstong isinulat ng tao ay napupunta sa HTML at sa onclick ng mga chip,
+// kaya ang mga karakter na makakasira roon ay inaalis. Ang ' ay nagiging ’.
+function _pbClean(s, max){
+  return String(s ?? '').replace(/[<>"`\\]/g, '').replace(/'/g, '’').replace(/\s+/g, ' ').trim().slice(0, max || 160);
+}
+function _pbSplitKey(key){
+  const i = String(key).indexOf('|');
+  return { dir: key.slice(0, i), pattern: key.slice(i + 1) };
+}
+function _pbName(key){
+  const cfg = CONFLUENCE_SETUPS[key];
+  const { dir, pattern } = _pbSplitKey(key);
+  return (cfg && cfg.name) || `${dir} · ${pattern}`;
+}
+function _pbSetupOf(key){
+  const cfg = CONFLUENCE_SETUPS[key];
+  if(cfg && cfg.tradeSetup) return cfg.tradeSetup;
+  const { pattern } = _pbSplitKey(key);
+  if(typeof PATTERN_FIXED_SETUP !== 'undefined' && PATTERN_FIXED_SETUP[pattern]) return PATTERN_FIXED_SETUP[pattern];
+  const hit = Object.entries(TRADE_SETUP_PATTERN_MAP).find(([s, list]) => s !== 'Invalidation Play' && list.includes(pattern) && !(s === 'Bounce Play' && pattern.includes('LH')) && !(s === 'Rejection Play' && pattern.includes('HL')));
+  if(pattern === '30 mins Invalidation Play') return 'Invalidation Play';
+  return hit ? hit[0] : '';
+}
+function _pbRegisterPattern(p, setup){
+  if(!p) return;
+  if(!FIELD_OPTIONS.pattern_type.includes(p)) FIELD_OPTIONS.pattern_type.push(p);
+  if(setup){
+    if(!FIELD_OPTIONS.trade_setup.includes(setup)) FIELD_OPTIONS.trade_setup.push(setup);
+    const m = TRADE_SETUP_PATTERN_MAP[setup] || (TRADE_SETUP_PATTERN_MAP[setup] = []);
+    if(!m.includes(p)) m.push(p);
+  }
+}
+function _pbCleanItem(it){
+  const o = { ...it, tag: _pbClean(it.tag, 60), text: _pbClean(it.text, 200) };
+  if(Array.isArray(it.select)) o.select = it.select.map(s => _pbClean(s, 40)).filter(Boolean);
+  return o;
+}
+function applyPlaybooks(rows){
+  (rows || []).forEach(r => {
+    if(!r || !r.key || !Array.isArray(r.items) || String(r.key).indexOf('|') < 0) return;
+    const base = CONFLUENCE_DEFAULTS[r.key];
+    CONFLUENCE_SETUPS[r.key] = {
+      ...(base ? JSON.parse(JSON.stringify(base)) : {}),
+      name: _pbClean(r.name, 80),
+      minConfluencePct: Number.isFinite(Number(r.min_pct)) ? Number(r.min_pct) : DEFAULT_MIN_CONFLUENCE_PCT,
+      items: r.items.map(_pbCleanItem),
+      patterns: (Array.isArray(r.chart_patterns) ? r.chart_patterns : []).map(p => _pbClean(p, 40)).filter(Boolean),
+      noAutoRules: !!r.no_auto_rules,
+      notes: String(r.notes || ''),
+      archived: !!r.archived,
+      tradeSetup: _pbClean(r.trade_setup, 40),
+      custom: !base,
+      saved: true
+    };
+    if(!base && !r.archived) _pbRegisterPattern(_pbSplitKey(r.key).pattern, _pbClean(r.trade_setup, 40));
+  });
+}
+async function loadPlaybooks(){
+  try{
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/playbooks?select=*&order=created_at.asc`, {
+      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}` }
+    });
+    if(!res.ok){
+      const t = await res.text();
+      PLAYBOOKS_TABLE_OK = /does not exist|could not find|42P01|PGRST20/i.test(t) ? false : null;
+    }else{
+      PLAYBOOK_ROWS = await res.json();
+      PLAYBOOKS_TABLE_OK = true;
+      applyPlaybooks(PLAYBOOK_ROWS);
+      // Ang score ng mga trade ay maaaring nagbago — iguhit muli kung naroon na.
+      if(PLAYBOOK_ROWS.length && typeof RAW_TRADES !== 'undefined' && RAW_TRADES.length){
+        try{ renderJournalTable(); }catch(e){}
+      }
+    }
+  }catch(e){ /* offline: ang nasa code ang gagamitin */ }
+  if(typeof currentView !== 'undefined' && currentView === 'playbooks') renderPlaybooks();
+}
+
+/* ---------- Stats ---------- */
+function _pbTrades(key){
+  return (typeof ALL_TRADES !== 'undefined' ? ALL_TRADES : []).filter(t => `${t.trade_type}|${t.pattern_type}` === key);
+}
+function _pbIsWin(t){ return t.win_loss === 'Win'; }
+function _pbIsLoss(t){ return t.win_loss === 'Loss' || t.win_loss === 'Liquidated'; }
+function _pbSummary(trades){
+  const w = trades.filter(_pbIsWin).length, l = trades.filter(_pbIsLoss).length;
+  const rs = trades.map(t => { try{ return _tradeR(t); }catch(e){ return null; } }).filter(r => r !== null && Number.isFinite(r));
+  return { n: trades.length, w, l, wr: (w + l) ? Math.round(w / (w + l) * 100) : null,
+           avgR: rs.length ? rs.reduce((a, b) => a + b, 0) / rs.length : null };
+}
+function _pbItemCredit(it, raw){
+  if(raw === undefined) return null;
+  if(it.select) return _selectCredit(it, raw);
+  const a = _ansKey(raw);
+  if(it.invert) return a === 'no' ? 1 : (a === 'almost' ? 0.5 : 0);
+  return (a === 'yes' || a === 'retest') ? 1 : (a === 'almost' ? 0.5 : 0);
+}
+function _pbStats(key){
+  const cfg = CONFLUENCE_SETUPS[key];
+  const trades = _pbTrades(key);
+  const all = _pbSummary(trades);
+  const rf = trades.filter(t => t.rules_followed === 'Yes' || t.rules_followed === 'No');
+  const rulesPct = rf.length ? Math.round(rf.filter(t => t.rules_followed === 'Yes').length / rf.length * 100) : null;
+  const scored = trades.map(t => ({ t, c: _confluenceCellData(t) })).filter(x => x.c);
+  const pass = _pbSummary(scored.filter(x => x.c.state === 'pass').map(x => x.t));
+  const fail = _pbSummary(scored.filter(x => x.c.state !== 'pass').map(x => x.t));
+  const questions = _cflList(cfg, {}).map(({ it, i }) => {
+    const met = [], missed = [];
+    trades.forEach(t => {
+      const ans = t.confluence_answers;
+      if(!ans || typeof ans !== 'object') return;
+      const c = _pbItemCredit(it, ans[i]);
+      if(c === null) return;
+      (c >= 1 ? met : missed).push(t);
+    });
+    return { it, met: _pbSummary(met), missed: _pbSummary(missed) };
+  });
+  const recent = trades.slice().sort((a, b) => String(b.close_date || '').localeCompare(String(a.close_date || ''))).slice(0, 8);
+  return { all, rulesPct, pass, fail, scoredN: scored.length, questions, recent };
+}
+
+/* ---------- Page ---------- */
+function renderPlaybooks(){
+  const note = document.getElementById('pbSqlNote');
+  if(note) note.innerHTML = PLAYBOOKS_TABLE_OK === false
+    ? `<div class="pb-sql-note">To save your own playbooks, run <code>supabase_playbooks.sql</code> in Supabase once. Until then you can look, but not save.</div>` : '';
+  const keys = Object.keys(CONFLUENCE_SETUPS);
+  if(!_pbSelKey || !CONFLUENCE_SETUPS[_pbSelKey]) _pbSelKey = keys.find(k => !CONFLUENCE_SETUPS[k].archived) || keys[0] || null;
+  renderPlaybookList();
+  renderPlaybookDetail();
+}
+function renderPlaybookList(){
+  const el = document.getElementById('pbList');
+  if(!el) return;
+  const q = (document.getElementById('pbSearch')?.value || '').trim().toLowerCase();
+  const keys = Object.keys(CONFLUENCE_SETUPS).filter(k => !q || (_pbName(k) + ' ' + k + ' ' + _pbSetupOf(k)).toLowerCase().includes(q));
+  _pbKeyList = keys;
+  const row = k => {
+    const cfg = CONFLUENCE_SETUPS[k], { dir } = _pbSplitKey(k);
+    const s = _pbSummary(_pbTrades(k));
+    const nQ = _cflList(cfg, {}).length;
+    return `<div class="note-item pb-item ${k === _pbSelKey ? 'selected' : ''}" onclick="selectPlaybook(${_pbKeyList.indexOf(k)})">
+      <div class="note-item-top"><span class="note-item-title">${escapeHtml(_pbName(k))}</span>
+        <span class="pill ${dir === 'Long' ? 'pill-green' : 'pill-red'}">${escapeHtml(dir)}</span></div>
+      <div class="pb-item-meta">${nQ} question${nQ === 1 ? '' : 's'} · ${s.n} trade${s.n === 1 ? '' : 's'}${s.wr !== null ? ` · <b>${s.wr}%</b> win` : ''}${cfg.custom ? ' · yours' : cfg.saved ? ' · edited' : ''}</div>
+    </div>`;
+  };
+  const active = keys.filter(k => !CONFLUENCE_SETUPS[k].archived);
+  const arch = keys.filter(k => CONFLUENCE_SETUPS[k].archived);
+  el.innerHTML = (active.length ? active.map(row).join('') : '<div class="empty-state">No playbook matches.</div>')
+    + (arch.length ? `<button class="pb-arch-toggle" onclick="_pbShowArchived=!_pbShowArchived;renderPlaybookList()">${_pbShowArchived ? '▾' : '▸'} Archived (${arch.length})</button>${_pbShowArchived ? arch.map(row).join('') : ''}` : '');
+}
+function selectPlaybook(i){
+  const k = _pbKeyList[i];
+  if(!k) return;
+  _pbSelKey = k;
+  renderPlaybookList();
+  renderPlaybookDetail();
+  if(window.innerWidth < 800) document.getElementById('pbDetail')?.scrollIntoView({ behavior:'smooth', block:'start' });
+}
+function setPlaybookTab(tab){ _pbTab = tab; renderPlaybookDetail(); }
+
+function _pbQuestionChips(it){
+  const c = [];
+  if(it.select) c.push(`Choice: ${it.select.map(escapeHtml).join(' · ')}${it.allGood ? ' (all count)' : ''}`);
+  else c.push(it.almost ? 'Yes / Almost / No' : 'Yes / No');
+  if(it.invert) c.push('No is good');
+  if(it.exec) c.push('Execution');
+  if(it.retest) c.push('Retest');
+  return c.map(x => `<span class="pb-chip">${x}</span>`).join('');
+}
+function _pbFmtR(r){ return r === null ? '—' : `${r >= 0 ? '+' : ''}${r.toFixed(2)}R`; }
+function _pbStatBox(label, val, sub){
+  return `<div class="pb-stat"><div class="pb-stat-label">${label}</div><div class="pb-stat-val num">${val}</div>${sub ? `<div class="pb-stat-sub">${sub}</div>` : ''}</div>`;
+}
+function _pbWrCell(s){
+  if(!s.n) return '<span class="pb-dim">—</span>';
+  return `<b class="num">${s.wr === null ? '—' : s.wr + '%'}</b> <span class="pb-dim">${s.n} trade${s.n === 1 ? '' : 's'}</span>`;
+}
+function renderPlaybookDetail(){
+  const el = document.getElementById('pbDetail');
+  if(!el) return;
+  const key = _pbSelKey, cfg = key && CONFLUENCE_SETUPS[key];
+  if(!cfg){ el.innerHTML = '<div class="empty-state">Select a playbook.</div>'; return; }
+  const { dir, pattern } = _pbSplitKey(key);
+  const setup = _pbSetupOf(key);
+  const bar = Number.isFinite(cfg.minConfluencePct) ? cfg.minConfluencePct : DEFAULT_MIN_CONFLUENCE_PCT;
+  const head = `
+    <div class="pb-head">
+      <div>
+        <h2 class="pb-title">${escapeHtml(_pbName(key))}</h2>
+        <div class="pb-meta">
+          <span class="pill ${dir === 'Long' ? 'pill-green' : 'pill-red'}">${escapeHtml(dir)}</span>
+          ${setup ? `<span class="pb-meta-item">${escapeHtml(setup)}</span>` : ''}
+          <span class="pb-meta-item">${escapeHtml(pattern)}</span>
+          <span class="pb-meta-item">Pass at ${bar}%</span>
+          ${cfg.noAutoRules ? '<span class="pb-meta-item">No auto-rules</span>' : ''}
+          ${cfg.archived ? '<span class="pill pill-orange">Archived</span>' : ''}
+        </div>
+      </div>
+      <div class="pb-actions">
+        <button class="ai-btn" onclick="editPlaybook()">Edit</button>
+        <button class="drawer-secondary-btn" onclick="duplicatePlaybook()">Duplicate</button>
+        <button class="drawer-secondary-btn" onclick="sharePlaybook()">Share</button>
+        <button class="drawer-secondary-btn" onclick="togglePlaybookArchive()">${cfg.archived ? 'Restore' : 'Archive'}</button>
+        ${!cfg.custom && cfg.saved ? '<button class="drawer-secondary-btn" onclick="resetPlaybook()">Reset to original</button>' : ''}
+      </div>
+    </div>
+    <div class="pb-tabs" role="tablist">
+      <button class="pb-tab ${_pbTab === 'checklist' ? 'active' : ''}" onclick="setPlaybookTab('checklist')">Checklist</button>
+      <button class="pb-tab ${_pbTab === 'stats' ? 'active' : ''}" onclick="setPlaybookTab('stats')">Stats</button>
+    </div>`;
+  let body;
+  if(_pbTab === 'stats'){
+    const s = _pbStats(key);
+    if(!s.all.n){
+      body = '<div class="empty-state">No trades on this playbook yet. Trades count here when their Trade Type and Pattern Type match it.</div>';
+    }else{
+      body = `
+        <div class="pb-stat-grid">
+          ${_pbStatBox('Trades', s.all.n, `${s.all.w} won · ${s.all.l} lost`)}
+          ${_pbStatBox('Win rate', s.all.wr === null ? '—' : s.all.wr + '%', 'Wins ÷ (wins + losses)')}
+          ${_pbStatBox('Average R', _pbFmtR(s.all.avgR), 'Per trade with a known risk')}
+          ${_pbStatBox('Rules followed', s.rulesPct === null ? '—' : s.rulesPct + '%', 'Of trades marked Yes/No')}
+        </div>
+        <h3 class="pb-h3">Passed the checklist vs not</h3>
+        <div class="pb-pf">
+          <div class="pb-pf-col good"><div class="pb-pf-label">Passed (${bar}%+)</div>${_pbWrCell(s.pass)}<div class="pb-dim">${_pbFmtR(s.pass.avgR)} avg</div></div>
+          <div class="pb-pf-col bad"><div class="pb-pf-label">Below ${bar}%</div>${_pbWrCell(s.fail)}<div class="pb-dim">${_pbFmtR(s.fail.avgR)} avg</div></div>
+        </div>
+        ${s.scoredN < s.all.n ? `<div class="pb-dim pb-note">${s.all.n - s.scoredN} trade${s.all.n - s.scoredN === 1 ? ' has' : 's have'} no checklist answers and ${s.all.n - s.scoredN === 1 ? 'is' : 'are'} left out of this.</div>` : ''}
+        <h3 class="pb-h3">Each question: win rate when met vs missed</h3>
+        <div class="pb-qtable-wrap"><table class="pb-qtable">
+          <thead><tr><th>Question</th><th>Met</th><th>Missed</th></tr></thead>
+          <tbody>${s.questions.map(q => {
+            const edge = (q.met.wr !== null && q.missed.wr !== null) ? q.met.wr - q.missed.wr : null;
+            return `<tr><td><span class="cfl-yn-tag">${escapeHtml(q.it.tag || '')}</span>${escapeHtml(q.it.text)}${edge !== null && Math.abs(edge) >= 15 && q.met.n >= 3 && q.missed.n >= 3 ? `<span class="pb-edge ${edge > 0 ? 'up' : 'down'}">${edge > 0 ? '+' : ''}${edge} pts when met</span>` : ''}</td>
+              <td>${_pbWrCell(q.met)}</td><td>${_pbWrCell(q.missed)}</td></tr>`;
+          }).join('')}</tbody>
+        </table></div>
+        <h3 class="pb-h3">Recent trades</h3>
+        <div class="pb-recent">${s.recent.map(t => {
+          const c = _confluenceCellData(t);
+          const r = (() => { try{ return _tradeR(t); }catch(e){ return null; } })();
+          return `<div class="pb-recent-row" onclick='openTradeViewModal(${JSON.stringify(t.position_id).replace(/'/g, '&#39;')})'>
+            <span class="pb-dim num">${escapeHtml(String(t.close_date || '').slice(0, 10))}</span>
+            <span>${escapeHtml(t.symbol || '')}</span>
+            <span class="pill ${_pbIsWin(t) ? 'pill-green' : _pbIsLoss(t) ? 'pill-red' : 'pill-muted'}">${escapeHtml(t.win_loss || '—')}</span>
+            <span class="num">${_pbFmtR(r)}</span>
+            <span class="num pb-dim">${c ? c.pct + '%' : '—'}</span>
+          </div>`;
+        }).join('')}</div>`;
+    }
+  }else{
+    const list = _cflList(cfg, {});
+    body = `
+      <ol class="pb-qlist">${list.map(({ it }) => `
+        <li class="pb-q"><span class="cfl-yn-tag">${escapeHtml(it.tag || '')}</span>
+          <div class="pb-q-text">${escapeHtml(it.text)}</div>
+          <div class="pb-chips">${_pbQuestionChips(it)}</div></li>`).join('')}
+        <li class="pb-q"><span class="cfl-yn-tag">Chart Pattern</span>
+          <div class="pb-q-text">Which chart pattern formed? <span class="pb-dim">(counts as one point)</span></div>
+          <div class="pb-chips">${(cfg.patterns || []).map(p => `<span class="pb-chip">${escapeHtml(p)}</span>`).join('') || '<span class="pb-dim">None set</span>'}</div></li>
+      </ol>
+      ${cfg.notes ? `<h3 class="pb-h3">Notes</h3><div class="pb-notes">${escapeHtml(cfg.notes)}</div>` : ''}`;
+  }
+  el.innerHTML = head + body;
+}
+
+/* ---------- Editor ---------- */
+function _pbTypeOf(it){ return it.select ? 'choice' : (it.almost ? 'almost' : 'yn'); }
+function _pbOpenEditor(draft){
+  _pbDraft = draft;
+  document.getElementById('pbEditTitle').textContent = draft.isNew ? 'New playbook' : 'Edit playbook';
+  document.getElementById('pbEditError').textContent = '';
+  _pbRenderEditor();
+  document.getElementById('pbEditModal').classList.add('open');
+}
+function closePlaybookEditor(){
+  document.getElementById('pbEditModal').classList.remove('open');
+  _pbDraft = null;
+}
+function newPlaybook(){
+  _pbOpenEditor({ isNew: true, key: null, isBuiltin: false, name: '', direction: 'Long', trade_setup: '', pattern_type: '',
+    min_pct: DEFAULT_MIN_CONFLUENCE_PCT, no_auto_rules: false, chart_patterns: [], notes: '',
+    items: [{ tag: '', text: '' }], savedLen: 0 });
+}
+function editPlaybook(){
+  const key = _pbSelKey, cfg = CONFLUENCE_SETUPS[key];
+  if(!cfg) return;
+  const { dir, pattern } = _pbSplitKey(key);
+  _pbOpenEditor({ isNew: false, key, isBuiltin: !cfg.custom, name: cfg.name || '', direction: dir, trade_setup: _pbSetupOf(key),
+    pattern_type: pattern, min_pct: Number.isFinite(cfg.minConfluencePct) ? cfg.minConfluencePct : DEFAULT_MIN_CONFLUENCE_PCT,
+    no_auto_rules: !!cfg.noAutoRules, chart_patterns: (cfg.patterns || []).slice(), notes: cfg.notes || '',
+    archived: !!cfg.archived, items: JSON.parse(JSON.stringify(cfg.items)), savedLen: cfg.items.length });
+}
+function _pbFreshItems(cfg){
+  return _cflList(cfg, {}).map(({ it }) => {
+    const { archived, order, ...rest } = it;
+    void archived; void order;
+    return JSON.parse(JSON.stringify(rest));
+  });
+}
+function duplicatePlaybook(){
+  const key = _pbSelKey, cfg = CONFLUENCE_SETUPS[key];
+  if(!cfg) return;
+  const { dir } = _pbSplitKey(key);
+  _pbOpenEditor({ isNew: true, key: null, isBuiltin: false, name: 'Copy of ' + _pbName(key), direction: dir, trade_setup: _pbSetupOf(key),
+    pattern_type: '', min_pct: Number.isFinite(cfg.minConfluencePct) ? cfg.minConfluencePct : DEFAULT_MIN_CONFLUENCE_PCT,
+    no_auto_rules: !!cfg.noAutoRules, chart_patterns: (cfg.patterns || []).slice(), notes: cfg.notes || '',
+    items: _pbFreshItems(cfg), savedLen: 0 });
+}
+function _pbVisible(){
+  return _pbDraft.items.map((it, i) => ({ it, i })).filter(x => !x.it.archived)
+    .sort((x, y) => (x.it.order ?? x.i) - (y.it.order ?? y.i) || x.i - y.i);
+}
+function _pbRenderEditor(){
+  const d = _pbDraft, body = document.getElementById('pbEditBody');
+  if(!d || !body) return;
+  const fixed = !d.isNew;
+  const setups = FIELD_OPTIONS.trade_setup || [];
+  const vis = _pbVisible();
+  body.innerHTML = `
+    <div class="pb-form-grid">
+      <label class="pb-field pb-span2"><span>Name</span>
+        <input type="text" maxlength="80" value="${escapeHtml(d.name)}" placeholder="${escapeHtml(d.pattern_type ? d.direction + ' · ' + d.pattern_type : 'e.g. London Breakout Long')}" oninput="_pbDraft.name=this.value"></label>
+      <label class="pb-field"><span>Direction</span>
+        <select ${fixed ? 'disabled' : ''} onchange="_pbDraft.direction=this.value">
+          ${['Long', 'Short'].map(o => `<option ${d.direction === o ? 'selected' : ''}>${o}</option>`).join('')}</select></label>
+      <label class="pb-field"><span>Pass at (%)</span>
+        <input type="number" min="0" max="100" step="5" value="${d.min_pct}" oninput="_pbDraft.min_pct=this.value"></label>
+      <label class="pb-field"><span>Trade Setup</span>
+        <input type="text" list="pbSetupList" ${fixed ? 'disabled' : ''} value="${escapeHtml(d.trade_setup)}" placeholder="e.g. Bounce Play" oninput="_pbDraft.trade_setup=this.value">
+        <datalist id="pbSetupList">${setups.map(s => `<option value="${escapeHtml(s)}"></option>`).join('')}</datalist></label>
+      <label class="pb-field"><span>Pattern Type</span>
+        <input type="text" ${fixed ? 'disabled' : ''} value="${escapeHtml(d.pattern_type)}" placeholder="e.g. 30 mins HL" oninput="_pbDraft.pattern_type=this.value"></label>
+    </div>
+    <div class="pb-hint">${fixed
+      ? 'Direction and Pattern Type are what link trades to this playbook, so they stay fixed. To make a variation, use Duplicate.'
+      : 'This checklist opens by itself on any setup or trade with this Direction and Pattern Type. The Pattern Type is added to your Pattern Type choices.'}</div>
+    <label class="pb-check"><input type="checkbox" ${d.no_auto_rules ? 'checked' : ''} onchange="_pbDraft.no_auto_rules=this.checked"> Don’t auto-mark broken rules from this checklist</label>
+
+    <h4 class="pb-h4">Questions <span class="pb-dim">(${vis.length})</span></h4>
+    <div class="pb-hint">Each trade’s answers are kept per question. Rewording is fine; for a different question, add a new one, so old trades keep their meaning. Removing a question you saved retires it: old trades keep their answer and their score.</div>
+    <div class="pb-qedit-list">${vis.map(({ it, i }, pos) => {
+      const type = _pbTypeOf(it);
+      return `<div class="pb-qedit">
+        <div class="pb-qedit-top">
+          <span class="pb-qnum num">${pos + 1}</span>
+          <input class="pb-qtag" type="text" maxlength="60" placeholder="Tag, e.g. MACD · 1H" value="${escapeHtml(it.tag || '')}" oninput="_pbDraft.items[${i}].tag=this.value">
+          <span class="pb-qmove">
+            <button type="button" title="Move up" ${pos === 0 ? 'disabled' : ''} onclick="movePbQuestion(${i},-1)">↑</button>
+            <button type="button" title="Move down" ${pos === vis.length - 1 ? 'disabled' : ''} onclick="movePbQuestion(${i},1)">↓</button>
+            <button type="button" class="pb-qdel" title="Remove" onclick="removePbQuestion(${i})">✕</button>
+          </span>
+        </div>
+        <input class="pb-qtext" type="text" maxlength="200" placeholder="The question, e.g. 1H MACD in Bull Territory?" value="${escapeHtml(it.text || '')}" oninput="_pbDraft.items[${i}].text=this.value">
+        <div class="pb-qopts">
+          <select onchange="setPbQuestionType(${i},this.value)">
+            <option value="yn" ${type === 'yn' ? 'selected' : ''}>Yes / No</option>
+            <option value="almost" ${type === 'almost' ? 'selected' : ''}>Yes / Almost / No</option>
+            <option value="choice" ${type === 'choice' ? 'selected' : ''}>Choice</option>
+          </select>
+          ${type === 'choice' ? `
+            <input class="pb-qchoices" type="text" placeholder="Choices, comma-separated: 1st, 2nd, 3rd" value="${escapeHtml((it.select || []).join(', '))}" oninput="_pbDraft.items[${i}].select=this.value.split(',').map(s=>s.trim()).filter(Boolean)">
+            <label class="pb-check" title="Off: the first two choices score full, the third half, the rest zero (like Sequence)."><input type="checkbox" ${it.allGood ? 'checked' : ''} onchange="_pbDraft.items[${i}].allGood=this.checked||undefined"> All choices count</label>`
+          : `<label class="pb-check" title="For questions where No is the good answer, e.g. Left Hand Present?"><input type="checkbox" ${it.invert ? 'checked' : ''} onchange="_pbDraft.items[${i}].invert=this.checked||undefined"> No is good</label>
+             <label class="pb-check"><input type="checkbox" ${it.retest ? 'checked' : ''} onchange="_pbDraft.items[${i}].retest=this.checked||undefined"> Retest answer</label>`}
+          <label class="pb-check"><input type="checkbox" ${it.exec ? 'checked' : ''} onchange="_pbDraft.items[${i}].exec=this.checked||undefined"> Execution</label>
+        </div>
+      </div>`;
+    }).join('')}</div>
+    <button type="button" class="drawer-secondary-btn pb-add" onclick="addPbQuestion()">+ Add question</button>
+
+    <h4 class="pb-h4">Chart patterns</h4>
+    <label class="pb-field"><span>Shown as choices; any pick counts as one point. Comma-separated.</span>
+      <textarea rows="2" oninput="_pbDraft.chart_patterns=this.value.split(',').map(s=>s.trim()).filter(Boolean)">${escapeHtml(d.chart_patterns.join(', '))}</textarea></label>
+    <h4 class="pb-h4">Notes</h4>
+    <label class="pb-field"><span>When to take it, when to skip it, how to manage it.</span>
+      <textarea rows="3" maxlength="4000" oninput="_pbDraft.notes=this.value">${escapeHtml(d.notes)}</textarea></label>`;
+}
+function addPbQuestion(){
+  const vis = _pbVisible();
+  vis.forEach(({ it }, pos) => { it.order = pos; });
+  const q = { tag: '', text: '', order: vis.length };
+  // Sa umiiral na playbook: tandaan kung kailan, para hindi bumaba ang score
+  // ng mga trade na nauna rito (_confluenceProgress `since`).
+  if(!_pbDraft.isNew) q.addedAt = new Date().toISOString();
+  _pbDraft.items.push(q);
+  _pbRenderEditor();
+  const list = document.querySelectorAll('#pbEditBody .pb-qtext');
+  if(list.length) list[list.length - 1].focus();
+}
+function movePbQuestion(i, dirn){
+  const vis = _pbVisible();
+  const pos = vis.findIndex(x => x.i === i), to = pos + dirn;
+  if(pos < 0 || to < 0 || to >= vis.length) return;
+  [vis[pos], vis[to]] = [vis[to], vis[pos]];
+  vis.forEach(({ it }, p) => { it.order = p; });
+  _pbRenderEditor();
+}
+function removePbQuestion(i){
+  if(i < _pbDraft.savedLen) _pbDraft.items[i].archived = true;   // naka-save: retire, huwag galawin ang posisyon
+  else _pbDraft.items.splice(i, 1);                               // bago pa lang: walang trade na sumagot dito
+  _pbRenderEditor();
+}
+function setPbQuestionType(i, type){
+  const it = _pbDraft.items[i];
+  delete it.almost; delete it.allGood;
+  if(type === 'choice'){ it.select = it.select && it.select.length ? it.select : ['1st', '2nd', '3rd']; delete it.invert; delete it.retest; }
+  else { delete it.select; if(type === 'almost') it.almost = true; }
+  _pbRenderEditor();
+}
+async function _pbUpsert(row){
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/playbooks?on_conflict=user_id,key`, {
+    method: 'POST',
+    headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}`, "Content-Type": "application/json",
+               "Prefer": "resolution=merge-duplicates,return=representation" },
+    body: JSON.stringify(row)
+  });
+  if(!res.ok){
+    const t = await res.text();
+    if(/does not exist|could not find|42P01|PGRST20/i.test(t)){ PLAYBOOKS_TABLE_OK = false; throw new Error('Run supabase_playbooks.sql in Supabase first, then try again.'); }
+    throw new Error(t.slice(0, 200));
+  }
+  const out = await res.json();
+  const saved = Array.isArray(out) ? out[0] : out;
+  PLAYBOOKS_TABLE_OK = true;
+  PLAYBOOK_ROWS = PLAYBOOK_ROWS.filter(r => r.key !== row.key).concat(saved || row);
+  applyPlaybooks([saved || row]);
+  return saved || row;
+}
+function _pbRowFromCfg(key, cfg, patch){
+  const { dir, pattern } = _pbSplitKey(key);
+  return Object.assign({
+    user_id: CURRENT_USER_ID, key, name: cfg.name || null, direction: dir, trade_setup: _pbSetupOf(key) || null, pattern_type: pattern,
+    min_pct: Number.isFinite(cfg.minConfluencePct) ? cfg.minConfluencePct : DEFAULT_MIN_CONFLUENCE_PCT,
+    items: cfg.items, chart_patterns: cfg.patterns || [], no_auto_rules: !!cfg.noAutoRules, notes: cfg.notes || null,
+    archived: !!cfg.archived, updated_at: new Date().toISOString()
+  }, patch || {});
+}
+async function savePlaybook(){
+  const d = _pbDraft, err = document.getElementById('pbEditError'), btn = document.getElementById('pbEditSaveBtn');
+  if(!d) return;
+  err.textContent = '';
+  const direction = d.direction === 'Short' ? 'Short' : 'Long';
+  const pattern = _pbClean(d.pattern_type, 40);
+  const setup = _pbClean(d.trade_setup, 40);
+  const key = d.isNew ? `${direction}|${pattern}` : d.key;
+  if(!pattern){ err.textContent = 'Give it a Pattern Type, it is how trades find this playbook.'; return; }
+  if(d.isNew && CONFLUENCE_SETUPS[key]){ err.textContent = `There is already a ${direction} playbook for “${pattern}”. Edit that one, or use a different Pattern Type.`; return; }
+  const items = d.items.map(it => _pbCleanItem(it));
+  const live = items.filter(it => !it.archived);
+  if(!live.length){ err.textContent = 'Add at least one question.'; return; }
+  if(live.some(it => !it.text)){ err.textContent = 'Every question needs its wording. Remove the empty one or fill it in.'; return; }
+  if(live.some(it => it.select && it.select.length < 2)){ err.textContent = 'A Choice question needs at least two choices.'; return; }
+  items.forEach(it => { Object.keys(it).forEach(k => { if(it[k] === undefined) delete it[k]; }); });
+  const pct = Math.max(0, Math.min(100, Math.round(Number(d.min_pct))));
+  const row = {
+    user_id: CURRENT_USER_ID, key, name: _pbClean(d.name, 80) || null, direction, trade_setup: setup || null, pattern_type: pattern,
+    min_pct: Number.isFinite(pct) ? pct : DEFAULT_MIN_CONFLUENCE_PCT, items,
+    chart_patterns: d.chart_patterns.map(p => _pbClean(p, 40)).filter(Boolean),
+    no_auto_rules: !!d.no_auto_rules, notes: String(d.notes || '').slice(0, 4000) || null,
+    archived: !!d.archived, updated_at: new Date().toISOString()
+  };
+  btn.disabled = true; btn.textContent = 'Saving…';
+  try{
+    await _pbUpsert(row);
+    _pbSelKey = key;
+    closePlaybookEditor();
+    renderPlaybooks();
+    try{ renderJournalTable(); }catch(e){}
+    if(typeof showToast === 'function') showToast('Playbook saved');
+  }catch(e){
+    err.textContent = e.message || String(e);
+  }finally{
+    btn.disabled = false; btn.textContent = 'Save playbook';
+  }
+}
+async function togglePlaybookArchive(){
+  const key = _pbSelKey, cfg = CONFLUENCE_SETUPS[key];
+  if(!cfg) return;
+  const to = !cfg.archived;
+  if(to && !(await customConfirm(`Archive “${_pbName(key)}”? It leaves your list and your Pattern Type choices. Trades already on it keep their checklist and score.`, 'Archive'))) return;
+  try{
+    await _pbUpsert(_pbRowFromCfg(key, cfg, { archived: to }));
+    if(!to && cfg.custom) _pbRegisterPattern(_pbSplitKey(key).pattern, cfg.tradeSetup);
+    if(to) _pbShowArchived = true;
+    renderPlaybooks();
+  }catch(e){ customAlert(e.message || String(e)); }
+}
+async function resetPlaybook(){
+  const key = _pbSelKey;
+  if(!CONFLUENCE_DEFAULTS[key]) return;
+  if(!(await customConfirm(`Reset “${_pbName(key)}” to the original checklist? Your edits to it are removed. Answers to questions you added stay on the trades but are no longer shown or scored.`, 'Reset'))) return;
+  try{
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/playbooks?key=eq.${encodeURIComponent(key)}`, {
+      method: 'DELETE', headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}` }
+    });
+    if(!res.ok) throw new Error((await res.text()).slice(0, 200));
+    PLAYBOOK_ROWS = PLAYBOOK_ROWS.filter(r => r.key !== key);
+    CONFLUENCE_SETUPS[key] = JSON.parse(JSON.stringify(CONFLUENCE_DEFAULTS[key]));
+    renderPlaybooks();
+    try{ renderJournalTable(); }catch(e){}
+  }catch(e){ customAlert(e.message || String(e)); }
+}
+
+/* ---------- Share / Import ----------
+   Isang code na maikokopya: "TDPB1:" + base64url ng playbook. Ang mga
+   tanong lang na aktibo, sa ayos na nakikita — walang trade, walang sagot. */
+function _pbEncode(obj){
+  const b = btoa(unescape(encodeURIComponent(JSON.stringify(obj))));
+  return 'TDPB1:' + b.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+function _pbDecode(code){
+  const m = String(code || '').trim().match(/TDPB1:([A-Za-z0-9_-]+)/);
+  if(!m) throw new Error('That is not a playbook code. It starts with TDPB1:');
+  let b = m[1].replace(/-/g, '+').replace(/_/g, '/');
+  while(b.length % 4) b += '=';
+  const obj = JSON.parse(decodeURIComponent(escape(atob(b))));
+  if(!obj || !Array.isArray(obj.q) || !obj.q.length) throw new Error('This code has no questions in it.');
+  return obj;
+}
+function sharePlaybook(){
+  const key = _pbSelKey, cfg = CONFLUENCE_SETUPS[key];
+  if(!cfg) return;
+  const { dir, pattern } = _pbSplitKey(key);
+  const code = _pbEncode({ n: _pbName(key), d: dir, s: _pbSetupOf(key), p: pattern,
+    m: Number.isFinite(cfg.minConfluencePct) ? cfg.minConfluencePct : DEFAULT_MIN_CONFLUENCE_PCT,
+    a: cfg.noAutoRules ? 1 : 0, c: cfg.patterns || [], o: cfg.notes || '', q: _pbFreshItems(cfg) });
+  _pbOpenCode('share', code);
+}
+function openPlaybookImport(){ _pbOpenCode('import', ''); }
+function _pbOpenCode(mode, code){
+  const m = document.getElementById('pbCodeModal');
+  m.dataset.mode = mode;
+  document.getElementById('pbCodeTitle').textContent = mode === 'share' ? 'Share playbook' : 'Import playbook';
+  document.getElementById('pbCodeSub').textContent = mode === 'share'
+    ? 'Send this code to another trader. They paste it in Playbooks › Import. Only the checklist goes, never your trades.'
+    : 'Paste a playbook code (starts with TDPB1:). You can review and change it before it is saved.';
+  const ta = document.getElementById('pbCodeText');
+  ta.value = code; ta.readOnly = mode === 'share';
+  document.getElementById('pbCodeError').textContent = '';
+  document.getElementById('pbCodeBtn').textContent = mode === 'share' ? 'Copy code' : 'Import';
+  m.classList.add('open');
+  setTimeout(() => { if(mode === 'share') ta.select(); else ta.focus(); }, 50);
+}
+function closePlaybookCode(){ document.getElementById('pbCodeModal').classList.remove('open'); }
+async function playbookCodeAction(){
+  const m = document.getElementById('pbCodeModal'), ta = document.getElementById('pbCodeText');
+  const err = document.getElementById('pbCodeError');
+  if(m.dataset.mode === 'share'){
+    try{ await navigator.clipboard.writeText(ta.value); }catch(e){ ta.select(); document.execCommand && document.execCommand('copy'); }
+    document.getElementById('pbCodeBtn').textContent = 'Copied ✓';
+    return;
+  }
+  let obj;
+  try{ obj = _pbDecode(ta.value); }catch(e){ err.textContent = e.message && !/JSON|URI|atob|decode/i.test(e.message) ? e.message : 'That code is incomplete or damaged. Copy it again in full.'; return; }
+  const dir = obj.d === 'Short' ? 'Short' : 'Long';
+  let pattern = _pbClean(obj.p, 40) || 'Imported';
+  if(CONFLUENCE_SETUPS[`${dir}|${pattern}`]){
+    let n = 2;
+    while(CONFLUENCE_SETUPS[`${dir}|${pattern} (${n})`]) n++;
+    pattern = `${pattern} (${n})`;
+  }
+  const allowed = ['tag', 'text', 'invert', 'almost', 'select', 'allGood', 'exec', 'retest', 'id', 'impliesWhenYes'];
+  const items = obj.q.slice(0, 40).map(q => {
+    const it = {};
+    allowed.forEach(k => { if(q && q[k] !== undefined) it[k] = q[k]; });
+    if(it.impliesWhenYes && typeof it.impliesWhenYes !== 'object') delete it.impliesWhenYes;
+    return _pbCleanItem({ tag: '', text: '', ...it });
+  });
+  closePlaybookCode();
+  _pbOpenEditor({ isNew: true, key: null, isBuiltin: false, name: _pbClean(obj.n, 80), direction: dir, trade_setup: _pbClean(obj.s, 40),
+    pattern_type: pattern, min_pct: Number.isFinite(Number(obj.m)) ? Number(obj.m) : DEFAULT_MIN_CONFLUENCE_PCT, no_auto_rules: !!obj.a,
+    chart_patterns: (Array.isArray(obj.c) ? obj.c : []).map(p => _pbClean(p, 40)).filter(Boolean), notes: String(obj.o || '').slice(0, 4000),
+    items, savedLen: 0 });
+  if(_pbSplitKey(`${dir}|${pattern}`).pattern !== _pbClean(obj.p, 40))
+    document.getElementById('pbEditError').textContent = `You already have a ${dir} “${_pbClean(obj.p, 40)}” playbook, so this one is named “${pattern}”. Change it if you like.`;
+}
