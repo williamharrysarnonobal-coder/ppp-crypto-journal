@@ -924,6 +924,7 @@ function showRulesTooltip(event){
   };
   section('Discipline', cell.dataset.clean, 'clean');
   section('Unfollowed Rules', cell.dataset.broke, 'broke');
+  section('Mistakes', cell.dataset.mistakes, 'mistakes');
   section('Notes', cell.dataset.notes, 'notes');
   const rect = cell.getBoundingClientRect();
   tip.style.left = `${rect.left}px`;
@@ -15613,14 +15614,16 @@ function renderJournalTable(){
           // Split into the two kinds. Run together, an observation on a clean
           // trade reads as a fault — the tooltip was the last place the two
           // were still being shown as one list.
-          if(c.key === 'rules_followed' && _ruleTags(r.unfollowed_rules).length){
+          // Pati ang Mistakes na pinili mo — lumalabas din sa hover.
+          const mistakesTxt = typeof _tpList === 'function' ? _tpList(r.mistakes).join(', ') : String(r.mistakes || '');
+          if(c.key === 'rules_followed' && (_ruleTags(r.unfollowed_rules).length || mistakesTxt)){
             const tags = _canonicalTags(r.unfollowed_rules);
             const broke = tags.filter(t => _tagKind(t) === 'breach');
             const notes = tags.filter(t => _tagKind(t) === 'observation');
             // Ang "Rules Followed" ay hindi tala — ito ang marka ng malinis,
             // kaya sariling seksyon, hindi kasama ng Notes.
             const clean = tags.filter(t => _tagKind(t) === 'sentinel');
-            return `<td data-clean="${escapeHtml(clean.join(', '))}" data-broke="${escapeHtml(broke.join(', '))}" data-notes="${escapeHtml(notes.join(', '))}" onmouseenter="showRulesTooltip(event)" onmouseleave="hideRulesTooltip()">${colored}</td>`;
+            return `<td data-clean="${escapeHtml(clean.join(', '))}" data-broke="${escapeHtml(broke.join(', '))}" data-notes="${escapeHtml(notes.join(', '))}" data-mistakes="${escapeHtml(mistakesTxt)}" onmouseenter="showRulesTooltip(event)" onmouseleave="hideRulesTooltip()">${colored}</td>`;
           }
           return `<td title="${String(r[c.key]||'').replace(/"/g,'&quot;')}">${colored}</td>`;
         }

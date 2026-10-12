@@ -5532,3 +5532,5 @@ body.mobile-mode .pi-dd{grid-template-columns:1fr;gap:12px;}
 
 /* Bulk edit: Mistakes chips may kulay ng pagkakamali kapag naka-add */
 .jb-tag.is-mistake.add{border-color:var(--loss);color:var(--loss);background:color-mix(in srgb,var(--loss) 14%,transparent);}
+
+  .rules-tip-head.mistakes{color:var(--warn);}
