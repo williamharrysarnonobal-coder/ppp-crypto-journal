@@ -26363,10 +26363,10 @@ function _renderConfluenceItemRow(it, i, ans, setAnswerFn){
       <span class="cfl-yn-buttons">
         <button type="button" class="cfl-yn-btn ${it.invert?'cfl-no':'cfl-yes'} ${ans==='yes'?'active':''}" onclick="${setAnswerFn}(${i},'yes')">Yes</button>
         ${it.retest ? `<button type="button" class="cfl-yn-btn cfl-retest ${ans==='retest'?'active':''}" onclick="${setAnswerFn}(${i},'retest')">Retest</button>` : ''}
-        <button type="button" class="cfl-yn-btn cfl-almost ${ans==='almost'?'active':''}" onclick="${setAnswerFn}(${i},'almost')">Almost</button>
+        ${(it.plain || it.noAlmost) ? '' : `<button type="button" class="cfl-yn-btn cfl-almost ${ans==='almost'?'active':''}" onclick="${setAnswerFn}(${i},'almost')">Almost</button>`}
         <button type="button" class="cfl-yn-btn ${it.invert?'cfl-yes':'cfl-no'} ${ans==='no'?'active':''}" onclick="${setAnswerFn}(${i},'no')">No</button>
-        <button type="button" class="cfl-yn-btn cfl-other ${isOther?'active':''}" title="Your own answer — counts as half, like Almost"
-          onclick="${isOther ? `clearCflAnswer('${setAnswerFn}', ${i})` : `setCflOther('${setAnswerFn}', ${i}, '')`}">Other</button>
+        ${(it.plain || it.noOther) ? '' : `<button type="button" class="cfl-yn-btn cfl-other ${isOther?'active':''}" title="Your own answer — counts as half, like Almost"
+          onclick="${isOther ? `clearCflAnswer('${setAnswerFn}', ${i})` : `setCflOther('${setAnswerFn}', ${i}, '')`}">Other</button>`}
       </span>
       ${isOther ? `<span class="cfl-other-wrap">
         <input type="text" class="cfl-other-input" list="${listId}" value="${escapeHtml(otherText)}"
@@ -33193,7 +33193,7 @@ function _pbQuestionChips(it){
   c.push(t ? t[1] : 'Yes / No');
   const pts = v => `<span class="pb-pts">${({ 1: 'full', 0.5: 'half', 0: '0' })[v]}</span>`;
   if(it.select) c.push(it.select.map(o => `${escapeHtml(o)} ${pts(_selectCredit(it, o))}`).join(' · '));
-  else if(_pbIsYnRadio(it)) c.push(_pbYnKeys(it).map(k => `${PB_YN_LABEL[k]} ${pts(_ynCredit(it, k))}`).join(' · '));
+  else if(_pbIsYnRadio(it)) c.push(_pbYnKeys(it).map(k => `${k === 'other' ? 'Other' : PB_YN_LABEL[k]} ${pts(_ynCredit(it, k === 'other' ? 'almost' : k))}`).join(' · '));
   return c.map(x => `<span class="pb-chip">${x}</span>`).join('');
 }
 function _pbFmtR(r){ return r === null ? '—' : `${r >= 0 ? '+' : ''}${r.toFixed(2)}R`; }
@@ -33300,13 +33300,18 @@ function renderPlaybookDetail(){
    may puntos. Ang mga pangalan ay nakapirmi — iyon ang naka-save na sagot sa
    bawat trade (yes / no / retest / almost). Ang simpleng Yes/No ay Yes at No
    lang. */
-const PB_YN_LABEL = { yes: 'Yes', no: 'No', retest: 'Retest', almost: 'Almost' };
+/* Lahat ng tanong sa checklist mo ay may Yes · Almost · No · Other (at Retest
+   sa iba) — kaya Radio ang mga iyon. Ang simpleng "Yes / No" (plain) ay Yes at
+   No lang, walang Almost at Other; iyon ang default ng bagong tanong. */
+const PB_YN_LABEL = { yes: 'Yes', no: 'No', retest: 'Retest', almost: 'Almost', other: 'Other (type your own)' };
 function _pbIsYnFamily(it){ return !it.select && !it.ui; }
-function _pbIsYnRadio(it){ return _pbIsYnFamily(it) && !!(it.invert || it.retest || it.almost || it.points); }
-function _pbYnKeys(it){ return ['yes', 'no', ...(it.retest ? ['retest'] : []), ...(it.almost ? ['almost'] : [])]; }
+function _pbIsYnRadio(it){ return _pbIsYnFamily(it) && !it.plain; }
+function _pbYnKeys(it){
+  return ['yes', 'no', ...(it.retest ? ['retest'] : []), ...(it.noAlmost ? [] : ['almost']), ...(it.noOther ? [] : ['other'])];
+}
 function _pbYnMaterialize(it){
   const p = {};
-  _pbYnKeys(it).forEach(k => { p[k] = _ynCredit(it, k); });
+  _pbYnKeys(it).filter(k => k !== 'other').forEach(k => { p[k] = _ynCredit(it, k); });
   it.points = p;
 }
 function setPbYnPoints(i, k, val){
@@ -33318,8 +33323,9 @@ function setPbYnPoints(i, k, val){
 function setPbYnOpt(i, k, on){
   const it = _pbDraft.items[i];
   _pbYnMaterialize(it);
-  if(on){ it[k] = true; it.points[k] = k === 'almost' ? 0.5 : 1; }
-  else { delete it[k]; delete it.points[k]; }
+  if(k === 'retest'){ if(on){ it.retest = true; it.points.retest = 1; } else { delete it.retest; delete it.points.retest; } }
+  if(k === 'almost'){ if(on){ delete it.noAlmost; it.points.almost = 0.5; } else it.noAlmost = true; }
+  if(k === 'other'){ if(on) delete it.noOther; else it.noOther = true; }
   _pbRenderEditor();
 }
 function _pbTypeOf(it){ return it.ui || (it.select ? 'choice' : (_pbIsYnRadio(it) ? 'radio' : 'yn')); }
@@ -33372,7 +33378,7 @@ function closePlaybookEditor(){
 function newPlaybook(){
   _pbOpenEditor({ isNew: true, key: null, isBuiltin: false, name: '', direction: 'Long', trade_setup: '', pattern_type: '',
     min_pct: DEFAULT_MIN_CONFLUENCE_PCT, no_auto_rules: false, chart_patterns: [], notes: '',
-    items: [{ tag: '', text: '' }], savedLen: 0 });
+    items: [{ tag: '', text: '', plain: true }], savedLen: 0 });
 }
 function editPlaybook(){
   const key = _pbSelKey, cfg = CONFLUENCE_SETUPS[key];
@@ -33456,16 +33462,17 @@ function _pbRenderEditor(){
         ${_pbIsYnRadio(it) ? `<div class="pb-opts">
           ${_pbYnKeys(it).map(k => `<div class="pb-opt">
             <input type="text" value="${PB_YN_LABEL[k]}" disabled aria-label="Option">
-            <select aria-label="Points for ${PB_YN_LABEL[k]}" onchange="setPbYnPoints(${i},'${k}',this.value)">
-              ${[['1', 'Full point'], ['0.5', 'Half point'], ['0', 'No point']].map(([v, l]) => `<option value="${v}" ${String(_ynCredit(it, k)) === v ? 'selected' : ''}>${l}</option>`).join('')}
+            <select aria-label="Points for ${PB_YN_LABEL[k]}" ${k === 'other' ? 'disabled title="Scored like Almost"' : `onchange="setPbYnPoints(${i},'${k}',this.value)"`}>
+              ${[['1', 'Full point'], ['0.5', 'Half point'], ['0', 'No point']].map(([v, l]) => `<option value="${v}" ${String(_ynCredit(it, k === 'other' ? 'almost' : k)) === v ? 'selected' : ''}>${l}</option>`).join('')}
             </select>
-            ${k === 'retest' || k === 'almost' ? `<button type="button" class="pb-opt-del" title="Remove option" onclick="setPbYnOpt(${i},'${k}',false)">✕</button>` : '<span></span>'}
+            ${k === 'yes' || k === 'no' ? '<span></span>' : `<button type="button" class="pb-opt-del" title="Remove option" onclick="setPbYnOpt(${i},'${k}',false)">✕</button>`}
           </div>`).join('')}
           <span class="pb-opt-row">
             ${!it.retest ? `<button type="button" class="pb-opt-add" onclick="setPbYnOpt(${i},'retest',true)">+ Retest</button>` : ''}
-            ${!it.almost ? `<button type="button" class="pb-opt-add" onclick="setPbYnOpt(${i},'almost',true)">+ Almost</button>` : ''}
+            ${it.noAlmost ? `<button type="button" class="pb-opt-add" onclick="setPbYnOpt(${i},'almost',true)">+ Almost</button>` : ''}
+            ${it.noOther ? `<button type="button" class="pb-opt-add" onclick="setPbYnOpt(${i},'other',true)">+ Other</button>` : ''}
           </span>
-          <div class="pb-hint">Your trades already store these answers, so the option names stay fixed. Set which one scores.</div>
+          <div class="pb-hint">Your trades already store these answers, so the option names stay fixed. Set which one scores; Other is scored like Almost.</div>
         </div>` : PB_PICK.includes(type) ? `<div class="pb-opts">
           ${(it.select || []).map((o, j) => `<div class="pb-opt">
             <input type="text" maxlength="40" value="${escapeHtml(o)}" aria-label="Option ${j + 1}" onchange="setPbOption(${i},${j},this.value)">
@@ -33491,7 +33498,7 @@ function _pbRenderEditor(){
 function addPbQuestion(){
   const vis = _pbVisible();
   vis.forEach(({ it }, pos) => { it.order = pos; });
-  const q = { tag: '', text: '', order: vis.length };
+  const q = { tag: '', text: '', order: vis.length, plain: true };
   // Sa umiiral na playbook: tandaan kung kailan, para hindi bumaba ang score
   // ng mga trade na nauna rito (_confluenceProgress `since`).
   if(!_pbDraft.isNew) q.addedAt = new Date().toISOString();
@@ -33520,11 +33527,13 @@ function setPbQuestionType(i, type){
   /* Naka-save na Yes/No na ginawang Radio: nananatiling Yes/No sa ilalim
      (para tumugma pa rin ang mga sagot ng lumang trade), may puntos lang. */
   if(type === 'radio' && _pbIsYnFamily(it) && i < _pbDraft.savedLen){
+    delete it.plain;
     _pbYnMaterialize(it);
     _pbRenderEditor();
     return;
   }
-  ['ui', 'select', 'multi', 'points', 'allGood', 'almost', 'noScore', 'invert', 'retest'].forEach(k => delete it[k]);
+  ['ui', 'select', 'multi', 'points', 'allGood', 'almost', 'noScore', 'invert', 'retest', 'plain', 'noAlmost', 'noOther'].forEach(k => delete it[k]);
+  if(type === 'yn') it.plain = true;
   if(type === 'toggle') it.ui = 'toggle';
   if(PB_PICK.includes(type)){
     it.select = keep || ['Option 1', 'Option 2'];
@@ -33689,7 +33698,7 @@ async function playbookCodeAction(){
     while(CONFLUENCE_SETUPS[`${dir}|${pattern} (${n})`]) n++;
     pattern = `${pattern} (${n})`;
   }
-  const allowed = ['tag', 'text', 'invert', 'almost', 'select', 'allGood', 'exec', 'retest', 'id', 'impliesWhenYes', 'ui', 'multi', 'points', 'noScore'];
+  const allowed = ['tag', 'text', 'invert', 'almost', 'select', 'allGood', 'exec', 'retest', 'id', 'impliesWhenYes', 'ui', 'multi', 'points', 'noScore', 'plain', 'noAlmost', 'noOther'];
   const items = obj.q.slice(0, 40).map(q => {
     const it = {};
     allowed.forEach(k => { if(q && q[k] !== undefined) it[k] = q[k]; });
