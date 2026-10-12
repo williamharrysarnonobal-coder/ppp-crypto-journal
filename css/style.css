@@ -5665,3 +5665,6 @@ body.mobile-mode .pi-dd{grid-template-columns:1fr;gap:12px;}
   body.mobile-mode .pb-opts{padding-left:0;}
   body.mobile-mode .pb-opt{grid-template-columns:1fr 104px 32px;}
   @media (max-width:600px){.pb-opts{padding-left:0;}.pb-opt{grid-template-columns:1fr 104px 32px;}}
+
+  .pb-opt input:disabled{opacity:1;color:var(--ink);background:transparent;}
+  .pb-opt-row{display:flex;gap:8px;flex-wrap:wrap;}
