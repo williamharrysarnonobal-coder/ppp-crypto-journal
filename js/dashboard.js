@@ -15684,17 +15684,23 @@ const _bulkRows = () => (RAW_TRADES || []).filter(r => JOURNAL_SELECTED.has(Stri
 const BULK_GROUPS = [
   { t: 'Setup & strategy', keys: ['trade_type','trade_setup','pattern_type','execution_tf','aof_phase'] },
   { t: 'Discipline', keys: ['rules_followed','exit_type','post_be_result','post_cutloss_result','post_stop_profit_result'] },
+  { t: 'Emotions', keys: ['entry_emotion','exit_emotion'] },
   { t: 'Result', keys: ['win_loss'] },
   { t: 'Account', keys: ['account','account_type'] },
   { t: 'Prices & size', keys: ['symbol','entry_price','close_price','tp_price','sl_price','position_size','leverage','profit_loss','fee'] },
   { t: 'Other', keys: ['link'] },
 ];
 let _bulkTagState = {};   // tag -> 'add' | 'remove'
+// Mistakes at Trade Management: listahan din, kaya pareho ang paraan ng Trade
+// Tags — idagdag sa lahat o alisin sa lahat, kada pagpipilian.
+const BULK_LIST_FIELDS = ['mistakes', 'trade_management'];
+let _bulkListState = {};  // field -> { option -> 'add' | 'remove' }
 
 function openJournalBulkEdit(){
   const rows = _bulkRows();
   if(!rows.length) return;
   _bulkTagState = {};
+  _bulkListState = {};
   document.getElementById('journalBulkTitle').textContent = `Edit ${rows.length} trade${rows.length === 1 ? '' : 's'}`;
   document.getElementById('journalBulkError').textContent = '';
   const fieldOf = k => ALL_DRAWER_FIELDS.find(f => f.key === k);
@@ -15730,7 +15736,7 @@ function openJournalBulkEdit(){
       return `<label class="jb-field ${cur.same ? '' : 'is-mixed'}" for="${id}"><span>${escapeHtml(f.label)} ${mixedNote}</span>
         <select id="${id}" data-bulk="${k}" data-initial="${escapeHtml(initial)}">
           ${keepLabel ? `<option value="__keep" selected>${keepLabel}</option>` : ''}
-          ${opts.map(o => `<option value="${escapeHtml(o)}" ${initial === o ? 'selected' : ''}>${escapeHtml(o)}</option>`).join('')}
+          ${opts.map(o => `<option value="${escapeHtml(o)}" ${initial === o ? 'selected' : ''}>${escapeHtml(typeof _optLabel === 'function' ? _optLabel(k, o) : o)}</option>`).join('')}
           <option value="__clear">— Clear on all —</option>
         </select></label>`;
     }
@@ -15763,6 +15769,15 @@ function openJournalBulkEdit(){
         ${tagRow('Rules', 'a rule broken — turns Rules Followed? to No', byKind('breach'))}
         ${tagRow('Notes', 'to remember or measure — counts against nothing', byKind('observation'))}
       </div>`
+    + BULK_LIST_FIELDS.map(field => {
+        const f = fieldOf(field);
+        const opts = (f && f.options) ? f.options.map(String) : [];
+        if(!opts.length) return '';
+        const count = o => rows.filter(r => _tpList(r[field]).some(x => x.toLowerCase() === o.toLowerCase())).length;
+        return `<div class="jb-group"><div class="jb-group-t">${escapeHtml(f.label)} <span class="jb-sub">click to add to all or remove from all, again to undo</span></div>
+          <div class="jb-tags">${opts.map((o, i) => { const c = count(o); const have = c === rows.length ? 'all' : c > 0 ? 'some' : 'none';
+            return `<button type="button" class="jb-tag has-${have}${field === 'mistakes' ? ' is-mistake' : ''}" data-list="${field}" data-opt-i="${i}" data-have="${have}" title="${c} of ${rows.length} selected trades" onclick="cycleBulkList(this)">${escapeHtml(o)}${have === 'some' ? ` <span class="jb-tag-n">${c}/${rows.length}</span>` : ''}</button>`; }).join('')}</div></div>`;
+      }).join('')
     + `<div class="jb-group"><div class="jb-group-t">Add a note <span class="jb-sub">added to every selected trade's notes</span></div>
         <textarea id="jb-note" rows="3" placeholder="Leave empty for no note"></textarea></div>`;
   document.getElementById('journalBulkModal').classList.add('open');
@@ -15780,6 +15795,26 @@ function cycleBulkTag(btn){
   btn.classList.toggle('add', next === 'add');
   btn.classList.toggle('remove', next === 'remove');
   btn.setAttribute('aria-label', `${tag}: ${next ? (next === 'add' ? 'add to all' : 'remove from all') : 'no change'}`);
+}
+function cycleBulkList(btn){
+  const field = btn.dataset.list;
+  const f = ALL_DRAWER_FIELDS.find(x => x.key === field);
+  const opt = (f && f.options || [])[Number(btn.dataset.optI)];
+  if(opt == null) return;
+  const st = _bulkListState[field] = _bulkListState[field] || {};
+  const next = st[opt] ? null : (btn.dataset.have === 'all' ? 'remove' : 'add');
+  if(next) st[opt] = next; else delete st[opt];
+  btn.classList.toggle('add', next === 'add');
+  btn.classList.toggle('remove', next === 'remove');
+  btn.setAttribute('aria-label', `${opt}: ${next ? (next === 'add' ? 'add to all' : 'remove from all') : 'no change'}`);
+}
+function _applyBulkList(current, ops){
+  let list = _tpList(current);
+  Object.entries(ops).forEach(([o, op]) => {
+    if(op === 'add' && !list.some(x => x.toLowerCase() === o.toLowerCase())) list.push(o);
+    if(op === 'remove') list = list.filter(x => x.toLowerCase() !== o.toLowerCase());
+  });
+  return list.length ? list.join(', ') : null;
 }
 function closeJournalBulkEdit(){
   document.getElementById('journalBulkModal').classList.remove('open');
@@ -15820,8 +15855,9 @@ async function saveJournalBulkEdit(){
   });
   const note = (document.getElementById('jb-note')?.value || '').trim();
   const tagOps = { ..._bulkTagState };
-  if(!Object.keys(set).length && !Object.keys(tagOps).length && !note){
-    errEl.textContent = 'Nothing changed yet — pick at least one field, tag or note.';
+  const listOps = Object.fromEntries(Object.entries(_bulkListState).filter(([, v]) => Object.keys(v).length));
+  if(!Object.keys(set).length && !Object.keys(tagOps).length && !Object.keys(listOps).length && !note){
+    errEl.textContent = 'Nothing changed yet — pick at least one field, tag, mistake or note.';
     return;
   }
   const btn = document.getElementById('journalBulkSaveBtn');
@@ -15837,6 +15873,7 @@ async function saveJournalBulkEdit(){
         if(rf) patch.rules_followed = rf;
       }
     }
+    Object.entries(listOps).forEach(([field, ops]) => { patch[field] = _applyBulkList(r[field], ops); });
     if(note){
       const log = Array.isArray(r.notes_log) ? [...r.notes_log] : [];
       log.push({ ts: new Date().toISOString(), text: note });

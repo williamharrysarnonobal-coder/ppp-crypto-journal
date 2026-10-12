@@ -5529,3 +5529,6 @@ body.mobile-mode .pi-dd{grid-template-columns:1fr;gap:12px;}
 /* Trade alert detail: TradingView at Share */
 .alert-actions{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:16px;flex-wrap:wrap;}
 .alert-share-btn{display:inline-flex;align-items:center;gap:6px;}
+
+/* Bulk edit: Mistakes chips may kulay ng pagkakamali kapag naka-add */
+.jb-tag.is-mistake.add{border-color:var(--loss);color:var(--loss);background:color-mix(in srgb,var(--loss) 14%,transparent);}
