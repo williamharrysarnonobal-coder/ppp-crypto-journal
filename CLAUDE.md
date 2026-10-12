@@ -105,8 +105,11 @@ find/replace, try the LF form, then the CRLF form.
 ## Trade Alerts (two tables, don't confuse them)
 
 - **`signal_alerts`**: what the Trade Alerts page, the bell and phone push
-  read. One inserted row per fired alert (a history). `seen` is shared across
-  devices.
+  read. One inserted row per fired alert. `seen` is shared across devices.
+  **Alerts expire after 6 hours**: the Worker cron (`expireTradeAlerts`)
+  deletes older rows every minute (a real delete, by the owner's choice), and
+  the dashboard only fetches the last 6 hours (`ALERT_TTL_HOURS` in both
+  `worker.js` and `dashboard.js`; keep them equal).
 - **`trading_signals`**: older "current state per symbol" table, upserted
   every bot cycle. Still written by the bots for their own heartbeat; **not**
   read by the dashboard. Don't reintroduce a UI dependency on it.

@@ -28,8 +28,25 @@ export default {
   // Bawat minuto (wrangler.toml → [triggers]): ang phone push na takdang oras na.
   async scheduled(event, env, ctx) {
     ctx.waitUntil(runPushCron(env, event.scheduledTime).catch(e => console.error('push cron', e)));
+    ctx.waitUntil(expireTradeAlerts(env).catch(e => console.error('alert expiry', e)));
   }
 };
+
+/* ANG TRADE ALERT AY 6 NA ORAS LANG. Binubura ng cron ang bawat alert na
+   lampas na roon, para hindi tambak ang Trade Alerts. Totoong pagbura ito sa
+   database (pinili niya), at iisa ang listahan ng lahat ng user. Ang
+   accuracy tracking (signal_outcomes) ay nakatali sa symbol + setup, hindi sa
+   alert, kaya hindi ito apektado. Tumutugma sa ALERT_TTL_HOURS sa dashboard.js. */
+const ALERT_TTL_HOURS = 6;
+async function expireTradeAlerts(env){
+  if (!env.SUPABASE_SERVICE_ROLE_KEY) return;
+  const cutoff = new Date(Date.now() - ALERT_TTL_HOURS * 3600000).toISOString();
+  const r = await fetch(`${SB_URL}/rest/v1/signal_alerts?alert_at=lt.${cutoff}`, {
+    method: 'DELETE',
+    headers: { apikey: env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`, Prefer: 'return=minimal' }
+  });
+  if (!r.ok) console.error('alert expiry', r.status, await r.text());
+}
 
 /* ANG HTML AY HINDI DAPAT MA-CACHE. ANG IBA, OO.
 

@@ -20214,9 +20214,14 @@ let lastAlertsSyncAt = null;
 let hasLoadedSignalAlertsOnce = false;
 let lastKnownUnseenAlertCount = 0;
 
+/* Ang Trade Alert ay 6 na oras lang: binubura ito ng cron ng Worker
+   (expireTradeAlerts). Dito ay hindi na rin kinukuha ang lampas na, para hindi
+   ito makita sa pagitan ng dalawang takbo ng cron. */
+const ALERT_TTL_HOURS = 6;
+function _alertCutoffIso(){ return new Date(Date.now() - ALERT_TTL_HOURS * 3600000).toISOString(); }
 async function loadSignalAlerts(){
   try{
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/signal_alerts?select=*&order=alert_at.desc`, {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/signal_alerts?select=*&alert_at=gte.${_alertCutoffIso()}&order=alert_at.desc`, {
       headers: {
         "apikey": SUPABASE_KEY,
         "Authorization": `Bearer ${USER_ACCESS_TOKEN}`
@@ -32085,7 +32090,7 @@ async function _nfCheckAlerts(known){
   if(Date.now() - _nfAlertsAt < 2 * 60000) return;
   _nfAlertsAt = Date.now();
   try{
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/signal_alerts?select=id,symbol,setup,message,alert_at,seen&order=alert_at.desc&limit=30`, {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/signal_alerts?select=id,symbol,setup,message,alert_at,seen${typeof _alertCutoffIso === 'function' ? '&alert_at=gte.' + _alertCutoffIso() : ''}&order=alert_at.desc&limit=30`, {
       headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}` }
     });
     if(!res.ok) return;
