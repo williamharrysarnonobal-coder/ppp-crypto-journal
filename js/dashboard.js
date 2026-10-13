@@ -8946,7 +8946,7 @@ function _rmDue(){
   if(s.types.review && hm >= toMin(s.evening) && (tradesToday.length || plan) && !(plan && plan.followed))
     out.push({ key: 'review', title: 'Review today', body: 'Did you follow the plan? How did the session feel?', go: () => { switchView('plan'); openDailyPlan(today); } });
   if(s.types.journal && typeof _upClosedAll === 'function'){
-    const open = Object.entries(_upClosedAll()).filter(([, r]) => !r.journaled);
+    const open = Object.entries(_upClosedAll()).filter(([id, r]) => !r.journaled && !(typeof _upOrderJournaled === 'function' && _upOrderJournaled(id)));
     if(open.length) out.push({ key: 'journal', fire: open.map(([id]) => 'journal:' + id),
       title: `${open.length} closed trade${open.length === 1 ? '' : 's'} to journal`,
       body: 'Upscale closed them; the numbers are ready to fill in.', go: () => journalFromUpscaleClose(open[0][0]) });
@@ -25404,6 +25404,9 @@ function _placedRecord(accId, entry, sl){
     const m = JSON.parse(localStorage.getItem(_UP_PLACED_KEY) || '{}');
     const hit = m[_placedKey(accId, entry, sl)];
     if(!hit || Date.now() - hit.at > 86400000) return null;
+    // Sarado at nasa Trade Journals na: tapos na ang hilerang ito — bumalik
+    // sa "Place Order" para sa susunod na trade.
+    if(hit.state === 'Closed' && typeof _upOrderJournaled === 'function' && _upOrderJournaled(hit.orderId, accId, hit)) return null;
     return hit;
   }catch(e){ return null; }
 }
@@ -25528,7 +25531,36 @@ function _upClosedAll(){
 }
 function _upClosedRecord(orderId){
   const r = _upClosedAll()[orderId];
-  return r && !r.journaled ? r : null;
+  return r && !_upOrderJournaled(orderId) ? r : null;
+}
+/* NA-JOURNAL NA BA ANG ORDER NA ITO — kahit hindi sa "Journal" button.
+   Pwede itong na-journal mula sa Pending Setups (Add Journal), sa bulk, o sa
+   Easy Add. Kaya tinitingnan ang mismong Trade Journals: ang setup ng order na
+   "Journaled" na o may trade na naka-link, o (kung walang setup) isang trade
+   sa parehong account na tugma ang entry at ang oras ng pagsara. */
+function _upOrderJournaled(orderId, accId, placed){
+  if(!orderId) return false;
+  // Walang naitabing detalye ng pagsara? Ang entry na nasa hilera ng calculator.
+  const r = _upClosedAll()[orderId] || (placed && placed.entry != null ? { entry: placed.entry, accId } : null);
+  if(r && r.journaled) return true;
+  const setups = (typeof SAVED_SETUPS !== 'undefined' ? SAVED_SETUPS : []).filter(s =>
+    s.upscale_order_id === orderId || (r && r.setupId != null && String(s.id) === String(r.setupId)));
+  if(setups.some(s => s.status === 'Journaled')) return true;
+  const trades = typeof RAW_TRADES !== 'undefined' ? RAW_TRADES : [];
+  const ids = new Set(setups.map(s => String(s.id)));
+  if(ids.size && trades.some(t => t.linked_setup_id != null && ids.has(String(t.linked_setup_id)))) return true;
+  if(r && r.entry != null){
+    const acc = (typeof TRADING_ACCOUNTS !== 'undefined' ? TRADING_ACCOUNTS : []).find(a => String(a.id) === String(accId != null ? accId : r.accId));
+    const name = acc ? acc.account_name : r.account;
+    const closeT = r.closedAt ? Date.parse(r.closedAt) : NaN;
+    return trades.some(t => t.account === name && t.entry_price != null
+      && Math.abs(Number(t.entry_price) - Number(r.entry)) <= Math.abs(Number(r.entry)) * 0.0005
+      && t.close_date
+      && (isNaN(closeT)
+        ? Date.now() - new Date(t.close_date).getTime() < 2 * 86400000          // walang oras ng pagsara: bago lang na trade
+        : Math.abs(new Date(t.close_date).getTime() - closeT) < 3 * 3600000));
+  }
+  return false;
 }
 function _upRememberClosed(orderId, acc, st, rec, setup, placedMap){
   const c = _upClosedAll();
