@@ -133,6 +133,10 @@ const ok=(l,c,x)=>{ if(!c) fail++; console.log('  '+(c?'ok   ':'MALI ')+l.padEnd
   await ev("toggleNotifFab(true)"); await sleep(300);
   await over('bell panel');
   await ev("toggleNotifFab(false)");
+  await ev(`(()=>{ const by = window._calByDay || {}; const d = Object.keys(by)[0]; if(d) showDayTrades(calMonth.getFullYear(), calMonth.getMonth(), Number(d)); })()`); await sleep(300);
+  await ev("if(document.getElementById('tradeModal').classList.contains('open')) openShareDay()"); await sleep(200);
+  await over('day share popup');
+  await ev("closeShareDay(); closeModal()");
   await ev("switchView('playbooks')"); await sleep(400);
   await ev("openPlaybookImport()"); await sleep(200);
   await over('playbook import popup');
