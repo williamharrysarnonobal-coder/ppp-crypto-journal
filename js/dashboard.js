@@ -34096,6 +34096,7 @@ function openShareDay(){
   document.getElementById('dayShareNativeBtn').style.display = (navigator.canShare && navigator.share) ? '' : 'none';
   document.getElementById('dayShareModal').classList.add('open');
   drawDayShare();
+  if(typeof _dpLoaded !== 'undefined' && !_dpLoaded && typeof loadDailyPlans === 'function') loadDailyPlans().then(drawDayShare).catch(() => {});
 }
 function closeShareDay(){ document.getElementById('dayShareModal').classList.remove('open'); }
 function drawDayShare(){
@@ -34128,9 +34129,17 @@ function drawDayShare(){
   ctx.fillStyle = C.ink; ctx.font = font(800, 54);
   ctx.fillText(day.toLocaleDateString('en-US', { month:'long', day:'numeric' }), L, 112);
   const acct = document.getElementById('accountFilter')?.value;
+  const accNames = acct && acct !== 'all' ? acct : [...new Set(trades.map(t => t.account).filter(Boolean))].join(', ');
   ctx.fillStyle = C.muted; ctx.font = font(500, 24);
   ctx.fillText([`${day.toLocaleDateString('en-US', { weekday:'long' })}, ${day.getFullYear()}`,
-    `${trades.length} trade${trades.length === 1 ? '' : 's'}`, showAcc && acct && acct !== 'all' ? acct : ''].filter(Boolean).join('  ·  '), L, 152);
+    `${trades.length} trade${trades.length === 1 ? '' : 's'}`].join('  ·  '), L, 152);
+  // Ang mga account: sariling linya, para hindi maputol kapag marami.
+  if(showAcc && accNames){
+    ctx.font = font(500, 19);
+    let a = accNames;
+    while(a.length > 4 && ctx.measureText(a).width > 680) a = a.slice(0, -2) + '…';
+    ctx.fillText(a, L, 184);
+  }
 
   // Ang malaking resulta: ilan ang panalo at talo.
   ctx.fillStyle = tone; ctx.font = font(800, 112);
@@ -34148,8 +34157,10 @@ function drawDayShare(){
     rs.length ? ['Return', `${sign(R)}${Math.abs(R).toFixed(2)}R`] : null,
     showMoney ? ['Net', `${sign(net)}$${Math.abs(net).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`] : null,
     be ? ['Breakeven', String(be)] : null,
-    ['Trades', String(trades.length)]
-  ].filter(Boolean).slice(0, 4);
+    ['Trades', String(trades.length)],
+    (() => { const marked = trades.filter(t => /^(yes|no)$/i.test(String(t.rules_followed || '').trim()));
+             return marked.length ? ['Rules followed', `${marked.filter(t => /^yes$/i.test(String(t.rules_followed).trim())).length}/${marked.length}`] : null; })()
+  ].filter(Boolean).slice(0, 6);
   const colW = (W - L * 2) / 2 > 260 ? 260 : (W - L * 2) / 2;
   stats.forEach(([k, v], i) => {
     const x = L + (i % 2) * colW, y = 404 + Math.floor(i / 2) * 68;
@@ -34158,6 +34169,33 @@ function drawDayShare(){
   });
 
   _drawShareTrend(ctx, good, C, W);
+
+  // Kanan, sa ilalim ng larawan: ang resulta ng bawat trade ayon sa oras.
+  const rx = 776, rw = W - rx - 56;
+  ctx.fillStyle = C.muted; ctx.font = font(600, 18); ctx.fillText('IN ORDER', rx, 404);
+  const ordered = [...trades].sort((a, b) => (a.close_date || 0) - (b.close_date || 0));
+  const dot = 26, dg = 10, perRow = Math.max(1, Math.floor((rw + dg) / (dot + dg)));
+  ordered.slice(0, perRow * 2).forEach((t, i) => {
+    const cx = rx + dot / 2 + (i % perRow) * (dot + dg), cy = 432 + Math.floor(i / perRow) * (dot + dg);
+    ctx.fillStyle = _isWin(t) ? C.win : _isLoss(t) ? C.loss : '#FFA53B';
+    ctx.beginPath(); ctx.arc(cx, cy, dot / 2, 0, Math.PI * 2); ctx.fill();
+  });
+  // Ang plano ng araw (Daily Plan): bias at max trades.
+  const iso = `${_dayShare.y}-${String(_dayShare.m + 1).padStart(2, '0')}-${String(_dayShare.d).padStart(2, '0')}`;
+  const plan = (typeof DAILY_PLANS !== 'undefined' ? DAILY_PLANS : []).find(p => p.plan_date === iso);
+  if(plan && (plan.bias || plan.max_trades != null)){
+    const py = ordered.length > perRow ? 540 : 504;
+    ctx.fillStyle = C.muted; ctx.font = font(600, 18); ctx.fillText('PLAN', rx, py);
+    const bias = plan.bias || '';
+    const biasCol = /bull/i.test(bias) ? C.win : /bear/i.test(bias) ? C.loss : C.ink;
+    ctx.font = font(700, 28); ctx.fillStyle = biasCol;
+    if(bias) ctx.fillText(bias, rx, py + 36);
+    const bw = bias ? ctx.measureText(bias).width : 0;
+    if(plan.max_trades != null){
+      ctx.fillStyle = C.muted; ctx.font = font(500, 22);
+      ctx.fillText(`${bias ? '  ·  ' : ''}max ${plan.max_trades} per account`, rx + bw, py + 34);
+    }
+  }
 
   ctx.fillStyle = C.accent; ctx.font = font(800, 22);
   ctx.fillText('TANAYDANA', L, H - 36);
