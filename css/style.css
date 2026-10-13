@@ -5676,3 +5676,14 @@ body.mobile-mode .pi-dd{grid-template-columns:1fr;gap:12px;}
   .econ-row-share{background:none;border:1px solid transparent;color:var(--muted);border-radius:6px;width:30px;height:30px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;}
   .econ-share-btn:focus-visible,.econ-row-share:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
   .pb-auto-note{font-size:11.5px;color:var(--warn);line-height:1.45;}
+
+  /* ---------- Bulk edit: chart screenshot ---------- */
+  .jb-chart{display:grid;grid-template-columns:180px 1fr;gap:10px;align-items:end;margin-bottom:6px;}
+  .jb-chart-drop{min-height:74px;border:1px dashed var(--rule);border-radius:8px;display:flex;align-items:center;justify-content:center;gap:12px;padding:10px 12px;cursor:pointer;color:var(--muted);font-size:12.5px;text-align:center;}
+  .jb-chart-drop:hover,.jb-chart-drop.drag,.jb-chart-drop:focus-visible{border-color:var(--accent);color:var(--ink);outline:none;}
+  .jb-chart-drop.has{justify-content:flex-start;text-align:left;border-style:solid;}
+  .jb-chart-drop img{width:96px;height:56px;object-fit:cover;border-radius:6px;flex-shrink:0;}
+  .jb-chart-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink);}
+  .jb-chart-x{background:none;border:1px solid var(--rule);color:var(--loss);border-radius:6px;padding:5px 10px;font-size:12px;cursor:pointer;font-family:inherit;}
+  body.mobile-mode .jb-chart{grid-template-columns:1fr;}
+  @media (max-width:600px){.jb-chart{grid-template-columns:1fr;}}

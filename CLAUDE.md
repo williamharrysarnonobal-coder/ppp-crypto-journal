@@ -105,6 +105,10 @@ find/replace, try the LF form, then the CRLF form.
 - Shared tables (`signal_alerts`, `trading_signals`, `economic_events`,
   screener) have no `user_id`; RLS just requires a signed-in user.
 - Storage buckets are private, folder-per-user (`{user_id}/...`).
+- Trade charts live in `trading_journal.chart_shots` (`{htf, setup, entry}`
+  arrays of paths in the `setup-screenshots` bucket). Bulk edit can put one
+  uploaded chart on many trades, so **one file can be shared**: only delete a
+  file from Storage when `_chartPathInUse(path)` says nothing else uses it.
 - Client-side config (columns, form fields, dropdown options) is in
   `localStorage` (per browser). Saved options are **merged** with options
   added in code, never replaced.

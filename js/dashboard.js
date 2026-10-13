@@ -15797,9 +15797,64 @@ function openJournalBulkEdit(){
           <div class="jb-tags">${opts.map((o, i) => { const c = count(o); const have = c === rows.length ? 'all' : c > 0 ? 'some' : 'none';
             return `<button type="button" class="jb-tag has-${have}${field === 'mistakes' ? ' is-mistake' : ''}" data-list="${field}" data-opt-i="${i}" data-have="${have}" title="${c} of ${rows.length} selected trades" onclick="cycleBulkList(this)">${escapeHtml(o)}${have === 'some' ? ` <span class="jb-tag-n">${c}/${rows.length}</span>` : ''}</button>`; }).join('')}</div></div>`;
       }).join('')
+    + `<div class="jb-group"><div class="jb-group-t">Chart screenshot <span class="jb-sub">one image for every selected trade · replaces the charts already in that slot</span></div>
+        <div class="jb-chart">
+          <label class="jb-field"><span>Slot</span>
+            <select id="jb-chart-slot" onchange="_bulkChart.slot=this.value">
+              ${CHART_SLOTS.map(s => `<option value="${s.key}">${s.label}</option>`).join('')}
+            </select></label>
+          <div id="jb-chart-drop" class="jb-chart-drop" tabindex="0" role="button" aria-label="Choose a chart image"
+            onclick="document.getElementById('jb-chart-file').click()"
+            onkeydown="if(event.key==='Enter'||event.key===' '){ event.preventDefault(); this.click(); }"
+            ondragover="event.preventDefault(); this.classList.add('drag')" ondragleave="this.classList.remove('drag')"
+            ondrop="event.preventDefault(); this.classList.remove('drag'); setBulkChartFile([...(event.dataTransfer.files||[])].find(f => f.type.startsWith('image/')))"></div>
+          <input type="file" id="jb-chart-file" accept="image/*" hidden onchange="setBulkChartFile(this.files[0]); this.value=''">
+        </div>
+        <div class="jb-sub">Charts that come from a trade's linked setup stay as they are.</div></div>`
     + `<div class="jb-group"><div class="jb-group-t">Add a note <span class="jb-sub">added to every selected trade's notes</span></div>
         <textarea id="jb-note" rows="3" placeholder="Leave empty for no note"></textarea></div>`;
+  _bulkChart = { file: null, slot: 'htf' };
+  _renderBulkChartDrop();
   document.getElementById('journalBulkModal').classList.add('open');
+}
+
+/* BULK CHART: isang larawan para sa lahat ng napiling trade. Isang beses lang
+   ina-upload; iisang path ang nasa chart_shots ng bawat trade. Kaya ang pagbura
+   ng file sa Storage ay laging dumadaan sa _chartPathInUse. */
+let _bulkChart = { file: null, slot: 'htf' };
+function _renderBulkChartDrop(){
+  const el = document.getElementById('jb-chart-drop');
+  if(!el) return;
+  if(_bulkChart.previewUrl){ try{ URL.revokeObjectURL(_bulkChart.previewUrl); }catch(e){} _bulkChart.previewUrl = null; }
+  if(_bulkChart.file){
+    _bulkChart.previewUrl = URL.createObjectURL(_bulkChart.file);
+    el.innerHTML = `<img src="${_bulkChart.previewUrl}" alt="Chart to add"><span class="jb-chart-name">${escapeHtml(_bulkChart.file.name || 'Pasted image')}</span>
+      <button type="button" class="jb-chart-x" onclick="event.stopPropagation(); setBulkChartFile(null)">Remove</button>`;
+    el.classList.add('has');
+  }else{
+    el.innerHTML = '<span>Click to choose, <b>paste (Ctrl+V)</b>, or drop an image</span>';
+    el.classList.remove('has');
+  }
+}
+function setBulkChartFile(file){
+  _bulkChart.file = file && file.type && file.type.startsWith('image/') ? file : null;
+  _renderBulkChartDrop();
+}
+document.addEventListener('paste', (e) => {
+  if(!document.getElementById('journalBulkModal')?.classList.contains('open')) return;
+  const t = e.target;
+  if(t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+  const f = [...(e.clipboardData && e.clipboardData.items || [])].filter(i => i.type && i.type.startsWith('image/')).map(i => i.getAsFile()).find(Boolean);
+  if(!f) return;
+  e.preventDefault();
+  setBulkChartFile(f);
+});
+// Ginagamit pa ba ng ibang trade o setup ang file na ito?
+function _chartPathInUse(path, skip){
+  const inShots = o => { const s = _chartShotsOf(o); return CHART_SLOTS.some(sl => s[sl.key].includes(path)); };
+  const trades = [...(typeof RAW_TRADES !== 'undefined' ? RAW_TRADES : []), ...(typeof PAPER_TRADES !== 'undefined' ? PAPER_TRADES : [])];
+  if(trades.some(t => t !== skip && inShots(t))) return true;
+  return (typeof SAVED_SETUPS !== 'undefined' ? SAVED_SETUPS : []).some(s => inShots(s) || s.before_screenshot === path || s.after_screenshot === path);
 }
 // Nasa lahat → pindot = alisin sa lahat. Nasa ilan o wala → pindot = idagdag
 // sa lahat. Pindot ulit = ibalik sa dati (walang pagbabago).
@@ -15875,16 +15930,40 @@ async function saveJournalBulkEdit(){
   const note = (document.getElementById('jb-note')?.value || '').trim();
   const tagOps = { ..._bulkTagState };
   const listOps = Object.fromEntries(Object.entries(_bulkListState).filter(([, v]) => Object.keys(v).length));
-  if(!Object.keys(set).length && !Object.keys(tagOps).length && !Object.keys(listOps).length && !note){
-    errEl.textContent = 'Nothing changed yet — pick at least one field, tag, mistake or note.';
+  const chart = _bulkChart && _bulkChart.file ? { file: _bulkChart.file, slot: _bulkChart.slot || 'htf' } : null;
+  if(!Object.keys(set).length && !Object.keys(tagOps).length && !Object.keys(listOps).length && !note && !chart){
+    errEl.textContent = 'Nothing changed yet — pick at least one field, tag, mistake, chart or note.';
     return;
   }
   const btn = document.getElementById('journalBulkSaveBtn');
   btn.disabled = true;
+  // Ang larawan: isang upload para sa lahat.
+  let chartPath = null;
+  const replacedPaths = new Set();
+  if(chart){
+    btn.textContent = 'Uploading chart…';
+    try{
+      const { data: { user } } = await sb.auth.getUser();
+      const ext = (chart.file.type && chart.file.type.split('/')[1]) || 'png';
+      chartPath = `${user.id}/bulk_${chart.slot}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}.${ext}`;
+      const { error } = await sb.storage.from('setup-screenshots').upload(chartPath, chart.file, { contentType: chart.file.type || 'image/png' });
+      if(error) throw error;
+    }catch(e){
+      btn.disabled = false; btn.textContent = 'Apply to trades';
+      errEl.textContent = `Couldn't upload the chart: ${e.message || e}. Nothing was changed.`;
+      return;
+    }
+  }
   let ok = 0, failed = 0;
   for(const r of rows){
     btn.textContent = `Saving ${ok + failed + 1} of ${rows.length}…`;
     const patch = { ...set };
+    if(chartPath){
+      const shots = _chartShotsOf(r);
+      shots[chart.slot].forEach(p => replacedPaths.add(p));
+      shots[chart.slot] = [chartPath];   // pinalitan, gaya ng pinili niya
+      patch.chart_shots = shots;
+    }
     if(Object.keys(tagOps).length){
       patch.unfollowed_rules = _applyBulkTags(r.unfollowed_rules, tagOps);
       if(!('rules_followed' in set)){
@@ -15919,6 +15998,12 @@ async function saveJournalBulkEdit(){
     }
   }
   btn.disabled = false; btn.textContent = 'Apply to trades';
+  // Ang mga napalitang file: binubura lang kung wala nang ibang gumagamit.
+  if(replacedPaths.size){
+    const gone = [...replacedPaths].filter(p => p !== chartPath && !_chartPathInUse(p));
+    if(gone.length){ try{ await sb.storage.from('setup-screenshots').remove(gone); }catch(e){} }
+  }
+  if(chart) setBulkChartFile(null);
   _rebuildTradeArrays();
   _rebuildTradeNumbers();
   if(typeof applyFilters === 'function') applyFilters(); else renderJournalTable();
@@ -18603,8 +18688,12 @@ async function deleteTradeChart(pid, slot, path){
     const shots = _chartShotsOf(raw);
     shots[slot] = shots[slot].filter(p => p !== path);
     await _saveTradeChartShots(pid, shots);
-    // Ang file mismo — hindi mahalaga kung pumalya; wala na ito sa trade.
-    try{ await sb.storage.from('setup-screenshots').remove([path]); }catch(e){}
+    // Ang file mismo — hindi mahalaga kung pumalya; wala na ito sa trade. Pero
+    // ang bulk chart ay iisang file ng maraming trade: buburahin lang kung wala
+    // nang ibang gumagamit.
+    if(!(typeof _chartPathInUse === 'function' && _chartPathInUse(path))){
+      try{ await sb.storage.from('setup-screenshots').remove([path]); }catch(e){}
+    }
     showToast('Screenshot deleted');
   }catch(e){
     await customAlert(`Couldn't delete it: ${e.message || e}`);
