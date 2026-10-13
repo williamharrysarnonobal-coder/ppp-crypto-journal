@@ -15697,7 +15697,7 @@ const _bulkRows = () => (RAW_TRADES || []).filter(r => JOURNAL_SELECTED.has(Stri
 // Ang mga field na puwedeng baguhin nang sabay-sabay. Hindi kasama ang mga
 // kinukuwenta (session, duration…), ang mga petsa, at ang mga pang-paper lang.
 const BULK_GROUPS = [
-  { t: 'Setup & strategy', keys: ['trade_type','trade_setup','pattern_type','execution_tf','aof_phase'] },
+  { t: 'Setup & strategy', keys: ['trade_type','trade_setup','pattern_type','execution_tf','aof_phase','entry_area','tp_area','sl_area'] },
   { t: 'Discipline', keys: ['rules_followed','exit_type','post_be_result','post_cutloss_result','post_stop_profit_result'] },
   { t: 'Emotions', keys: ['entry_emotion','exit_emotion'] },
   { t: 'Result', keys: ['win_loss'] },
@@ -15757,10 +15757,14 @@ function openJournalBulkEdit(){
     }
     const type = f.widget === 'number' ? 'number' : 'text';
     const initial = cur.same ? cur.v : '';
+    // Entry / TP / SL Area: ang mga dati mong isinulat bilang mungkahi, gaya sa drawer.
+    const past = f.suggest === 'history'
+      ? [...new Set((RAW_TRADES || []).map(r => String(r[k] || '').trim()).filter(Boolean))].slice(0, 80) : [];
     return `<label class="jb-field ${cur.same ? '' : 'is-mixed'}" for="${id}"><span>${escapeHtml(f.label)} ${mixedNote}</span>
       <input id="${id}" data-bulk="${k}" data-initial="${escapeHtml(initial)}" data-mixed="${cur.same ? '' : '1'}"
-        type="${type}" ${type === 'number' ? 'step="any"' : ''} value="${escapeHtml(initial)}"
-        placeholder="${cur.same ? 'Empty' : 'Mixed — keep each'}"></label>`;
+        type="${type}" ${type === 'number' ? 'step="any"' : ''} value="${escapeHtml(initial)}" ${past.length ? `list="${id}-list"` : ''}
+        placeholder="${cur.same ? (f.placeholder ? escapeHtml(f.placeholder) : 'Empty') : 'Mixed — keep each'}">
+      ${past.length ? `<datalist id="${id}-list">${past.map(v => `<option value="${escapeHtml(v)}"></option>`).join('')}</datalist>` : ''}</label>`;
   };
   // Kasama ang "Rules Followed" (ang marka ng malinis), at nakagrupo ayon sa
   // uri: Rules at Notes — ang parehong hati ng Options at ng drawer.
