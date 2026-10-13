@@ -34099,86 +34099,69 @@ function openShareDay(){
 }
 function closeShareDay(){ document.getElementById('dayShareModal').classList.remove('open'); }
 function drawDayShare(){
+  /* Kapareho ng Share Trade: 1200×675, malaking resulta, ilang numero sa
+     ilalim, at ang trend art sa kanan. Simple lang — walang listahan. */
   const cv = document.getElementById('dayShareCanvas');
   if(!cv || !_dayShare) return;
-  const showR = document.getElementById('dayShareR').checked;
-  const showUsd = document.getElementById('dayShareUsd').checked;
+  const showMoney = document.getElementById('dayShareUsd').checked;
   const showAcc = document.getElementById('dayShareAcc').checked;
-  const trades = [..._dayShare.trades].sort((a, b) => (a.close_date || 0) - (b.close_date || 0));
-  const MAX = 12, shown = trades.slice(0, MAX);
-  const W = 1200, L = 64, ROW = 84;
-  cv.width = W;
-  cv.height = Math.max(900, 420 + shown.length * ROW + (trades.length > MAX ? 50 : 0) + 110);
-  const H = cv.height, ctx = cv.getContext('2d');
-  const C = { bg:'#12141C', surf:'#1B1F2B', rule:'#2E3446', ink:'#F1EEE6', muted:'#93989F', win:'#2ECC71', loss:'#FF5C5C', be:'#FFA53B', accent: cssVar('--accent') || '#F0B429' };
+  cv.width = 1200; cv.height = 675;
+  const ctx = cv.getContext('2d'), W = cv.width, H = cv.height;
+  const C = { bg:'#12141C', surf:'#1B1F2B', rule:'#2E3446', ink:'#F1EEE6', muted:'#93989F',
+              win:'#2ECC71', loss:'#FF5C5C', accent: cssVar('--accent') || '#F0B429' };
   const font = (w, s) => `${w} ${s}px "Public Sans", system-ui, sans-serif`;
-  const rr = (x, y, w, h, r) => { ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x, y, w, h, r) : ctx.rect(x, y, w, h); };
   const sign = v => v >= -0.005 ? '+' : '−';
-  const fit = (t, maxW) => { t = String(t); if(ctx.measureText(t).width <= maxW) return t; while(t.length > 1 && ctx.measureText(t + '…').width > maxW) t = t.slice(0, -1); return t + '…'; };
-
+  const trades = _dayShare.trades;
   const w = trades.filter(_isWin).length, l = trades.filter(_isLoss).length, be = trades.length - w - l;
   const rs = trades.map(t => _tradeR(t)).filter(r => r !== null);
-  const totalR = rs.reduce((a, b) => a + b, 0);
+  const R = rs.reduce((a, b) => a + b, 0);
   const net = trades.reduce((a, t) => a + netPnl(t), 0);
-  const good = w >= l;
+  const good = w > l || (w === l && (rs.length ? R >= 0 : net >= 0));
+  const tone = good ? C.win : C.loss;
 
   ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
-  ctx.fillStyle = good ? C.win : C.loss; ctx.fillRect(0, 0, 12, H);
-  ctx.fillStyle = C.ink; ctx.font = font(800, 56);
-  ctx.fillText(new Date(_dayShare.y, _dayShare.m, _dayShare.d).toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric' }), L, 110, W - L * 2);
+  ctx.fillStyle = tone; ctx.fillRect(0, 0, 10, H);
+  const L = 64;
+  ctx.textBaseline = 'alphabetic';
+  // Ulo: ang araw.
+  const day = new Date(_dayShare.y, _dayShare.m, _dayShare.d);
+  ctx.fillStyle = C.ink; ctx.font = font(800, 54);
+  ctx.fillText(day.toLocaleDateString('en-US', { month:'long', day:'numeric' }), L, 112);
   const acct = document.getElementById('accountFilter')?.value;
   ctx.fillStyle = C.muted; ctx.font = font(500, 24);
-  ctx.fillText(showAcc && acct && acct !== 'all' ? acct : 'Trading day', L, 152, W - L * 2);
+  ctx.fillText([`${day.toLocaleDateString('en-US', { weekday:'long' })}, ${day.getFullYear()}`,
+    `${trades.length} trade${trades.length === 1 ? '' : 's'}`, showAcc && acct && acct !== 'all' ? acct : ''].filter(Boolean).join('  ·  '), L, 152);
 
-  // Ang malaking resulta + mga kahon.
-  const boxes = [
-    ['Result', `${w}W  ${l}L${be ? '  ' + be + 'BE' : ''}`, good ? C.win : C.loss],
-    ['Win rate', (w + l) ? `${Math.round(w / (w + l) * 100)}%` : '—', C.ink],
-    ['Trades', String(trades.length), C.ink]
-  ];
-  if(showR) boxes.push(['Total R', rs.length ? `${sign(totalR)}${Math.abs(totalR).toFixed(2)}R` : '—', rs.length ? (totalR >= 0 ? C.win : C.loss) : C.muted]);
-  if(showUsd) boxes.push(['Net', `${sign(net)}$${Math.abs(net).toLocaleString(undefined, { maximumFractionDigits: 2 })}`, net >= 0 ? C.win : C.loss]);
-  // Mas malapad ang Result: ito ang pinakamahalaga at pinakamahaba ("2W 1L 1BE").
-  const gy = 196, gap = 16, weights = boxes.map((_, i) => i === 0 ? 1.7 : 1);
-  const unit = (W - L * 2 - (boxes.length - 1) * gap) / weights.reduce((a, b) => a + b, 0);
-  let bx = L;
-  boxes.forEach(([k, v, col], i) => {
-    const x = bx, bw = unit * weights[i];
-    bx += bw + gap;
-    ctx.fillStyle = C.surf; rr(x, gy, bw, 120, 16); ctx.fill();
-    ctx.fillStyle = C.muted; ctx.font = font(700, 18); ctx.fillText(k.toUpperCase(), x + 22, gy + 40);
-    // Lumiliit ang font hanggang kasya — hindi pinuputol ang numero.
-    let fs = 40;
-    ctx.font = font(800, fs);
-    while(fs > 20 && ctx.measureText(v).width > bw - 40){ fs -= 2; ctx.font = font(800, fs); }
-    ctx.fillStyle = col; ctx.fillText(fit(v, bw - 40), x + 22, gy + 94);
+  // Ang malaking resulta: ilan ang panalo at talo.
+  ctx.fillStyle = tone; ctx.font = font(800, 112);
+  ctx.fillText(`${w}W ${l}L`, L - 4, 290);
+  // Pill: win rate
+  const wr = (w + l) ? `${Math.round(w / (w + l) * 100)}% WIN RATE` : 'NO RESULT YET';
+  ctx.font = font(700, 22);
+  const pw = ctx.measureText(wr).width + 32;
+  ctx.fillStyle = good ? 'rgba(46,204,113,.16)' : 'rgba(255,92,92,.16)';
+  ctx.beginPath(); ctx.roundRect ? ctx.roundRect(L, 314, pw, 40, 20) : ctx.rect(L, 314, pw, 40); ctx.fill();
+  ctx.fillStyle = tone; ctx.fillText(wr, L + 16, 342);
+
+  // Mga numero sa ilalim: dalawang hanay.
+  const stats = [
+    rs.length ? ['Return', `${sign(R)}${Math.abs(R).toFixed(2)}R`] : null,
+    showMoney ? ['Net', `${sign(net)}$${Math.abs(net).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`] : null,
+    be ? ['Breakeven', String(be)] : null,
+    ['Trades', String(trades.length)]
+  ].filter(Boolean).slice(0, 4);
+  const colW = (W - L * 2) / 2 > 260 ? 260 : (W - L * 2) / 2;
+  stats.forEach(([k, v], i) => {
+    const x = L + (i % 2) * colW, y = 404 + Math.floor(i / 2) * 68;
+    ctx.fillStyle = C.muted; ctx.font = font(600, 18); ctx.fillText(k.toUpperCase(), x, y);
+    ctx.fillStyle = C.ink; ctx.font = font(700, 30); ctx.fillText(v, x, y + 36);
   });
 
-  // Bawat trade.
-  let y = gy + 120 + 56;
-  ctx.fillStyle = C.muted; ctx.font = font(700, 18); ctx.fillText('TRADES', L, y);
-  y += 18;
-  shown.forEach(t => {
-    const res = _isWin(t) ? ['Win', C.win] : _isLoss(t) ? ['Loss', C.loss] : ['BE', C.be];
-    ctx.fillStyle = C.rule; ctx.fillRect(L, y, W - L * 2, 1);
-    const base = y + 52;
-    ctx.fillStyle = res[1]; ctx.beginPath(); ctx.arc(L + 9, base - 9, 8, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = C.muted; ctx.font = font(600, 24);
-    ctx.fillText(t.close_date ? t.close_date.toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit' }) : '—', L + 32, base);
-    ctx.fillStyle = C.ink; ctx.font = font(700, 28);
-    const dir = t.trade_type && t.trade_type !== '—' ? ' ' + t.trade_type : '';
-    const setup = t.trade_setup && t.trade_setup !== 'Unspecified' ? '  ·  ' + t.trade_setup : '';
-    // Kanang bahagi: resulta, R, $.
-    const right = [res[0], showR && _tradeR(t) !== null ? `${sign(_tradeR(t))}${Math.abs(_tradeR(t)).toFixed(2)}R` : null,
-      showUsd ? `${sign(netPnl(t))}$${Math.abs(netPnl(t)).toLocaleString(undefined, { maximumFractionDigits: 2 })}` : null].filter(Boolean).join('   ');
-    ctx.font = font(800, 26); const rw = ctx.measureText(right).width;
-    ctx.fillStyle = res[1]; ctx.textAlign = 'right'; ctx.fillText(right, W - L, base); ctx.textAlign = 'left';
-    ctx.fillStyle = C.ink; ctx.font = font(700, 28);
-    ctx.fillText(fit(`${t.symbol || ''}${dir}${setup}`, W - L - (L + 170) - rw - 30), L + 170, base);
-    y += ROW;
-  });
-  if(trades.length > MAX){ y += 40; ctx.fillStyle = C.muted; ctx.font = font(600, 24); ctx.fillText(`+ ${trades.length - MAX} more`, L, y); }
-  ctx.fillStyle = C.accent; ctx.font = font(800, 24); ctx.fillText('TANAYDANA', L, H - 48);
-  const bw2 = ctx.measureText('TANAYDANA').width;
-  ctx.fillStyle = C.muted; ctx.font = font(500, 20); ctx.fillText('trading journal', L + bw2 + 12, H - 48);
+  _drawShareTrend(ctx, good, C, W);
+
+  ctx.fillStyle = C.accent; ctx.font = font(800, 22);
+  ctx.fillText('TANAYDANA', L, H - 36);
+  const brandW = ctx.measureText('TANAYDANA').width;
+  ctx.fillStyle = C.muted; ctx.font = font(500, 18);
+  ctx.fillText('trading journal', L + brandW + 12, H - 36);
 }
