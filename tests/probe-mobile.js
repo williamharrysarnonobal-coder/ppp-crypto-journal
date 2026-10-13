@@ -119,6 +119,30 @@ const ok=(l,c,x)=>{ if(!c) fail++; console.log('  '+(c?'ok   ':'MALI ')+l.padEnd
   const s2 = await send('Page.captureScreenshot',{format:'png',clip:{x:0,y:0,width:390,height:844,scale:0.8}},S);
   fs.writeFileSync(path.join(__dirname,'m-plan-modal.png'), Buffer.from(s2.data,'base64'));
   await ev("closeDailyPlan()");
+  // Bawat iba pang page, at ang mga popup na madalas gamitin sa phone.
+  const VIEWS = ['journal', 'notebook', 'mood', 'alerts', 'reports', 'accounts', 'calculator', 'paper',
+                 'salary', 'config', 'settings', 'admin', 'achievements', 'challenges', 'leaderboard', 'finance'];
+  for(const v of VIEWS){
+    const exists = await ev(`!!document.getElementById('view-${v}')`);
+    if(!exists) continue;
+    await ev(`switchView('${v}')`); await sleep(700);
+    await over(v);
+  }
+  await shoot('m-calculator.png');
+  await ev("switchView('dashboard')"); await sleep(400);
+  await ev("toggleNotifFab(true)"); await sleep(300);
+  await over('bell panel');
+  await ev("toggleNotifFab(false)");
+  await ev("switchView('playbooks')"); await sleep(400);
+  await ev("openPlaybookImport()"); await sleep(200);
+  await over('playbook import popup');
+  await ev("closePlaybookCode(); newPlaybook()"); await sleep(200);
+  await over('new playbook editor');
+  await ev("closePlaybookEditor()");
+  await ev("switchView('news')"); await sleep(400);
+  await ev("openEconShare('month')"); await sleep(200);
+  await over('calendar share month');
+  await ev("closeEconShare()");
   ok('walang JS error', errors.length === 0, errors.length + '');
   errors.slice(0,3).forEach(x => console.log('       ' + x.slice(0,140)));
   console.log('\n' + (fail ? fail + ' MALI' : 'lahat pumasa'));
