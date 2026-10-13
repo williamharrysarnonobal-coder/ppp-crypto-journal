@@ -15277,7 +15277,19 @@ const _missingJournalCols = new Set();
 async function _journalSend(url, method, body){
   const strip = b => {
     const one = o => { const c = { ...o }; _missingJournalCols.forEach(k => delete c[k]); return c; };
-    return Array.isArray(b) ? b.map(one) : one(b);
+    if(!Array.isArray(b)) return one(b);
+    /* PGRST102 "All object keys must match": ang sabay-sabay na insert ay
+       tinatanggihan kapag magkaiba ang mga field ng mga hilera — hal. sa bulk
+       journal, ang galing sa Upscale ay may fee/oras na wala sa idinikit.
+       Kaya pareho ang hugis ng lahat: ang wala sa isang hilera ay null. Ang
+       mga column na may default sa database (user_id, created_at) ay wala sa
+       kahit isang hilera, kaya hindi sila nadadamay. */
+    // Ang NOT NULL na may default sa database: ang default mismo, hindi null.
+    const FILL = { chart_shots: {}, notes_log: [], is_paper: false };
+    const rows = b.map(one);
+    const keys = [...new Set(rows.flatMap(r => Object.keys(r)))];
+    return rows.map(r => Object.fromEntries(keys.map(k =>
+      [k, r[k] !== undefined ? r[k] : (k in FILL ? JSON.parse(JSON.stringify(FILL[k])) : null)])));
   };
   const send = b => fetch(url, {
     method,
