@@ -7199,7 +7199,8 @@ const EMOTION_EMOJI = {
   'calm':'😌', 'confident':'😎', 'focused':'🎯', 'patient':'🧘', 'excited':'🤩', 'greedy':'🤑',
   'impatient':'😣', 'anxious':'😟', 'nervous':'😰', 'fearful':'😨', 'hesitant':'😬', 'bored':'🥱', 'frustrated':'😤',
   'angry':'😠', 'disappointed':'😞', 'relieved':'😮‍💨', 'satisfied':'😊', 'regretful':'😔', 'overconfident':'😏',
-  'tired':'😴', 'happy':'😄', 'sad':'😢', 'proud':'💪', 'neutral':'😐'
+  'tired':'😴', 'happy':'😄', 'sad':'😢', 'proud':'💪', 'neutral':'😐',
+  'defeated':'😩', 'discouraged':'😓', 'numb':'😶', 'hopeless':'🥀'
 };
 function _optLabel(key, o){
   if(key === 'entry_emotion' || key === 'exit_emotion' || key === 'emotion'){
@@ -7218,7 +7219,9 @@ const FIELD_OPTIONS = {
   emotion: ['Calm','Confident','Focused','Patient','Excited','Greedy','Impatient','Anxious','Nervous','Fearful',
     'Hesitant','Bored','Frustrated','Angry','Disappointed','Relieved','Satisfied','Regretful','Overconfident',
     // Mga simpleng damdamin pagkatapos ng trade (hiniling, 2026-10-13).
-    'Happy','Sad','Proud','Neutral'],
+    'Happy','Sad','Proud','Neutral',
+    // Pagkatapos ng sunod-sunod na talo.
+    'Defeated','Discouraged','Numb','Hopeless'],
   trade_management: ['Set and Forget','SL to BE','Partials','Trailing Stop','Moved TP','Moved SL',
     'Added to Position','Scaled In','Closed Early','Closed Manually'],
   win_loss: ['Loss','Win','Breakeven','Liquidated'],
