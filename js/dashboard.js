@@ -34174,17 +34174,33 @@ function drawDayShare(){
   const rx = 776, rw = W - rx - 56;
   ctx.fillStyle = C.muted; ctx.font = font(600, 18); ctx.fillText('IN ORDER', rx, 404);
   const ordered = [...trades].sort((a, b) => (a.close_date || 0) - (b.close_date || 0));
-  const dot = 26, dg = 10, perRow = Math.max(1, Math.floor((rw + dg) / (dot + dg)));
-  ordered.slice(0, perRow * 2).forEach((t, i) => {
-    const cx = rx + dot / 2 + (i % perRow) * (dot + dg), cy = 432 + Math.floor(i / perRow) * (dot + dg);
-    ctx.fillStyle = _isWin(t) ? C.win : _isLoss(t) ? C.loss : '#FFA53B';
-    ctx.beginPath(); ctx.arc(cx, cy, dot / 2, 0, Math.PI * 2); ctx.fill();
+  // Bawat bilog: ang simula ng symbol (BTC, XAU…), berde/pula/kahel ayon sa resulta.
+  const base = s => { let b = String(s || '').toUpperCase().split(/[\/:\-\s]/)[0].replace(/\.P$/, '').replace(/(USDT|USDC|USD|PERP)$/, '');
+                      return (b || String(s || '?').toUpperCase()).slice(0, 4); };
+  const dot = 58, dg = 10, perRow = Math.max(1, Math.floor((rw + dg) / (dot + dg)));
+  const maxDots = perRow * 2, more = ordered.length - maxDots;
+  ordered.slice(0, more > 0 ? maxDots - 1 : maxDots).forEach((t, i) => {
+    const cx = rx + dot / 2 + (i % perRow) * (dot + dg), cy = 446 + Math.floor(i / perRow) * (dot + dg);
+    const col = _isWin(t) ? C.win : _isLoss(t) ? C.loss : '#FFA53B';
+    ctx.fillStyle = col; ctx.beginPath(); ctx.arc(cx, cy, dot / 2, 0, Math.PI * 2); ctx.fill();
+    const label = base(t.symbol);
+    let fs = 19; ctx.font = font(800, fs);
+    while(fs > 11 && ctx.measureText(label).width > dot - 12){ fs--; ctx.font = font(800, fs); }
+    ctx.fillStyle = _isLoss(t) ? '#FFFFFF' : '#12141C';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(label, cx, cy + 1);
+    ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
   });
+  if(more > 0){
+    const i = maxDots - 1, cx = rx + dot / 2 + (i % perRow) * (dot + dg), cy = 446 + Math.floor(i / perRow) * (dot + dg);
+    ctx.strokeStyle = C.rule; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(cx, cy, dot / 2 - 1, 0, Math.PI * 2); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.font = font(700, 18); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(`+${more + 1}`, cx, cy + 1); ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  }
   // Ang plano ng araw (Daily Plan): bias at max trades.
   const iso = `${_dayShare.y}-${String(_dayShare.m + 1).padStart(2, '0')}-${String(_dayShare.d).padStart(2, '0')}`;
   const plan = (typeof DAILY_PLANS !== 'undefined' ? DAILY_PLANS : []).find(p => p.plan_date === iso);
   if(plan && (plan.bias || plan.max_trades != null)){
-    const py = ordered.length > perRow ? 540 : 504;
+    const py = ordered.length > perRow ? 586 : 522;
     ctx.fillStyle = C.muted; ctx.font = font(600, 18); ctx.fillText('PLAN', rx, py);
     const bias = plan.bias || '';
     const biasCol = /bull/i.test(bias) ? C.win : /bear/i.test(bias) ? C.loss : C.ink;
