@@ -136,10 +136,10 @@ find/replace, try the LF form, then the CRLF form.
   and 8h without a heartbeat (not between 12AM and 7AM UAE; sent at 7:00
   instead).
 - **`btc_live_bot_v2.py`** (2026-10-16, gitignored, has secrets) replaces v1
-  for BTC alerts. Only four setups: 15M Higher Low / Lower High (same rules
+  for BTC alerts. Six setups: 5M and 15M Higher Low / Lower High (same rules
   as v1) and 30M Long / Short Invalidation, where the 1H only needs the
   histogram colour (green for long, red for short), not the MACD side of
-  zero. 5M and 1H setups were dropped. v2 keeps its own `bot_v2.log` and
+  zero. The 1H setups were dropped. v2 keeps its own `bot_v2.log` and
   `btc_last_sent_v2.json` in `Documents\BTC_BOT`. `btc_live_bot.py` (v1) is
   kept as a backup. The task switch to v2 is done by
   `Documents\fix-btc-bot-task.ps1` (needs admin).
