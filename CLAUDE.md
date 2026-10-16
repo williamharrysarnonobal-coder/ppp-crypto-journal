@@ -141,9 +141,11 @@ find/replace, try the LF form, then the CRLF form.
   Long / Short Invalidation (the 5M MACD+histogram replaces the 3M; in the
   invalidations the 1H only needs the histogram colour, not the MACD side
   of zero). The 1H setups and the 3M were dropped. v2 keeps its own `bot_v2.log` and
-  `btc_last_sent_v2.json` in `Documents\BTC_BOT`. `btc_live_bot.py` (v1) is
-  kept as a backup. The task switch to v2 is done by
-  `Documents\fix-btc-bot-task.ps1` (needs admin).
+  `btc_last_sent_v2.json` in `Documents\BTC_BOT`. It runs from its own Task
+  Scheduler task **"BTC Bot v2"** (at log-on, keeps running on battery,
+  restarts within a minute on a crash; created without admin). The old
+  **"BTC Bot"** task (v1, `btc_live_bot.py`) is **disabled** and kept only as
+  a backup: never run both, or every alert is sent twice.
 
 ## Confluence checklists = Playbooks
 
