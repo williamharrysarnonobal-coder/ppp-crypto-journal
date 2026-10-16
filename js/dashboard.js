@@ -7220,7 +7220,7 @@ const FIELD_OPTIONS = {
      kahilingan niya), ang damdamin sa pagpasok at paglabas, at kung paano
      hinawakan ang trade. Nae-edit ang lahat sa Configuration. */
   mistakes: ['Entered too early','Chased the entry','No confirmation','Oversized','Undersized',
-    'SL too tight','SL too wide','Moved SL','Exited too early','Held too long','Ignored the plan',
+    'SL too tight','SL too wide','Moved SL','Exited too early','Held too long','Ignored the plan','Doubted the plan',
     'Traded against bias','Traded the news','Overtraded','Revenge trade','FOMO entry'],
   emotion: ['Calm','Confident','Focused','Patient','Excited','Greedy','Impatient','Anxious','Nervous','Fearful',
     'Hesitant','Bored','Frustrated','Angry','Disappointed','Relieved','Satisfied','Regretful','Overconfident',
