@@ -154,6 +154,10 @@ find/replace, try the LF form, then the CRLF form.
   The old "ALTS Bot" task stays disabled.
 - Both v2 tasks run through **`pyw.exe`** (no console window): with `py.exe`
   the bot dies when its window is closed (exit 0xC000013A).
+- v2 Telegram carries **setup alerts only**: `SEND_TELEGRAM_HEARTBEAT` and
+  `SEND_TELEGRAM_STATUS` (startup message, daily summary, failed-cycles
+  warning) are False by the owner's choice. `heartbeat_at` is still written
+  to the database every cycle, because the app's offline push depends on it.
 
 ## Confluence checklists = Playbooks
 
