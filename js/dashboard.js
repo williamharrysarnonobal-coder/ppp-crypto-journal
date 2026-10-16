@@ -3809,6 +3809,10 @@ function renderCalendar(){
         if(String(d) === bestDay) cls += ' best';
         pnlHtml = `<div class="p">${fmtMoney(info.pnl)}</div><div class="cal-count" style="font-size:10.5px;color:var(--muted);">${info.count} trade${info.count>1?'s':''}</div>`;
         click = `onclick="showDayTrades(${y}, ${m}, ${d})"`;
+      }else if(new Date(y, m, d) <= _now){
+        // Walang trade: mapipindot pa rin, para sa Daily post ng araw na umupo ka.
+        cls = 'notrade';
+        click = `onclick="showDayTrades(${y}, ${m}, ${d})" title="No trades. Click to make a daily post."`;
       }
       // Appended, never assigned — the win/loss branch above sets `cls` from
       // scratch, so marking today before it would simply be overwritten on any
@@ -4604,14 +4608,15 @@ function showDayTrades(y, m, d){
 
   document.getElementById('modalTitle').textContent = dateLabel;
   const pnl = trades.reduce((s,t)=>s+netPnl(t),0);
-  document.getElementById('modalSub').textContent = `${trades.length} trade${trades.length===1?'':'s'} · ${fmtMoney(pnl)}`;
-  document.getElementById('modalBody').innerHTML = renderTradeCards(trades);
+  document.getElementById('modalSub').textContent = trades.length ? `${trades.length} trade${trades.length===1?'':'s'} · ${fmtMoney(pnl)}` : 'No trades';
+  document.getElementById('modalBody').innerHTML = trades.length ? renderTradeCards(trades)
+    : '<div class="empty-state">No trades this day. You can still make a Daily post about it, for example why you sat out.</div>';
   // Share: para sa araw lang — itinatago ng closeModal.
   _dayShare = { y, m, d, trades };
   const sb = document.getElementById('modalShareDayBtn');
   if(sb) sb.style.display = trades.length ? '' : 'none';
   const pb = document.getElementById('modalDailyPostBtn');
-  if(pb) pb.style.display = trades.length ? '' : 'none';
+  if(pb) pb.style.display = '';
   document.getElementById('tradeModal').classList.add('open');
 }
 
@@ -34231,7 +34236,7 @@ function drawDayShare(){
    nagkukuwento ng araw: ika-ilang araw na, ang resulta, ang plano, ang bawat
    trade, ang naramdaman, at ang aral. Galing sa journal at sa Daily Plan. */
 function openDailyPost(){
-  if(!_dayShare || !_dayShare.trades.length) return;
+  if(!_dayShare) return;
   document.getElementById('dailyPostTitle').textContent = 'Daily post · ' + new Date(_dayShare.y, _dayShare.m, _dayShare.d).toLocaleDateString('en-US', { month:'long', day:'numeric' });
   document.getElementById('dailyPostNativeBtn').style.display = (navigator.canShare && navigator.share) ? '' : 'none';
   const les = document.getElementById('dailyPostLesson');
@@ -34299,9 +34304,10 @@ function drawDailyPost(centerOffset){
   const tone = good ? C.win : C.loss;
   const dayNo = new Set((ALL_TRADES || []).filter(t => t.close_date && t.close_date <= new Date(_dayShare.y, _dayShare.m, _dayShare.d, 23, 59, 59)).map(t => _dpIso(t.close_date))).size;
   const groups = _dpostGroups(trades, raw);
+  const noTrade = !trades.length;
 
   ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
-  ctx.fillStyle = tone; ctx.fillRect(0, 0, W, 10);
+  ctx.fillStyle = noTrade ? C.accent : tone; ctx.fillRect(0, 0, W, 10);
   ctx.textBaseline = 'alphabetic';
   const section = (label, yy) => { ctx.fillStyle = C.muted; ctx.font = font(800, 20); ctx.fillText(label, L, yy); ctx.fillStyle = C.rule; ctx.fillRect(L, yy + 14, R - L, 1); };
 
@@ -34315,6 +34321,29 @@ function drawDailyPost(centerOffset){
     ctx.fillStyle = C.muted; ctx.font = font(500, 24); ctx.fillText(fit(accs, R - L), L, 210); y = 318;
   }
   y += off;
+
+  // Walang trade: "NO TRADE" at ang Lesson mo lang, nakagitna.
+  if(noTrade){
+    ctx.fillStyle = C.accent; ctx.font = font(800, 140); ctx.fillText('NO TRADE', L - 4, y + 60, R - L);
+    ctx.fillStyle = C.muted; ctx.font = font(600, 30); ctx.fillText('Sat out today', L, y + 116);
+    y += 160;
+    if(lesson){
+      y += 28; section('LESSON', y); y += 30;
+      ctx.font = font(700, 40);
+      const lines = _wrapCanvasText(ctx, lesson, R - L - 64, 9);
+      const lh = 56, bh = lines.length * lh + 44;
+      ctx.fillStyle = C.surf; rr(L, y, R - L, bh, 18); ctx.fill();
+      ctx.fillStyle = C.accent; ctx.fillRect(L, y, 6, bh);
+      ctx.fillStyle = C.ink; lines.forEach((ln, i) => ctx.fillText(ln, L + 34, y + 22 + lh * (i + 1) - 8));
+      y += bh;
+    }
+    if(!off){ const extra = Math.round((H - 110 - y) / 2) - 40; if(extra > 30) return drawDailyPost(extra); }
+    ctx.fillStyle = C.accent; ctx.font = font(800, 26); ctx.fillText('TANAYDANA', L, H - 56);
+    const bwN = ctx.measureText('TANAYDANA').width;
+    ctx.fillStyle = C.muted; ctx.font = font(500, 22); ctx.fillText('trading journal', L + bwN + 12, H - 56);
+    ctx.textAlign = 'right'; ctx.fillText(day.toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' }), R, H - 56); ctx.textAlign = 'left';
+    return;
+  }
 
   // Resulta (mas malaki kapag "Result only")
   const only = layout === 'result';
