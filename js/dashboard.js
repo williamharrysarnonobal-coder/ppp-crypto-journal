@@ -34243,6 +34243,84 @@ function _dpostBase(s){
   const b = String(s || '').toUpperCase().split(/[\/:\-\s]/)[0].replace(/\.P$/, '').replace(/(USDT|USDC|USD|PERP)$/, '');
   return (b || String(s || '?').toUpperCase()).slice(0, 4);
 }
+/* Ang buod ng araw, isinulat mula sa mismong journal: ilang setup, paano
+   nagsara ang bawat isa, ang disiplina, ang damdamin, at isang takeaway na
+   tugma sa nangyari. Walang AI — pare-pareho, libre, at walang ipinapadala. */
+const _DPOST_TIPS = {
+  'entered too early': 'wait for the candle to close and confirm before entering.',
+  'chased the entry': 'if price already left your entry, let it go. Another setup will come.',
+  'no confirmation': 'no confirmation, no trade. The checklist is there for days like this.',
+  'oversized': 'size by your risk, not by how sure you feel.',
+  'sl too tight': 'give the stop room to sit beyond the structure, not just under price.',
+  'moved sl': 'a stop that moves is no longer a plan. Set it, then leave it.',
+  'exited too early': 'let the trade reach the target the plan gave it.',
+  'held too long': 'take profit where the plan says, not where hope says.',
+  'ignored the plan': 'the plan only works when it is followed every time.',
+  'doubted the plan': 'trust the setup you already tested. Doubt is not a signal.',
+  'traded against bias': 'trading with the higher-timeframe bias keeps the odds on your side.',
+  'overtraded': 'fewer, cleaner trades beat more trades.',
+  'revenge trade': 'after a loss, step away first. The next trade does not owe you anything.',
+  'fomo entry': 'missing a move costs nothing. Chasing it often does.'
+};
+function _dpostSummary(trades, raw){
+  if(!trades.length) return null;
+  const base = s => _dpostBase(s);
+  const groups = [];
+  trades.forEach(t => {
+    const r0 = raw(t), k = [t.symbol, t.trade_type, r0.pattern_type || t.trade_setup].join('|');
+    const tm = t.close_date ? t.close_date.getTime() : 0;
+    const g = groups.find(x => x.k === k && Math.abs(x.tm - tm) <= 15 * 60000);
+    if(g) g.list.push(t); else groups.push({ k, tm, list: [t] });
+  });
+  const accounts = new Set(trades.map(t => t.account).filter(Boolean)).size;
+  const pats = [...new Set(groups.map(g => raw(g.list[0]).pattern_type).filter(Boolean))];
+  const dirs = [...new Set(groups.map(g => g.list[0].trade_type).filter(d => d && d !== '—'))];
+  const out = [];
+  out.push(`Took ${groups.length} setup${groups.length === 1 ? '' : 's'}${accounts > 1 ? ` across ${accounts} accounts` : ''}`
+    + (pats.length === 1 && dirs.length === 1 ? `, ${groups.length > 1 ? 'all ' : ''}${pats[0]} ${dirs[0].toLowerCase()}${groups.length > 1 ? 's' : ''}.` : '.'));
+  // Paano nagsara: pinagsama ayon sa paraan.
+  const how = g => {
+    const ex = String(raw(g.list[0]).exit_type || '').toLowerCase();
+    const r = g.list.map(x => _tradeR(x)).filter(v => v !== null);
+    const R = r.length ? r.reduce((a, b) => a + b, 0) / r.length : null;
+    const rTxt = R === null ? '' : ` ${R >= 0 ? 'for +' : 'at −'}${Math.abs(R).toFixed(2)}R`;
+    if(/tp hit/.test(ex)) return ['hit TP', rTxt];
+    if(/sl hit/.test(ex)) return ['got stopped out', rTxt];
+    if(/cut loss/.test(ex)) return ['was cut early', rTxt];
+    if(/be hit/.test(ex)) return ['closed at breakeven', ''];
+    if(/stop profit/.test(ex)) return ['closed in profit at the moved stop', rTxt];
+    if(/early tp/.test(ex)) return ['was taken early', rTxt];
+    const won = g.list.filter(_isWin).length > g.list.filter(_isLoss).length;
+    return [won ? 'won' : 'lost', rTxt];
+  };
+  const byHow = {};
+  groups.forEach(g => { const [h, r] = how(g); const k = h + '|' + r; (byHow[k] = byHow[k] || { h, r, syms: [] }).syms.push(base(g.list[0].symbol)); });
+  const join = a => a.length <= 1 ? a.join('') : a.slice(0, -1).join(', ') + ' and ' + a[a.length - 1];
+  const parts = Object.values(byHow).map(x => `${join(x.syms)} ${x.syms.length > 1 ? x.h.replace(/^was /, 'were ').replace(/^got /, 'got ') : x.h}${x.r}`);
+  if(parts.length) out.push(parts.join('; ') + '.');
+  // Disiplina
+  const marked = trades.filter(t => /^(yes|no)$/i.test(String(t.rules_followed || '').trim()));
+  const yes = marked.filter(t => /^yes$/i.test(String(t.rules_followed).trim())).length;
+  if(marked.length) out.push(yes === marked.length ? 'Followed the rules on every trade.' : `Rules followed on ${yes} of ${marked.length}.`);
+  // Damdamin
+  const most = k => { const m = {}; trades.forEach(t => { const v = String(raw(t)[k] || '').trim(); if(v) m[v] = (m[v] || 0) + 1; }); return Object.entries(m).sort((a, b) => b[1] - a[1])[0]?.[0] || null; };
+  const inE = most('entry_emotion'), outE = most('exit_emotion');
+  if(inE && outE) out.push(`Felt ${inE.toLowerCase()} going in, ${outE.toLowerCase()} coming out.`);
+  else if(inE || outE) out.push(`Felt ${(inE || outE).toLowerCase()} ${inE ? 'going in' : 'after'}.`);
+  // Takeaway
+  const ms = trades.flatMap(t => String(raw(t).mistakes || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean));
+  const top = Object.entries(ms.reduce((m, x) => (m[x] = (m[x] || 0) + 1, m), {})).sort((a, b) => b[1] - a[1])[0];
+  const w = trades.filter(_isWin).length, l = trades.filter(_isLoss).length;
+  let tip;
+  if(top && _DPOST_TIPS[top[0]]) tip = _DPOST_TIPS[top[0]];
+  else if(l && !w && marked.length && yes === marked.length) tip = 'a red day inside the rules is still a good day. Fixed risk keeps it small.';
+  else if(w && !l) tip = 'the setups that met the checklist were the ones that paid. Stick to them.';
+  else if(l > w && _dpostRsum(trades) > 0) tip = `a ${Math.round(w / (w + l) * 100)}% win rate still pays when the losses stay small and the winners run.`;
+  else if(l > w) tip = 'when the market is not giving it, protecting the account is the win.';
+  else tip = 'one good setup is enough. The rest is patience.';
+  return { text: out.join(' '), tip: tip.charAt(0).toUpperCase() + tip.slice(1) };
+}
+function _dpostRsum(trades){ return trades.map(t => _tradeR(t)).filter(r => r !== null).reduce((a, b) => a + b, 0); }
 function drawDailyPost(){
   const cv = document.getElementById('dailyPostCanvas');
   if(!cv || !_dayShare) return;
@@ -34304,20 +34382,27 @@ function drawDailyPost(){
 
   const section = (label, yy) => { ctx.fillStyle = C.muted; ctx.font = font(800, 20); ctx.fillText(label, L, yy); ctx.fillStyle = C.rule; ctx.fillRect(L, yy + 14, R - L, 1); };
 
-  // Ang plano
-  if(plan && (plan.bias || plan.max_trades != null || plan.plan_notes)){
-    y += 28; section('THE PLAN', y); y += 58;
-    const bias = plan.bias || '';
-    ctx.font = font(800, 34); ctx.fillStyle = /bull/i.test(bias) ? C.win : /bear/i.test(bias) ? C.loss : C.ink;
-    if(bias) ctx.fillText(bias + (/no trade/i.test(bias) ? '' : ' bias'), L, y);
-    const bw = bias ? ctx.measureText(bias + (/no trade/i.test(bias) ? '' : ' bias')).width : 0;
-    if(plan.max_trades != null){ ctx.fillStyle = C.muted; ctx.font = font(500, 26); ctx.fillText(`${bias ? '   ·   ' : ''}max ${plan.max_trades} trade${plan.max_trades === 1 ? '' : 's'} per account`, L + bw, y - 2); }
-    if(plan.plan_notes){
-      ctx.fillStyle = C.ink; ctx.font = font(500, 26);
-      _wrapCanvasText(ctx, String(plan.plan_notes).replace(/\s+/g, ' '), R - L, 2).forEach((ln, i) => ctx.fillText(ln, L, y + 44 + i * 36));
-      y += 44 + 36 * Math.min(2, _wrapCanvasText(ctx, String(plan.plan_notes).replace(/\s+/g, ' '), R - L, 2).length) - 36;
+  // TODAY IN SHORT: buod na binuo ng app mula sa journal (libre, walang AI).
+  {
+    const sum = _dpostSummary(trades, raw);
+    if(sum){
+      y += 28; section('TODAY IN SHORT', y); y += 30;
+      ctx.font = font(500, 29);
+      const lines = _wrapCanvasText(ctx, sum.text, R - L - 56, 5);
+      ctx.font = font(700, 29);
+      const tipLines = _wrapCanvasText(ctx, sum.tip, R - L - 56 - 30, 2);
+      const lh = 42, bh = lines.length * lh + 30 + 34 + tipLines.length * lh + 22;
+      ctx.fillStyle = C.surf; rr(L, y, R - L, bh, 18); ctx.fill();
+      ctx.fillStyle = tone; ctx.fillRect(L, y, 6, bh);
+      ctx.font = font(500, 29); ctx.fillStyle = C.ink;
+      lines.forEach((ln, i) => ctx.fillText(ln, L + 32, y + 50 + i * lh));
+      // Ang takeaway: sariling linya, naka-highlight — ito ang mapupulot.
+      let ty = y + 50 + lines.length * lh + 22;
+      ctx.fillStyle = C.accent; ctx.font = font(800, 18); ctx.fillText('TAKEAWAY', L + 32, ty);
+      ctx.font = font(700, 29); ctx.fillStyle = C.ink;
+      tipLines.forEach((ln, i) => ctx.fillText(ln, L + 32, ty + 38 + i * lh));
+      y += bh + 6;
     }
-    y += 40;
   }
 
   // Ang nangyari. Ang iisang setup na kinuha sa ilang account (parehong symbol,
@@ -34331,7 +34416,7 @@ function drawDailyPost(){
     const g = groups.find(x => x.k === k && Math.abs(x.tm - tm) <= 15 * 60000);
     if(g) g.list.push(t); else groups.push({ k, tm, list: [t] });
   });
-  const MAX = 5, ROW = 96;
+  const MAX = 4, ROW = 96;
   groups.slice(0, MAX).forEach(g => {
     const t = g.list[0], r0 = raw(t);
     const gw = g.list.filter(_isWin).length, gl = g.list.filter(_isLoss).length;
@@ -34373,8 +34458,7 @@ function drawDailyPost(){
     marked.length ? ['Rules followed', `${marked.filter(t => /^yes$/i.test(String(t.rules_followed).trim())).length}/${marked.length}`, C.ink] : null,
     ['Setups', String(groups.length), C.ink]
   ].filter(Boolean).slice(0, 3);
-  const willLesson = !!((plan && (plan.improve || plan.went_well)) || trades.some(t => String(raw(t).mistakes || '').trim()));
-  if(boxes.length && H - 120 - y > (willLesson ? 340 : 200)){
+  if(boxes.length && y + 34 + 34 + 116 <= H - 84){   // kasya bago ang paa
     y += 34; section('THE DAY IN NUMBERS', y); y += 34;
     const gap = 16, bw = (R - L - (boxes.length - 1) * gap) / boxes.length;
     boxes.forEach(([k, v, col], i) => {
@@ -34385,34 +34469,6 @@ function drawDailyPost(){
       ctx.fillStyle = col; ctx.fillText(v, x + 22, y + 90);
     });
     y += 116;
-  }
-
-  // Ang naramdaman: ang pinakamadalas na emosyon sa pagpasok at paglabas.
-  const most = k => { const m = {}; trades.forEach(t => { const v = String(raw(t)[k] || '').trim(); if(v) m[v] = (m[v] || 0) + 1; }); return Object.entries(m).sort((a, b) => b[1] - a[1])[0]?.[0] || null; };
-  const inE = most('entry_emotion'), outE = most('exit_emotion');
-  if(inE || outE){
-    y += 34; section('HOW I FELT', y); y += 60;
-    const chip = (txt, x) => { ctx.font = font(700, 28); const tw = ctx.measureText(txt).width + 36; ctx.fillStyle = C.surf; rr(x, y - 40, tw, 56, 28); ctx.fill(); ctx.fillStyle = C.ink; ctx.fillText(txt, x + 18, y - 2); return tw; };
-    const emo = v => { const e = (typeof EMOTION_EMOJI !== 'undefined' && EMOTION_EMOJI[String(v).toLowerCase()]) || ''; return e ? e + '  ' + v : v; };
-    let x = L;
-    if(inE){ ctx.fillStyle = C.muted; ctx.font = font(600, 22); ctx.fillText('Entry', x, y - 2); x += ctx.measureText('Entry').width + 14; x += chip(emo(inE), x) + 28; }
-    if(outE){ ctx.fillStyle = C.muted; ctx.font = font(600, 22); ctx.fillText('Exit', x, y - 2); x += ctx.measureText('Exit').width + 14; chip(emo(outE), x); }
-    y += 20;
-  }
-
-  // Ang aral
-  const allMistakes = trades.flatMap(t => String(raw(t).mistakes || '').split(',').map(s => s.trim()).filter(Boolean));
-  const topMistake = Object.entries(allMistakes.reduce((m, x) => (m[x] = (m[x] || 0) + 1, m), {})).sort((a, b) => b[1] - a[1])[0];
-  const lesson = (plan && (plan.improve || plan.went_well)) ? String(plan.improve || plan.went_well)
-    : topMistake ? `Watch out for: ${topMistake[0]}${topMistake[1] > 1 ? ` (${topMistake[1]}×)` : ''}.` : null;
-  if(lesson){
-    y += 34; section(plan && plan.improve ? 'LESSON' : plan && plan.went_well ? 'WHAT WENT WELL' : 'LESSON', y); y += 30;
-    ctx.font = font(600, 30);
-    const lines = _wrapCanvasText(ctx, lesson.replace(/\s+/g, ' '), R - L - 40, Math.max(1, Math.min(4, Math.floor((H - 130 - y) / 42))));
-    const lh = 42, bh = lines.length * lh + 36;
-    ctx.fillStyle = C.surf; rr(L, y, R - L, bh, 18); ctx.fill();
-    ctx.fillStyle = tone; ctx.fillRect(L, y, 6, bh);
-    ctx.fillStyle = C.ink; lines.forEach((ln, i) => ctx.fillText(ln, L + 30, y + 46 + i * lh));
   }
 
   // Paa
