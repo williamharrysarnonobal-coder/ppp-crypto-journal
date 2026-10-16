@@ -3,6 +3,7 @@
 btc_live_bot.py
 btc_live_bot_v2.py
 crypto_live_bot.py
+crypto_live_bot_v2.py
 economic_calendar_bot.py
 screener_bot.py
 *.env

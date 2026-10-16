@@ -146,6 +146,13 @@ find/replace, try the LF form, then the CRLF form.
   restarts within a minute on a crash; created without admin). The old
   **"BTC Bot"** task (v1, `btc_live_bot.py`) is **disabled** and kept only as
   a backup: never run both, or every alert is sent twice.
+- **`crypto_live_bot_v2.py`** (alts, gitignored) runs from task **"ALTS Bot
+  v2"**: four setups only, 15M HL/LH and 30M Long/Short Invalidation, same
+  rules as BTC v2 (5M replaces 3M; histogram-only 1H in the invalidations),
+  no 5M or 1H setups, BTC not in its coin list. Log `crypto_bot_v2.log`.
+  The old "ALTS Bot" task stays disabled.
+- Both v2 tasks run through **`pyw.exe`** (no console window): with `py.exe`
+  the bot dies when its window is closed (exit 0xC000013A).
 
 ## Confluence checklists = Playbooks
 
