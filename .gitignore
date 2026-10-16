@@ -1,6 +1,7 @@
 # Local bot scripts — contain hardcoded Telegram + Supabase secrets,
 # never push these to GitHub.
 btc_live_bot.py
+btc_live_bot_v2.py
 crypto_live_bot.py
 economic_calendar_bot.py
 screener_bot.py

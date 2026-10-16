@@ -135,9 +135,14 @@ find/replace, try the LF form, then the CRLF form.
   cycle. The Worker cron pushes "BTC Bot is offline" to admins' phones at 2h
   and 8h without a heartbeat (not between 12AM and 7AM UAE; sent at 7:00
   instead).
-- BTC 1H HL / LH conditions (owner's rules, 2026-10-12): 4H MACD+hist on the
-  trend side, 1H MACD trend side with 1H hist pulling back, 30M MACD still on
-  the trend side, 15M MACD+hist pulling back. 12H is not required.
+- **`btc_live_bot_v2.py`** (2026-10-16, gitignored, has secrets) replaces v1
+  for BTC alerts. Only four setups: 15M Higher Low / Lower High (same rules
+  as v1) and 30M Long / Short Invalidation, where the 1H only needs the
+  histogram colour (green for long, red for short), not the MACD side of
+  zero. 5M and 1H setups were dropped. v2 keeps its own `bot_v2.log` and
+  `btc_last_sent_v2.json` in `Documents\BTC_BOT`. `btc_live_bot.py` (v1) is
+  kept as a backup. The task switch to v2 is done by
+  `Documents\fix-btc-bot-task.ps1` (needs admin).
 
 ## Confluence checklists = Playbooks
 
