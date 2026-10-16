@@ -5697,3 +5697,12 @@ body.mobile-mode .pi-dd{grid-template-columns:1fr;gap:12px;}
   .jb-chart3 .jb-chart-x{align-self:flex-start;}
   body.mobile-mode .jb-chart3{grid-template-columns:1fr;}
   @media (max-width:600px){.jb-chart3{grid-template-columns:1fr;}}
+
+  /* ---------- Daily post ---------- */
+  .dpost-layouts{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 10px;}
+  .dpost-layout{background:var(--surface-2);border:1px solid var(--rule);color:var(--muted);border-radius:20px;padding:6px 14px;font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit;}
+  .dpost-layout.active{background:var(--accent);border-color:var(--accent);color:#12151B;}
+  .dpost-layout:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+  .dpost-lesson{display:flex;flex-direction:column;gap:5px;font-size:12.5px;font-weight:600;color:var(--ink);margin-bottom:10px;}
+  .dpost-lesson span{font-weight:400;color:var(--muted);}
+  .dpost-lesson textarea{background:var(--surface-2);border:1px solid var(--rule);color:var(--ink);border-radius:8px;padding:9px 11px;font-size:13px;font-family:inherit;resize:vertical;width:100%;}

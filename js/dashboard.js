@@ -34234,37 +34234,34 @@ function openDailyPost(){
   if(!_dayShare || !_dayShare.trades.length) return;
   document.getElementById('dailyPostTitle').textContent = 'Daily post · ' + new Date(_dayShare.y, _dayShare.m, _dayShare.d).toLocaleDateString('en-US', { month:'long', day:'numeric' });
   document.getElementById('dailyPostNativeBtn').style.display = (navigator.canShare && navigator.share) ? '' : 'none';
+  const les = document.getElementById('dailyPostLesson');
+  if(les){ let v = ''; try{ v = localStorage.getItem(_dpostLessonKey()) || ''; }catch(e){} les.value = v; }
+  document.querySelectorAll('#dailyPostModal .dpost-layout').forEach(b => b.classList.toggle('active', b.dataset.layout === _dpostLayout));
   document.getElementById('dailyPostModal').classList.add('open');
   drawDailyPost();
-  if(typeof _dpLoaded !== 'undefined' && !_dpLoaded && typeof loadDailyPlans === 'function') loadDailyPlans().then(drawDailyPost).catch(() => {});
+  if(typeof _dpLoaded !== 'undefined' && !_dpLoaded && typeof loadDailyPlans === 'function') loadDailyPlans().then(() => drawDailyPost()).catch(() => {});
 }
 function closeDailyPost(){ document.getElementById('dailyPostModal').classList.remove('open'); }
 function _dpostBase(s){
   const b = String(s || '').toUpperCase().split(/[\/:\-\s]/)[0].replace(/\.P$/, '').replace(/(USDT|USDC|USD|PERP)$/, '');
   return (b || String(s || '?').toUpperCase()).slice(0, 4);
 }
-/* Ang buod ng araw, isinulat mula sa mismong journal: ilang setup, paano
-   nagsara ang bawat isa, ang disiplina, ang damdamin, at isang takeaway na
-   tugma sa nangyari. Walang AI — pare-pareho, libre, at walang ipinapadala. */
-const _DPOST_TIPS = {
-  'entered too early': 'wait for the candle to close and confirm before entering.',
-  'chased the entry': 'if price already left your entry, let it go. Another setup will come.',
-  'no confirmation': 'no confirmation, no trade. The checklist is there for days like this.',
-  'oversized': 'size by your risk, not by how sure you feel.',
-  'sl too tight': 'give the stop room to sit beyond the structure, not just under price.',
-  'moved sl': 'a stop that moves is no longer a plan. Set it, then leave it.',
-  'exited too early': 'let the trade reach the target the plan gave it.',
-  'held too long': 'take profit where the plan says, not where hope says.',
-  'ignored the plan': 'the plan only works when it is followed every time.',
-  'doubted the plan': 'trust the setup you already tested. Doubt is not a signal.',
-  'traded against bias': 'trading with the higher-timeframe bias keeps the odds on your side.',
-  'overtraded': 'fewer, cleaner trades beat more trades.',
-  'revenge trade': 'after a loss, step away first. The next trade does not owe you anything.',
-  'fomo entry': 'missing a move costs nothing. Chasing it often does.'
-};
-function _dpostSummary(trades, raw){
-  if(!trades.length) return null;
-  const base = s => _dpostBase(s);
+/* Ang Daily post: ikaw ang nagsusulat ng Lesson; ang resulta at ang mga setup
+   ay galing sa journal. Tatlong layout na mapipili. Ang Lesson ay naaalala kada
+   araw sa device na ito (hindi nawawala kapag isinara ang popup). */
+let _dpostLayout = (() => { try{ return localStorage.getItem('tanaydana-dpost-layout') || 'setups'; }catch(e){ return 'setups'; } })();
+const _dpostLessonKey = () => _dayShare ? `tanaydana-dpost-lesson-${_dayShare.y}-${_dayShare.m + 1}-${_dayShare.d}` : null;
+function setDailyPostLayout(v){
+  _dpostLayout = v;
+  try{ localStorage.setItem('tanaydana-dpost-layout', v); }catch(e){}
+  document.querySelectorAll('#dailyPostModal .dpost-layout').forEach(b => b.classList.toggle('active', b.dataset.layout === v));
+  drawDailyPost();
+}
+function onDailyPostLesson(el){
+  try{ const k = _dpostLessonKey(); if(k){ if(el.value.trim()) localStorage.setItem(k, el.value); else localStorage.removeItem(k); } }catch(e){}
+  drawDailyPost();
+}
+function _dpostGroups(trades, raw){
   const groups = [];
   trades.forEach(t => {
     const r0 = raw(t), k = [t.symbol, t.trade_type, r0.pattern_type || t.trade_setup].join('|');
@@ -34272,72 +34269,26 @@ function _dpostSummary(trades, raw){
     const g = groups.find(x => x.k === k && Math.abs(x.tm - tm) <= 15 * 60000);
     if(g) g.list.push(t); else groups.push({ k, tm, list: [t] });
   });
-  const accounts = new Set(trades.map(t => t.account).filter(Boolean)).size;
-  const pats = [...new Set(groups.map(g => raw(g.list[0]).pattern_type).filter(Boolean))];
-  const dirs = [...new Set(groups.map(g => g.list[0].trade_type).filter(d => d && d !== '—'))];
-  const out = [];
-  out.push(`Took ${groups.length} setup${groups.length === 1 ? '' : 's'}${accounts > 1 ? ` across ${accounts} accounts` : ''}`
-    + (pats.length === 1 && dirs.length === 1 ? `, ${groups.length > 1 ? 'all ' : ''}${pats[0]} ${dirs[0].toLowerCase()}${groups.length > 1 ? 's' : ''}.` : '.'));
-  // Paano nagsara: pinagsama ayon sa paraan.
-  const how = g => {
-    const ex = String(raw(g.list[0]).exit_type || '').toLowerCase();
-    const r = g.list.map(x => _tradeR(x)).filter(v => v !== null);
-    const R = r.length ? r.reduce((a, b) => a + b, 0) / r.length : null;
-    const rTxt = R === null ? '' : ` ${R >= 0 ? 'for +' : 'at −'}${Math.abs(R).toFixed(2)}R`;
-    if(/tp hit/.test(ex)) return ['hit TP', rTxt];
-    if(/sl hit/.test(ex)) return ['got stopped out', rTxt];
-    if(/cut loss/.test(ex)) return ['was cut early', rTxt];
-    if(/be hit/.test(ex)) return ['closed at breakeven', ''];
-    if(/stop profit/.test(ex)) return ['closed in profit at the moved stop', rTxt];
-    if(/early tp/.test(ex)) return ['was taken early', rTxt];
-    const won = g.list.filter(_isWin).length > g.list.filter(_isLoss).length;
-    return [won ? 'won' : 'lost', rTxt];
-  };
-  const byHow = {};
-  groups.forEach(g => { const [h, r] = how(g); const k = h + '|' + r; (byHow[k] = byHow[k] || { h, r, syms: [] }).syms.push(base(g.list[0].symbol)); });
-  const join = a => a.length <= 1 ? a.join('') : a.slice(0, -1).join(', ') + ' and ' + a[a.length - 1];
-  const parts = Object.values(byHow).map(x => `${join(x.syms)} ${x.syms.length > 1 ? x.h.replace(/^was /, 'were ').replace(/^got /, 'got ') : x.h}${x.r}`);
-  if(parts.length) out.push(parts.join('; ') + '.');
-  // Disiplina
-  const marked = trades.filter(t => /^(yes|no)$/i.test(String(t.rules_followed || '').trim()));
-  const yes = marked.filter(t => /^yes$/i.test(String(t.rules_followed).trim())).length;
-  if(marked.length) out.push(yes === marked.length ? 'Followed the rules on every trade.' : `Rules followed on ${yes} of ${marked.length}.`);
-  // Damdamin
-  const most = k => { const m = {}; trades.forEach(t => { const v = String(raw(t)[k] || '').trim(); if(v) m[v] = (m[v] || 0) + 1; }); return Object.entries(m).sort((a, b) => b[1] - a[1])[0]?.[0] || null; };
-  const inE = most('entry_emotion'), outE = most('exit_emotion');
-  if(inE && outE) out.push(`Felt ${inE.toLowerCase()} going in, ${outE.toLowerCase()} coming out.`);
-  else if(inE || outE) out.push(`Felt ${(inE || outE).toLowerCase()} ${inE ? 'going in' : 'after'}.`);
-  // Takeaway
-  const ms = trades.flatMap(t => String(raw(t).mistakes || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean));
-  const top = Object.entries(ms.reduce((m, x) => (m[x] = (m[x] || 0) + 1, m), {})).sort((a, b) => b[1] - a[1])[0];
-  const w = trades.filter(_isWin).length, l = trades.filter(_isLoss).length;
-  let tip;
-  if(top && _DPOST_TIPS[top[0]]) tip = _DPOST_TIPS[top[0]];
-  else if(l && !w && marked.length && yes === marked.length) tip = 'a red day inside the rules is still a good day. Fixed risk keeps it small.';
-  else if(w && !l) tip = 'the setups that met the checklist were the ones that paid. Stick to them.';
-  else if(l > w && _dpostRsum(trades) > 0) tip = `a ${Math.round(w / (w + l) * 100)}% win rate still pays when the losses stay small and the winners run.`;
-  else if(l > w) tip = 'when the market is not giving it, protecting the account is the win.';
-  else tip = 'one good setup is enough. The rest is patience.';
-  return { text: out.join(' '), tip: tip.charAt(0).toUpperCase() + tip.slice(1) };
+  return groups;
 }
-function _dpostRsum(trades){ return trades.map(t => _tradeR(t)).filter(r => r !== null).reduce((a, b) => a + b, 0); }
-function drawDailyPost(){
+function drawDailyPost(centerOffset){
   const cv = document.getElementById('dailyPostCanvas');
   if(!cv || !_dayShare) return;
+  const off = typeof centerOffset === 'number' ? centerOffset : 0;
   const showMoney = document.getElementById('dailyPostUsd').checked;
   const showAcc = document.getElementById('dailyPostAcc').checked;
+  const lesson = String(document.getElementById('dailyPostLesson')?.value || '').replace(/\s+/g, ' ').trim();
+  const layout = _dpostLayout;
   const ctx = cv.getContext('2d');
   const W = 1080, H = 1350; cv.width = W; cv.height = H;
   const C = { bg:'#12141C', surf:'#1B1F2B', rule:'#2E3446', ink:'#F1EEE6', muted:'#93989F', win:'#2ECC71', loss:'#FF5C5C', be:'#FFA53B', accent: cssVar('--accent') || '#F0B429' };
   const font = (w, s) => `${w} ${s}px "Public Sans", system-ui, sans-serif`;
-  const EMOJI_FONT = '"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif';
   const rr = (x, y, w, h, r) => { ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x, y, w, h, r) : ctx.rect(x, y, w, h); };
   const sign = v => v >= -0.005 ? '+' : '−';
   const fit = (t, maxW) => { t = String(t || ''); if(ctx.measureText(t).width <= maxW) return t; while(t.length > 1 && ctx.measureText(t + '…').width > maxW) t = t.slice(0, -1); return t + '…'; };
   const L = 72, R = W - 72;
 
   const day = new Date(_dayShare.y, _dayShare.m, _dayShare.d);
-  const iso = _dpIso(day);
   const trades = [..._dayShare.trades].sort((a, b) => (a.close_date || 0) - (b.close_date || 0));
   const raw = t => (RAW_TRADES || []).find(x => x.position_id === t.position_id) || t;
   const w = trades.filter(_isWin).length, l = trades.filter(_isLoss).length;
@@ -34346,129 +34297,123 @@ function drawDailyPost(){
   const net = trades.reduce((a, t) => a + netPnl(t), 0);
   const good = w > l || (w === l && (rs.length ? Rsum >= 0 : net >= 0));
   const tone = good ? C.win : C.loss;
-  // Ika-ilang araw ng journey: bilang ng magkakaibang araw na may trade hanggang dito.
   const dayNo = new Set((ALL_TRADES || []).filter(t => t.close_date && t.close_date <= new Date(_dayShare.y, _dayShare.m, _dayShare.d, 23, 59, 59)).map(t => _dpIso(t.close_date))).size;
-  const plan = (typeof DAILY_PLANS !== 'undefined' ? DAILY_PLANS : []).find(p => p.plan_date === iso);
+  const groups = _dpostGroups(trades, raw);
 
   ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
-  // Manipis na guhit sa itaas, kulay ng araw.
   ctx.fillStyle = tone; ctx.fillRect(0, 0, W, 10);
   ctx.textBaseline = 'alphabetic';
+  const section = (label, yy) => { ctx.fillStyle = C.muted; ctx.font = font(800, 20); ctx.fillText(label, L, yy); ctx.fillStyle = C.rule; ctx.fillRect(L, yy + 14, R - L, 1); };
 
   // Ulo
-  ctx.fillStyle = C.accent; ctx.font = font(800, 26);
-  ctx.fillText(`DAY ${dayNo}  ·  TRADING JOURNAL`, L, 92);
+  ctx.fillStyle = C.accent; ctx.font = font(800, 26); ctx.fillText(`DAY ${dayNo}  ·  TRADING JOURNAL`, L, 92);
   ctx.fillStyle = C.ink; ctx.font = font(800, 64);
   ctx.fillText(day.toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric' }), L, 168, R - L);
+  let y = 300;
   if(showAcc){
     const accs = [...new Set(trades.map(t => t.account).filter(Boolean))].join(', ');
-    ctx.fillStyle = C.muted; ctx.font = font(500, 24); ctx.fillText(fit(accs, R - L), L, 210);
+    ctx.fillStyle = C.muted; ctx.font = font(500, 24); ctx.fillText(fit(accs, R - L), L, 210); y = 318;
   }
+  y += off;
 
-  // Resulta
-  let y = showAcc ? 318 : 300;
-  ctx.fillStyle = tone; ctx.font = font(800, 104);
+  // Resulta (mas malaki kapag "Result only")
+  const only = layout === 'result';
+  const bigFont = only ? 150 : 104;
+  if(only) y += 60;
+  ctx.fillStyle = tone; ctx.font = font(800, bigFont);
   const big = `${w}W ${l}L`;
   ctx.fillText(big, L - 4, y);
   const bigW = ctx.measureText(big).width;
   const side = [rs.length ? `${sign(Rsum)}${Math.abs(Rsum).toFixed(2)}R` : null,
     showMoney ? `${sign(net)}$${Math.abs(net).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : null].filter(Boolean).join('   ');
-  ctx.font = font(800, 40);
+  ctx.font = font(800, only ? 52 : 40);
   ctx.fillStyle = rs.length ? (Rsum >= 0 ? C.win : C.loss) : (net >= 0 ? C.win : C.loss);
-  ctx.fillText(side, L + bigW + 36, y - 46);
-  ctx.fillStyle = C.muted; ctx.font = font(600, 24);
+  ctx.fillText(side, L + bigW + 36, y - (only ? 70 : 46), R - (L + bigW + 36));
+  ctx.fillStyle = C.muted; ctx.font = font(600, only ? 28 : 24);
   ctx.fillText(`${trades.length} trade${trades.length === 1 ? '' : 's'}  ·  ${(w + l) ? Math.round(w / (w + l) * 100) + '% win rate' : 'no result yet'}`, L + bigW + 36, y - 4, R - (L + bigW + 36));
-  y += 44;
+  y += only ? 70 : 44;
 
-  const section = (label, yy) => { ctx.fillStyle = C.muted; ctx.font = font(800, 20); ctx.fillText(label, L, yy); ctx.fillStyle = C.rule; ctx.fillRect(L, yy + 14, R - L, 1); };
+  // Ang Lesson mo
+  if(lesson){
+    y += 28; section('LESSON', y); y += 30;
+    const fs0 = only ? 40 : 31, lh = only ? 56 : 44;
+    ctx.font = font(700, fs0);
+    const maxLines = only ? 9 : (layout === 'numbers' ? 4 : 5);
+    const lines = _wrapCanvasText(ctx, lesson, R - L - 64, maxLines);
+    const bh = lines.length * lh + 44;
+    ctx.fillStyle = C.surf; rr(L, y, R - L, bh, 18); ctx.fill();
+    ctx.fillStyle = tone; ctx.fillRect(L, y, 6, bh);
+    ctx.fillStyle = C.ink; lines.forEach((ln, i) => ctx.fillText(ln, L + 34, y + 22 + lh * (i + 1) - (lh - fs0) / 2));
+    y += bh + 6;
+  }else if(only){
+    // Walang lesson pa: ang bilog ng bawat trade, para hindi bakante.
+    y += 40;
+  }
 
-  // TODAY IN SHORT: buod na binuo ng app mula sa journal (libre, walang AI).
-  {
-    const sum = _dpostSummary(trades, raw);
-    if(sum){
-      y += 28; section('TODAY IN SHORT', y); y += 30;
-      ctx.font = font(500, 29);
-      const lines = _wrapCanvasText(ctx, sum.text, R - L - 56, 5);
-      ctx.font = font(700, 29);
-      const tipLines = _wrapCanvasText(ctx, sum.tip, R - L - 56 - 30, 2);
-      const lh = 42, bh = lines.length * lh + 30 + 34 + tipLines.length * lh + 22;
-      ctx.fillStyle = C.surf; rr(L, y, R - L, bh, 18); ctx.fill();
-      ctx.fillStyle = tone; ctx.fillRect(L, y, 6, bh);
-      ctx.font = font(500, 29); ctx.fillStyle = C.ink;
-      lines.forEach((ln, i) => ctx.fillText(ln, L + 32, y + 50 + i * lh));
-      // Ang takeaway: sariling linya, naka-highlight — ito ang mapupulot.
-      let ty = y + 50 + lines.length * lh + 22;
-      ctx.fillStyle = C.accent; ctx.font = font(800, 18); ctx.fillText('TAKEAWAY', L + 32, ty);
-      ctx.font = font(700, 29); ctx.fillStyle = C.ink;
-      tipLines.forEach((ln, i) => ctx.fillText(ln, L + 32, ty + 38 + i * lh));
-      y += bh + 6;
+  // Ang bawat setup
+  if(layout !== 'result'){
+    y += 28; section('WHAT HAPPENED', y); y += 30;
+    const room = Math.max(1, Math.floor((H - 100 - y - (layout === 'numbers' ? 190 : 0)) / 96));
+    const MAX = Math.min(5, room), ROW = 96;
+    groups.slice(0, MAX).forEach(g => {
+      const t = g.list[0], r0 = raw(t);
+      const gw = g.list.filter(_isWin).length, gl = g.list.filter(_isLoss).length;
+      const col = gw > gl ? C.win : gl > gw ? C.loss : C.be;
+      const cy = y + ROW / 2;
+      ctx.fillStyle = col; ctx.beginPath(); ctx.arc(L + 30, cy, 30, 0, Math.PI * 2); ctx.fill();
+      const lab = _dpostBase(t.symbol);
+      let fs = 19; ctx.font = font(800, fs); while(fs > 11 && ctx.measureText(lab).width > 48){ fs--; ctx.font = font(800, fs); }
+      ctx.fillStyle = gl > gw ? '#FFFFFF' : '#12141C'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(lab, L + 30, cy + 1);
+      ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+      const gr = g.list.map(x => _tradeR(x)).filter(r => r !== null);
+      const Rt = gr.length ? gr.reduce((a, b) => a + b, 0) / gr.length : null;
+      const gNet = g.list.reduce((a, x) => a + netPnl(x), 0);
+      const right = showMoney ? `${sign(gNet)}$${Math.abs(gNet).toLocaleString(undefined, { maximumFractionDigits: 2 })}`
+        : (Rt !== null ? `${sign(Rt)}${Math.abs(Rt).toFixed(2)}R` : (gw > gl ? 'Win' : gl > gw ? 'Loss' : 'BE'));
+      ctx.font = font(800, 32); const rw = ctx.measureText(right).width;
+      ctx.fillStyle = col; ctx.textAlign = 'right'; ctx.fillText(right, R, cy + 12); ctx.textAlign = 'left';
+      const tx = L + 84, tw = R - tx - rw - 24;
+      const dir = t.trade_type && t.trade_type !== '—' ? t.trade_type : '';
+      const what = [dir, r0.pattern_type || (t.trade_setup !== 'Unspecified' ? t.trade_setup : '')].filter(Boolean).join(' · ') || t.symbol || 'Trade';
+      ctx.fillStyle = C.ink; ctx.font = font(700, 30); ctx.fillText(fit(what, tw), tx, cy - 4);
+      const tm = t.close_date ? t.close_date.toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit' }) : '';
+      const why = [tm, g.list.length > 1 ? `× ${g.list.length} accounts` : null, r0.exit_type].filter(Boolean).join('  ·  ');
+      ctx.fillStyle = C.muted; ctx.font = font(500, 22); ctx.fillText(fit(why, tw), tx, cy + 30);
+      y += ROW;
+    });
+    if(groups.length > MAX){ const restN = groups.slice(MAX).reduce((a, g) => a + g.list.length, 0); ctx.fillStyle = C.muted; ctx.font = font(600, 22); ctx.fillText(`+ ${restN} more trade${restN === 1 ? '' : 's'}`, L + 84, y + 20); y += 40; }
+  }
+
+  // Ang araw sa mga numero
+  if(layout === 'numbers'){
+    const gR = groups.map(g => { const r = g.list.map(x => _tradeR(x)).filter(v => v !== null); return { g, R: r.length ? r.reduce((a, b) => a + b, 0) / r.length : null }; }).filter(x => x.R !== null);
+    const best = gR.length ? gR.reduce((a, b) => b.R > a.R ? b : a) : null;
+    const worst = gR.length ? gR.reduce((a, b) => b.R < a.R ? b : a) : null;
+    const marked = trades.filter(t => /^(yes|no)$/i.test(String(t.rules_followed || '').trim()));
+    const boxes = [
+      best && best.R > 0 ? ['Best', `${_dpostBase(best.g.list[0].symbol)}  ${sign(best.R)}${Math.abs(best.R).toFixed(2)}R`, C.win] : null,
+      worst && worst.R < 0 ? ['Worst', `${_dpostBase(worst.g.list[0].symbol)}  ${sign(worst.R)}${Math.abs(worst.R).toFixed(2)}R`, C.loss] : null,
+      marked.length ? ['Rules followed', `${marked.filter(t => /^yes$/i.test(String(t.rules_followed).trim())).length}/${marked.length}`, C.ink] : null,
+      ['Setups', String(groups.length), C.ink]
+    ].filter(Boolean).slice(0, 3);
+    if(boxes.length && y + 34 + 34 + 116 <= H - 84){
+      y += 34; section('THE DAY IN NUMBERS', y); y += 34;
+      const gap = 16, bw = (R - L - (boxes.length - 1) * gap) / boxes.length;
+      boxes.forEach(([k, v, col], i) => {
+        const x = L + i * (bw + gap);
+        ctx.fillStyle = C.surf; rr(x, y, bw, 116, 16); ctx.fill();
+        ctx.fillStyle = C.muted; ctx.font = font(700, 18); ctx.fillText(k.toUpperCase(), x + 22, y + 38);
+        let fs = 36; ctx.font = font(800, fs); while(fs > 20 && ctx.measureText(v).width > bw - 40){ fs -= 2; ctx.font = font(800, fs); }
+        ctx.fillStyle = col; ctx.fillText(v, x + 22, y + 90);
+      });
+      y += 116;
     }
   }
 
-  // Ang nangyari. Ang iisang setup na kinuha sa ilang account (parehong symbol,
-  // direksyon at pattern, nagsara nang halos sabay) ay iisang hilera, "× 3".
-  y += 28; section('WHAT HAPPENED', y); y += 30;
-  const groups = [];
-  trades.forEach(t => {
-    const r0 = raw(t);
-    const k = [t.symbol, t.trade_type, r0.pattern_type || t.trade_setup].join('|');
-    const tm = t.close_date ? t.close_date.getTime() : 0;
-    const g = groups.find(x => x.k === k && Math.abs(x.tm - tm) <= 15 * 60000);
-    if(g) g.list.push(t); else groups.push({ k, tm, list: [t] });
-  });
-  const MAX = 4, ROW = 96;
-  groups.slice(0, MAX).forEach(g => {
-    const t = g.list[0], r0 = raw(t);
-    const gw = g.list.filter(_isWin).length, gl = g.list.filter(_isLoss).length;
-    const col = gw > gl ? C.win : gl > gw ? C.loss : C.be;
-    const isLossRow = gl > gw;
-    const cy = y + ROW / 2;
-    ctx.fillStyle = col; ctx.beginPath(); ctx.arc(L + 30, cy, 30, 0, Math.PI * 2); ctx.fill();
-    const lab = _dpostBase(t.symbol);
-    let fs = 19; ctx.font = font(800, fs); while(fs > 11 && ctx.measureText(lab).width > 48){ fs--; ctx.font = font(800, fs); }
-    ctx.fillStyle = isLossRow ? '#FFFFFF' : '#12141C'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(lab, L + 30, cy + 1);
-    ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
-    // Kanan: resulta (ang R ng setup ay pareho sa bawat account; ang $ ay pinagsama).
-    const gr = g.list.map(x => _tradeR(x)).filter(r => r !== null);
-    const Rt = gr.length ? gr.reduce((a, b) => a + b, 0) / gr.length : null;
-    const gNet = g.list.reduce((a, x) => a + netPnl(x), 0);
-    const right = showMoney ? `${sign(gNet)}$${Math.abs(gNet).toLocaleString(undefined, { maximumFractionDigits: 2 })}`
-      : (Rt !== null ? `${sign(Rt)}${Math.abs(Rt).toFixed(2)}R` : (gw > gl ? 'Win' : gl > gw ? 'Loss' : 'BE'));
-    ctx.font = font(800, 32); const rw = ctx.measureText(right).width;
-    ctx.fillStyle = col; ctx.textAlign = 'right'; ctx.fillText(right, R, cy + 12); ctx.textAlign = 'left';
-    const tx = L + 84, tw = R - tx - rw - 24;
-    const dir = t.trade_type && t.trade_type !== '—' ? t.trade_type : '';
-    const what = [dir, r0.pattern_type || (t.trade_setup !== 'Unspecified' ? t.trade_setup : '')].filter(Boolean).join(' · ') || t.symbol || 'Trade';
-    ctx.fillStyle = C.ink; ctx.font = font(700, 30); ctx.fillText(fit(what, tw), tx, cy - 4);
-    const tm = t.close_date ? t.close_date.toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit' }) : '';
-    const why = [tm, g.list.length > 1 ? `× ${g.list.length} accounts` : null, r0.exit_type, String(r0.mistakes || '').split(',')[0].trim() || null].filter(Boolean).join('  ·  ');
-    ctx.fillStyle = C.muted; ctx.font = font(500, 22); ctx.fillText(fit(why, tw), tx, cy + 30);
-    y += ROW;
-  });
-  if(groups.length > MAX){ const restN = groups.slice(MAX).reduce((a, g) => a + g.list.length, 0); ctx.fillStyle = C.muted; ctx.font = font(600, 22); ctx.fillText(`+ ${restN} more trade${restN === 1 ? '' : 's'}`, L + 84, y + 24); y += 44; }
-
-  // Ang araw sa mga numero — kapag may puwang pa (walang plano o walang aral).
-  const gR = groups.map(g => { const r = g.list.map(x => _tradeR(x)).filter(v => v !== null); return { g, R: r.length ? r.reduce((a, b) => a + b, 0) / r.length : null }; }).filter(x => x.R !== null);
-  const best = gR.length ? gR.reduce((a, b) => b.R > a.R ? b : a) : null;
-  const worst = gR.length ? gR.reduce((a, b) => b.R < a.R ? b : a) : null;
-  const marked = trades.filter(t => /^(yes|no)$/i.test(String(t.rules_followed || '').trim()));
-  const boxes = [
-    best && best.R > 0 ? ['Best', `${_dpostBase(best.g.list[0].symbol)}  ${sign(best.R)}${Math.abs(best.R).toFixed(2)}R`, C.win] : null,
-    worst && worst.R < 0 ? ['Worst', `${_dpostBase(worst.g.list[0].symbol)}  ${sign(worst.R)}${Math.abs(worst.R).toFixed(2)}R`, C.loss] : null,
-    marked.length ? ['Rules followed', `${marked.filter(t => /^yes$/i.test(String(t.rules_followed).trim())).length}/${marked.length}`, C.ink] : null,
-    ['Setups', String(groups.length), C.ink]
-  ].filter(Boolean).slice(0, 3);
-  if(boxes.length && y + 34 + 34 + 116 <= H - 84){   // kasya bago ang paa
-    y += 34; section('THE DAY IN NUMBERS', y); y += 34;
-    const gap = 16, bw = (R - L - (boxes.length - 1) * gap) / boxes.length;
-    boxes.forEach(([k, v, col], i) => {
-      const x = L + i * (bw + gap);
-      ctx.fillStyle = C.surf; rr(x, y, bw, 116, 16); ctx.fill();
-      ctx.fillStyle = C.muted; ctx.font = font(700, 18); ctx.fillText(k.toUpperCase(), x + 22, y + 38);
-      let fs = 36; ctx.font = font(800, fs); while(fs > 20 && ctx.measureText(v).width > bw - 40){ fs -= 2; ctx.font = font(800, fs); }
-      ctx.fillStyle = col; ctx.fillText(v, x + 22, y + 90);
-    });
-    y += 116;
+  // "Result only": igitna ang resulta at ang lesson sa natitirang puwang.
+  if(layout === 'result' && !off){
+    const extra = Math.round((H - 110 - y) / 2) - 40;
+    if(extra > 30) return drawDailyPost(extra);
   }
 
   // Paa
