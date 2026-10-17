@@ -154,7 +154,10 @@ find/replace, try the LF form, then the CRLF form.
   v2"**: four setups only, 15M HL/LH and 30M Long/Short Invalidation, same
   rules as BTC v2 (5M replaces 3M; histogram-only 1H in the invalidations),
   no 5M or 1H setups, BTC not in its coin list. Log `crypto_bot_v2.log`.
-  The old "ALTS Bot" task stays disabled.
+  Same anti-repeat rules as BTC: per coin+setup cooldown (15M 1h, 30M 1.5h)
+  saved to `crypto_last_sent_v2.json`, and no alerts 12-7 AM UAE (a setup
+  that formed overnight is not sent at 7). The old "ALTS Bot" task stays
+  disabled.
 - Both v2 tasks run through **`pyw.exe`** (no console window): with `py.exe`
   the bot dies when its window is closed (exit 0xC000013A).
 - v2 Telegram carries **setup alerts only**: `SEND_TELEGRAM_HEARTBEAT` and
