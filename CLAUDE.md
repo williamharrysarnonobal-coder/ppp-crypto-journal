@@ -206,3 +206,6 @@ find/replace, try the LF form, then the CRLF form.
   **Weekly post** (the Daily post modal with `_dpostScope = 'week'`: one row
   per traded day, lesson saved per week in localStorage). Weeks start Sunday,
   like the Calendar.
+- Every share defaults to **$ as the main number** (Show $ amounts checked;
+  Main number = $ amount) and always shows **Rules followed** (_rulesFollowedTxt,
+  "5 of 6") next to the win rate, by the owner's choice.

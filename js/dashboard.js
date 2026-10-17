@@ -18243,13 +18243,13 @@ function drawShareCard(){
   const stats = [
     // Ang R ay ang malaking numero kapag walang $; kapag may $, dito ito.
     showMoney && R !== null ? ['Return', `${R >= 0 ? '+' : '−'}${Math.abs(R).toFixed(2)}R`] : null,
+    row.rules_followed ? ['Rules followed', /^yes$/i.test(row.rules_followed) ? 'Yes ✓' : 'No'] : null,
     acc !== null ? ['Account', `${acc >= 0 ? '+' : '−'}${Math.abs(acc).toFixed(2)}%`] : null,
     plan !== null ? ['Planned RR', `1:${plan.toFixed(2)}`] : null,
     move !== null ? ['Price move', `${move >= 0 ? '+' : '−'}${Math.abs(move).toFixed(2)}%`] : null,
     row.trade_setup ? ['Setup', row.trade_setup] : null,
     row.pattern_type ? ['Pattern', row.pattern_type] : null,
-    computeDuration(row) ? ['Duration', computeDuration(row)] : null,
-    row.rules_followed ? ['Rules followed', /^yes$/i.test(row.rules_followed) ? 'Yes ✓' : 'No'] : null
+    computeDuration(row) ? ['Duration', computeDuration(row)] : null
   ].filter(Boolean).slice(0, 6);
   const colW = textW / 2;
   stats.forEach(([k, v], i) => {
@@ -18438,6 +18438,13 @@ function openShareCalendar(){
 function closeShareCalendar(){
   document.getElementById('calShareModal').classList.remove('open');
 }
+/* Rules followed para sa mga share: "5 of 6" (ang may sagot lang na Yes/No), o
+   null kapag walang may sagot. Kasama sa lahat ng share, hindi lang win rate. */
+function _rulesFollowedTxt(trades){
+  const marked = (trades || []).filter(t => /^(yes|no)$/i.test(String(t.rules_followed || '').trim()));
+  if(!marked.length) return null;
+  return `${marked.filter(t => /^yes$/i.test(String(t.rules_followed).trim())).length} of ${marked.length}`;
+}
 /* Isang bucket (araw o buwan) ng mga trade → mga bilang na kailangan ng larawan. */
 function _shareBucket(trades){
   const s = { net: 0, R: 0, rN: 0, pct: 0, pN: 0, w: 0, l: 0, n: 0 };
@@ -18484,14 +18491,16 @@ function _drawYearShare(cv, modes, showTotals, showAcc){
       [mode === 'wl' ? 'Result' : 'Year', valOf(year, mode) || '—', mode === 'wl' ? C.ink : (year.net >= 0 ? C.win : C.loss)],
       ['Win rate', (year.w + year.l) ? `${Math.round(year.w / (year.w + year.l) * 100)}%` : '—', C.ink],
       ['Trades', String(year.n), C.ink],
-      ['Green months', `${traded.filter(s => s.net > 0).length} of ${traded.length}`, C.ink]
-    ];
-    const bw = (W - L * 2 - 3 * 16) / 4;
+      ['Green months', `${traded.filter(s => s.net > 0).length} of ${traded.length}`, C.ink],
+      _rulesFollowedTxt(pool) ? ['Rules followed', _rulesFollowedTxt(pool), C.ink] : null
+    ].filter(Boolean);
+    const bw = (W - L * 2 - (boxes.length - 1) * 16) / boxes.length;
     boxes.forEach(([k, v, col], i) => {
       const x = L + i * (bw + 16);
       ctx.fillStyle = C.surf; rr(x, gy, bw, 96, 14); ctx.fill();
-      ctx.fillStyle = C.muted; ctx.font = font(700, 16); ctx.fillText(k.toUpperCase(), x + 20, gy + 34);
-      ctx.fillStyle = col; ctx.font = font(800, 32); ctx.fillText(v, x + 20, gy + 76);
+      ctx.fillStyle = C.muted; ctx.font = font(700, 16); ctx.fillText(k.toUpperCase(), x + 20, gy + 34, bw - 32);
+      let fsz = 32; ctx.font = font(800, fsz); while(fsz > 18 && ctx.measureText(v).width > bw - 36){ fsz -= 2; ctx.font = font(800, fsz); }
+      ctx.fillStyle = col; ctx.fillText(v, x + 20, gy + 76);
     });
     gy += 126;
   }
@@ -18567,14 +18576,16 @@ function _drawWeekShare(cv, modes, showTotals, showAcc){
       [mode === 'wl' ? 'Result' : 'Week', valOf(wk, mode) || '—', mode === 'wl' ? C.ink : (wk.net >= 0 ? C.win : C.loss)],
       ['Win rate', (wk.w + wk.l) ? `${Math.round(wk.w / (wk.w + wk.l) * 100)}%` : '—', C.ink],
       ['Trades', String(wk.n), C.ink],
-      ['Green days', `${traded.filter(x => x.s.net > 0).length} of ${traded.length}`, C.ink]
-    ];
-    const bw = (W - L * 2 - 3 * 16) / 4;
+      ['Green days', `${traded.filter(x => x.s.net > 0).length} of ${traded.length}`, C.ink],
+      _rulesFollowedTxt(trades) ? ['Rules followed', _rulesFollowedTxt(trades), C.ink] : null
+    ].filter(Boolean);
+    const bw = (W - L * 2 - (boxes.length - 1) * 16) / boxes.length;
     boxes.forEach(([k, v, col], i) => {
       const x = L + i * (bw + 16);
       ctx.fillStyle = C.surf; rr(x, gy, bw, 96, 14); ctx.fill();
-      ctx.fillStyle = C.muted; ctx.font = font(700, 16); ctx.fillText(k.toUpperCase(), x + 20, gy + 34);
-      ctx.fillStyle = col; ctx.font = font(800, 32); ctx.fillText(v, x + 20, gy + 76);
+      ctx.fillStyle = C.muted; ctx.font = font(700, 16); ctx.fillText(k.toUpperCase(), x + 20, gy + 34, bw - 32);
+      let fsz = 32; ctx.font = font(800, fsz); while(fsz > 18 && ctx.measureText(v).width > bw - 36){ fsz -= 2; ctx.font = font(800, fsz); }
+      ctx.fillStyle = col; ctx.fillText(v, x + 20, gy + 76);
     });
     gy += 126;
   }
@@ -18678,14 +18689,16 @@ function drawCalendarShare(){
       [mode === 'wl' ? 'Result' : 'Month', total, mode === 'wl' ? C.ink : (net >= 0 ? C.win : C.loss)],
       ['Win rate', (w + l) ? `${Math.round(w / (w + l) * 100)}%` : '—', C.ink],
       ['Trades', String(trades.length), C.ink],
-      ['Green days', `${green} of ${all.length}`, C.ink]
-    ];
-    const bw = (W - L * 2 - 3 * 16) / 4;
+      ['Green days', `${green} of ${all.length}`, C.ink],
+      _rulesFollowedTxt(trades) ? ['Rules followed', _rulesFollowedTxt(trades), C.ink] : null
+    ].filter(Boolean);
+    const bw = (W - L * 2 - (boxes.length - 1) * 16) / boxes.length;
     boxes.forEach(([k, v, col], i) => {
       const x = L + i * (bw + 16);
       ctx.fillStyle = C.surf; rr(x, gy, bw, 96, 14); ctx.fill();
-      ctx.fillStyle = C.muted; ctx.font = font(700, 16); ctx.fillText(k.toUpperCase(), x + 20, gy + 34);
-      ctx.fillStyle = col; ctx.font = font(800, 32); ctx.fillText(v, x + 20, gy + 76);
+      ctx.fillStyle = C.muted; ctx.font = font(700, 16); ctx.fillText(k.toUpperCase(), x + 20, gy + 34, bw - 32);
+      let fsz = 32; ctx.font = font(800, fsz); while(fsz > 18 && ctx.measureText(v).width > bw - 36){ fsz -= 2; ctx.font = font(800, fsz); }
+      ctx.fillStyle = col; ctx.fillText(v, x + 20, gy + 76);
     });
     gy += 122;
   }
@@ -34310,9 +34323,11 @@ function drawDayShare(){
     ctx.fillText(a, L, 184);
   }
 
-  // Ang malaking resulta: ilan ang panalo at talo.
-  ctx.fillStyle = tone; ctx.font = font(800, 112);
-  ctx.fillText(`${w}W ${l}L`, L - 4, 290);
+  // Ang malaking resulta: ang $ (gaya ng share ng isang trade) kapag naka-check
+  // ang "Show $ amounts", kung hindi ay ilan ang panalo at talo.
+  const netTxt = `${sign(net)}$${Math.abs(net).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  ctx.fillStyle = showMoney ? (net >= 0 ? C.win : C.loss) : tone; ctx.font = font(800, 112);
+  ctx.fillText(showMoney ? netTxt : `${w}W ${l}L`, L - 4, 290, 700);
   // Pill: win rate
   const wr = (w + l) ? `${Math.round(w / (w + l) * 100)}% WIN RATE` : 'NO RESULT YET';
   ctx.font = font(700, 22);
@@ -34324,11 +34339,10 @@ function drawDayShare(){
   // Mga numero sa ilalim: dalawang hanay.
   const stats = [
     rs.length ? ['Return', `${sign(R)}${Math.abs(R).toFixed(2)}R`] : null,
-    showMoney ? ['Net', `${sign(net)}$${Math.abs(net).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`] : null,
+    showMoney ? ['Result', `${w}W ${l}L`] : null,
     be ? ['Breakeven', String(be)] : null,
     ['Trades', String(trades.length)],
-    (() => { const marked = trades.filter(t => /^(yes|no)$/i.test(String(t.rules_followed || '').trim()));
-             return marked.length ? ['Rules followed', `${marked.filter(t => /^yes$/i.test(String(t.rules_followed).trim())).length}/${marked.length}`] : null; })()
+    _rulesFollowedTxt(trades) ? ['Rules followed', _rulesFollowedTxt(trades)] : null
   ].filter(Boolean).slice(0, 6);
   const colW = (W - L * 2) / 2 > 260 ? 260 : (W - L * 2) / 2;
   stats.forEach(([k, v], i) => {
@@ -34544,7 +34558,9 @@ function drawDailyPost(centerOffset){
   ctx.fillStyle = rs.length ? (Rsum >= 0 ? C.win : C.loss) : (net >= 0 ? C.win : C.loss);
   ctx.fillText(side, L + bigW + 36, y - (only ? 70 : 46), R - (L + bigW + 36));
   ctx.fillStyle = C.muted; ctx.font = font(600, only ? 28 : 24);
-  ctx.fillText(`${trades.length} trade${trades.length === 1 ? '' : 's'}  ·  ${(w + l) ? Math.round(w / (w + l) * 100) + '% win rate' : 'no result yet'}`, L + bigW + 36, y - 4, R - (L + bigW + 36));
+  const rulesTxt = _rulesFollowedTxt(trades);
+  ctx.fillText([`${trades.length} trade${trades.length === 1 ? '' : 's'}`, (w + l) ? Math.round(w / (w + l) * 100) + '% win rate' : 'no result yet',
+    rulesTxt ? `rules followed ${rulesTxt}` : null].filter(Boolean).join('  ·  '), L + bigW + 36, y - 4, R - (L + bigW + 36));
   y += only ? 70 : 44;
 
   // Ang Lesson mo
