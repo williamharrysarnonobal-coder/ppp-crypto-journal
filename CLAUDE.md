@@ -138,7 +138,9 @@ find/replace, try the LF form, then the CRLF form.
 - **`btc_live_bot_v2.py`** (2026-10-16, gitignored, has secrets) replaces v1
   for BTC alerts. Six setups: 5M HL/LH (v1 rules plus the 1-minute MACD
   below zero for the long, above zero for the short), 15M HL/LH (also
-  requires the 30M MACD and histogram on the trade's side) and 30M
+  requires the 30M MACD and histogram on the trade's side; the 5M is on the
+  far side of zero with its histogram already turned: bear + green for the
+  HL, bull + red for the LH) and 30M
   Long / Short Invalidation (the 5M MACD+histogram replaces the 3M; in the
   invalidations the 1H MACD is on the far side of zero with its histogram
   turned, i.e. bear + green for the long, bull + red for the short, as in the
