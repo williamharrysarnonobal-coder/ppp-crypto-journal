@@ -201,3 +201,8 @@ find/replace, try the LF form, then the CRLF form.
   Copy image / Share… / Download PNG; see `drawMarketHoursShare`,
   `drawEconShare`) instead of inventing new ones.
 - Times shown to the owner are UAE time (Asia/Dubai).
+- Calendar shares: a day popup has **Share day** + **Daily post**; a week (Σ)
+  popup has **Share week** (`calShareModal` with `_calShareKind = 'week'`) +
+  **Weekly post** (the Daily post modal with `_dpostScope = 'week'`: one row
+  per traded day, lesson saved per week in localStorage). Weeks start Sunday,
+  like the Calendar.

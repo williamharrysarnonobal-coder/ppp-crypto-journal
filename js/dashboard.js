@@ -4386,6 +4386,7 @@ function closeModal(){
   if(shareBtn) shareBtn.style.display = 'none';
   const postBtn = document.getElementById('modalDailyPostBtn');
   if(postBtn) postBtn.style.display = 'none';
+  ['modalShareWeekBtn', 'modalWeeklyPostBtn'].forEach(id => { const b = document.getElementById(id); if(b) b.style.display = 'none'; });
   // Same reasoning for "View Trades": only the category drill-downs know what
   // to filter the journal by, so it retires here instead of in every opener.
   _setJournalDrill(null, null);
@@ -4678,8 +4679,12 @@ function showWeekTrades(weekIdx){
   document.getElementById('modalTitle').textContent = `Week Summary — ${rangeLabel}`;
   document.getElementById('modalSub').textContent = `${week.count} trade${week.count===1?'':'s'} · ${fmtMoney(week.pnl)}`;
   document.getElementById('modalBody').innerHTML = renderTradeCards(week.trades);
+  // Share week at Weekly post: para sa linggo lang — itinatago ng closeModal.
+  _weekShare = { y: calMonth.getFullYear(), m: calMonth.getMonth(), days, trades: week.trades, label: rangeLabel };
+  ['modalShareWeekBtn', 'modalWeeklyPostBtn'].forEach(id => { const b = document.getElementById(id); if(b) b.style.display = ''; });
   document.getElementById('tradeModal').classList.add('open');
 }
+let _weekShare = null;   // { y, m, days:[day numbers], trades, label }
 
 function openWeekReview(){
   if(!WEEK_REVIEW_CONTEXT) return;
@@ -18354,10 +18359,12 @@ function _shareFileName(canvasId){
   if(canvasId === 'profShareCanvas') return `tanaydana-trader-card-${_mhDayIso(Date.now())}.png`;
   if(canvasId === 'nfShareCanvas') return `tanaydana-${(_nfShareRow && _nfShareRow.type) || 'notification'}-${_mhDayIso(Date.now())}.png`;
   if(canvasId === 'mhShareCanvas') return `market-hours-${_mhDayIso(Date.now())}.png`;
-  if(canvasId === 'dailyPostCanvas' && _dayShare) return `daily-post-${_dayShare.y}-${String(_dayShare.m + 1).padStart(2, '0')}-${String(_dayShare.d).padStart(2, '0')}.png`;
+  if(canvasId === 'dailyPostCanvas' && _dpostScope !== 'week' && _dayShare) return `daily-post-${_dayShare.y}-${String(_dayShare.m + 1).padStart(2, '0')}-${String(_dayShare.d).padStart(2, '0')}.png`;
   if(canvasId === 'dayShareCanvas' && _dayShare) return `trades-${_dayShare.y}-${String(_dayShare.m + 1).padStart(2, '0')}-${String(_dayShare.d).padStart(2, '0')}.png`;
   if(canvasId === 'econShareCanvas' && typeof _econShareName === 'function') return _econShareName();
   if(canvasId === 'calShareCanvas' && _calShareKind === 'year') return `year-${YEAR_OVERVIEW}.png`;
+  if(canvasId === 'calShareCanvas' && _calShareKind === 'week' && _weekShare) return `week-${_weekShare.y}-${String(_weekShare.m + 1).padStart(2, '0')}-${String(_weekShare.days[0]).padStart(2, '0')}.png`;
+  if(canvasId === 'dailyPostCanvas' && _dpostScope === 'week' && _weekShare) return `weekly-post-${_weekShare.y}-${String(_weekShare.m + 1).padStart(2, '0')}-${String(_weekShare.days[0]).padStart(2, '0')}.png`;
   if(canvasId === 'calShareCanvas'){
     return `calendar-${calMonth.getFullYear()}-${String(calMonth.getMonth() + 1).padStart(2, '0')}.png`;
   }
@@ -18516,9 +18523,98 @@ function _drawYearShare(cv, modes, showTotals, showAcc){
   ctx.fillStyle = C.muted; ctx.font = font(500, 18); ctx.fillText('trading journal', L + bw2 + 12, H - 30);
 }
 
+function openShareWeek(){
+  if(!_weekShare) return;
+  _calShareKind = 'week';
+  document.getElementById('calShareMonth').textContent = _weekShare.label;
+  document.getElementById('calShareTotalsK').textContent = 'Week totals';
+  document.getElementById('calShareNativeBtn').style.display = (navigator.canShare && navigator.share) ? '' : 'none';
+  document.getElementById('calShareModal').classList.add('open');
+  onCalShareMain();
+}
+/* ANG LINGGO BILANG LARAWAN — kapareho ng buwan (ang parehong mga pagpipilian:
+   R, %, $ o W–L, kabuuan, pangalan ng account), pero isang hilera ng mga araw
+   ng linggong iyon, malalaki. */
+function _drawWeekShare(cv, modes, showTotals, showAcc){
+  const ctx = cv.getContext('2d');
+  const W = cv.width, H = cv.height;
+  const C = { bg:'#12141C', surf:'#1B1F2B', ink:'#F1EEE6', muted:'#93989F', win:'#2ECC71', loss:'#FF5C5C', accent: cssVar('--accent') || '#F0B429' };
+  const font = (w, s) => `${w} ${s}px "Public Sans", system-ui, sans-serif`;
+  const rr = (x, y, w, h, r) => { ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x, y, w, h, r) : ctx.rect(x, y, w, h); };
+  const sign = v => v >= -0.005 ? '+' : '−';
+  const valOf = (s, md) => md === 'usd' ? `${sign(s.net)}$${Math.abs(s.net).toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+    : md === 'r' ? (s.rN ? `${sign(s.R)}${Math.abs(s.R).toFixed(1)}R` : null)
+    : md === 'pct' ? (s.pN ? `${sign(s.pct)}${Math.abs(s.pct).toFixed(2)}%` : null)
+    : `${s.w}W ${s.l}L`;
+  const mode = modes[0] || 'wl';
+  const { y: yy, m: mm, days, trades } = _weekShare;
+  const byDay = days.map(d => ({ d, s: _shareBucket(trades.filter(t => t.close_date && t.close_date.getDate() === d)) }));
+  const wk = _shareBucket(trades);
+
+  ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+  const L = 56;
+  ctx.fillStyle = C.ink; ctx.font = font(800, 52); ctx.fillText(_weekShare.label, L, 96, W - L * 2);
+  const acct = document.getElementById('accountFilter')?.value;
+  ctx.fillStyle = C.muted; ctx.font = font(500, 22);
+  ctx.fillText((showAcc && acct && acct !== 'all' ? acct : 'Trading week'), L, 134, W - L * 2);
+
+  let gy = 170;
+  if(showTotals){
+    const traded = byDay.filter(x => x.s.n);
+    const boxes = [
+      [mode === 'wl' ? 'Result' : 'Week', valOf(wk, mode) || '—', mode === 'wl' ? C.ink : (wk.net >= 0 ? C.win : C.loss)],
+      ['Win rate', (wk.w + wk.l) ? `${Math.round(wk.w / (wk.w + wk.l) * 100)}%` : '—', C.ink],
+      ['Trades', String(wk.n), C.ink],
+      ['Green days', `${traded.filter(x => x.s.net > 0).length} of ${traded.length}`, C.ink]
+    ];
+    const bw = (W - L * 2 - 3 * 16) / 4;
+    boxes.forEach(([k, v, col], i) => {
+      const x = L + i * (bw + 16);
+      ctx.fillStyle = C.surf; rr(x, gy, bw, 96, 14); ctx.fill();
+      ctx.fillStyle = C.muted; ctx.font = font(700, 16); ctx.fillText(k.toUpperCase(), x + 20, gy + 34);
+      ctx.fillStyle = col; ctx.font = font(800, 32); ctx.fillText(v, x + 20, gy + 76);
+    });
+    gy += 126;
+  }
+  // Isang hilera: bawat araw ng linggo, malaki.
+  const n = byDay.length, gap = 12;
+  const cw = (W - L * 2 - (n - 1) * gap) / n, ch = H - gy - 90;
+  byDay.forEach(({ d, s }, i) => {
+    const x = L + i * (cw + gap);
+    const up = s.n && (mode === 'wl' ? s.w >= s.l : s.net >= 0);
+    ctx.fillStyle = !s.n ? C.surf : up ? 'rgba(46,204,113,.18)' : 'rgba(255,92,92,.18)';
+    rr(x, gy, cw, ch, 16); ctx.fill();
+    if(s.n){ ctx.strokeStyle = up ? 'rgba(46,204,113,.55)' : 'rgba(255,92,92,.55)'; ctx.lineWidth = 2; rr(x, gy, cw, ch, 16); ctx.stroke(); }
+    const dt = new Date(yy, mm, d);
+    ctx.fillStyle = C.muted; ctx.font = font(700, 18); ctx.fillText(dt.toLocaleDateString('en-US', { weekday:'short' }).toUpperCase(), x + 16, gy + 34);
+    ctx.fillStyle = s.n ? C.ink : C.muted; ctx.font = font(800, 40); ctx.fillText(String(d), x + 16, gy + 84);
+    if(s.n){
+      let v = valOf(s, mode) || `${s.w}W ${s.l}L`;
+      let fs = 34; ctx.font = font(800, fs); while(fs > 16 && ctx.measureText(v).width > cw - 28){ fs -= 2; ctx.font = font(800, fs); }
+      ctx.fillStyle = up ? C.win : C.loss; ctx.fillText(v, x + 16, gy + ch - 70);
+      const extra = modes.slice(1).map(md => valOf(s, md)).filter(t => t && t !== v);
+      ctx.fillStyle = C.muted; ctx.font = font(600, 16);
+      (extra.length ? extra : [`${s.n} trade${s.n === 1 ? '' : 's'}`]).slice(0, 2).forEach((t, k) => {
+        while(ctx.measureText(t).width > cw - 28 && t.length > 3) t = t.slice(0, -1);
+        ctx.fillText(t, x + 16, gy + ch - 38 + k * 22);
+      });
+    }else{
+      ctx.fillStyle = C.muted; ctx.font = font(500, 16); ctx.fillText('no trades', x + 16, gy + ch - 30);
+    }
+  });
+  ctx.fillStyle = C.accent; ctx.font = font(800, 22); ctx.fillText('TANAYDANA', L, H - 30);
+  const bw2 = ctx.measureText('TANAYDANA').width;
+  ctx.fillStyle = C.muted; ctx.font = font(500, 18); ctx.fillText('trading journal', L + bw2 + 12, H - 30);
+}
+
 function drawCalendarShare(){
   const cv = document.getElementById('calShareCanvas');
   if(!cv) return;
+  if(_calShareKind === 'week' && _weekShare){
+    _drawWeekShare(cv, _calShareModes(),
+      document.getElementById('calShareTotals').checked, document.getElementById('calShareAccount').checked);
+    return;
+  }
   if(_calShareKind === 'year'){
     _drawYearShare(cv, _calShareModes(),
       document.getElementById('calShareTotals').checked, document.getElementById('calShareAccount').checked);
@@ -34295,9 +34391,21 @@ function drawDayShare(){
    Isang portrait na larawan (1080×1350, ang pinakamagandang sukat sa feed) na
    nagkukuwento ng araw: ika-ilang araw na, ang resulta, ang plano, ang bawat
    trade, ang naramdaman, at ang aral. Galing sa journal at sa Daily Plan. */
+/* Ang Weekly post ay ang parehong popup at mga layout, pero ang buong linggo:
+   isang hilera kada araw (hindi kada setup), at ang Lesson ay kada linggo. */
+let _dpostScope = 'day';   // 'day' | 'week'
+function openWeeklyPost(){
+  if(!_weekShare) return;
+  _dpostScope = 'week';
+  _openPostModal('Weekly post · ' + _weekShare.label);
+}
 function openDailyPost(){
   if(!_dayShare) return;
-  document.getElementById('dailyPostTitle').textContent = 'Daily post · ' + new Date(_dayShare.y, _dayShare.m, _dayShare.d).toLocaleDateString('en-US', { month:'long', day:'numeric' });
+  _dpostScope = 'day';
+  _openPostModal('Daily post · ' + new Date(_dayShare.y, _dayShare.m, _dayShare.d).toLocaleDateString('en-US', { month:'long', day:'numeric' }));
+}
+function _openPostModal(title){
+  document.getElementById('dailyPostTitle').textContent = title;
   document.getElementById('dailyPostNativeBtn').style.display = (navigator.canShare && navigator.share) ? '' : 'none';
   const les = document.getElementById('dailyPostLesson');
   if(les){ let v = ''; try{ v = localStorage.getItem(_dpostLessonKey()) || ''; }catch(e){} les.value = v; }
@@ -34315,7 +34423,9 @@ function _dpostBase(s){
    ay galing sa journal. Tatlong layout na mapipili. Ang Lesson ay naaalala kada
    araw sa device na ito (hindi nawawala kapag isinara ang popup). */
 let _dpostLayout = (() => { try{ return localStorage.getItem('tanaydana-dpost-layout') || 'setups'; }catch(e){ return 'setups'; } })();
-const _dpostLessonKey = () => _dayShare ? `tanaydana-dpost-lesson-${_dayShare.y}-${_dayShare.m + 1}-${_dayShare.d}` : null;
+const _dpostLessonKey = () => _dpostScope === 'week'
+  ? (_weekShare ? `tanaydana-wpost-lesson-${_weekShare.y}-${_weekShare.m + 1}-${_weekShare.days[0]}` : null)
+  : (_dayShare ? `tanaydana-dpost-lesson-${_dayShare.y}-${_dayShare.m + 1}-${_dayShare.d}` : null);
 function setDailyPostLayout(v){
   _dpostLayout = v;
   try{ localStorage.setItem('tanaydana-dpost-layout', v); }catch(e){}
@@ -34338,7 +34448,8 @@ function _dpostGroups(trades, raw){
 }
 function drawDailyPost(centerOffset){
   const cv = document.getElementById('dailyPostCanvas');
-  if(!cv || !_dayShare) return;
+  const wk = _dpostScope === 'week';
+  if(!cv || !(wk ? _weekShare : _dayShare)) return;
   const off = typeof centerOffset === 'number' ? centerOffset : 0;
   const showMoney = document.getElementById('dailyPostUsd').checked;
   const showAcc = document.getElementById('dailyPostAcc').checked;
@@ -34353,8 +34464,9 @@ function drawDailyPost(centerOffset){
   const fit = (t, maxW) => { t = String(t || ''); if(ctx.measureText(t).width <= maxW) return t; while(t.length > 1 && ctx.measureText(t + '…').width > maxW) t = t.slice(0, -1); return t + '…'; };
   const L = 72, R = W - 72;
 
-  const day = new Date(_dayShare.y, _dayShare.m, _dayShare.d);
-  const trades = [..._dayShare.trades].sort((a, b) => (a.close_date || 0) - (b.close_date || 0));
+  const day = wk ? new Date(_weekShare.y, _weekShare.m, _weekShare.days[0]) : new Date(_dayShare.y, _dayShare.m, _dayShare.d);
+  const lastDay = wk ? new Date(_weekShare.y, _weekShare.m, _weekShare.days[_weekShare.days.length - 1], 23, 59, 59) : null;
+  const trades = [...(wk ? _weekShare.trades : _dayShare.trades)].sort((a, b) => (a.close_date || 0) - (b.close_date || 0));
   const raw = t => (RAW_TRADES || []).find(x => x.position_id === t.position_id) || t;
   const w = trades.filter(_isWin).length, l = trades.filter(_isLoss).length;
   const rs = trades.map(t => _tradeR(t)).filter(r => r !== null);
@@ -34362,8 +34474,18 @@ function drawDailyPost(centerOffset){
   const net = trades.reduce((a, t) => a + netPnl(t), 0);
   const good = w > l || (w === l && (rs.length ? Rsum >= 0 : net >= 0));
   const tone = good ? C.win : C.loss;
-  const dayNo = new Set((ALL_TRADES || []).filter(t => t.close_date && t.close_date <= new Date(_dayShare.y, _dayShare.m, _dayShare.d, 23, 59, 59)).map(t => _dpIso(t.close_date))).size;
-  const groups = _dpostGroups(trades, raw);
+  // Ika-ilang araw (o linggo, Linggo ang simula gaya ng Calendar) na may trade.
+  const _wkKey = d => { const s = new Date(d.getFullYear(), d.getMonth(), d.getDate() - d.getDay()); return _dpIso(s); };
+  const dayNo = wk
+    ? new Set((ALL_TRADES || []).filter(t => t.close_date && t.close_date <= lastDay).map(t => _wkKey(t.close_date))).size
+    : new Set((ALL_TRADES || []).filter(t => t.close_date && t.close_date <= new Date(_dayShare.y, _dayShare.m, _dayShare.d, 23, 59, 59)).map(t => _dpIso(t.close_date))).size;
+  // Weekly: isang "grupo" kada araw na may trade.
+  const groups = wk
+    ? _weekShare.days.map(d => ({ d, list: trades.filter(t => t.close_date && t.close_date.getDate() === d) })).filter(g => g.list.length)
+    : _dpostGroups(trades, raw);
+  const rangeTxt = wk ? `${day.toLocaleDateString('en-US', { month:'long', day:'numeric' })} – ${lastDay.toLocaleDateString('en-US', day.getMonth() === lastDay.getMonth() ? { day:'numeric' } : { month:'long', day:'numeric' })}` : '';
+  const footDate = wk ? `${day.toLocaleDateString('en-US', { month:'short', day:'numeric' })} – ${lastDay.toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' })}`
+    : day.toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' });
   const noTrade = !trades.length;
 
   ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
@@ -34372,9 +34494,9 @@ function drawDailyPost(centerOffset){
   const section = (label, yy) => { ctx.fillStyle = C.muted; ctx.font = font(800, 20); ctx.fillText(label, L, yy); ctx.fillStyle = C.rule; ctx.fillRect(L, yy + 14, R - L, 1); };
 
   // Ulo
-  ctx.fillStyle = C.accent; ctx.font = font(800, 26); ctx.fillText(`DAY ${dayNo}  ·  TRADING JOURNAL`, L, 92);
+  ctx.fillStyle = C.accent; ctx.font = font(800, 26); ctx.fillText(`${wk ? 'WEEK' : 'DAY'} ${dayNo}  ·  TRADING JOURNAL`, L, 92);
   ctx.fillStyle = C.ink; ctx.font = font(800, 64);
-  ctx.fillText(day.toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric' }), L, 168, R - L);
+  ctx.fillText(wk ? rangeTxt : day.toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric' }), L, 168, R - L);
   let y = 300;
   if(showAcc){
     const accs = [...new Set(trades.map(t => t.account).filter(Boolean))].join(', ');
@@ -34401,7 +34523,7 @@ function drawDailyPost(centerOffset){
     ctx.fillStyle = C.accent; ctx.font = font(800, 26); ctx.fillText('TANAYDANA', L, H - 56);
     const bwN = ctx.measureText('TANAYDANA').width;
     ctx.fillStyle = C.muted; ctx.font = font(500, 22); ctx.fillText('trading journal', L + bwN + 12, H - 56);
-    ctx.textAlign = 'right'; ctx.fillText(day.toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' }), R, H - 56); ctx.textAlign = 'left';
+    ctx.textAlign = 'right'; ctx.fillText(footDate, R, H - 56); ctx.textAlign = 'left';
     return;
   }
 
@@ -34441,14 +34563,39 @@ function drawDailyPost(centerOffset){
 
   // Ang bawat setup
   if(layout !== 'result'){
-    y += 28; section('WHAT HAPPENED', y); y += 30;
+    y += 28; section(wk ? 'DAY BY DAY' : 'WHAT HAPPENED', y); y += 30;
     const room = Math.max(1, Math.floor((H - 100 - y - (layout === 'numbers' ? 190 : 0)) / 96));
-    const MAX = Math.min(5, room), ROW = 96;
+    const MAX = Math.min(wk ? 7 : 5, room), ROW = 96;
     groups.slice(0, MAX).forEach(g => {
       const t = g.list[0], r0 = raw(t);
       const gw = g.list.filter(_isWin).length, gl = g.list.filter(_isLoss).length;
       const col = gw > gl ? C.win : gl > gw ? C.loss : C.be;
       const cy = y + ROW / 2;
+      if(wk){
+        // Isang araw: bilog na may araw ng linggo, ang W–L, ang mga coin, at ang R (o $).
+        const dt = new Date(_weekShare.y, _weekShare.m, g.d);
+        const dr = g.list.map(x => _tradeR(x)).filter(r => r !== null);
+        const dR = dr.reduce((a, b) => a + b, 0), dNet = g.list.reduce((a, x) => a + netPnl(x), 0);
+        const dCol = gw > gl ? C.win : gl > gw ? C.loss : (dr.length ? (dR >= 0 ? C.win : C.loss) : C.be);
+        ctx.fillStyle = dCol; ctx.beginPath(); ctx.arc(L + 30, cy, 30, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = dCol === C.loss ? '#FFFFFF' : '#12141C'; ctx.font = font(800, 17);
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(dt.toLocaleDateString('en-US', { weekday:'short' }).toUpperCase(), L + 30, cy + 1);
+        ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+        const right = showMoney ? `${sign(dNet)}$${Math.abs(dNet).toLocaleString(undefined, { maximumFractionDigits: 2 })}`
+          : (dr.length ? `${sign(dR)}${Math.abs(dR).toFixed(2)}R` : `${gw}W ${gl}L`);
+        ctx.font = font(800, 32); const rw = ctx.measureText(right).width;
+        ctx.fillStyle = dCol; ctx.textAlign = 'right'; ctx.fillText(right, R, cy + 12); ctx.textAlign = 'left';
+        const tx = L + 84, tw = R - tx - rw - 24;
+        ctx.fillStyle = C.ink; ctx.font = font(700, 30);
+        ctx.fillText(fit(`${dt.toLocaleDateString('en-US', { month:'short', day:'numeric' })}  ·  ${gw}W ${gl}L`, tw), tx, cy - 4);
+        const coins = [...new Set(g.list.map(x => _dpostBase(x.symbol)))].join(', ');
+        const setups = _dpostGroups(g.list, raw).length;
+        ctx.fillStyle = C.muted; ctx.font = font(500, 22);
+        ctx.fillText(fit(`${setups} setup${setups === 1 ? '' : 's'}  ·  ${coins}`, tw), tx, cy + 30);
+        y += ROW;
+        return;
+      }
       ctx.fillStyle = col; ctx.beginPath(); ctx.arc(L + 30, cy, 30, 0, Math.PI * 2); ctx.fill();
       const lab = _dpostBase(t.symbol);
       let fs = 19; ctx.font = font(800, fs); while(fs > 11 && ctx.measureText(lab).width > 48){ fs--; ctx.font = font(800, fs); }
@@ -34473,20 +34620,22 @@ function drawDailyPost(centerOffset){
     if(groups.length > MAX){ const restN = groups.slice(MAX).reduce((a, g) => a + g.list.length, 0); ctx.fillStyle = C.muted; ctx.font = font(600, 22); ctx.fillText(`+ ${restN} more trade${restN === 1 ? '' : 's'}`, L + 84, y + 20); y += 40; }
   }
 
-  // Ang araw sa mga numero
+  // Ang araw (o linggo) sa mga numero. Sa linggo: ang pinakamaganda at
+  // pinakapangit na ARAW (kabuuang R), hindi setup.
   if(layout === 'numbers'){
-    const gR = groups.map(g => { const r = g.list.map(x => _tradeR(x)).filter(v => v !== null); return { g, R: r.length ? r.reduce((a, b) => a + b, 0) / r.length : null }; }).filter(x => x.R !== null);
+    const gR = groups.map(g => { const r = g.list.map(x => _tradeR(x)).filter(v => v !== null); return { g, R: r.length ? r.reduce((a, b) => a + b, 0) / (wk ? 1 : r.length) : null }; }).filter(x => x.R !== null);
+    const lab = g => wk ? new Date(_weekShare.y, _weekShare.m, g.d).toLocaleDateString('en-US', { weekday:'short' }) : _dpostBase(g.list[0].symbol);
     const best = gR.length ? gR.reduce((a, b) => b.R > a.R ? b : a) : null;
     const worst = gR.length ? gR.reduce((a, b) => b.R < a.R ? b : a) : null;
     const marked = trades.filter(t => /^(yes|no)$/i.test(String(t.rules_followed || '').trim()));
     const boxes = [
-      best && best.R > 0 ? ['Best', `${_dpostBase(best.g.list[0].symbol)}  ${sign(best.R)}${Math.abs(best.R).toFixed(2)}R`, C.win] : null,
-      worst && worst.R < 0 ? ['Worst', `${_dpostBase(worst.g.list[0].symbol)}  ${sign(worst.R)}${Math.abs(worst.R).toFixed(2)}R`, C.loss] : null,
+      best && best.R > 0 ? [wk ? 'Best day' : 'Best', `${lab(best.g)}  ${sign(best.R)}${Math.abs(best.R).toFixed(2)}R`, C.win] : null,
+      worst && worst.R < 0 ? [wk ? 'Worst day' : 'Worst', `${lab(worst.g)}  ${sign(worst.R)}${Math.abs(worst.R).toFixed(2)}R`, C.loss] : null,
       marked.length ? ['Rules followed', `${marked.filter(t => /^yes$/i.test(String(t.rules_followed).trim())).length}/${marked.length}`, C.ink] : null,
-      ['Setups', String(groups.length), C.ink]
+      wk ? ['Days traded', String(groups.length), C.ink] : ['Setups', String(groups.length), C.ink]
     ].filter(Boolean).slice(0, 3);
     if(boxes.length && y + 34 + 34 + 116 <= H - 84){
-      y += 34; section('THE DAY IN NUMBERS', y); y += 34;
+      y += 34; section(wk ? 'THE WEEK IN NUMBERS' : 'THE DAY IN NUMBERS', y); y += 34;
       const gap = 16, bw = (R - L - (boxes.length - 1) * gap) / boxes.length;
       boxes.forEach(([k, v, col], i) => {
         const x = L + i * (bw + gap);
@@ -34500,7 +34649,8 @@ function drawDailyPost(centerOffset){
   }
 
   // "Result only": igitna ang resulta at ang lesson sa natitirang puwang.
-  if(layout === 'result' && !off){
+  // Weekly: laging nakagitna (kaunti lang ang hilera kapag kaunti ang araw).
+  if((layout === 'result' || wk) && !off){
     const extra = Math.round((H - 110 - y) / 2) - 40;
     if(extra > 30) return drawDailyPost(extra);
   }
@@ -34509,5 +34659,5 @@ function drawDailyPost(centerOffset){
   ctx.fillStyle = C.accent; ctx.font = font(800, 26); ctx.fillText('TANAYDANA', L, H - 56);
   const bw2 = ctx.measureText('TANAYDANA').width;
   ctx.fillStyle = C.muted; ctx.font = font(500, 22); ctx.fillText('trading journal', L + bw2 + 12, H - 56);
-  ctx.textAlign = 'right'; ctx.fillText(day.toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' }), R, H - 56); ctx.textAlign = 'left';
+  ctx.textAlign = 'right'; ctx.fillText(footDate, R, H - 56); ctx.textAlign = 'left';
 }
