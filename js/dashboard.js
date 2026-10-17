@@ -17013,7 +17013,24 @@ let drawerBulkTargets = null;
    pagpapasya ng isang upuan, hindi isang setting. */
 let LAST_EASY_ADD_BROKER = 'upscale';
 
+/* AUTO-DETECT NG BROKER mula sa account: ang Upscale account ay Upscale, ang
+   The5ers ay The5ers — mula sa prop_firm sa My Accounts, o sa pangalan. Null
+   kapag hindi alam (gaya ng Easy Add na walang setup), para ang huling pinili
+   ang manatili. */
+function _brokerForAccount(name){
+  if(!name) return null;
+  const acc = (typeof TRADING_ACCOUNTS !== 'undefined' ? TRADING_ACCOUNTS : []).find(a => a.account_name === name);
+  const firm = String(acc && acc.prop_firm || '').toLowerCase();
+  const nm = String(name).toLowerCase();
+  if(/5ers|five\s*ers/.test(firm) || /5ers/.test(nm)) return 'the5ers';
+  if(/upscale/.test(firm) || (acc && acc.upscale_account_id) || /upscale/.test(nm)) return 'upscale';
+  return null;
+}
 function openEasyAddModal(){
+  const setupAcc = (pendingJournalPrefill && pendingJournalPrefill.account)
+    || (pendingJournalSetupId ? (SAVED_SETUPS.find(x => x.id === pendingJournalSetupId) || {}).account_name : null);
+  const detected = _brokerForAccount(setupAcc);
+  if(detected) LAST_EASY_ADD_BROKER = detected;
   document.getElementById('easyAddBroker').value = LAST_EASY_ADD_BROKER;
   document.getElementById('easyAddError').textContent = '';
   _renderEasyAddTarget();
@@ -17303,13 +17320,21 @@ function parseEasyAddText(){
   const raw = document.getElementById('easyAddInput').value;
   const errEl = document.getElementById('easyAddError');
   errEl.textContent = '';
-  const broker = document.getElementById('easyAddBroker').value;
+  let broker = document.getElementById('easyAddBroker').value;
 
   let parsed;
-  if(broker === 'upscale'){
-    parsed = parseUpscaleEasyAddText(raw);
-  }else if(broker === 'the5ers'){
-    parsed = parseThe5ersEasyAddText(raw);
+  if(broker === 'upscale' || broker === 'the5ers'){
+    parsed = broker === 'upscale' ? parseUpscaleEasyAddText(raw) : parseThe5ersEasyAddText(raw);
+    /* Hindi mabasa sa napiling format pero nababasa sa isa pa? Iyon ang tamang
+       format — lumilipat nang kusa, sa halip na mag-error. */
+    if(!Object.keys(parsed).length){
+      const other = broker === 'upscale' ? 'the5ers' : 'upscale';
+      const alt = other === 'upscale' ? parseUpscaleEasyAddText(raw) : parseThe5ersEasyAddText(raw);
+      if(Object.keys(alt).length){
+        parsed = alt; broker = other; LAST_EASY_ADD_BROKER = other;
+        document.getElementById('easyAddBroker').value = other;
+      }
+    }
   }else{
     // Ang Manual ay isang form na ngayon, hindi teksto — walang pagbabasa ng
     // label at walang hugis na masisira.
