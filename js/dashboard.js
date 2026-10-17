@@ -18536,6 +18536,8 @@ function openShareWeek(){
    R, %, $ o W–L, kabuuan, pangalan ng account), pero isang hilera ng mga araw
    ng linggong iyon, malalaki. */
 function _drawWeekShare(cv, modes, showTotals, showAcc){
+  // Mas maikli kaysa sa buwan: isang hilera lang ang mga araw.
+  cv.width = 1200; cv.height = 675;
   const ctx = cv.getContext('2d');
   const W = cv.width, H = cv.height;
   const C = { bg:'#12141C', surf:'#1B1F2B', ink:'#F1EEE6', muted:'#93989F', win:'#2ECC71', loss:'#FF5C5C', accent: cssVar('--accent') || '#F0B429' };
@@ -18615,6 +18617,7 @@ function drawCalendarShare(){
       document.getElementById('calShareTotals').checked, document.getElementById('calShareAccount').checked);
     return;
   }
+  if(cv.height !== 1080){ cv.width = 1200; cv.height = 1080; }
   if(_calShareKind === 'year'){
     _drawYearShare(cv, _calShareModes(),
       document.getElementById('calShareTotals').checked, document.getElementById('calShareAccount').checked);
