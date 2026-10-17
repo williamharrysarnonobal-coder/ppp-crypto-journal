@@ -9466,8 +9466,43 @@ function copyCellValue(btnEl){
 // 64937.100), and grabbing numbers positionally would happily read one of
 // those as a price. Each value is only accepted if it follows its own label
 // and looks like a price rather than a tick count.
+/* PANGALAWANG TEMPLATE: lahat ng label muna, saka lahat ng numero (ganito
+   kumokopya ang order ticket sa M1 laptop):
+     Entry price / Leverage / PROFIT LEVEL / Ticks / Price / STOP LEVEL / Ticks / Price
+     82154.02 / 10000.0 / 1697915 / 83851.93 / 7342335 / 81419.78
+   Ang PROFIT LEVEL at STOP LEVEL ay header lang, walang sariling numero; ang
+   iba ay ipinapares sa numero ayon sa pagkakasunod. Null kapag hindi ganito
+   ang hugis, para ang unang template ang gamitin. */
+function _parseTicketColumns(lines){
+  const isNum = l => /^[-+]?[\d,]*\.?\d+\D{0,2}$/.test(l.replace(/\s/g, ''));
+  const firstNum = lines.findIndex(isNum);
+  if(firstNum < 3) return null;
+  const labels = lines.slice(0, firstNum), values = lines.slice(firstNum);
+  if(!values.every(isNum) || labels.some(isNum)) return null;
+  const isHeader = l => /profit\s*level|take\s*profit|stop\s*level|stop\s*loss/i.test(l);
+  const fields = [];
+  let section = null;
+  labels.forEach(l => {
+    if(isHeader(l)){ section = /profit/i.test(l) ? 'tp' : 'sl'; return; }
+    fields.push({ label: l, section });
+  });
+  if(fields.length !== values.length) return null;
+  const num = s => { const n = parseFloat(String(s).replace(/,/g, '').replace(/[^\d.\-]/g, '')); return Number.isFinite(n) && n > 0 ? n : null; };
+  const out = { entry: null, tp: null, sl: null };
+  fields.forEach((f, i) => {
+    if(/entry/i.test(f.label)) out.entry = num(values[i]);
+    else if(/^price\b/i.test(f.label) && f.section) out[f.section] = num(values[i]);
+  });
+  return out.entry != null || out.tp != null || out.sl != null ? out : null;
+}
+
 function parsePositionTicket(raw){
   const lines = String(raw || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  const cols = _parseTicketColumns(lines);
+  if(cols){
+    if(cols.entry != null && cols.tp != null) cols.direction = cols.tp > cols.entry ? 'Long' : 'Short';
+    return cols;
+  }
 
   // Tick counts are big integers with no decimal part; prices here carry
   // decimals. Anything without a decimal point is rejected outright.
