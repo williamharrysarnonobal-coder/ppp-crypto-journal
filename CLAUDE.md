@@ -160,6 +160,10 @@ find/replace, try the LF form, then the CRLF form.
   saved to `crypto_last_sent_v2.json`, and no alerts 12-7 AM UAE (a setup
   that formed overnight is not sent at 7). The old "ALTS Bot" task stays
   disabled.
+- If the log shows `TELEGRAM ERROR ... group chat was upgraded to a supergroup
+  chat`, Telegram gave the group a new id (`migrate_to_chat_id`): put it in
+  `CHAT_ID` of that bot's v1 and v2 files and restart the task. Alerts still
+  reach the app meanwhile; only Telegram fails. (BTC group migrated 2026-10-18.)
 - Both v2 tasks run through **`pyw.exe`** (no console window): with `py.exe`
   the bot dies when its window is closed (exit 0xC000013A).
 - v2 Telegram carries **setup alerts only**: `SEND_TELEGRAM_HEARTBEAT` and
