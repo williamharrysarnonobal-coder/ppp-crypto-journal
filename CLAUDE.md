@@ -164,6 +164,10 @@ find/replace, try the LF form, then the CRLF form.
   chat`, Telegram gave the group a new id (`migrate_to_chat_id`): put it in
   `CHAT_ID` of that bot's v1 and v2 files and restart the task. Alerts still
   reach the app meanwhile; only Telegram fails. (BTC group migrated 2026-10-18.)
+- Each v2 Telegram alert carries a per-coin count under its title ("Alert #3
+  today for LDO (15M HL ×2 · 30M Long Inv ×1)"), across all setups, reset daily
+  at 7 AM UAE; saved in `btc_alert_counts_v2.json` / `crypto_alert_counts_v2.json`
+  (`count_alert()` in each bot).
 - Both v2 tasks run through **`pyw.exe`** (no console window): with `py.exe`
   the bot dies when its window is closed (exit 0xC000013A).
 - v2 Telegram carries **setup alerts only**: `SEND_TELEGRAM_HEARTBEAT` and
@@ -205,6 +209,12 @@ find/replace, try the LF form, then the CRLF form.
   Copy image / Share… / Download PNG; see `drawMarketHoursShare`,
   `drawEconShare`) instead of inventing new ones.
 - Times shown to the owner are UAE time (Asia/Dubai).
+- Upscale auto-journal needs the setup's `upscale_order_id`. Orders placed from
+  the Calculator are remembered per browser (localStorage, 24h, keyed
+  account|entry|SL) and linked to the setup whichever comes first: at Trade This
+  Setup, right after Place Order (`_linkSetupToOrder`), or at Journal time
+  (`_linkPlacedOrderToSetup`). Orders placed in the Upscale terminal itself, or
+  from another device, can't be linked, so those still need a paste.
 - Calendar shares: a day popup has **Share day** + **Daily post**; a week (Σ)
   popup has **Share week** (`calShareModal` with `_calShareKind = 'week'`) +
   **Weekly post** (the Daily post modal with `_dpostScope = 'week'`: one row

@@ -25681,6 +25681,9 @@ async function confirmUpscaleOrders(){
          (Order Placed + Cancel Order). */
       _rememberPlacedOrder(r.acc.id, entry, sl, r.result.orderId,
         { symbol, tp: Number.isFinite(tp) ? tp : null, qty: r.qty, lev: r.lev });
+      // Nauna na ang Trade This Setup? I-link na ang setup na iyon ngayon.
+      const waiting = _unlinkedSetupsFor(r.acc.id, entry, sl);
+      if(waiting.length === 1) await _linkSetupToOrder(waiting[0], r.result.orderId, 'Order Placed');
     }catch(e){
       r.state = 'error'; r.note = e.message;
     }
@@ -25730,6 +25733,39 @@ function _placedRecord(accId, entry, sl){
 function _takePlacedOrder(accId, entry, sl){
   const r = _placedRecord(accId, entry, sl);
   return r ? r.orderId : null;
+}
+/* ANG ORDER AT ANG SETUP, KAHIT ALIN ANG UNA.
+   Dati, nali-link lang ang order kapag nauna ang Place Order bago ang Trade This
+   Setup; kapag nauna ang setup, walang order id ito, kaya sa Journal ay paste
+   pa rin — "minsan automatic, minsan hindi". Ngayon: pagka-Place Order, hinahanap
+   ang setup na naghihintay sa parehong account at parehong Entry/SL at
+   nili-link; at sa Journal, sinusubukan ulit bago humingi ng paste. */
+async function _linkSetupToOrder(s, orderId, status){
+  if(!s || !orderId || s.upscale_order_id) return false;
+  const body = { upscale_order_id: orderId };
+  if(status) body.status = status;
+  try{
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/position_setups?id=eq.${s.id}`, {
+      method: 'PATCH',
+      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}`,
+                 "Content-Type": "application/json", "Prefer": "return=minimal" },
+      body: JSON.stringify(body)
+    });
+    if(!res.ok) throw new Error(await res.text());
+    Object.assign(s, body);
+    return true;
+  }catch(e){ console.warn('Could not link the setup to its Upscale order:', e.message); return false; }
+}
+function _unlinkedSetupsFor(accId, entry, sl){
+  return (typeof SAVED_SETUPS !== 'undefined' ? SAVED_SETUPS : []).filter(s =>
+    !s.upscale_order_id && !s.is_paper && String(s.account_id) === String(accId)
+    && (s.status || 'Pending') === 'Pending'
+    && Number(s.entry_price) === Number(entry) && Number(s.sl_price) === Number(sl));
+}
+async function _linkPlacedOrderToSetup(s){
+  if(!s || s.upscale_order_id || s.is_paper) return false;
+  const hit = _placedRecord(s.account_id, s.entry_price, s.sl_price);
+  return hit ? _linkSetupToOrder(s, hit.orderId) : false;
 }
 
 /* ANG KALAGAYAN MULA SA UPSCALE.
@@ -28403,6 +28439,8 @@ async function saveTradeNote(){
 async function journalFromSetup(id){
   const s = SAVED_SETUPS.find(x => x.id === id);
   if(!s) return;
+  // Walang order id pero na-Place Order sa device na ito? I-link muna.
+  if(!s.upscale_order_id) await _linkPlacedOrderToSetup(s);
   /* Ang setup na naka-link sa Upscale: ang mga numero ay galing sa Upscale,
      walang paste. Kung hindi pa naitatabi ng app ang pagsara (sarado ang app
      noon, o ibang device), kinukuha ito ngayon din. Ang "journaled" na tanda
