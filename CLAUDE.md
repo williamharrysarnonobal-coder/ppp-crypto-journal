@@ -164,8 +164,8 @@ find/replace, try the LF form, then the CRLF form.
   chat`, Telegram gave the group a new id (`migrate_to_chat_id`): put it in
   `CHAT_ID` of that bot's v1 and v2 files and restart the task. Alerts still
   reach the app meanwhile; only Telegram fails. (BTC group migrated 2026-10-18.)
-- Each v2 Telegram alert carries a per-coin count under its title ("Alert #3
-  today for LDO (15M HL ×2 · 30M Long Inv ×1)"), across all setups, reset daily
+- Each v2 Telegram alert carries a per-coin-and-setup count under its title
+  ("15M HL - Alert #2 today" = that setup came back for that coin), reset daily
   at 7 AM UAE; saved in `btc_alert_counts_v2.json` / `crypto_alert_counts_v2.json`
   (`count_alert()` in each bot).
 - Both v2 tasks run through **`pyw.exe`** (no console window): with `py.exe`
