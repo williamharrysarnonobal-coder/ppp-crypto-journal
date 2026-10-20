@@ -168,6 +168,10 @@ find/replace, try the LF form, then the CRLF form.
   ("15M HL - Alert #2 today" = that setup came back for that coin), reset daily
   at 7 AM UAE; saved in `btc_alert_counts_v2.json` / `crypto_alert_counts_v2.json`
   (`count_alert()` in each bot).
+- The office laptop drops into Modern Standby often (Kernel-Power 506/507 in
+  the System log); right after waking, Wi-Fi isn't up yet and a Telegram send
+  fails with an SSL EOF. v2 `send()` retries after 5s, 15s, 30s and 60s (not on
+  a 400) and masks the bot token in the log.
 - Both v2 tasks run through **`pyw.exe`** (no console window): with `py.exe`
   the bot dies when its window is closed (exit 0xC000013A).
 - v2 Telegram carries **setup alerts only**: `SEND_TELEGRAM_HEARTBEAT` and
