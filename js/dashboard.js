@@ -17264,6 +17264,9 @@ function parseThe5ersEasyAddText(raw){
 
   const sideIdx = cells.findIndex(c => /^(buy|sell|long|short)$/i.test(c));
   if(sideIdx !== -1) parsed.trade_type = /^(buy|long)$/i.test(cells[sideIdx]) ? 'Long' : 'Short';
+  // Ang symbol bago ang Side ("BTCUSD", "XAUUSD") → "BTC/USD", gaya ng sa journal.
+  const symCell = sideIdx > 0 ? cells.slice(0, sideIdx).reverse().find(c => /^[A-Z0-9]{2,10}(USDT|USD)$/i.test(c)) : null;
+  if(symCell){ const m = symCell.toUpperCase().match(/^([A-Z0-9]+?)(USDT|USD)$/); parsed.symbol = `${m[1]}/${m[2]}`; }
 
   const DT = /^(\d{1,2}\.\d{1,2}\.\d{2,4})\s+(\d{1,2}:\d{2}(?::\d{2})?)$/;
   const dateIdx = [];

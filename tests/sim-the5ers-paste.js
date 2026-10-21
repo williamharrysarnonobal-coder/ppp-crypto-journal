@@ -94,6 +94,27 @@ ok('Loss', gold.win_loss, 'Loss');
 ok('risk |entry−SL| × qty ay nasa oz na', Math.round(Math.abs(4155.18 - 4148) * gold.position_size), Math.round(7.18 * 42));
 ok('BTC hindi ginalaw (lot = 1)', parse(noHeaders).position_size, 0.66);
 
+console.log('\nANG MGA IDINIKIT NIYA (may symbol sa unahan) — UAE time ang oras ng The5ers');
+const btc = parse('BTCUSD\nSell\n16.10.26 20:41\n16.10.26 21:08\n$81,471.56\n$81,124.26\n2.36\n-$115.12\n$0\n+$704.51\nWin');
+ok('BTC Short', btc.trade_type, 'Short');
+ok('symbol BTC/USD', btc.symbol, 'BTC/USD');
+ok('open 16 Oct 20:41', btc.open_date, '2026-10-16T20:41:00');
+ok('close 16 Oct 21:08', btc.close_date, '2026-10-16T21:08:00');
+ok('entry / exit', [btc.entry_price, btc.close_price], [81471.56, 81124.26]);
+ok('qty 2.36 (BTC lot = 1)', btc.position_size, 2.36);
+ok('fee 115.12', btc.fee, 115.12);
+ok('net = +704.51 gaya ng The5ers', net(btc), 704.51);
+ok('Win', btc.win_loss, 'Win');
+const xau = parse('XAUUSD\nSell\n20.10.26 22:37\n20.10.26 23:00\n$4,122.36\n$4,126.33\n1.98\n-$16.33\n$0\n-$802.39\nLoss');
+ok('XAU Short', xau.trade_type, 'Short');
+ok('symbol XAU/USD', xau.symbol, 'XAU/USD');
+ok('walang symbol kapag wala', parse(noHeaders).symbol, undefined);
+ok('open / close', [xau.open_date, xau.close_date], ['2026-10-20T22:37:00', '2026-10-20T23:00:00']);
+ok('qty = 198 oz (1.98 lots)', xau.position_size, 198);
+ok('fee 16.33', xau.fee, 16.33);
+ok('net = -802.39 gaya ng The5ers', net(xau), -802.39);
+ok('Loss', xau.win_loss, 'Loss');
+
 console.log('\nLEVERAGE MULA SA SETUP');
 ok('kasama ang leverage sa prefill ng Journal', /leverage: s\.leverage != null/.test(js), true);
 
