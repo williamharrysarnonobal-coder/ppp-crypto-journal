@@ -63,6 +63,10 @@ find/replace, try the LF form, then the CRLF form.
 - Only the Supabase **anon/publishable** key may appear in browser code
   (`js/supabase.js`). The `sb_secret_`/service_role key lives only in
   Cloudflare Worker secrets and the local bot scripts.
+- The v2 bots (`btc_live_bot_v2.py`, `crypto_live_bot_v2.py`) ARE committed (as a
+  backup); their secrets live in `bot_secrets.py` next to them (gitignored,
+  never commit or print it). Keep it that way: never paste a token or key back
+  into a committed script. `.assetsignore` keeps every `*.py` off the site.
 - `btc_live_bot.py`, `crypto_live_bot.py`, `economic_calendar_bot.py`,
   `screener_bot.py` contain Telegram + Supabase secrets: they are
   `.gitignore`d, must never be committed, and their secrets must never be
@@ -129,7 +133,7 @@ find/replace, try the LF form, then the CRLF form.
   (`crypto_live_bot.py`) is deliberately disabled, and BTC was removed from
   its coin list so re-enabling it can't double BTC alerts; only the BTC bot
   posts BTC alerts (symbol `BTC`). Code edits need a bot restart
-  (Stop/Start-ScheduledTask 'BTC Bot'). The owner's default for bots is
+  (Stop/Start-ScheduledTask 'BTC Bot v2' / 'ALTS Bot v2'). The owner's default for bots is
   "check, don't change" unless they ask.
 - **BTC bot watchdog**: the bot writes `trading_signals.heartbeat_at` every
   cycle. The Worker cron pushes "BTC Bot is offline" to admins' phones at 2h
@@ -222,7 +226,8 @@ find/replace, try the LF form, then the CRLF form.
 - Calendar shares: a day popup has **Share day** + **Daily post**; a week (Σ)
   popup has **Share week** (`calShareModal` with `_calShareKind = 'week'`) +
   **Weekly post** (the Daily post modal with `_dpostScope = 'week'`: one row
-  per traded day, lesson saved per week in localStorage). Weeks start Sunday,
+  per traded day, lesson saved per week in localStorage). DAY N / WEEK N count
+  every calendar day/week since the first trade (owner's choice). Weeks start Sunday,
   like the Calendar.
 - Every share defaults to **$ as the main number** (Show $ amounts checked;
   Main number = $ amount) and always shows **Rules followed** (_rulesFollowedTxt,

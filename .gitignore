@@ -1,12 +1,15 @@
 # Local bot scripts — contain hardcoded Telegram + Supabase secrets,
 # never push these to GitHub.
 btc_live_bot.py
-btc_live_bot_v2.py
 crypto_live_bot.py
-crypto_live_bot_v2.py
 economic_calendar_bot.py
 screener_bot.py
 *.env
+# Secrets for the v2 bots (which ARE committed): never commit this one.
+bot_secrets.py
+# The bots' own state/count files.
+btc_*_v2.json
+crypto_*_v2.json
 
 # The bots write their own console output here when run with a redirect
 # (e.g. `python btc_live_bot.py > bot.log`) — local runtime noise, not code.

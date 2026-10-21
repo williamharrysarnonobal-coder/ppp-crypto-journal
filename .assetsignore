@@ -10,3 +10,5 @@ CLAUDE.md
 supabase_*.sql
 # Test harness (probes + sims), local tooling only.
 tests
+# Bot scripts (Python): run on the office laptop, not part of the site.
+*.py

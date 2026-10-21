@@ -34543,11 +34543,16 @@ function drawDailyPost(centerOffset){
   const net = trades.reduce((a, t) => a + netPnl(t), 0);
   const good = w > l || (w === l && (rs.length ? Rsum >= 0 : net >= 0));
   const tone = good ? C.win : C.loss;
-  // Ika-ilang araw (o linggo, Linggo ang simula gaya ng Calendar) na may trade.
-  const _wkKey = d => { const s = new Date(d.getFullYear(), d.getMonth(), d.getDate() - d.getDay()); return _dpIso(s); };
+  // Ika-ilang araw (o linggo) MULA SA PINAKAUNANG TRADE — may trade man o wala
+  // ang mga araw sa pagitan (pinili niya). Linggo ang simula ng linggo, gaya ng Calendar.
+  const _dayOnly = d => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const _firstT = (ALL_TRADES || []).reduce((m, t) => { const d = t.close_date; return d && (!m || d < m) ? d : m; }, null);
+  const _start = _firstT ? _dayOnly(_firstT) : _dayOnly(day);
+  const _days = (a, b) => Math.round((_dayOnly(b) - _dayOnly(a)) / 86400000);
+  const _sunday = d => new Date(d.getFullYear(), d.getMonth(), d.getDate() - d.getDay());
   const dayNo = wk
-    ? new Set((ALL_TRADES || []).filter(t => t.close_date && t.close_date <= lastDay).map(t => _wkKey(t.close_date))).size
-    : new Set((ALL_TRADES || []).filter(t => t.close_date && t.close_date <= new Date(_dayShare.y, _dayShare.m, _dayShare.d, 23, 59, 59)).map(t => _dpIso(t.close_date))).size;
+    ? Math.max(1, Math.floor(_days(_sunday(_start), _sunday(day)) / 7) + 1)
+    : Math.max(1, _days(_start, day) + 1);
   // Weekly: isang "grupo" kada araw na may trade.
   const groups = wk
     ? _weekShare.days.map(d => ({ d, list: trades.filter(t => t.close_date && t.close_date.getDate() === d) })).filter(g => g.list.length)
