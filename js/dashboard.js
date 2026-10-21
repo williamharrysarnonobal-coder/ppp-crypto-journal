@@ -25971,6 +25971,9 @@ function _upParsedFor(orderId){
   };
   const parsed = { ...base };
   Object.entries(up).forEach(([k, v]) => { if(v !== undefined && v !== null) parsed[k] = v; });
+  // Ang lumang naitabi ay may Open na kapareho ng Close (oras ng pagsara ang
+  // nakuha noon). Hindi iyon ang pagbukas — blangko na lang.
+  if(parsed.open_date && parsed.open_date === parsed.close_date) delete parsed.open_date;
   return { parsed, setup };
 }
 /* Kunin sa Upscale ngayon din ang sarado nang order — para hindi umasa sa
@@ -27569,6 +27572,17 @@ function _cancelJournalQueue(){
 function _openBulkJournalDrawer(){
   if(!journalBulkPastes.length) return;
   drawerBulkTargets = journalBulkPastes.slice();
+  /* Iisang trade sa ilang account: kapag walang oras ng pagbukas ang isa (ang
+     Upscale ay minsang hindi nagbibigay), hinihiram ito sa ibang account sa
+     run na ito na sumara sa halos parehong oras (sa loob ng 15 minuto). */
+  drawerBulkTargets.forEach(t => {
+    if(t.parsed.open_date || !t.parsed.close_date) return;
+    const c = new Date(t.parsed.close_date).getTime();
+    const donor = drawerBulkTargets.find(o => o !== t && o.parsed.open_date && o.parsed.close_date
+      && Math.abs(new Date(o.parsed.close_date).getTime() - c) <= 15 * 60000
+      && new Date(o.parsed.open_date).getTime() <= c);
+    if(donor) t.parsed = { ...t.parsed, open_date: donor.parsed.open_date };
+  });
 
   const prefill = { ...drawerBulkTargets[0].parsed };
   const setups = drawerBulkTargets

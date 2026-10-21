@@ -470,11 +470,20 @@ async function handleUpscale(request, env, action) {
         }
         const posFee = pos ? fromFp9(pos.fee) : null;
         const posPnl = pos ? fromFp9(pos.pnl) : null;
+        /* Ang oras ng pagbukas: ang position, o ang fill ng entry order. HINDI
+           ang updatedAt ng order — nag-a-update iyon pagsara ng posisyon, kaya
+           dati ay pareho ang Open at Close (11:30 · 11:30). Walang mahanap?
+           null, at blangko sa journal, kaysa maling oras. */
+        const at = (o, keys) => { for (const k of keys) { const t = o && o[k] != null && o[k] !== '' ? tsOf({ executedAt: o[k] }) : null; if (t) return t; } return null; };
+        const closedAt = at(pos, ['closedAt', 'closeTime', 'closedTime']) || (closer ? tsOf(closer) : null);
+        let openedAt = at(pos, ['openedAt', 'openTime', 'openedTime', 'createdAt', 'created'])
+          || at(h, ['executedAt', 'filledAt', 'executionTime', 'fillTime']);
+        if (openedAt && closedAt && openedAt === closedAt) openedAt = null;
         states[id] = { state: 'Closed', how, pnl: posPnl ?? pnl, entry,
           fee: posFee != null && isFinite(posFee) ? Math.abs(posFee) : null,
           funding: pos ? fromFp9(pos.funding) : null,
           exit: closer ? entryOf(closer) : null,
-          openedAt: (pos && tsOf({ executedAt: pos.openedAt })) || tsOf(h), closedAt: (pos && tsOf({ executedAt: pos.closedAt })) || (closer ? tsOf(closer) : null) };
+          openedAt, closedAt };
       }
       return json({ states });
     }
