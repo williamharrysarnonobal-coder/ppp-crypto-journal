@@ -137,7 +137,8 @@ find/replace, try the LF form, then the CRLF form.
   "check, don't change" unless they ask.
 - **BTC bot watchdog**: the bot writes `trading_signals.heartbeat_at` every
   cycle. The Worker cron pushes "BTC Bot is offline" to admins' phones at 2h
-  and 8h without a heartbeat (not between 12AM and 7AM UAE; sent at 7:00
+  and 8h without a heartbeat (each a 5-minute window, same tag, so one missed
+  cron minute can't lose it; not between 12AM and 7AM UAE; sent at 7:00
   instead).
 - **`btc_live_bot_v2.py`** (2026-10-16, gitignored, has secrets) replaces v1
   for BTC alerts. Six setups: 5M HL/LH (v1 rules plus the 1-minute MACD
@@ -176,6 +177,9 @@ find/replace, try the LF form, then the CRLF form.
   the System log); right after waking, Wi-Fi isn't up yet and a Telegram send
   fails with an SSL EOF. v2 `send()` retries after 5s, 15s, 30s and 60s (not on
   a 400) and masks the bot token in the log.
+- Both v2 tasks also have a **every-10-minutes trigger** with MultipleInstances
+  = IgnoreNew: if the bot was killed (e.g. a cancelled Restart from the Start
+  menu closed it on 2026-10-22), the task starts it again within 10 minutes.
 - Both v2 tasks run through **`pyw.exe`** (no console window): with `py.exe`
   the bot dies when its window is closed (exit 0xC000013A).
 - v2 Telegram carries **setup alerts only**: `SEND_TELEGRAM_HEARTBEAT` and

@@ -866,10 +866,15 @@ async function runPushCron(env, scheduledTime) {
     if (hb) {
       const age = Math.floor((minute - Date.parse(hb)) / 60000);
       const hm = _pzLocalClock(minute, 'Asia/Dubai').hm, quiet = hm < '07:00';
-      const due = (!quiet && (age === 120 || age === 480)) || (hm === '07:00' && age >= 120);
+      /* Isang 5-minutong bintana, hindi isang eksaktong minuto: kapag nalaktawan
+         o nahuli ang cron sa minutong iyon (nangyari: 9 AM huminto ang bot, walang
+         dumating sa 11 AM), wala nang alert. Ang mga sumunod sa bintana ay may
+         parehong tag, kaya pinapalitan lang nang tahimik ang nauna sa telepono. */
+      const inWin = (a, at) => a >= at && a < at + 5;
+      const due = (!quiet && (inWin(age, 120) || inWin(age, 480))) || (hm >= '07:00' && hm < '07:05' && age >= 120);
       if (due) {
         const h = Math.floor(age / 60);
-        botMsgs = [{ title: 'BTC Bot is offline', body: `No update from the bot for ${h} hour${h === 1 ? '' : 's'}. Check the office laptop: plugged in, awake, and the BTC Bot task running.`, tag: 'bot-offline', url: 'dashboard.html#view=alerts' }];
+        botMsgs = [{ title: 'BTC Bot is offline', body: `No update from the bot for ${h} hour${h === 1 ? '' : 's'}. Check the office laptop: plugged in, awake, and the BTC Bot v2 task running.`, tag: `bot-offline-${age >= 480 ? 8 : 2}`, url: 'dashboard.html#view=alerts' }];
         const a = await sb('user_access?role=eq.admin&select=user_id');
         if (a.ok) (await a.json()).forEach(x => admins.add(x.user_id));
       }
