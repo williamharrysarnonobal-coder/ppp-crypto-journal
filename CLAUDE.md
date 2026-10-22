@@ -217,6 +217,10 @@ find/replace, try the LF form, then the CRLF form.
   Copy image / Share… / Download PNG; see `drawMarketHoursShare`,
   `drawEconShare`) instead of inventing new ones.
 - Times shown to the owner are UAE time (Asia/Dubai).
+- Notification on/off is **per device** (owner's choice): the 🔔 ⚙ categories
+  and the Phone notifications list are one switch (`setNfCategory` writes both the
+  in-app mute and that device's `push_subscriptions.prefs`). They are NOT in
+  `UI_PREF_LS_KEYS`, so they never sync across devices. Off wins if they disagree.
 - Upscale auto-journal needs the setup's `upscale_order_id`. Orders placed from
   the Calculator are remembered per browser (localStorage, 24h, keyed
   account|entry|SL) and linked to the setup whichever comes first: at Trade This

@@ -428,11 +428,12 @@ const UI_PREF_LS_KEYS = {
   // Kung Rule o Note ang bawat Trade Tag — siya ang nagpapasya, sa Options.
   tag_kinds: 'ledger-tag-kinds',
   // Aling market sa Market Hours ang may 🔔 — sumusunod sa account.
-  market_hours_notify: 'tanaydana-mh-notify',
-  // Notification 15 minuto bago ang High impact na balita.
-  econ_notify: 'tanaydana-econ-notify',
-  // Aling klase ng notification ang naka-off (⚙ sa 🔔).
-  notif_muted: 'tanaydana-nf-muted'
+  market_hours_notify: 'tanaydana-mh-notify'
+  /* Ang on/off ng bawat klase ng notification (⚙ sa 🔔, kasama ang High impact
+     news) ay PER DEVICE na, hindi sinasabay sa account (pinili niya): naka-off
+     ang Trade Alerts sa telepono pero naka-on sa laptop, halimbawa. Dati ay
+     sinasabay ito, kaya ang device na naka-on ay nagbabalik ng ON sa iba.
+     Ang push sa telepono (push_subscriptions.prefs) ay per device na noon pa. */
 };
 
 let _uiPrefsSyncTimer = null;
@@ -32694,15 +32695,33 @@ async function renderPushSettings(){
     <div class="push-row"><span class="push-state ${sub ? 'on' : ''}">${sub ? '● On' : '○ Off'}</span><span class="push-msg">${escapeHtml(status)}</span>
       <button class="${sub ? 'drawer-secondary-btn' : 'ai-btn'}" onclick="togglePush()">${sub ? 'Turn off on this device' : 'Turn on for this device'}</button></div>
     <div class="rm-list">
-      <label><input type="checkbox" ${t.market ? 'checked' : ''} onchange="setPushType('market', this.checked)"> Market open and close <span>the markets with 🔔 in Market Hours: 30 min before it opens and when it closes</span></label>
-      <label><input type="checkbox" ${t.news ? 'checked' : ''} onchange="setPushType('news', this.checked)"> High impact news <span>15 min before</span></label>
-      <label><input type="checkbox" ${t.alerts ? 'checked' : ''} onchange="setPushType('alerts', this.checked)"> Trade Alerts <span>each new signal from the BTC bot; several at once come as one</span></label>
-      <label><input type="checkbox" ${t.reminders ? 'checked' : ''} onchange="setPushType('reminders', this.checked)"> Daily Plan and evening review <span>at your morning and evening times above, only if not done yet</span></label>
+      <label><input type="checkbox" ${t.market ? 'checked' : ''} onchange="setNfCategory('market', this.checked)"> Market open and close <span>the markets with 🔔 in Market Hours: 30 min before it opens and when it closes</span></label>
+      <label><input type="checkbox" ${t.news ? 'checked' : ''} onchange="setNfCategory('news', this.checked)"> High impact news <span>15 min before</span></label>
+      <label><input type="checkbox" ${t.alerts ? 'checked' : ''} onchange="setNfCategory('alerts', this.checked)"> Trade Alerts <span>each new signal from the BTC bot; several at once come as one</span></label>
+      <label><input type="checkbox" ${t.reminders ? 'checked' : ''} onchange="setNfCategory('reminders', this.checked)"> Daily Plan and evening review <span>at your morning and evening times above, only if not done yet</span></label>
     </div>
     <div class="rm-actions">${sub ? '<button class="drawer-secondary-btn" id="pushTestBtn" onclick="sendPushTest()">Send a test to my phone</button>' : ''}
       ${_isIOS() && !_isStandalone() ? '<button class="drawer-secondary-btn" onclick="showPushIosHelp()">How to add to Home Screen</button>' : ''}</div>`;
 }
-// Ang mga dating setting ay nagpapaalam din sa server.
+/* ISANG SWITCH KADA KLASE, KADA DEVICE. Ang ⚙ sa 🔔 at ang listahan sa Phone
+   notifications ay iisang setting na (setNfCategory ang sumusulat sa dalawa).
+   Ang luma na hindi magkatugma (hal. off sa push pero on sa 🔔): off ang
+   mananaig, kaya ang pinatay mo ay mananatiling patay. */
+(() => {
+  try{
+    const t = _pushTypes();
+    let changed = false;
+    ['market', 'news', 'alerts', 'reminders'].forEach(k => {
+      const muted = _nfIsMuted(k);
+      if(t[k] === false && !muted){
+        if(k === 'news') localStorage.setItem(ECON_NOTIFY_KEY, '0');
+        else { const s = _nfMutedSet(); s.add(k); localStorage.setItem(NF_MUTE_KEY, JSON.stringify([...s])); }
+      }else if(muted && t[k] !== false){ t[k] = false; localStorage.setItem(PUSH_TYPES_KEY, JSON.stringify(t)); changed = true; }
+    });
+    // Ang push row ng device na ito ay sumusunod (kapag naka-login na).
+    if(changed) setTimeout(() => syncPushPrefs(), 5000);
+  }catch(e){}
+})();// Ang mga dating setting ay nagpapaalam din sa server.
 (() => {
   const wrap = name => { const f = window[name]; if(typeof f !== 'function') return; window[name] = function(){ const r = f.apply(this, arguments); try{ syncPushPrefs(); }catch(e){} return r; }; };
   wrap('toggleMarketNotify'); wrap('saveReminderSettings');
