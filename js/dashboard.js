@@ -18451,6 +18451,9 @@ function _rulesFollowedTxt(trades){
   if(!marked.length) return null;
   return `${marked.filter(t => /^yes$/i.test(String(t.rules_followed).trim())).length} of ${marked.length}`;
 }
+/* "2W 1L 1BE": ang BE ay ipinapakita rin (hindi panalo, hindi talo), para ang
+   araw na puro BE ay hindi magmukhang "0W 0L" na parang walang nangyari. */
+function _wlTxt(w, l, be){ return `${w}W ${l}L${be > 0 ? ` ${be}BE` : ''}`; }
 /* Isang bucket (araw o buwan) ng mga trade → mga bilang na kailangan ng larawan. */
 function _shareBucket(trades){
   const s = { net: 0, R: 0, rN: 0, pct: 0, pN: 0, w: 0, l: 0, n: 0 };
@@ -18473,10 +18476,10 @@ function _drawYearShare(cv, modes, showTotals, showAcc){
   const font = (w, s) => `${w} ${s}px "Public Sans", system-ui, sans-serif`;
   const rr = (x, y, w, h, r) => { ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x, y, w, h, r) : ctx.rect(x, y, w, h); };
   const sign = v => v >= -0.005 ? '+' : '−';  // −0.0 ay "+0.0"
-  const valOf = (s, md) => md === 'usd' ? `${sign(s.net)}$${Math.abs(s.net).toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+  const valOf = (s, md) => md === 'usd' ? `${sign(s.net)}${Math.abs(s.net).toLocaleString(undefined, { maximumFractionDigits: 0 })}`
     : md === 'r' ? (s.rN ? `${sign(s.R)}${Math.abs(s.R).toFixed(1)}R` : null)
     : md === 'pct' ? (s.pN ? `${sign(s.pct)}${Math.abs(s.pct).toFixed(2)}%` : null)
-    : `${s.w}W ${s.l}L`;
+    : _wlTxt(s.w, s.l, s.n - s.w - s.l);
   const mode = modes[0] || 'wl';
   const y = YEAR_OVERVIEW;
   const pool = _yearOverviewPool().filter(t => t.close_date.getFullYear() === y);
@@ -18517,13 +18520,14 @@ function _drawYearShare(cv, modes, showTotals, showAcc){
   months.forEach((s, m) => {
     const x = L + (m % cols) * (cw + gap), yy = gy + Math.floor(m / cols) * (ch + gap);
     const up = s.n && (mode === 'wl' ? s.w >= s.l : s.net >= 0);
-    ctx.fillStyle = !s.n ? C.surf : up ? 'rgba(46,204,113,.18)' : 'rgba(255,92,92,.18)';
+    const beOnly = s.n && !s.w && !s.l;   // puro BE: kahel
+    ctx.fillStyle = !s.n ? C.surf : beOnly ? 'rgba(255,165,59,.16)' : up ? 'rgba(46,204,113,.18)' : 'rgba(255,92,92,.18)';
     rr(x, yy, cw, ch, 14); ctx.fill();
-    if(s.n){ ctx.strokeStyle = up ? 'rgba(46,204,113,.55)' : 'rgba(255,92,92,.55)'; ctx.lineWidth = 2; rr(x, yy, cw, ch, 14); ctx.stroke(); }
+    if(s.n){ ctx.strokeStyle = beOnly ? 'rgba(255,165,59,.55)' : up ? 'rgba(46,204,113,.55)' : 'rgba(255,92,92,.55)'; ctx.lineWidth = 2; rr(x, yy, cw, ch, 14); ctx.stroke(); }
     ctx.fillStyle = s.n ? C.ink : C.muted; ctx.font = font(700, 22); ctx.fillText(MN[m], x + 18, yy + 36);
     if(s.n){
-      ctx.fillStyle = up ? C.win : C.loss; ctx.font = font(800, 34);
-      ctx.fillText(valOf(s, mode) || `${s.w}W ${s.l}L`, x + 18, yy + ch - 50);
+      ctx.fillStyle = beOnly ? '#FFA53B' : up ? C.win : C.loss; ctx.font = font(800, 34);
+      ctx.fillText(valOf(s, mode) || _wlTxt(s.w, s.l, s.n - s.w - s.l), x + 18, yy + ch - 50);
       const extra = modes.slice(1).map(md => valOf(s, md)).filter(Boolean);
       ctx.fillStyle = C.muted; ctx.font = font(600, 17);
       let small = extra.length ? extra.join('  ·  ') : `${s.n} trades`;
@@ -18559,10 +18563,10 @@ function _drawWeekShare(cv, modes, showTotals, showAcc){
   const font = (w, s) => `${w} ${s}px "Public Sans", system-ui, sans-serif`;
   const rr = (x, y, w, h, r) => { ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x, y, w, h, r) : ctx.rect(x, y, w, h); };
   const sign = v => v >= -0.005 ? '+' : '−';
-  const valOf = (s, md) => md === 'usd' ? `${sign(s.net)}$${Math.abs(s.net).toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+  const valOf = (s, md) => md === 'usd' ? `${sign(s.net)}${Math.abs(s.net).toLocaleString(undefined, { maximumFractionDigits: 0 })}`
     : md === 'r' ? (s.rN ? `${sign(s.R)}${Math.abs(s.R).toFixed(1)}R` : null)
     : md === 'pct' ? (s.pN ? `${sign(s.pct)}${Math.abs(s.pct).toFixed(2)}%` : null)
-    : `${s.w}W ${s.l}L`;
+    : _wlTxt(s.w, s.l, s.n - s.w - s.l);
   const mode = modes[0] || 'wl';
   const { y: yy, m: mm, days, trades } = _weekShare;
   const byDay = days.map(d => ({ d, s: _shareBucket(trades.filter(t => t.close_date && t.close_date.getDate() === d)) }));
@@ -18601,16 +18605,17 @@ function _drawWeekShare(cv, modes, showTotals, showAcc){
   byDay.forEach(({ d, s }, i) => {
     const x = L + i * (cw + gap);
     const up = s.n && (mode === 'wl' ? s.w >= s.l : s.net >= 0);
-    ctx.fillStyle = !s.n ? C.surf : up ? 'rgba(46,204,113,.18)' : 'rgba(255,92,92,.18)';
+    const beOnly = s.n && !s.w && !s.l;   // puro BE: kahel
+    ctx.fillStyle = !s.n ? C.surf : beOnly ? 'rgba(255,165,59,.16)' : up ? 'rgba(46,204,113,.18)' : 'rgba(255,92,92,.18)';
     rr(x, gy, cw, ch, 16); ctx.fill();
-    if(s.n){ ctx.strokeStyle = up ? 'rgba(46,204,113,.55)' : 'rgba(255,92,92,.55)'; ctx.lineWidth = 2; rr(x, gy, cw, ch, 16); ctx.stroke(); }
+    if(s.n){ ctx.strokeStyle = beOnly ? 'rgba(255,165,59,.55)' : up ? 'rgba(46,204,113,.55)' : 'rgba(255,92,92,.55)'; ctx.lineWidth = 2; rr(x, gy, cw, ch, 16); ctx.stroke(); }
     const dt = new Date(yy, mm, d);
     ctx.fillStyle = C.muted; ctx.font = font(700, 18); ctx.fillText(dt.toLocaleDateString('en-US', { weekday:'short' }).toUpperCase(), x + 16, gy + 34);
     ctx.fillStyle = s.n ? C.ink : C.muted; ctx.font = font(800, 40); ctx.fillText(String(d), x + 16, gy + 84);
     if(s.n){
-      let v = valOf(s, mode) || `${s.w}W ${s.l}L`;
+      let v = valOf(s, mode) || _wlTxt(s.w, s.l, s.n - s.w - s.l);
       let fs = 34; ctx.font = font(800, fs); while(fs > 16 && ctx.measureText(v).width > cw - 28){ fs -= 2; ctx.font = font(800, fs); }
-      ctx.fillStyle = up ? C.win : C.loss; ctx.fillText(v, x + 16, gy + ch - 70);
+      ctx.fillStyle = beOnly ? '#FFA53B' : up ? C.win : C.loss; ctx.fillText(v, x + 16, gy + ch - 70);
       const extra = modes.slice(1).map(md => valOf(s, md)).filter(t => t && t !== v);
       ctx.fillStyle = C.muted; ctx.font = font(600, 16);
       (extra.length ? extra : [`${s.n} trade${s.n === 1 ? '' : 's'}`]).slice(0, 2).forEach((t, k) => {
@@ -18665,11 +18670,11 @@ function drawCalendarShare(){
     const p = raw ? _accountPct(raw) : null; if(p !== null){ s.pct += p; s.pN++; }
   });
   const sign = v => v >= -0.005 ? '+' : '−';  // −0.0 ay "+0.0"
-  const valOf = (s, md) => md === 'usd' ? `${sign(s.net)}$${Math.abs(s.net).toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+  const valOf = (s, md) => md === 'usd' ? `${sign(s.net)}${Math.abs(s.net).toLocaleString(undefined, { maximumFractionDigits: 0 })}`
     : md === 'r' ? (s.rN ? `${sign(s.R)}${Math.abs(s.R).toFixed(1)}R` : null)
     : md === 'pct' ? (s.pN ? `${sign(s.pct)}${Math.abs(s.pct).toFixed(2)}%` : null)
-    : `${s.w}W ${s.l}L`;
-  const val = s => valOf(s, mode) || `${s.w}W ${s.l}L`;
+    : _wlTxt(s.w, s.l, s.n - s.w - s.l);
+  const val = s => valOf(s, mode) || _wlTxt(s.w, s.l, s.n - s.w - s.l);
 
   ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
   const L = 56;
@@ -18688,9 +18693,9 @@ function drawCalendarShare(){
     const pT = all.reduce((a, s) => a + s.pct, 0), pN = all.reduce((a, s) => a + s.pN, 0);
     const w = all.reduce((a, s) => a + s.w, 0), l = all.reduce((a, s) => a + s.l, 0);
     const green = all.filter(s => s.net > 0).length;
-    const total = mode === 'usd' ? `${sign(net)}$${Math.abs(net).toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+    const total = mode === 'usd' ? `${sign(net)}${Math.abs(net).toLocaleString(undefined, { maximumFractionDigits: 0 })}`
       : mode === 'pct' ? (pN ? `${sign(pT)}${Math.abs(pT).toFixed(2)}%` : '—')
-      : mode === 'r' ? (rN ? `${sign(Rt)}${Math.abs(Rt).toFixed(1)}R` : '—') : `${w}W ${l}L`;
+      : mode === 'r' ? (rN ? `${sign(Rt)}${Math.abs(Rt).toFixed(1)}R` : '—') : _wlTxt(w, l, all.reduce((a, s) => a + s.n - s.w - s.l, 0));
     const boxes = [
       [mode === 'wl' ? 'Result' : 'Month', total, mode === 'wl' ? C.ink : (net >= 0 ? C.win : C.loss)],
       ['Win rate', (w + l) ? `${Math.round(w / (w + l) * 100)}%` : '—', C.ink],
@@ -18722,13 +18727,14 @@ function drawCalendarShare(){
     const idx = first + d - 1, x = L + (idx % 7) * (cw + 10), y = gy + Math.floor(idx / 7) * (ch + 10);
     const s = days[d];
     const up = s && (mode === 'wl' ? s.w >= s.l : s.net >= 0);
-    ctx.fillStyle = !s ? C.surf : up ? 'rgba(46,204,113,.18)' : 'rgba(255,92,92,.18)';
+    const beOnly = s && s.n && !s.w && !s.l;   // puro BE: kahel
+    ctx.fillStyle = !s ? C.surf : beOnly ? 'rgba(255,165,59,.16)' : up ? 'rgba(46,204,113,.18)' : 'rgba(255,92,92,.18)';
     rr(x, y, cw, ch, 12); ctx.fill();
-    if(s){ ctx.strokeStyle = up ? 'rgba(46,204,113,.55)' : 'rgba(255,92,92,.55)'; ctx.lineWidth = 2; rr(x, y, cw, ch, 12); ctx.stroke(); }
+    if(s){ ctx.strokeStyle = beOnly ? 'rgba(255,165,59,.55)' : up ? 'rgba(46,204,113,.55)' : 'rgba(255,92,92,.55)'; ctx.lineWidth = 2; rr(x, y, cw, ch, 12); ctx.stroke(); }
     ctx.fillStyle = s ? C.ink : C.muted; ctx.font = font(600, 18);
     ctx.fillText(String(d), x + 12, y + 28);
     if(s){
-      ctx.fillStyle = up ? C.win : C.loss; ctx.font = font(800, 24);
+      ctx.fillStyle = beOnly ? '#FFA53B' : up ? C.win : C.loss; ctx.font = font(800, 24);
       let t = val(s);
       while(ctx.measureText(t).width > cw - 20 && t.length > 3) t = t.slice(0, -1);
       const extra = modes.slice(1).map(md => valOf(s, md)).filter(Boolean);
@@ -34456,7 +34462,7 @@ function drawDayShare(){
   // ang "Show $ amounts", kung hindi ay ilan ang panalo at talo.
   const netTxt = `${sign(net)}$${Math.abs(net).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   ctx.fillStyle = showMoney ? (net >= 0 ? C.win : C.loss) : tone; ctx.font = font(800, 112);
-  ctx.fillText(showMoney ? netTxt : `${w}W ${l}L`, L - 4, 290, 700);
+  ctx.fillText(showMoney ? netTxt : _wlTxt(w, l, be), L - 4, 290, 700);
   // Pill: win rate
   const wr = (w + l) ? `${Math.round(w / (w + l) * 100)}% WIN RATE` : 'NO RESULT YET';
   ctx.font = font(700, 22);
@@ -34468,8 +34474,8 @@ function drawDayShare(){
   // Mga numero sa ilalim: dalawang hanay.
   const stats = [
     rs.length ? ['Return', `${sign(R)}${Math.abs(R).toFixed(2)}R`] : null,
-    showMoney ? ['Result', `${w}W ${l}L`] : null,
-    be ? ['Breakeven', String(be)] : null,
+    showMoney ? ['Result', _wlTxt(w, l, be)] : null,
+    be && !showMoney ? ['Breakeven', String(be)] : null,
     ['Trades', String(trades.length)],
     _rulesFollowedTxt(trades) ? ['Rules followed', _rulesFollowedTxt(trades)] : null
   ].filter(Boolean).slice(0, 6);
@@ -34618,8 +34624,11 @@ function drawDailyPost(centerOffset){
   const rs = trades.map(t => _tradeR(t)).filter(r => r !== null);
   const Rsum = rs.reduce((a, b) => a + b, 0);
   const net = trades.reduce((a, t) => a + netPnl(t), 0);
+  const be = trades.length - w - l;
+  // Puro BE (walang panalo o talo): kahel, hindi pula — gaya ng bilog ng BE.
+  const allBE = !w && !l && be > 0;
   const good = w > l || (w === l && (rs.length ? Rsum >= 0 : net >= 0));
-  const tone = good ? C.win : C.loss;
+  const tone = allBE ? C.be : good ? C.win : C.loss;
   // Ika-ilang araw (o linggo) MULA SA PINAKAUNANG TRADE — may trade man o wala
   // ang mga araw sa pagitan (pinili niya). Linggo ang simula ng linggo, gaya ng Calendar.
   const _dayOnly = d => new Date(d.getFullYear(), d.getMonth(), d.getDate());
@@ -34682,18 +34691,21 @@ function drawDailyPost(centerOffset){
   const only = layout === 'result';
   const bigFont = only ? 150 : 104;
   if(only) y += 60;
-  ctx.fillStyle = tone; ctx.font = font(800, bigFont);
-  const big = `${w}W ${l}L`;
+  const big = _wlTxt(w, l, be);
+  // Mas maliit kapag mahaba (may BE), para may puwang pa ang R at $ sa tabi.
+  let bf = bigFont; ctx.font = font(800, bf);
+  while(bf > 60 && ctx.measureText(big).width > (only ? 620 : 520)){ bf -= 4; ctx.font = font(800, bf); }
+  ctx.fillStyle = tone;
   ctx.fillText(big, L - 4, y);
   const bigW = ctx.measureText(big).width;
   const side = [rs.length ? `${sign(Rsum)}${Math.abs(Rsum).toFixed(2)}R` : null,
     showMoney ? `${sign(net)}$${Math.abs(net).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : null].filter(Boolean).join('   ');
   ctx.font = font(800, only ? 52 : 40);
-  ctx.fillStyle = rs.length ? (Rsum >= 0 ? C.win : C.loss) : (net >= 0 ? C.win : C.loss);
+  ctx.fillStyle = allBE ? C.be : rs.length ? (Rsum >= 0 ? C.win : C.loss) : (net >= 0 ? C.win : C.loss);
   ctx.fillText(side, L + bigW + 36, y - (only ? 70 : 46), R - (L + bigW + 36));
   ctx.fillStyle = C.muted; ctx.font = font(600, only ? 28 : 24);
   const rulesTxt = _rulesFollowedTxt(trades);
-  ctx.fillText([`${trades.length} trade${trades.length === 1 ? '' : 's'}`, (w + l) ? Math.round(w / (w + l) * 100) + '% win rate' : 'no result yet',
+  ctx.fillText([`${trades.length} trade${trades.length === 1 ? '' : 's'}`, (w + l) ? Math.round(w / (w + l) * 100) + '% win rate' : (be ? 'breakeven' : 'no result yet'),
     rulesTxt ? `rules followed ${rulesTxt}` : null].filter(Boolean).join('  ·  '), L + bigW + 36, y - 4, R - (L + bigW + 36));
   y += only ? 70 : 44;
 
@@ -34729,19 +34741,20 @@ function drawDailyPost(centerOffset){
         const dt = new Date(_weekShare.y, _weekShare.m, g.d);
         const dr = g.list.map(x => _tradeR(x)).filter(r => r !== null);
         const dR = dr.reduce((a, b) => a + b, 0), dNet = g.list.reduce((a, x) => a + netPnl(x), 0);
-        const dCol = gw > gl ? C.win : gl > gw ? C.loss : (dr.length ? (dR >= 0 ? C.win : C.loss) : C.be);
+        const gbe = g.list.length - gw - gl;
+        const dCol = gw > gl ? C.win : gl > gw ? C.loss : (!gw && gbe ? C.be : dr.length ? (dR >= 0 ? C.win : C.loss) : C.be);
         ctx.fillStyle = dCol; ctx.beginPath(); ctx.arc(L + 30, cy, 30, 0, Math.PI * 2); ctx.fill();
         ctx.fillStyle = dCol === C.loss ? '#FFFFFF' : '#12141C'; ctx.font = font(800, 17);
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         ctx.fillText(dt.toLocaleDateString('en-US', { weekday:'short' }).toUpperCase(), L + 30, cy + 1);
         ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
         const right = showMoney ? `${sign(dNet)}$${Math.abs(dNet).toLocaleString(undefined, { maximumFractionDigits: 2 })}`
-          : (dr.length ? `${sign(dR)}${Math.abs(dR).toFixed(2)}R` : `${gw}W ${gl}L`);
+          : (dr.length ? `${sign(dR)}${Math.abs(dR).toFixed(2)}R` : _wlTxt(gw, gl, gbe));
         ctx.font = font(800, 32); const rw = ctx.measureText(right).width;
         ctx.fillStyle = dCol; ctx.textAlign = 'right'; ctx.fillText(right, R, cy + 12); ctx.textAlign = 'left';
         const tx = L + 84, tw = R - tx - rw - 24;
         ctx.fillStyle = C.ink; ctx.font = font(700, 30);
-        ctx.fillText(fit(`${dt.toLocaleDateString('en-US', { month:'short', day:'numeric' })}  ·  ${gw}W ${gl}L`, tw), tx, cy - 4);
+        ctx.fillText(fit(`${dt.toLocaleDateString('en-US', { month:'short', day:'numeric' })}  ·  ${_wlTxt(gw, gl, gbe)}`, tw), tx, cy - 4);
         const coins = [...new Set(g.list.map(x => _dpostBase(x.symbol)))].join(', ');
         const setups = _dpostGroups(g.list, raw).length;
         ctx.fillStyle = C.muted; ctx.font = font(500, 22);
@@ -34776,7 +34789,9 @@ function drawDailyPost(centerOffset){
   // Ang araw (o linggo) sa mga numero. Sa linggo: ang pinakamaganda at
   // pinakapangit na ARAW (kabuuang R), hindi setup.
   if(layout === 'numbers'){
-    const gR = groups.map(g => { const r = g.list.map(x => _tradeR(x)).filter(v => v !== null); return { g, R: r.length ? r.reduce((a, b) => a + b, 0) / (wk ? 1 : r.length) : null }; }).filter(x => x.R !== null);
+    const gR = groups.map(g => { const r = g.list.map(x => _tradeR(x)).filter(v => v !== null); return { g, R: r.length ? r.reduce((a, b) => a + b, 0) / (wk ? 1 : r.length) : null }; })
+      // Ang puro BE ay hindi "Worst" (−0.03R ay fee lang), kaya hindi kasama.
+      .filter(x => x.R !== null && x.g.list.some(t => _isWin(t) || _isLoss(t)));
     const lab = g => wk ? new Date(_weekShare.y, _weekShare.m, g.d).toLocaleDateString('en-US', { weekday:'short' }) : _dpostBase(g.list[0].symbol);
     const best = gR.length ? gR.reduce((a, b) => b.R > a.R ? b : a) : null;
     const worst = gR.length ? gR.reduce((a, b) => b.R < a.R ? b : a) : null;

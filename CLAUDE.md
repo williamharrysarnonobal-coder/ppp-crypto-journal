@@ -243,6 +243,8 @@ find/replace, try the LF form, then the CRLF form.
   per traded day, lesson saved per week in localStorage). DAY N / WEEK N count
   every calendar day/week since the first trade (owner's choice). Weeks start Sunday,
   like the Calendar.
+- Breakeven shows everywhere a W–L does: `_wlTxt(w, l, be)` → "0W 0L 1BE";
+  an all-BE day/week/cell is orange (not red), and BE-only setups are not "Worst".
 - Every share defaults to **$ as the main number** (Show $ amounts checked;
   Main number = $ amount) and always shows **Rules followed** (_rulesFollowedTxt,
   "5 of 6") next to the win rate, by the owner's choice.
