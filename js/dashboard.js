@@ -27927,6 +27927,32 @@ async function bulkSetSetupEmotion(sel){
   }
 }
 
+/* BULK STATUS: isang Status sa lahat ng naka-tsek, isang PATCH. Hindi inaalis
+   ang tsek, para diretso na sa "Add Journal" pagkatapos gawing Closed. */
+async function bulkSetSetupStatus(sel){
+  const v = sel.value;
+  const ids = [...SELECTED_SETUP_IDS];
+  if(!v || !ids.length){ sel.value = ''; return; }
+  sel.disabled = true;
+  try{
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/position_setups?id=in.(${ids.join(',')})`, {
+      method: 'PATCH',
+      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}`,
+                 "Content-Type": "application/json", "Prefer": "return=minimal" },
+      body: JSON.stringify({ status: v })
+    });
+    if(!res.ok) throw new Error(await res.text());
+    SAVED_SETUPS.forEach(s => { if(ids.includes(s.id)) s.status = v; });
+    renderSavedSetups();
+    showToast(`Status ${v} set on ${ids.length} setup${ids.length === 1 ? '' : 's'}`);
+  }catch(e){
+    await customAlert("Couldn't save: " + e.message);
+  }finally{
+    sel.disabled = false;
+    sel.value = '';
+  }
+}
+
 /* ANG STATUS AY IKAW ANG NAGTATAKDA (pinili niya). Ang Upscale na naka-link ay
    kusang nagbabago pa rin (Order Placed → In Position → Closed), pero puwede
    mong palitan. Ang Journal ay para lang sa Closed: ang trade na tumatakbo pa

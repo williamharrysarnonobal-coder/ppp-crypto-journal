@@ -230,6 +230,7 @@ find/replace, try the LF form, then the CRLF form.
   setups still move on their own (incl. a Pending one linked late). **Journal only
   when Closed** (`_setupJournalBlock`: Confluence, then Closed), single and bulk.
   The "N closed trades to journal" reminder counts setups with Status Closed.
+  The bulk bar has **Set Status…** (`bulkSetSetupStatus`, one PATCH, keeps the ticks).
 - Upscale auto-journal needs the setup's `upscale_order_id`. Orders placed from
   the Calculator are remembered per browser (localStorage, 24h, keyed
   account|entry|SL) and linked to the setup whichever comes first: at Trade This
