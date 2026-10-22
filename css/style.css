@@ -4974,6 +4974,12 @@ select.ps-emo-sel{-webkit-appearance:none;appearance:none;min-height:30px;paddin
 select.ps-emo-sel.has{color:var(--ink);}
 select.ps-emo-sel:hover{border-color:var(--muted);}
 select.ps-emo-sel:focus-visible{outline:2px solid var(--accent);outline-offset:1px;}
+/* Status sa Pending Setups — ang pill mismo ang dropdown */
+select.ps-status-sel{-webkit-appearance:none;appearance:none;cursor:pointer;border:0;font-family:inherit;padding-right:22px;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%2393989F' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 8px center;}
+select.ps-status-sel option{color:var(--ink);background:var(--surface);}
+select.ps-status-sel:focus-visible{outline:2px solid var(--accent);outline-offset:1px;}
 /* Share: header at subtitle */
 .share-text{display:inline-flex;align-items:center;gap:6px;}
 .share-text input{background:var(--surface-2);border:1px solid var(--rule);border-radius:7px;color:var(--ink);font:inherit;font-size:13px;padding:5px 8px;width:180px;}

@@ -42,10 +42,14 @@ ok('hindi object -> hindi', has({ confluence_answers: 'yes' }) === false);
 
 console.log('\n2. LAHAT NG TATLONG GATE AY DUMADAAN DITO\n');
 const gate = fnBody('journalSelectedSetups');
-ok('gate ng bulk: ready', /const ready = picked\.filter\(_setupHasConfluence\)/.test(gate));
+// Ready = may confluence AT Closed (_setupJournalBlock ang sumasagot sa dalawa).
+ok('gate ng bulk: ready', /const ready = picked\.filter\(s => !_setupJournalBlock\(s\)\)/.test(gate));
+const block = fnBody('_setupJournalBlock');
+ok('Journal block: confluence muna', /!_setupHasConfluence\(s\)/.test(block));
+ok('Journal block: Closed muna', /!== 'Closed'/.test(block));
 ok('gate ng bulk: missing', /const missing = picked\.filter\(s => !_setupHasConfluence\(s\)\)/.test(gate));
 ok('label ng pindutan', /_setupHasConfluence\(s\) \? 'Edit Confluence' : 'Confluence'/.test(js));
-ok('naka-disable ang Journal', /!_setupHasConfluence\(s\) \? 'disabled/.test(js));
+ok('naka-disable ang Journal', /const why = _setupJournalBlock\(s\)/.test(js) && /why \? `disabled/.test(js));
 
 /* Walang natitirang lugar na nagtatanong ng parehong tanong sa lumang paraan.
    Ang paghahambing ng pattern sa _bulkJournalRows ay ibang tanong — kung

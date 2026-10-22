@@ -225,6 +225,11 @@ find/replace, try the LF form, then the CRLF form.
   and the Phone notifications list are one switch (`setNfCategory` writes both the
   in-app mute and that device's `push_subscriptions.prefs`). They are NOT in
   `UI_PREF_LS_KEYS`, so they never sync across devices. Off wins if they disagree.
+- **Setup Status** (Pending Setups): the pill is a dropdown (Pending / Order Placed
+  (Upscale only) / In Position / Closed / Cancelled), set by the owner; Upscale-linked
+  setups still move on their own (incl. a Pending one linked late). **Journal only
+  when Closed** (`_setupJournalBlock`: Confluence, then Closed), single and bulk.
+  The "N closed trades to journal" reminder counts setups with Status Closed.
 - Upscale auto-journal needs the setup's `upscale_order_id`. Orders placed from
   the Calculator are remembered per browser (localStorage, 24h, keyed
   account|entry|SL) and linked to the setup whichever comes first: at Trade This

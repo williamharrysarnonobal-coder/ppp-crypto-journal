@@ -8971,11 +8971,13 @@ function _rmDue(){
     out.push({ key: 'plan', title: "Fill in today's plan", body: 'Bias, max trades and your mindset, before the first trade.', go: () => { switchView('plan'); openDailyPlan(today); } });
   if(s.types.review && hm >= toMin(s.evening) && (tradesToday.length || plan) && !(plan && plan.followed))
     out.push({ key: 'review', title: 'Review today', body: 'Did you follow the plan? How did the session feel?', go: () => { switchView('plan'); openDailyPlan(today); } });
-  if(s.types.journal && typeof _upClosedAll === 'function'){
-    const open = Object.entries(_upClosedAll()).filter(([id, r]) => !r.journaled && !(typeof _upOrderJournaled === 'function' && _upOrderJournaled(id)));
-    if(open.length) out.push({ key: 'journal', fire: open.map(([id]) => 'journal:' + id),
+  // Ang mga setup na Closed (ikaw o ang Upscale ang nagsara) at hindi pa
+  // journaled. Ang In Position ay tumatakbo pa, kaya hindi ito kasama.
+  if(s.types.journal && typeof SAVED_SETUPS !== 'undefined'){
+    const open = SAVED_SETUPS.filter(x => x.status === 'Closed' && !x.is_paper);
+    if(open.length) out.push({ key: 'journal', fire: open.map(x => 'journal:' + x.id),
       title: `${open.length} closed trade${open.length === 1 ? '' : 's'} to journal`,
-      body: 'Upscale closed them; the numbers are ready to fill in.', go: () => journalFromUpscaleClose(open[0][0]) });
+      body: 'They are marked Closed in Pending Setups.', go: () => switchView('calculator') });
   }
   if(s.types.incomplete && typeof _journalMissingFields === 'function'){
     const raw = (typeof RAW_TRADES !== 'undefined' ? RAW_TRADES : []).filter(r => r.close_date && _dpIso(new Date(r.close_date)) === today && !(r.is_paper === true || r.is_paper === 'true'));
@@ -25839,7 +25841,7 @@ async function refreshUpscaleOrderStates(force){
           }
         });
         // Ang setup.
-        (SAVED_SETUPS || []).filter(s => s.upscale_order_id === orderId && _UP_SETUP_LIVE.has(s.status))
+        (SAVED_SETUPS || []).filter(s => s.upscale_order_id === orderId && (_UP_SETUP_LIVE.has(s.status) || (s.status || 'Pending') === 'Pending'))
           .forEach(s => {
             s._atBE = !!st.atBE;
             if(s.status !== st.state){ setSetupStatus(s.id, st.state); changed = true; }
@@ -27442,11 +27444,19 @@ async function journalSelectedSetups(){
   // Same gate as the per-row Journal button, which sits disabled until a
   // confluence exists — enforced again here so ticking a row can't route
   // around it.
-  const ready = picked.filter(_setupHasConfluence);
+  const notClosed = picked.filter(s => _setupHasConfluence(s) && (s.status || 'Pending') !== 'Closed');
+  const ready = picked.filter(s => !_setupJournalBlock(s));
   const missing = picked.filter(s => !_setupHasConfluence(s));
   if(!ready.length){
-    await customAlert('Fill in Confluence first — none of the selected setups have one yet.');
+    await customAlert(notClosed.length && !missing.length
+      ? 'Set the Status to Closed first. Only closed trades can be journaled.'
+      : 'Fill in Confluence first — none of the selected setups have one yet.');
     return;
+  }
+  if(notClosed.length){
+    const names = notClosed.map(s => `${s.account_name || 'unnamed'} (${s.status || 'Pending'})`).join(', ');
+    const ok = await customConfirm(`${notClosed.length} selected setup${notClosed.length===1?' is':'s are'} not Closed yet (${names}) and will be skipped. Journal the other ${ready.length}?`, `Journal ${ready.length}`);
+    if(!ok) return;
   }
   if(missing.length){
     const names = missing.map(s => s.account_name || 'unnamed').join(', ');
@@ -27917,6 +27927,23 @@ async function bulkSetSetupEmotion(sel){
   }
 }
 
+/* ANG STATUS AY IKAW ANG NAGTATAKDA (pinili niya). Ang Upscale na naka-link ay
+   kusang nagbabago pa rin (Order Placed → In Position → Closed), pero puwede
+   mong palitan. Ang Journal ay para lang sa Closed: ang trade na tumatakbo pa
+   ay hindi pa maisusulat, at ang paalalang "to journal" ay Closed lang ang
+   binibilang — kaya ang In Position ay hindi na nangungulit. */
+const SETUP_STATUS_CHOICES = ['Pending', 'Order Placed', 'In Position', 'Closed', 'Cancelled'];
+function _setupStatusSelect(s, status, cls){
+  const opts = SETUP_STATUS_CHOICES.filter(o => o !== 'Order Placed' || s.upscale_order_id || status === o);
+  if(!opts.includes(status)) opts.unshift(status);
+  return `<select class="pill ${cls} ps-status-sel" aria-label="Status" onchange="setSetupStatus(${Number(s.id)}, this.value)">${
+    opts.map(o => `<option value="${escapeHtml(o)}"${o === status ? ' selected' : ''}>${escapeHtml(o)}</option>`).join('')}</select>`;
+}
+function _setupJournalBlock(s){
+  if(!_setupHasConfluence(s)) return 'Fill in Confluence first';
+  if((s.status || 'Pending') !== 'Closed') return 'Set the Status to Closed first';
+  return '';
+}
 function setupRowHTML(s, selectable){
   const riskAmount = Number(s.risk_amount);
   // Prices/quantity only exist on setups saved after the calculator became
@@ -27947,7 +27974,8 @@ function setupRowHTML(s, selectable){
     <!-- Entry Emotion: napapalitan agad sa Pending; basa lang sa Journaled. -->
     <td onclick="event.stopPropagation();">${selectable ? _setupEmotionSelect(s)
       : (s.entry_emotion ? escapeHtml(_optLabel('emotion', s.entry_emotion)) : '<span style="color:var(--muted);">—</span>')}</td>
-    <td><span class="pill ${statusPillClass}">${escapeHtml(status)}</span></td>
+    <td onclick="event.stopPropagation();">${selectable ? _setupStatusSelect(s, status, statusPillClass)
+      : `<span class="pill ${statusPillClass}">${escapeHtml(status)}</span>`}</td>
     <!-- Isang "Actions" menu sa halip na hanay ng mga button. Sagot ang
          tinitingnan para sa Confluence, hindi Pattern Type — tingnan ang
          _setupHasConfluence. -->
@@ -27959,7 +27987,8 @@ function setupRowHTML(s, selectable){
           <button type="button" role="menuitem" onclick="closeRowActions(); openConfluenceModal(${s.id})">${_setupHasConfluence(s) ? 'Edit Confluence' : 'Confluence'}</button>
           <button type="button" role="menuitem" onclick="closeRowActions(); openSetupDetailsModal([${s.id}])">Areas &amp; Emotions</button>
           ${status !== 'Journaled'
-            ? `<button type="button" role="menuitem" ${!_setupHasConfluence(s) ? 'disabled title="Fill in Confluence first"' : ''} onclick="closeRowActions(); journalFromSetup(${s.id})">Journal${!_setupHasConfluence(s) ? ' <span class="ra-hint">— fill in Confluence first</span>' : ''}</button>`
+            ? (() => { const why = _setupJournalBlock(s);
+                return `<button type="button" role="menuitem" ${why ? `disabled title="${why}"` : ''} onclick="closeRowActions(); journalFromSetup(${s.id})">Journal${why ? ` <span class="ra-hint">— ${why.charAt(0).toLowerCase() + why.slice(1)}</span>` : ''}</button>`; })()
             : `<button type="button" role="menuitem" onclick="closeRowActions(); setSetupStatus(${s.id}, 'Pending')">Revert to Pending</button>`}
           ${status === 'In Position' && s.upscale_order_id && !s._atBE
             ? `<button type="button" role="menuitem" onclick="closeRowActions(); moveSlToBE('${s.account_id}', '${s.upscale_order_id}', null)">Move SL to BE</button>`
