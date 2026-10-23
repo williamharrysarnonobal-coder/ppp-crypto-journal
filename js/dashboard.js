@@ -13057,10 +13057,23 @@ async function saveFinTx(){
   }
 }
 
+/* Ang Transfer na nagbayad ng bill ng isang card. Kapag binura ito nang
+   mag-isa, bumabalik ang pera pero nananatiling "Paid" ang card at sulong ang
+   mga installment. Ang Undo sa card ang tamang daan: binabaligtad nito lahat. */
+function _finBillPaymentOwner(txId){
+  return FIN_ACCOUNTS.find(a => a.last_bill_payment_tx_id != null && String(a.last_bill_payment_tx_id) === String(txId)) || null;
+}
 async function deleteFinTx(id){
   const t = FIN_TXNS.find(x => x.id === id);
   if(!t) return;
-  if(!(await customConfirm('Delete this transaction? The account balance will be adjusted back.', 'Delete'))) return;
+  const owner = _finBillPaymentOwner(id);
+  if(owner){
+    await customAlert(`This is the bill payment for ${owner.account_name}. To reverse it, open ${owner.account_name} and press Undo next to the payment: that also steps the installments back and marks the bill unpaid.`);
+    return;
+  }
+  if(!(await customConfirm(t.tx_type === 'Correction'
+    ? 'Delete this balance correction record? The account balance stays as it is now.'
+    : 'Delete this transaction? The account balance will be adjusted back.', 'Delete'))) return;
   try{
     const res = await fetch(`${SUPABASE_URL}/rest/v1/finance_transactions?id=eq.${id}`, {
       method: 'DELETE',
@@ -13102,14 +13115,17 @@ async function deleteFinTx(id){
 // instead of one-by-one — for when you've filtered down to a batch (e.g. a
 // bad bulk import) and want it gone.
 async function deleteAllFilteredFinTx(){
-  const rows = FIN_TXNS.filter(_finTxPassesFilters);
+  // Ang mga bill payment ay hindi kasama (Undo sa card ang daan para doon).
+  const kept = FIN_TXNS.filter(_finTxPassesFilters).filter(t => _finBillPaymentOwner(t.id));
+  const rows = FIN_TXNS.filter(_finTxPassesFilters).filter(t => !_finBillPaymentOwner(t.id));
+  if(!rows.length && kept.length){ await customAlert('Only card bill payments match. Reverse those with Undo on the card.'); return; }
   if(!rows.length){ await customAlert('No transactions match the current filters.'); return; }
 
   const periodEl = document.getElementById('finTxPeriodFilter');
   const accEl = document.getElementById('finTxAccountFilter');
   const typeEl = document.getElementById('finTxTypeFilter');
   const scoped = (periodEl && periodEl.value !== 'all') || (accEl && accEl.value !== 'all') || (typeEl && typeEl.value !== 'all');
-  if(!(await customConfirm(`Delete all ${rows.length} transaction${rows.length===1?'':'s'}${scoped ? ' matching the current filters' : ''}? Account balances will be adjusted back. This can't be undone.`, 'Delete All'))) return;
+  if(!(await customConfirm(`Delete all ${rows.length} transaction${rows.length===1?'':'s'}${scoped ? ' matching the current filters' : ''}? Account balances will be adjusted back.${kept.length ? ` ${kept.length} card bill payment${kept.length === 1 ? ' is' : 's are'} skipped (use Undo on the card).` : ''} This can't be undone.`, 'Delete All'))) return;
 
   try{
     const ids = rows.map(r => r.id);
@@ -13451,12 +13467,15 @@ function _finMonthISO(d){
 }
 
 // Total of this account's Expense transactions inside one calendar month.
+/* Gastos bawas refund: ang Income sa isang card (refund, cashback) ay bawas
+   din sa bill, gaya ng sa Owed (_finUnsettledTxTotal). Dati ay gastos lang ang
+   binibilang, kaya sobra ang binabayaran kapag may refund sa buwang iyon. */
 function _finMonthTxTotal(accountId, monthDate){
   const y = monthDate.getFullYear(), m = monthDate.getMonth();
   return FIN_TXNS
-    .filter(t => t.account_id === accountId && t.tx_type === 'Expense' && t.tx_date)
+    .filter(t => t.account_id === accountId && (t.tx_type === 'Expense' || t.tx_type === 'Income') && t.tx_date)
     .filter(t => { const d = new Date(t.tx_date + 'T00:00:00'); return d.getFullYear() === y && d.getMonth() === m; })
-    .reduce((s, t) => s + (Number(t.amount) || 0), 0);
+    .reduce((s, t) => s + (t.tx_type === 'Income' ? -1 : 1) * (Number(t.amount) || 0), 0);
 }
 
 // This month's committed recurring dues on an account: each active
@@ -13801,13 +13820,20 @@ async function undoAccountBillPayment(accountId){
   if(!acc) return;
   if(!(await customConfirm("Mark this bill as UNPAID again? Installment progress steps back by 1, last month's transactions count as owed again, and the logged payment transaction (if any) will be deleted.", 'Undo'))) return;
 
-  const linked = FIN_RECURRING.filter(r => r.account_id === accountId);
+  /* Ang mga item lang na nasa bill na iyon (nagsimula na at hindi pa tapos ang
+     iskedyul sa buwang iyon) — ang mga sinulong ng mismong bayad. Dati ay
+     inuurong ang LAHAT ng installment na may bayad, pati ang natapos noong mga
+     nakaraang buwan, at binubura ang "last billed" ng bawat subscription. */
+  const billMonth = acc.last_bill_paid ? new Date(acc.last_bill_paid + 'T00:00:00') : null;
+  const inThatBill = r => !billMonth || isNaN(billMonth.getTime())
+    || (_finRecStartedBy(r, billMonth) && !_finRecEndedBefore(r, billMonth));
+  const linked = FIN_RECURRING.filter(r => r.account_id === accountId && inThatBill(r));
   for(const r of linked){
     if(r.kind === 'Installment' && (Number(r.payments_applied) || 0) > 0){
       const newCount = (Number(r.payments_applied) || 0) - 1;
       const patch = await _finPatchRecurring(r.id, { payments_applied: newCount });
       if(patch.ok) r.payments_applied = newCount;
-    }else if(r.kind === 'Subscription' && r.last_billed){
+    }else if(r.kind === 'Subscription' && r.last_billed && (!acc.last_bill_paid || r.last_billed === acc.last_bill_paid)){
       const patch = await _finPatchRecurring(r.id, { last_billed: null });
       if(patch.ok) r.last_billed = null;
     }

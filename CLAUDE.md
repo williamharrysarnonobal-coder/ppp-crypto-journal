@@ -222,6 +222,11 @@ find/replace, try the LF form, then the CRLF form.
 - A paid month's bill stays as it was: `_finRecBilledIn` keeps an installment that
   is now fully paid on the months of its schedule once that bill is paid. The
   "what to advance" list (`_finRecDueIn`) still skips fully paid ones.
+- A bill = installments + card Expenses − card Income (refunds) of that month.
+- Undo steps back only items in that bill (started, schedule not over) and clears
+  only that month's subscription `last_billed`. A bill payment Transfer can't be
+  deleted from Transactions (`_finBillPaymentOwner`); Undo on the card reverses it.
+- `tests/sim-finance-bill.js` runs Paid/Undo end-to-end on the owner's real numbers.
 
 ## UI conventions
 
