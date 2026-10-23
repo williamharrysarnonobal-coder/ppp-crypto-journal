@@ -215,6 +215,14 @@ find/replace, try the LF form, then the CRLF form.
 - The Confluence window keeps its Yes/Almost/No/Other buttons look (owner's
   choice); "Radio" is only how the editor describes those questions.
 
+## Finance (credit card bills)
+
+- "Paid" takes the bill amount **before** advancing installments, settles only
+  card expenses dated up to the end of the bill month, and logs one Transfer.
+- A paid month's bill stays as it was: `_finRecBilledIn` keeps an installment that
+  is now fully paid on the months of its schedule once that bill is paid. The
+  "what to advance" list (`_finRecDueIn`) still skips fully paid ones.
+
 ## UI conventions
 
 - Reuse the shared modal overlays and share-image pattern (canvas +

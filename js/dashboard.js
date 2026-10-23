@@ -13507,8 +13507,21 @@ function _finRecDueIn(accountId, monthDate){
   );
 }
 
+/* ANG BILL NA BAYAD NA AY HINDI NAGBABAGO. Ang huling hulog (hal. iPhone 12 of
+   12) ay "fully paid" na pagkatapos ng Paid, kaya dati ay natatanggal ito sa
+   "Bill for September" na kababayad lang — 2,172.46 ang binayaran pero 1,651.21
+   ang ipinapakita. Kapag nabayaran na ang bill ng buwang ito (last_bill_paid),
+   ang installment na tapos na ay kasama pa rin sa buwang nasa iskedyul nito. */
+function _finRecBilledIn(accountId, monthDate){
+  const acc = (typeof FIN_ACCOUNTS !== 'undefined' ? FIN_ACCOUNTS : []).find(a => a.id === accountId);
+  const paidThrough = acc && acc.last_bill_paid ? new Date(acc.last_bill_paid + 'T00:00:00') : null;
+  const mIdx = monthDate.getFullYear() * 12 + monthDate.getMonth();
+  const billPaid = paidThrough && !isNaN(paidThrough.getTime()) && (paidThrough.getFullYear() * 12 + paidThrough.getMonth()) >= mIdx;
+  return FIN_RECURRING.filter(r => r.account_id === accountId && _finRecStartedBy(r, monthDate) && !_finRecEndedBefore(r, monthDate)
+    && (!_finRecIsFullyPaid(r) || (billPaid && !!r.first_bill)));
+}
 function _finMonthlyRecurringItems(accountId, monthDate){
-  return _finRecDueIn(accountId, monthDate)
+  return _finRecBilledIn(accountId, monthDate)
     .map(r => {
       const isInstallment = r.kind === 'Installment';
       const amount = isInstallment
