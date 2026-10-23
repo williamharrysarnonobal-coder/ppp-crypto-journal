@@ -13662,6 +13662,11 @@ async function confirmPayAllDueForAccount(){
   if(btn){ btn.disabled = true; btn.textContent = 'Paying…'; }
 
   const prevMonth = _finPreviousMonthLabel();
+  /* ANG HALAGA AY KINUKUWENTA BAGO ANG LAHAT — ang mismong ipinakita sa modal.
+     Dati ay pagkatapos isulong ang mga installment: ang huling hulog (12 of 12)
+     ay "fully paid" na noon, kaya hindi na nabilang, at kulang ang naibawas
+     (2,172.46 ang bill, 1,651.21 ang na-log — kulang ang iPhone na 521.25). */
+  const billAmount = _finMonthlyRecurringTotal(accountId, prevMonth) + _finMonthTxTotal(accountId, prevMonth);
 
   // 1. Advance every linked recurring item by one payment — but only the ones
   //    that had actually started by this statement's month. Advancing an item
@@ -13705,7 +13710,7 @@ async function confirmPayAllDueForAccount(){
 
   // 3. Log the actual payment as a Transfer, tagged so it's easy to find/
   //    total later, and deduct it from the account it really came from.
-  const billAmount = _finMonthlyRecurringTotal(accountId, prevMonth) + _finMonthTxTotal(accountId, prevMonth);
+  //    (billAmount was worked out at the top, before step 1.)
   let paymentTxId = null;
   if(billAmount > 0){
     try{
