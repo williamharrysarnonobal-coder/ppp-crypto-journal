@@ -13688,9 +13688,13 @@ async function confirmPayAllDueForAccount(){
   //    won't have settled_bill set and will still count toward Owed.
   const billMonthIso = _finMonthISO(prevMonth);
   try{
-    const unsettled = FIN_TXNS.filter(t => t.account_id === accountId && !t.settled_bill);
+    /* Hanggang sa dulo lang ng buwan ng bill. Ang gastos ngayong buwan (hal.
+       Oct 14 na taxi) ay nasa SUSUNOD na bill at hindi kasama sa halagang
+       binayaran — dati ay namarkahan din itong bayad, kaya nawala sa Owed. */
+    const billEnd = _finMonthISO(new Date(prevMonth.getFullYear(), prevMonth.getMonth() + 1, 1));
+    const unsettled = FIN_TXNS.filter(t => t.account_id === accountId && !t.settled_bill && (!t.tx_date || t.tx_date < billEnd));
     if(unsettled.length){
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/finance_transactions?account_id=eq.${accountId}&settled_bill=is.null`, {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/finance_transactions?account_id=eq.${accountId}&settled_bill=is.null&or=(tx_date.is.null,tx_date.lt.${billEnd})`, {
         method: 'PATCH',
         headers: {
           "apikey": SUPABASE_KEY,
