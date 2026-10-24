@@ -226,6 +226,10 @@ find/replace, try the LF form, then the CRLF form.
 - Undo steps back only items in that bill (started, schedule not over) and clears
   only that month's subscription `last_billed`. A bill payment Transfer can't be
   deleted from Transactions (`_finBillPaymentOwner`); Undo on the card reverses it.
+- Recurring: fully paid installments move to a collapsible **Completed** panel
+  (open state in localStorage). A credit card's details show **PAYMENT HISTORY**
+  (every Transfer into the card, newest first). Recurring amounts use the paying
+  account's currency (`_finRecCur`), not a hard-coded PHP.
 - `tests/sim-finance-bill.js` runs Paid/Undo end-to-end on the owner's real numbers.
 
 ## UI conventions

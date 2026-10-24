@@ -3486,6 +3486,9 @@ table.breakdown tbody tr{cursor:pointer;}
     margin-bottom:16px;padding-bottom:10px;border-bottom:1px solid var(--rule);}
   .fin-tab-nav .subnav-item{padding:8px 14px;font-size:13px;}
   .subnav-item.active{background:var(--surface-2);color:var(--accent);font-weight:500;}
+  /* Payment history ng credit card: buwan, tapos kailan at saan galing */
+  .fin-pay-hist-meta{display:block;font-size:11px;color:var(--muted);margin-top:2px;font-weight:400;}
+  .fin-pay-hist-row{align-items:flex-start;}
   .subnav-content{flex:1;min-width:0;}
   .subnav-panel{display:none;}
   .subnav-panel.active{display:block;}

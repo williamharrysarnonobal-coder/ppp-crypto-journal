@@ -11858,6 +11858,7 @@ function openFinAccountDetailsModal(accountId, backToId){
       ${billSection('BILL FOR ' + prevMonth.toLocaleDateString('en-US',{month:'long'}).toUpperCase(), prevMonth, prevTx, 'prev')}
       ${paymentHtml}
     </div>
+    ${_finCardPaymentHistoryHtml(a)}
     <div class="fin-acc-details-section">
       <div class="fin-acc-details-heading">FULL HISTORY</div>
       ${_finAccHistoryFilterHtml(accountId)}
@@ -11865,6 +11866,32 @@ function openFinAccountDetailsModal(accountId, backToId){
   `;
   renderFinAccountHistory(accountId);
   document.getElementById('finAccountDetailsModal').classList.add('open');
+}
+
+/* PAYMENT HISTORY ng isang credit card: bawat bayad sa card (ang Transfer na
+   ginagawa ng Paid, o anumang Transfer papunta rito), pinakabago muna — ang
+   buwan ng bill, kailan binayaran, saan galing, at magkano. */
+function _finCardPaymentHistoryHtml(a){
+  const pays = FIN_TXNS.filter(t => t.tx_type === 'Transfer' && t.to_account_id === a.id && t.tx_date)
+    .sort((x, y) => (y.tx_date || '').localeCompare(x.tx_date || '') || (y.id || 0) - (x.id || 0));
+  const monthOf = t => {
+    const m = String(t.description || '').match(/^([A-Za-z]+) bill payment$/);
+    if(m) return m[1];
+    return 'Payment';
+  };
+  const total = pays.reduce((s, t) => s + (Number(t.amount) || 0), 0);
+  const rows = pays.map(t => `
+      <div class="fin-acc-details-row fin-pay-hist-row">
+        <span><b>${escapeHtml(monthOf(t))}</b>
+          <span class="fin-pay-hist-meta">Paid ${new Date(t.tx_date + 'T00:00:00').toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' })} · from ${escapeHtml(_finAccountName(t.account_id))}</span></span>
+        <span>${finMoney(t.amount, a.currency)}</span>
+      </div>`).join('');
+  return `
+    <div class="fin-acc-details-section">
+      <div class="fin-acc-details-heading">PAYMENT HISTORY</div>
+      ${pays.length ? rows + `<div class="fin-acc-details-row fin-acc-details-total"><span>${pays.length} payment${pays.length === 1 ? '' : 's'}</span><span>${finMoney(total, a.currency)}</span></div>`
+        : '<div class="fin-acc-details-row"><span style="color:var(--muted);">No payments yet. Press Paid on a bill and it shows here.</span><span></span></div>'}
+    </div>`;
 }
 
 function closeFinAccountDetailsModal(){
@@ -13950,10 +13977,16 @@ function renderFinanceRecurring(){
   if(!instBody) return;
 
   const fmtPeriod = d => d ? d.toLocaleDateString('en-US',{month:'short',year:'numeric'}) : '—';
-  const insts = FIN_RECURRING.filter(r => r.kind === 'Installment');
+  /* Ang tapos na (lahat ng hulog bayad na) ay nasa sariling "Completed" na
+     listahan sa ilalim, hindi kasama ng mga tumatakbo pa. */
+  const allInsts = FIN_RECURRING.filter(r => r.kind === 'Installment');
+  const insts = allInsts.filter(r => !_finRecIsFullyPaid(r));
+  const doneInsts = allInsts.filter(r => _finRecIsFullyPaid(r));
+  _renderFinDoneInstallments(doneInsts);
   const subs = FIN_RECURRING.filter(r => r.kind === 'Subscription');
 
   document.getElementById('finInstEmpty').style.display = insts.length ? 'none' : 'block';
+  document.getElementById('finInstEmpty').textContent = doneInsts.length ? 'No running installments. The finished ones are under Completed.' : 'No installments yet.';
   document.getElementById('finInstWrap').style.display = insts.length ? 'block' : 'none';
   document.getElementById('finInstCardGrid').style.display = insts.length ? '' : 'none';
   instBody.innerHTML = insts.map(r => {
@@ -13974,9 +14007,9 @@ function renderFinanceRecurring(){
       <tr>
         <td>${escapeHtml(r.name)}<div style="font-size:10.5px;color:var(--muted);">${escapeHtml(_finAccountName(r.account_id))}</div></td>
         <td>${escapeHtml(r.category || '—')}</td>
-        <td>${finMoney(r.total_amount, 'PHP')}</td>
-        <td>${finMoney(monthly, 'PHP')}</td>
-        <td><span class="pill ${done ? 'pill-green' : 'pill-orange'}">${paid} / ${total} paid</span><div style="font-size:10.5px;color:var(--muted);margin-top:3px;">${done ? '' : `${finMoney(remaining, 'PHP')} remaining`}</div></td>
+        <td>${finMoney(r.total_amount, _finRecCur(r))}</td>
+        <td>${finMoney(monthly, _finRecCur(r))}</td>
+        <td><span class="pill ${done ? 'pill-green' : 'pill-orange'}">${paid} / ${total} paid</span><div style="font-size:10.5px;color:var(--muted);margin-top:3px;">${done ? '' : `${finMoney(remaining, _finRecCur(r))} remaining`}</div></td>
         <td style="white-space:nowrap;">${dueCell}</td>
         <td>${escapeHtml(r.notes || '—')}</td>
         <td style="text-align:right;white-space:nowrap;">
@@ -14008,11 +14041,11 @@ function renderFinanceRecurring(){
           </div>
           ${r.category ? `<span class="pill pill-muted fin-acc-card-currency">${escapeHtml(r.category)}</span>` : ''}
         </div>
-        <div class="account-card-balance">${finMoney(monthly, 'PHP')}<span style="font-size:12px;color:var(--muted);font-weight:400;"> /mo</span></div>
+        <div class="account-card-balance">${finMoney(monthly, _finRecCur(r))}<span style="font-size:12px;color:var(--muted);font-weight:400;"> /mo</span></div>
         <div style="font-size:10.5px;color:var(--muted);margin-top:2px;text-transform:uppercase;letter-spacing:.05em;">Monthly payment</div>
         <div style="font-size:12px;margin-top:10px;">
           <span class="pill ${done ? 'pill-green' : 'pill-orange'}">${paid} / ${total} paid</span>
-          ${done ? '' : `<span style="color:var(--muted);margin-left:6px;">${finMoney(remaining, 'PHP')} remaining</span>`}
+          ${done ? '' : `<span style="color:var(--muted);margin-left:6px;">${finMoney(remaining, _finRecCur(r))} remaining</span>`}
         </div>
         <div style="font-size:12px;margin-top:8px;">Due: ${dueCell}</div>
         ${r.notes ? `<div style="font-size:12px;color:var(--muted);margin-top:8px;font-style:italic;">${escapeHtml(r.notes)}</div>` : ''}
@@ -14037,7 +14070,7 @@ function renderFinanceRecurring(){
     return `
       <tr>
         <td>${escapeHtml(r.name)}<div style="font-size:10.5px;color:var(--muted);">${escapeHtml(_finAccountName(r.account_id))}</div></td>
-        <td>${finMoney(r.price, 'PHP')}</td>
+        <td>${finMoney(r.price, _finRecCur(r))}</td>
         <td>${escapeHtml(r.cycle || 'Monthly')}</td>
         <td style="white-space:nowrap;">${dueCell}</td>
         <td>${escapeHtml(r.notes || '—')}</td>
@@ -14061,7 +14094,7 @@ function renderFinanceRecurring(){
           </div>
           <span class="pill pill-muted fin-acc-card-currency">${escapeHtml(r.cycle || 'Monthly')}</span>
         </div>
-        <div class="account-card-balance">${finMoney(r.price, 'PHP')}</div>
+        <div class="account-card-balance">${finMoney(r.price, _finRecCur(r))}</div>
         <div style="font-size:12px;margin-top:8px;">Due: ${dueCell}</div>
         ${r.notes ? `<div style="font-size:12px;color:var(--muted);margin-top:8px;font-style:italic;">${escapeHtml(r.notes)}</div>` : ''}
         <div class="fin-acc-card-actions">
@@ -14073,6 +14106,47 @@ function renderFinanceRecurring(){
       </div>
     `;
   }).join('');
+}
+
+// Ang pera ng installment/subscription ay sa account na nagbabayad (hal. AED),
+// hindi laging PHP.
+function _finRecCur(r){ const a = FIN_ACCOUNTS.find(x => x.id === r.account_id); return (a && a.currency) || (FIN_ACCOUNTS[0] && FIN_ACCOUNTS[0].currency) || 'PHP'; }
+function _finRecFinishedMonth(r){
+  if(!r.first_bill) return null;
+  const d = new Date(r.first_bill + 'T00:00:00');
+  if(isNaN(d.getTime())) return null;
+  return new Date(d.getFullYear(), d.getMonth() + Math.max(1, Number(r.total_payments) || 1) - 1, 1);
+}
+function _renderFinDoneInstallments(done){
+  const wrap = document.getElementById('finDoneWrap');
+  if(!wrap) return;
+  document.getElementById('finDonePanel').style.display = done.length ? '' : 'none';
+  document.getElementById('finDoneCount').textContent = done.length;
+  const sorted = [...done].sort((a, b) => (_finRecFinishedMonth(b) || 0) - (_finRecFinishedMonth(a) || 0));
+  document.getElementById('finDoneBody').innerHTML = sorted.map(r => {
+    const fin = _finRecFinishedMonth(r);
+    const monthly = (Number(r.total_amount) || 0) / Math.max(1, Number(r.total_payments) || 1);
+    return `
+      <tr>
+        <td>${escapeHtml(r.name)}<div style="font-size:10.5px;color:var(--muted);">${escapeHtml(_finAccountName(r.account_id))}</div></td>
+        <td>${finMoney(r.total_amount, _finRecCur(r))}</td>
+        <td>${finMoney(monthly, _finRecCur(r))} × ${Number(r.total_payments) || 0}</td>
+        <td><span class="pill pill-green">${fin ? 'Done ' + fin.toLocaleDateString('en-US', { month:'short', year:'numeric' }) : 'Done'}</span></td>
+        <td style="text-align:right;white-space:nowrap;">
+          <button class="drawer-secondary-btn" style="padding:4px 8px;font-size:11px;color:var(--ink);border-color:var(--accent);" title="Edit" onclick="openFinRecModal('Installment', ${r.id})">${editIconSVG()}</button>
+          <button class="drawer-danger-btn" style="padding:4px 10px;font-size:11px;margin-left:4px;" onclick="deleteFinRec(${r.id})">${deleteIconSVG()}</button>
+        </td>
+      </tr>`;
+  }).join('');
+  const open = (() => { try{ return localStorage.getItem('tanaydana-fin-done-open') === '1'; }catch(e){ return false; } })();
+  wrap.style.display = open ? '' : 'none';
+  document.getElementById('finDoneToggle').textContent = open ? `Hide (${done.length})` : `Show (${done.length})`;
+}
+function toggleFinDoneInstallments(){
+  const wrap = document.getElementById('finDoneWrap');
+  const open = wrap.style.display === 'none';
+  try{ localStorage.setItem('tanaydana-fin-done-open', open ? '1' : '0'); }catch(e){}
+  renderFinanceRecurring();
 }
 
 function openFinRecModal(kind, id){
@@ -14112,7 +14186,7 @@ function closeFinRecModal(){
 function updateFinRecMonthly(){
   const total = parseFloat(document.getElementById('finRecTotal').value) || 0;
   const count = parseInt(document.getElementById('finRecCount').value, 10) || 0;
-  document.getElementById('finRecMonthly').textContent = count > 0 ? finMoney(total / count, 'PHP') + ' / month' : '—';
+  document.getElementById('finRecMonthly').textContent = count > 0 ? finMoney(total / count, _finRecCur({ account_id: parseInt(document.getElementById('finRecAccount').value, 10) || null })) + ' / month' : '—';
 }
 
 async function saveFinRec(){
