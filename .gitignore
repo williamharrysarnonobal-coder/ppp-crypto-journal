@@ -7,6 +7,8 @@ screener_bot.py
 *.env
 # Secrets for the v2 bots (which ARE committed): never commit this one.
 bot_secrets.py
+# TradeLocker login for local API discovery only: never commit.
+tradelocker_secrets.json
 # The bots' own state/count files.
 btc_*_v2.json
 crypto_*_v2.json

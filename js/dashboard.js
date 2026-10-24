@@ -9443,7 +9443,7 @@ function renderPosSizeCalculator(){
           ? '<span class="ps-up-none">—</span>'
           : _placedRecord(acc.id, entry, sl)
             ? _placedRowHTML(acc, _placedRecord(acc.id, entry, sl))
-            : `<button type="button" class="up-order-btn up-order-btn-sm" onclick="placeUpscaleOrders(['${acc.id}'])" ${c.minLev == null ? 'disabled' : ''} title="Send this order to Upscale — ${escapeHtml(acc.upscale_account_label || '')}">Place Order</button>`}</td>` : ''}
+            : `<button type="button" class="up-order-btn up-order-btn-sm" onclick="placeUpscaleOrders(['${acc.id}'])" ${c.minLev == null ? 'disabled' : ''} title="Send this order — ${escapeHtml(acc.upscale_account_label || '')}">Place Order</button>`}</td>` : ''}
       <td style="white-space:nowrap;">
         <button type="button" class="poscalc-accent-btn" onclick="copyCellValue(this)" ${c.qty == null ? 'disabled' : ''}>Copy</button>
         <button type="button" class="poscalc-accent-btn" onclick="tradeThisSetup('${acc.id}')" ${c.minLev == null ? 'disabled' : ''}>Trade This Setup</button>
@@ -17162,7 +17162,7 @@ function _brokerForAccount(name){
   const firm = String(acc && acc.prop_firm || '').toLowerCase();
   const nm = String(name).toLowerCase();
   if(/5ers|five\s*ers/.test(firm) || /5ers/.test(nm)) return 'the5ers';
-  if(/upscale/.test(firm) || (acc && acc.upscale_account_id) || /upscale/.test(nm)) return 'upscale';
+  if(/upscale/.test(firm) || (acc && acc.upscale_account_id && !String(acc.upscale_account_id).startsWith('tl:')) || /upscale/.test(nm)) return 'upscale';
   return null;
 }
 function openEasyAddModal(){
@@ -25579,7 +25579,7 @@ async function placeUpscaleOrders(accountIds){
 
   const linked = TRADING_ACCOUNTS.filter(a => a.upscale_account_id && a.account_type !== 'Exchange'
     && (!accountIds || accountIds.map(String).includes(String(a.id))));
-  if(!linked.length){ await customAlert('No account here has an Upscale API key yet — add one in My Accounts → Edit.'); return; }
+  if(!linked.length){ await customAlert('No account here is connected to a broker yet — connect one in My Accounts → Edit.'); return; }
   // Ang may order na sa parehong presyo ay nilalaktawan — walang dobleng order.
   const accs = linked.filter(a => { const rec = _placedRecord(a.id, entry, sl); return !rec || rec.state === 'Closed'; });
   if(!accs.length){ await customAlert('This order is already placed on every account. Cancel it first to place it again.'); return; }
@@ -28860,9 +28860,23 @@ async function _upscaleCall(action, body){
   return data;
 }
 
+/* Aling broker ang ikokonekta: Upscale (API key) o TradeLocker (login).
+   Kusang TradeLocker kapag mukhang GFT / TradeLocker ang account. */
+let _accBroker = 'upscale';
+function setAccBroker(b){
+  _accBroker = b === 'tradelocker' ? 'tradelocker' : 'upscale';
+  document.querySelectorAll('#accBrokerTabs button').forEach(x => x.setAttribute('aria-selected', x.dataset.broker === _accBroker ? 'true' : 'false'));
+  document.getElementById('accUpRowKey').style.display = _accBroker === 'upscale' ? '' : 'none';
+  document.getElementById('accTlForm').style.display = _accBroker === 'tradelocker' ? '' : 'none';
+  document.getElementById('accUpscalePick').innerHTML = '';
+  document.getElementById('accUpscaleNote').textContent = '';
+}
 function _renderUpscaleApiSection(a){
   const box = document.getElementById('accUpscaleApi');
   if(!box) return;
+  ['accTlPassword'].forEach(id => { const el = document.getElementById(id); if(el) el.value = ''; });
+  const looksTL = a && /goat|gft|tradelocker/i.test(`${a.prop_firm || ''} ${a.firm || ''} ${a.account_name || ''}`);
+  setAccBroker(looksTL ? 'tradelocker' : 'upscale');
   // Kailangan ng naka-save na account; at walang API ang isang exchange.
   const show = !!(a && a.id && a.account_type !== 'Exchange');
   box.style.display = show ? '' : 'none';
@@ -28873,7 +28887,68 @@ function _renderUpscaleApiSection(a){
   const linked = !!a.upscale_account_id;
   document.getElementById('accUpscaleLinked').style.display = linked ? '' : 'none';
   document.getElementById('accUpscaleForm').style.display = linked ? 'none' : '';
+  document.getElementById('accBrokerTabs').style.display = linked ? 'none' : '';
   document.getElementById('accUpscaleLabel').textContent = a.upscale_account_label || 'an Upscale account';
+}
+
+/* TRADELOCKER (hal. GFT). Ang login ay napupunta lang sa Worker, na nag-e-encrypt
+   dito; ang password ay nililinis pagkatapos ng bawat subok. Iisang login
+   para sa lahat ng account sa TradeLocker — ikaw ang pipili kung alin ito. */
+async function checkTradeLockerLogin(){
+  const note = document.getElementById('accUpscaleNote');
+  const pick = document.getElementById('accUpscalePick');
+  const btn = document.getElementById('accTlCheckBtn');
+  const creds = { broker: 'tradelocker', email: document.getElementById('accTlEmail').value.trim(),
+    password: document.getElementById('accTlPassword').value, server: document.getElementById('accTlServer').value.trim(),
+    env: document.getElementById('accTlEnv').value };
+  pick.innerHTML = ''; note.textContent = ''; note.className = 'up-api-note';
+  if(!creds.email || !creds.password || !creds.server){ note.textContent = 'Fill in the email, password and server.'; return; }
+  btn.disabled = true; btn.textContent = 'Checking…';
+  try{
+    const { accounts } = await _upscaleCall('check', { tradingAccountId: editingAccountId, ...creds });
+    const usable = (accounts || []).filter(x => x.status === 'active');
+    // Ang mga account na naka-link na sa ibang journal account ay hindi na iniaalok.
+    const taken = new Set(TRADING_ACCOUNTS.filter(x => x.id !== editingAccountId).map(x => x.upscale_account_id).filter(Boolean));
+    const free = usable.filter(x => !taken.has(x.accountId));
+    if(!free.length){
+      document.getElementById('accTlPassword').value = '';
+      note.className = 'up-api-note bad';
+      note.textContent = usable.length ? 'Every account under this login is already linked to another account here.' : 'The login works, but it has no active accounts.';
+      return;
+    }
+    if(free.length === 1){ await _linkTradeLocker(creds, free[0].accountId); return; }
+    window._tlPendingCreds = creds;
+    pick.innerHTML = '<div class="up-api-pick-q">This login has several accounts — which one is this?</div>'
+      + free.map(x => `<button type="button" class="up-api-choice" onclick="_linkTradeLocker(window._tlPendingCreds, '${x.accountId}')">
+          <b>${escapeHtml(x.label)}</b>
+          <span>Balance $${x.balance != null ? x.balance.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</span>
+        </button>`).join('');
+  }catch(e){
+    document.getElementById('accTlPassword').value = '';
+    note.className = 'up-api-note bad';
+    note.textContent = e.message;
+  }finally{
+    btn.disabled = false; btn.textContent = 'Connect';
+  }
+}
+async function _linkTradeLocker(creds, accountId){
+  const note = document.getElementById('accUpscaleNote');
+  try{
+    const r = await _upscaleCall('link', { tradingAccountId: editingAccountId, ...creds, upscaleAccountId: accountId });
+    const acc = TRADING_ACCOUNTS.find(x => x.id === editingAccountId);
+    if(acc){ acc.upscale_account_id = r.accountId; acc.upscale_account_label = r.label; }
+    _renderUpscaleApiSection(acc);
+    note.className = 'up-api-note good';
+    note.textContent = 'Connected to TradeLocker. The login is stored encrypted and will not be shown again.';
+    if(typeof renderPosSizeCalculator === 'function') renderPosSizeCalculator();
+  }catch(e){
+    note.className = 'up-api-note bad';
+    note.textContent = e.message;
+  }finally{
+    window._tlPendingCreds = null;
+    document.getElementById('accTlPassword').value = '';
+    document.getElementById('accUpscalePick').innerHTML = '';
+  }
 }
 
 async function checkUpscaleApiKey(){
@@ -28938,7 +29013,7 @@ async function _linkUpscale(apiKey, upscaleAccountId){
   }
 }
 async function unlinkUpscaleApi(){
-  if(!(await customConfirm('Remove the Upscale API key from this account? Orders from the calculator will stop for it.'))) return;
+  if(!(await customConfirm('Disconnect the broker from this account? Orders from the calculator will stop for it.'))) return;
   const note = document.getElementById('accUpscaleNote');
   try{
     await _upscaleCall('unlink', { tradingAccountId: editingAccountId });
@@ -28946,7 +29021,7 @@ async function unlinkUpscaleApi(){
     if(acc){ acc.upscale_account_id = null; acc.upscale_account_label = null; acc.upscale_api_key_enc = null; }
     _renderUpscaleApiSection(acc);
     note.className = 'up-api-note';
-    note.textContent = 'Key removed.';
+    note.textContent = 'Disconnected.';
     if(typeof renderPosSizeCalculator === 'function') renderPosSizeCalculator();
   }catch(e){
     note.className = 'up-api-note bad';

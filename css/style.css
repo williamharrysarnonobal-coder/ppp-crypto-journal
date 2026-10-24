@@ -5771,3 +5771,15 @@ body.mobile-mode .pi-dd{grid-template-columns:1fr;gap:12px;}
 
   .cal-cell.notrade{cursor:pointer;}
   .cal-cell.notrade:hover{border-color:var(--accent);}
+
+/* Broker API sa Edit account: Upscale o TradeLocker. */
+.up-api-brokers{display:flex;gap:6px;margin:8px 0 10px;flex-wrap:wrap;}
+.up-api-brokers button{padding:6px 12px;border-radius:999px;border:1px solid var(--rule);background:var(--surface-2);color:var(--muted);font:inherit;font-size:12.5px;font-weight:600;cursor:pointer;}
+.up-api-brokers button span{font-weight:400;opacity:.8;}
+.up-api-brokers button[aria-selected="true"]{color:var(--accent);border-color:var(--accent);}
+.up-api-brokers button:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+.up-api-tl{display:flex;flex-direction:column;gap:8px;}
+.up-api-tl input,.up-api-tl select{min-width:0;padding:9px 11px;background:var(--surface);color:var(--ink);border:1px solid var(--rule);border-radius:6px;font-family:ui-monospace,Consolas,monospace;font-size:12.5px;}
+.up-api-tl input:focus,.up-api-tl select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);}
+.up-api-tl select{font-family:inherit;}
+.up-api-tl .up-api-row input{flex:1;}

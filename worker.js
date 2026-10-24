@@ -368,6 +368,243 @@ function pickOrderType(direction, entry, price) {
   return better ? 'limit' : 'stop_market';
 }
 
+/* ============================ TRADELOCKER ============================
+   (hal. Goat Funded Trader). Ginagamit ang PAREHONG mga column ng Upscale sa
+   trading_accounts, kaya walang bagong SQL at gumagana agad ang Place Order,
+   status, Cancel, Move SL to BE at auto-journal ng app:
+     upscale_api_key_enc   'tl:' + JSON {email, password, server, env}, AES-GCM
+                           encrypted (gaya ng Upscale key; hindi kailanman sa browser)
+     upscale_account_id    'tl:<env>:<accountId>:<accNum>'
+     upscale_account_label 'TradeLocker #2571666 · $100,000'
+   Ang mga sagot ay nasa anyo ng Upscale (quote / order / status / cancel /
+   move_be), kaya ang app ay hindi na kailangang magkaroon ng ibang daan.
+   Ang qty ng app ay units (BTC, oz); ang TradeLocker ay lots (lotSize ng
+   instrument: BTC 1, XAU 100), kaya kino-convert dito. Basa lang ang
+   lahat maliban sa 'order', 'cancel' at 'move_be'. */
+const TL_TOKENS = new Map();      // sha256(email|password|server|env) -> { token, exp }
+const TL_INSTRUMENTS = new Map(); // accountId -> { at, list }
+const tlBase = env => `https://${env === 'live' ? 'live' : 'demo'}.tradelocker.com/backend-api`;
+
+async function tlToken(c, fresh) {
+  // Ang susi ng cache ay may hash ng PASSWORD din: kung email lang, ang maling
+  // password ay papasok gamit ang session ng naunang tamang login.
+  const raw = new TextEncoder().encode(`${c.email}|${c.password}|${c.server}|${c.env}`);
+  const k = b64(await crypto.subtle.digest('SHA-256', raw));
+  const hit = TL_TOKENS.get(k);
+  if (!fresh && hit && hit.exp > Date.now() + 60000) return hit.token;
+  const res = await fetch(`${tlBase(c.env)}/auth/jwt/token`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: c.email, password: c.password, server: c.server })
+  });
+  const j = await res.json().catch(() => ({}));
+  if (!res.ok || !j.accessToken) throw new UpscaleError(401, 'tl_login',
+    'TradeLocker did not accept the login. Check the email, password and server (e.g. GFTTL), and Demo or Live.');
+  const exp = j.expireDate ? Date.parse(j.expireDate) : Date.now() + 30 * 60000;
+  TL_TOKENS.set(k, { token: j.accessToken, exp });
+  return j.accessToken;
+}
+async function tl(c, method, path, accNum, body) {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const token = await tlToken(c, attempt > 0);
+    const res = await fetch(`${tlBase(c.env)}${path}`, {
+      method,
+      headers: { Authorization: `Bearer ${token}`, ...(accNum ? { accNum: String(accNum) } : {}),
+        ...(body ? { 'Content-Type': 'application/json' } : {}) },
+      body: body ? JSON.stringify(body) : undefined
+    });
+    if (res.status === 401 && attempt === 0) continue;   // token ran out: log in again once
+    const j = await res.json().catch(() => null);
+    if (!res.ok || (j && j.s && j.s !== 'ok')) {
+      if (res.status === 429) throw new UpscaleError(429, 'rate', 'TradeLocker asked to slow down — try again in a few seconds.');
+      const msg = (j && (j.errmsg || j.message)) || res.status;
+      throw new UpscaleError(res.status >= 400 ? res.status : 502, 'tradelocker', `TradeLocker said: ${msg}`);
+    }
+    return j;
+  }
+}
+// Mga hilera ng TradeLocker ay array ng values; ang /trade/config ang nagsasabi ng pangalan.
+const tlRows = (rows, cols) => (rows || []).map(r => Object.fromEntries(cols.map((k, i) => [k, r[i]])));
+const TL_ORDER_COLS = ['id', 'tradableInstrumentId', 'routeId', 'qty', 'side', 'type', 'status', 'filledQty', 'avgPrice', 'price', 'stopPrice', 'validity', 'expireDate', 'createdDate', 'lastModified', 'isOpen', 'positionId', 'stopLoss', 'stopLossType', 'takeProfit', 'takeProfitType', 'strategyId'];
+const TL_POS_COLS = ['id', 'tradableInstrumentId', 'routeId', 'side', 'qty', 'avgPrice', 'stopLossId', 'takeProfitId', 'openDate', 'unrealizedPl', 'strategyId'];
+const tlNum = v => (v == null || v === '' ? null : Number(v));
+const tlIso = v => { const n = Number(v); if (!v) return null; const d = Number.isFinite(n) ? new Date(n < 1e12 ? n * 1000 : n) : new Date(v); return isNaN(d) ? null : d.toISOString(); };
+
+async function tlInstrument(c, acc, symbol) {
+  const want = String(symbol || '').toUpperCase().replace(/[^A-Z0-9]/g, '');   // "BTC/USD" -> "BTCUSD"
+  if (!want) throw new UpscaleError(400, 'no_symbol', 'Put the Symbol in the calculator first (e.g. BTC/USD).');
+  let cache = TL_INSTRUMENTS.get(acc.id);
+  if (!cache || Date.now() - cache.at > 6 * 3600000) {
+    const j = await tl(c, 'GET', `/trade/accounts/${acc.id}/instruments`, acc.accNum);
+    cache = { at: Date.now(), list: ((j && j.d) || {}).instruments || [] };
+    TL_INSTRUMENTS.set(acc.id, cache);
+  }
+  const norm = n => String(n || '').toUpperCase().replace(/\.[A-Z0-9]+$/, '').replace(/[^A-Z0-9]/g, '');
+  const ins = cache.list.find(i => norm(i.name) === want) || cache.list.find(i => norm(i.name) === want + 'T')
+    || cache.list.find(i => norm(i.name).startsWith(baseAssetOf(symbol)));
+  if (!ins) throw new UpscaleError(404, 'market_not_found', `This TradeLocker account has no ${symbol} to trade.`);
+  const route = t => ((ins.routes || []).find(r => r.type === t) || {}).id;
+  const info = route('INFO'), trade = route('TRADE');
+  const det = ((await tl(c, 'GET', `/trade/instruments/${ins.tradableInstrumentId}?routeId=${info}&locale=en`, acc.accNum)) || {}).d || {};
+  const q = ((await tl(c, 'GET', `/trade/quotes?routeId=${info}&tradableInstrumentId=${ins.tradableInstrumentId}`, acc.accNum)) || {}).d || {};
+  const price = q.ap > 0 && q.bp > 0 ? (Number(q.ap) + Number(q.bp)) / 2 : Number(q.ap || q.bp) || null;
+  return { id: ins.tradableInstrumentId, ticker: ins.name, info, trade, price,
+    lotSize: Number(det.lotSize) || 1, lotStep: Number(det.lotStep) || 0.01, minLot: Number(det.minLot) || 0.01, maxLot: Number(det.maxLot) || null,
+    paused: det.symbolStatus && det.symbolStatus !== 'FULLY_OPEN', closeOnly: det.symbolStatus === 'CLOSE_ONLY' };
+}
+function tlParseAccount(id) {
+  const m = String(id || '').match(/^tl:(demo|live):(\d+):(\d+)$/);
+  if (!m) throw new UpscaleError(400, 'bad_account', 'This TradeLocker link is damaged. Remove it and connect again.');
+  return { env: m[1], id: m[2], accNum: m[3] };
+}
+
+async function handleTradeLocker(env, token, row, accId, action, body) {
+  if (action === 'check' || action === 'link') {
+    const c = { email: String(body.email || '').trim(), password: String(body.password || ''), server: String(body.server || '').trim(),
+      env: body.env === 'live' ? 'live' : 'demo' };
+    if (!/^[^@\s]+@[^@\s]+$/.test(c.email) || !c.password || !/^[\w.-]{2,40}$/.test(c.server))
+      throw new UpscaleError(400, 'bad_login', 'Fill in the TradeLocker email, password and server.');
+    const j = await tl(c, 'GET', '/auth/jwt/all-accounts');
+    const accounts = ((j && j.accounts) || []).map(a => {
+      const bal = Number(a.accountBalance);
+      return { accountId: `tl:${c.env}:${a.id}:${a.accNum}`, status: String(a.status).toUpperCase() === 'ACTIVE' ? 'active' : String(a.status).toLowerCase(),
+        apiTrading: true, balance: Number.isFinite(bal) ? bal : null,
+        label: `TradeLocker #${a.id}${Number.isFinite(bal) ? ' · $' + bal.toLocaleString('en-US') : ''}${c.env === 'demo' ? ' · Demo' : ''}` };
+    });
+    if (action === 'check') return json({ accounts });
+    const pick = accounts.find(a => a.accountId === body.upscaleAccountId);
+    if (!pick) throw new UpscaleError(400, 'bad_account', 'That account is not under this TradeLocker login.');
+    await sbPatchAccount(token, accId, {
+      upscale_api_key_enc: await encrypt(env, 'tl:' + JSON.stringify(c)),
+      upscale_account_id: pick.accountId, upscale_account_label: pick.label
+    });
+    return json({ ok: true, label: pick.label, accountId: pick.accountId });
+  }
+
+  const plain = await decrypt(env, row.upscale_api_key_enc);
+  if (!plain.startsWith('tl:')) throw new UpscaleError(400, 'bad_account', 'This account is not linked to TradeLocker.');
+  const c = JSON.parse(plain.slice(3));
+  const acc = tlParseAccount(row.upscale_account_id);
+  const okId = v => /^\d{1,30}$/.test(String(v || ''));
+
+  const state = async () => {
+    const d = (((await tl(c, 'GET', `/trade/accounts/${acc.id}/state`, acc.accNum)) || {}).d || {}).accountDetailsData || [];
+    return { balance: tlNum(d[0]), consistency: null };
+  };
+
+  if (action === 'status') {
+    const ids = (Array.isArray(body.orderIds) ? body.orderIds : []).map(String).filter(okId).slice(0, 20);
+    if (!ids.length) return json({ states: {} });
+    const open = tlRows((((await tl(c, 'GET', `/trade/accounts/${acc.id}/orders`, acc.accNum)) || {}).d || {}).orders, TL_ORDER_COLS);
+    const hist = tlRows((((await tl(c, 'GET', `/trade/accounts/${acc.id}/ordersHistory`, acc.accNum)) || {}).d || {}).ordersHistory, TL_ORDER_COLS);
+    const positions = tlRows((((await tl(c, 'GET', `/trade/accounts/${acc.id}/positions`, acc.accNum)) || {}).d || {}).positions, TL_POS_COLS);
+    let closedRows = null;
+    const states = {};
+    for (const id of ids) {
+      const o = open.find(x => String(x.id) === id) || hist.find(x => String(x.id) === id);
+      if (!o) { states[id] = { state: 'Unknown' }; continue; }
+      const st = String(o.status || '').toLowerCase();
+      if (/cancel|reject|refus|expire/.test(st)) { states[id] = { state: 'Cancelled' }; continue; }
+      if (!/fill/.test(st) || !o.positionId) { states[id] = { state: 'Order Placed' }; continue; }
+      const entry = tlNum(o.avgPrice) || tlNum(o.price) || tlNum(o.stopPrice);
+      const pos = positions.find(p => String(p.id) === String(o.positionId));
+      if (pos) {
+        const sl = open.find(x => String(x.id) === String(pos.stopLossId));
+        const stop = sl ? (tlNum(sl.stopPrice) || tlNum(sl.price)) : null;
+        states[id] = { state: 'In Position', entry: tlNum(pos.avgPrice) || entry, stop, atBE: !!(stop && sameLevel(stop, tlNum(pos.avgPrice) || entry)) };
+        continue;
+      }
+      // Sarado: ang order na nagsara ng parehong posisyon.
+      const closer = hist.filter(x => String(x.positionId) === String(o.positionId) && String(x.id) !== id && /fill/i.test(x.status || ''))
+        .sort((a, b) => Number(b.lastModified || 0) - Number(a.lastModified || 0))[0];
+      const exit = closer ? (tlNum(closer.avgPrice) || tlNum(closer.stopPrice) || tlNum(closer.price)) : null;
+      // P&L at fee: mula sa ulat ng mga saradong trade kung naroon; kung hindi,
+      // kinukuwenta mula sa presyo × lots × lotSize (gross, walang fee).
+      if (closedRows === null) {
+        try { const r = await tl(c, 'GET', '/trade/reports/close-trades-history', acc.accNum); closedRows = (r && (r.data || (r.d && r.d.data))) || []; }
+        catch { closedRows = []; }
+      }
+      const rep = closedRows.find(r => r && Object.values(r).some(v => String(v) === String(o.positionId)));
+      const pick = (r, re) => { if (!r) return null; const k = Object.keys(r).find(k => re.test(k)); return k ? tlNum(r[k]) : null; };
+      let pnl = pick(rep, /^(net)?(profit|pnl|pl)$|realized/i);
+      const fee = pick(rep, /commission|fee/i);
+      if (pnl == null && exit != null && entry != null) {
+        let lotSize = 1;
+        try { const ins = (TL_INSTRUMENTS.get(acc.id) || { list: [] }).list.find(i => String(i.tradableInstrumentId) === String(o.tradableInstrumentId));
+          if (ins) { const info = ((ins.routes || []).find(r => r.type === 'INFO') || {}).id;
+            lotSize = Number((((await tl(c, 'GET', `/trade/instruments/${ins.tradableInstrumentId}?routeId=${info}&locale=en`, acc.accNum)) || {}).d || {}).lotSize) || 1; } } catch {}
+        pnl = Math.round((exit - entry) * (String(o.side).toLowerCase() === 'buy' ? 1 : -1) * Number(o.filledQty || o.qty) * lotSize * 100) / 100;
+      }
+      let how = null;
+      if (closer) {
+        const t = String(closer.type || '').toLowerCase();
+        if (t === 'limit') how = 'TP Hit';
+        else if (t === 'stop') how = exit != null && entry != null && sameLevel(exit, entry) ? 'BE Hit' : (pnl > 0 ? 'Stop Profit' : 'SL Hit');
+      }
+      states[id] = { state: 'Closed', how, pnl, entry, exit, fee: fee != null ? Math.abs(fee) : null,
+        openedAt: tlIso(o.lastModified) || tlIso(o.createdDate), closedAt: closer ? (tlIso(closer.lastModified) || tlIso(closer.createdDate)) : null };
+    }
+    return json({ states });
+  }
+
+  if (action === 'cancel') {
+    const orderId = String(body.orderId || '');
+    if (!okId(orderId)) throw new UpscaleError(400, 'bad_order', 'Which order?');
+    const open = tlRows((((await tl(c, 'GET', `/trade/accounts/${acc.id}/orders`, acc.accNum)) || {}).d || {}).orders, TL_ORDER_COLS);
+    const o = open.find(x => String(x.id) === orderId);
+    if (!o || /fill/i.test(o.status || '')) throw new UpscaleError(409, 'not_active',
+      'That order is no longer waiting on TradeLocker — it has filled or was already cancelled. If it filled, close the position there.');
+    await tl(c, 'DELETE', `/trade/orders/${orderId}`, acc.accNum);
+    return json({ ok: true });
+  }
+
+  if (action === 'move_be') {
+    const id = String(body.orderId || '');
+    if (!okId(id)) throw new UpscaleError(400, 'bad_order', 'Which order?');
+    const hist = tlRows((((await tl(c, 'GET', `/trade/accounts/${acc.id}/ordersHistory`, acc.accNum)) || {}).d || {}).ordersHistory, TL_ORDER_COLS);
+    const o = hist.find(x => String(x.id) === id);
+    const positions = tlRows((((await tl(c, 'GET', `/trade/accounts/${acc.id}/positions`, acc.accNum)) || {}).d || {}).positions, TL_POS_COLS);
+    const pos = o && positions.find(p => String(p.id) === String(o.positionId));
+    if (!pos) throw new UpscaleError(409, 'no_stop', 'No open position for this order — it may not be filled yet, or it is already closed.');
+    const entry = tlNum(pos.avgPrice);
+    const ins = await tlInstrument(c, acc, body.symbol);
+    const long = String(pos.side).toLowerCase() === 'buy';
+    if (!(long ? ins.price > entry : ins.price < entry)) throw new UpscaleError(409, 'not_in_profit',
+      `Price (${ins.price}) is not past your entry (${entry}) yet — a stop at breakeven would close the trade straight away.`);
+    await tl(c, 'PATCH', `/trade/positions/${pos.id}`, acc.accNum, { stopLoss: entry });
+    return json({ ok: true, stop: entry });
+  }
+
+  const ins = await tlInstrument(c, acc, body.symbol);
+  const market = { id: ins.id, asset: baseAssetOf(body.symbol), ticker: ins.ticker, price: ins.price, paused: ins.paused, closeOnly: ins.closeOnly };
+  if (action === 'quote') return json({ market, account: await state().catch(() => null) });
+
+  if (action !== 'order') throw new UpscaleError(400, 'bad_request', 'Unknown action.');
+  const entry = Number(body.entry), sl = Number(body.sl), tp = body.tp == null || body.tp === '' ? null : Number(body.tp);
+  const units = Number(body.quantity);
+  if (!(entry > 0) || !(sl > 0) || entry === sl) throw new UpscaleError(400, 'bad_prices', 'Entry and SL are needed, and must differ.');
+  if (!(units > 0)) throw new UpscaleError(400, 'bad_qty', 'Quantity must be above zero.');
+  const direction = entry > sl ? 'long' : 'short';
+  if (tp != null && (!(tp > 0) || (direction === 'long' ? tp <= entry : tp >= entry))) throw new UpscaleError(400, 'bad_tp', 'TP is on the wrong side of Entry.');
+  if (ins.paused) throw new UpscaleError(403, 'market_paused', `${ins.ticker} is not open for trading right now.`);
+  const type = pickOrderType(direction, entry, ins.price);
+  if (!type) throw new UpscaleError(409, 'market_price_stale', 'TradeLocker had no price for this market — try again in a moment.');
+  // Units → lots, pababa sa lotStep: hindi lalampas sa risk mo.
+  const step = ins.lotStep, lots = Math.floor((units / ins.lotSize) / step + 1e-9) * step;
+  const qty = Number(lots.toFixed(6));
+  if (qty < ins.minLot) throw new UpscaleError(400, 'bad_qty',
+    `That size is ${(units / ins.lotSize).toFixed(4)} lots — below the minimum ${ins.minLot} lot for ${ins.ticker}. Raise the risk amount to send it.`);
+  if (ins.maxLot && qty > ins.maxLot) throw new UpscaleError(400, 'bad_qty', `That is ${qty} lots — above the ${ins.maxLot} lot maximum for ${ins.ticker}.`);
+  const order = { qty: String(qty), routeId: ins.trade, side: direction === 'long' ? 'buy' : 'sell', validity: 'GTC',
+    type: type === 'limit' ? 'limit' : 'stop', tradableInstrumentId: String(ins.id),
+    stopLoss: sl, stopLossType: 'absolute' };
+  if (type === 'limit') order.price = entry; else order.stopPrice = entry;
+  if (tp != null) { order.takeProfit = tp; order.takeProfitType = 'absolute'; }
+  const res = await tl(c, 'POST', `/trade/accounts/${acc.id}/orders`, acc.accNum, order);
+  const orderId = res && res.d && res.d.orderId;
+  if (!orderId) throw new UpscaleError(502, 'tradelocker', 'TradeLocker did not return an order id.');
+  return json({ ok: true, orderId: String(orderId), status: 'active', type, direction, price: ins.price, ticker: ins.ticker, lots: qty });
+}
+
 async function handleUpscale(request, env, action) {
   if (request.method !== 'POST') return json({ error: 'POST only.' }, 405);
   try {
@@ -382,6 +619,11 @@ async function handleUpscale(request, env, action) {
 
     // Make sure the journal account is the caller's before touching anything.
     const row = await sbAccount(token, accId);
+
+    // TradeLocker (hal. GFT): sariling daan, parehong anyo ng sagot.
+    const isTL = (action === 'check' || action === 'link') ? body.broker === 'tradelocker'
+      : action !== 'unlink' && String(row.upscale_account_id || '').startsWith('tl:');
+    if (isTL) return await handleTradeLocker(env, token, row, accId, action, body);
 
     if (action === 'check' || action === 'link') {
       const apiKey = String(body.apiKey || '').trim();

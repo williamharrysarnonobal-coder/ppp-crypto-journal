@@ -233,6 +233,25 @@ find/replace, try the LF form, then the CRLF form.
   account's currency (`_finRecCur`), not a hard-coded PHP.
 - `tests/sim-finance-bill.js` runs Paid/Undo end-to-end on the owner's real numbers.
 
+## TradeLocker (e.g. Goat Funded Trader)
+
+- Same flow as Upscale and the SAME columns, no SQL: `upscale_api_key_enc` holds
+  `'tl:' + JSON {email,password,server,env}` (AES-GCM by the Worker, never sent
+  to the browser), `upscale_account_id` = `tl:<demo|live>:<accountId>:<accNum>`.
+  `handleUpscale` sends `tl:` accounts (and check/link with `broker:'tradelocker'`)
+  to `handleTradeLocker`, which answers in Upscale's shapes (quote/order/status/
+  cancel/move_be), so Place Order, Pending Setups status, Cancel, BE and auto-
+  journal work unchanged. Edit account → Broker API → TradeLocker tab.
+- API base `https://{demo|live}.tradelocker.com/backend-api`; JWT login cached per
+  sha256(email|password|server|env) (never per email: a wrong password must fail).
+  Rows are arrays mapped by `/trade/config` columns (`TL_ORDER_COLS`, `TL_POS_COLS`).
+  Qty: the app sends units; the Worker converts to lots (lotSize: BTC 1, XAU 100)
+  and floors to lotStep. Symbols are like `BTCUSD.X`. Closed P&L/fee come from
+  `/trade/reports/close-trades-history` when present, else gross from prices.
+- Owner's GFT accounts: demo #2571666 (accNum 1), #2571667 (accNum 2), server GFTTL.
+  `tradelocker_secrets.json` (gitignored) holds the login for local read-only
+  discovery scripts only.
+
 ## Login page App preview
 
 - `login.html` has a **tour section** under the login box, above the footer
