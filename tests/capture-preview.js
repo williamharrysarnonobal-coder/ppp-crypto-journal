@@ -91,7 +91,29 @@ const PREVIEW_DATA = `
     { id: 4, account_id: 4, kind: 'Subscription', name: 'Music streaming', price: 10.99, cycle: 'Monthly', first_bill: mStr(9, 2) },
     { id: 5, account_id: 1, kind: 'Subscription', name: 'Cloud storage', price: 2.99, cycle: 'Monthly', first_bill: mStr(9, 2) }];
   T.finance_budgets = [{ id: 1, category: '🍔 Food & Dining', amount: 400 }, { id: 2, category: '🚗 Transportation', amount: 150 }];
-  // Walang paalala o banner na sasakop sa larawan.
+  // Sample achievements: payout certificates at isang tournament. Ang larawan
+  // ay ginagawa rito mismo (canvas), walang totoong file o storage.
+  T.achievements = [
+    { id: 1, category: 'Withdrawal', subject: 'Third payout · Apex Funded 100K', body: 'Consistent month, no rule broken.', amount: 3180.5, image_path: 'cert|PAYOUT CERTIFICATE|Apex Funded|$3,180.50', created_at: new Date(now - 6 * day).toISOString() },
+    { id: 2, category: 'Tournament', subject: 'Top 5 · Monthly Trading Cup', body: 'Finished 4th of 1,200 traders.', amount: null, image_path: 'cert|TOURNAMENT|Monthly Trading Cup|4th place', created_at: new Date(now - 21 * day).toISOString() },
+    { id: 3, category: 'Withdrawal', subject: 'Second payout · Nova Capital 100K', body: 'Paid out in 24 hours.', amount: 2450, image_path: 'cert|PAYOUT CERTIFICATE|Nova Capital|$2,450.00', created_at: new Date(now - 38 * day).toISOString() },
+    { id: 4, category: 'Withdrawal', subject: 'First payout · Summit Prop 50K', body: 'The first one. Funded in 19 days.', amount: 1275.25, image_path: 'cert|PAYOUT CERTIFICATE|Summit Prop|$1,275.25', created_at: new Date(now - 64 * day).toISOString() }];
+  const cert = (kind, firm, big, date) => {
+    const c = document.createElement('canvas'); c.width = 800; c.height = 560; const x = c.getContext('2d');
+    const g = x.createLinearGradient(0, 0, 800, 560); g.addColorStop(0, '#1B2030'); g.addColorStop(1, '#0E1118'); x.fillStyle = g; x.fillRect(0, 0, 800, 560);
+    x.strokeStyle = '#F0B429'; x.lineWidth = 3; x.strokeRect(24, 24, 752, 512); x.lineWidth = 1; x.strokeRect(36, 36, 728, 488);
+    x.textAlign = 'center'; x.fillStyle = '#F0B429'; x.font = '700 22px sans-serif'; x.fillText(kind, 400, 120);
+    x.fillStyle = '#93989F'; x.font = '500 20px sans-serif'; x.fillText('This certifies that', 400, 190);
+    x.fillStyle = '#F1EEE6'; x.font = '800 44px sans-serif'; x.fillText('Demo Trader', 400, 250);
+    x.fillStyle = '#93989F'; x.font = '500 20px sans-serif'; x.fillText(kind === 'TOURNAMENT' ? 'placed in the ' + firm : 'received a payout from ' + firm, 400, 300);
+    x.fillStyle = '#2ECC71'; x.font = '800 64px sans-serif'; x.fillText(big, 400, 390);
+    x.fillStyle = '#93989F'; x.font = '500 16px sans-serif'; x.fillText(date + '  ·  sample certificate', 400, 470);
+    return c.toDataURL('image/jpeg', 0.85);
+  };
+  const realFrom = sb.storage.from;
+  sb.storage.from = bucket => bucket !== 'achievements' ? realFrom(bucket) : { ...realFrom(bucket), createSignedUrl: async p => {
+    const [, kind, firm, big] = String(p).split('|'); const a = T.achievements.find(r => r.image_path === p);
+    return { data: { signedUrl: cert(kind, firm, big, new Date(a ? a.created_at : now).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })) }, error: null }; } };  // Walang paalala o banner na sasakop sa larawan.
   try{ localStorage.setItem('tanaydana-reminders', JSON.stringify({ enabled: false })); }catch(e){}
 })();
 `;
@@ -105,10 +127,13 @@ const SLIDES = [
   { file: '06-calculator', view: 'calculator', run: `(()=>{ const set = (id, v) => { const el = document.getElementById(id); if(el){ el.value = v; el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); } }; set('psSymbol', 'BTC/USD'); set('psEntry', '67000'); set('psTP', '68600'); set('psSL', '66450'); if(typeof renderPosSizeCalculator === 'function') renderPosSizeCalculator(); })()` },
   { file: '07-alerts', view: 'alerts', run: `(typeof switchAlertsTab === 'function' && switchAlertsTab('bitcoin'))` },
   { file: '08-plan', view: 'plan' },
-  { file: '09-finance', view: 'finance', tab: 'dashboard' },
-  { file: '10-finance-accounts', view: 'finance', tab: 'accounts' },
-  { file: '11-finance-recurring', view: 'finance', tab: 'recurring' },
-  { file: '12-challenges', view: 'challenges' }
+  { file: '09-news', view: 'news' },
+  { file: '10-hours', view: 'hours' },
+  { file: '11-finance', view: 'finance', tab: 'dashboard' },
+  { file: '12-finance-accounts', view: 'finance', tab: 'accounts' },
+  { file: '13-finance-recurring', view: 'finance', tab: 'recurring' },
+  { file: '14-challenges', view: 'challenges' },
+  { file: '15-achievements', view: 'achievements' }
 ];
 
 const MIME = { '.html': 'text/html', '.css': 'text/css', '.js': 'text/javascript', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.webp': 'image/webp', '.ico': 'image/x-icon' };
@@ -119,7 +144,19 @@ const server = http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/javascript' });
     return res.end(fs.readFileSync(path.join(__dirname, 'fake-supabase.js'), 'utf8') + PREVIEW_DATA);
   }
-  if(p.startsWith('/api/')){ res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end('{"events":[]}'); }
+  // Sample na high/medium impact news ngayong linggo (gawa-gawa) para sa Calendar.
+  if(p === '/api/economic-events'){
+    const base = new Date(); base.setHours(0, 0, 0, 0);
+    const at = (d, h, m) => new Date(base.getTime() + d * 864e5 + (h * 60 + m) * 6e4).toISOString();
+    const E = [[0, 16, 30, 'Initial Jobless Claims', 'US', 'High', '228K', '231K'], [0, 18, 0, 'New Home Sales', 'US', 'Medium', '715K', '698K'],
+      [1, 12, 0, 'CPI y/y', 'EU', 'High', '2.1%', '2.2%'], [1, 16, 30, 'Core PCE Price Index m/m', 'US', 'High', '0.2%', '0.3%'],
+      [2, 3, 50, 'BoJ Policy Rate', 'JP', 'High', '0.50%', '0.50%'], [2, 13, 0, 'GDP q/q', 'GB', 'Medium', '0.3%', '0.4%'],
+      [3, 16, 30, 'Non-Farm Employment Change', 'US', 'High', '165K', '142K'], [3, 16, 30, 'Unemployment Rate', 'US', 'High', '4.2%', '4.2%'],
+      [4, 22, 0, 'FOMC Statement', 'US', 'High', '', ''], [-1, 18, 0, 'ISM Services PMI', 'US', 'High', '51.8', '52.0', '52.4']];
+    const events = E.map(([d, h, m, title, country, impact, forecast, previous, actual]) => ({ title, country, event_date: at(d, h, m), impact, forecast, previous, actual: actual || null, comment: null, comment_tl: null }));
+    res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ events }));
+  }
+  if(p.startsWith('/api/')){ res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end('{}'); }
   fs.readFile(path.join(ROOT, p), (e, b) => { if(e) return res.writeHead(404).end(); res.writeHead(200, { 'Content-Type': MIME[path.extname(p).toLowerCase()] || 'application/octet-stream' }); res.end(b); });
 });
 let ws, id = 0, S; const pend = new Map();
@@ -139,6 +176,10 @@ async function ev(e){ const r = await send('Runtime.evaluate', { returnByValue: 
   S = (await send('Target.attachToTarget', { targetId, flatten: true })).sessionId;
   await send('Page.enable', {}, S); await send('Runtime.enable', {}, S);
   await send('Emulation.setDeviceMetricsOverride', { width: W, height: H, deviceScaleFactor: 1, mobile: false }, S);
+  // Ang orasan ng capture: susunod na Miyerkules, 5:40 PM (London at New York bukas).
+  await send('Page.addScriptToEvaluateOnNewDocument', { source: `(() => { const R = Date; const d = new R(); d.setDate(d.getDate() + (((3 - d.getDay() + 7) % 7) || 7)); d.setHours(17, 40, 0, 0); const off = d.getTime() - R.now();
+    class D extends R { constructor(...a){ if(a.length) super(...a); else super(R.now() + off); } static now(){ return R.now() + off; } }
+    window.Date = D; })();` }, S);
   await send('Page.navigate', { url: `http://127.0.0.1:${PORT}/dashboard.html` }, S);
   for(let i = 0; i < 60; i++){ await sleep(250); const n = await ev('typeof ALL_TRADES==="undefined"?-1:ALL_TRADES.length'); if(n > 0) break; }
   await sleep(2500);
