@@ -11559,6 +11559,7 @@ function finAccountCardHTML(a){
       <div class="fin-acc-card-actions${!isCredit ? ' has-subadd' : ''}" onclick="event.stopPropagation();">
         ${!isCredit ? `<button class="fin-subacct-add" onclick="openFinSubAccountModal(${a.id})">+ Sub-account</button>` : ''}
         <div class="fin-acc-card-actions-btns">
+          ${isCredit ? `<button class="drawer-secondary-btn" style="padding:4px 9px;font-size:11px;color:var(--ink);border-color:var(--accent);" title="Payment history" onclick="openFinPayHistory(${a.id})">Payments</button>` : ''}
           <button class="drawer-secondary-btn" style="padding:4px 8px;font-size:11px;color:var(--ink);border-color:var(--accent);" title="Edit" onclick="openFinAccountModal(${a.id})">${editIconSVG()}</button>
           <button class="drawer-danger-btn" style="padding:4px 10px;font-size:11px;margin-left:0;" onclick="deleteFinAccount(${a.id})">${deleteIconSVG()}</button>
         </div>
@@ -11858,7 +11859,6 @@ function openFinAccountDetailsModal(accountId, backToId){
       ${billSection('BILL FOR ' + prevMonth.toLocaleDateString('en-US',{month:'long'}).toUpperCase(), prevMonth, prevTx, 'prev')}
       ${paymentHtml}
     </div>
-    ${_finCardPaymentHistoryHtml(a)}
     <div class="fin-acc-details-section">
       <div class="fin-acc-details-heading">FULL HISTORY</div>
       ${_finAccHistoryFilterHtml(accountId)}
@@ -11888,11 +11888,20 @@ function _finCardPaymentHistoryHtml(a){
       </div>`).join('');
   return `
     <div class="fin-acc-details-section">
-      <div class="fin-acc-details-heading">PAYMENT HISTORY</div>
       ${pays.length ? rows + `<div class="fin-acc-details-row fin-acc-details-total"><span>${pays.length} payment${pays.length === 1 ? '' : 's'}</span><span>${finMoney(total, a.currency)}</span></div>`
         : '<div class="fin-acc-details-row"><span style="color:var(--muted);">No payments yet. Press Paid on a bill and it shows here.</span><span></span></div>'}
     </div>`;
 }
+
+/* Payment history: sariling popup mula sa "Payments" button ng credit card. */
+function openFinPayHistory(accountId){
+  const a = FIN_ACCOUNTS.find(x => x.id === accountId);
+  if(!a) return;
+  document.getElementById('finPayHistTitle').textContent = `${a.account_name} · Payment history`;
+  document.getElementById('finPayHistBody').innerHTML = _finCardPaymentHistoryHtml(a);
+  document.getElementById('finPayHistModal').classList.add('open');
+}
+function closeFinPayHistory(){ document.getElementById('finPayHistModal').classList.remove('open'); }
 
 function closeFinAccountDetailsModal(){
   document.getElementById('finAccountDetailsModal').classList.remove('open');
