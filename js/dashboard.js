@@ -17298,34 +17298,35 @@ function parseUpscaleEasyAddText(raw){
     }
   }
 
-  const pnlLine = lines.find(l => /^Pnl:/i.test(l));
-  if(pnlLine){
-    const m = pnlLine.match(/Pnl:\s*(-?[\d,]+\.?\d*)/i);
-    if(m) parsed.profit_loss = parseFloat(m[1].replace(/,/g,''));
-  }
+  /* ANG HALAGA NG ISANG LABEL: sa parehong linya ("Close: $79,820.3") o sa
+     KASUNOD na linya ("Close:" tapos "$79,820.3") — ganito ang kopya mula sa
+     Mac. Ang unang may laman ang ginagamit (ang buod sa itaas ng card). */
+  const labelNum = re => {
+    for(let i = 0; i < lines.length; i++){
+      if(!re.test(lines[i])) continue;
+      const rest = lines[i].replace(re, '');
+      const m = (rest.match(/(-?\$?-?[\d,]+\.?\d*)/) || (/^\s*$/.test(rest) && lines[i + 1] ? lines[i + 1].match(/^(-?\$?-?[\d,]+\.?\d*)/) : null));
+      if(m){ const v = parseFloat(m[1].replace(/[$,]/g, '')); if(Number.isFinite(v)) return v; }
+    }
+    return null;
+  };
+  // "Prl:" din — ganoon minsan lumalabas ang "Pnl:" sa kopya mula sa Mac.
+  const pnlV = labelNum(/^P[nr]l:/i);
+  if(pnlV != null) parsed.profit_loss = pnlV;
 
   // The position card's top summary row already shows the TOTAL fee for
   // the round-trip (its per-fill rows below — Open/Close — just break that
   // same total down into the two legs, they don't add anything extra) —
   // so only the first "Fee:" line matters; summing every "Fee:" line would
   // count the per-fill breakdown on top of the total that already includes it.
-  const feeLine = lines.find(l => /^Fee:/i.test(l));
-  if(feeLine){
-    const m = feeLine.match(/Fee:\s*(-?[\d,]+\.?\d*)/i);
-    if(m) parsed.fee = parseFloat(m[1].replace(/,/g,''));
-  }
+  const feeV = labelNum(/^Fee:/i);
+  if(feeV != null) parsed.fee = feeV;
 
-  const avgLine = lines.find(l => /^Avg:/i.test(l));
-  if(avgLine){
-    const m = avgLine.match(/Avg:\s*\$?([\d,]+\.?\d*)/i);
-    if(m) parsed.entry_price = parseFloat(m[1].replace(/,/g,''));
-  }
+  const avgV = labelNum(/^Avg:/i);
+  if(avgV != null) parsed.entry_price = Math.abs(avgV);
 
-  const closePriceLine = lines.find(l => /^Close:/i.test(l));
-  if(closePriceLine){
-    const m = closePriceLine.match(/Close:\s*\$?([\d,]+\.?\d*)/i);
-    if(m) parsed.close_price = parseFloat(m[1].replace(/,/g,''));
-  }
+  const closeV = labelNum(/^Close:/i);
+  if(closeV != null) parsed.close_price = Math.abs(closeV);
 
   // Position size — the first bare decimal number with no "$" and no comma
   // (Collateral values always have a comma, e.g. "20,198.4").
@@ -17363,8 +17364,11 @@ function parseUpscaleEasyAddText(raw){
   }
 
   const timestamps = [];
-  for(let i = 0; i < lines.length - 1; i++){
-    if(/^\d{1,2}\.\d{1,2}\.\d{2,4}$/.test(lines[i]) && /^\d{1,2}:\d{2}(:\d{2})?$/.test(lines[i+1])){
+  for(let i = 0; i < lines.length; i++){
+    // Petsa at oras sa magkahiwalay na linya, o sa iisang linya (Mac).
+    const one = lines[i].match(/^(\d{1,2}\.\d{1,2}\.\d{2,4})\s+(\d{1,2}:\d{2}(?::\d{2})?)$/);
+    if(one){ const iso = _parseExchangeDateTime(one[1], one[2]); if(iso) timestamps.push(iso); continue; }
+    if(i < lines.length - 1 && /^\d{1,2}\.\d{1,2}\.\d{2,4}$/.test(lines[i]) && /^\d{1,2}:\d{2}(:\d{2})?$/.test(lines[i+1])){
       const iso = _parseExchangeDateTime(lines[i], lines[i+1]);
       if(iso) timestamps.push(iso);
     }
