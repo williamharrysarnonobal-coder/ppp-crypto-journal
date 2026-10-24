@@ -23139,8 +23139,8 @@ async function renderProfile(){
     fields.innerHTML = `
       <div class="field-row"><label>Display Name</label><input id="profileName" placeholder="Your name" value="${escapeHtml(p.display_name || '')}"></div>
       <div class="field-row"><label>Nickname</label><input id="profileNickname" placeholder="e.g. JessiePinkman" value="${escapeHtml(p.nickname || '')}"></div>
-      <div class="field-row"><label>Username (used to log in)</label><input id="profileUsername" placeholder="e.g. juandelacruz" autocapitalize="off" autocorrect="off" value="${escapeHtml(p.username || '')}"></div>
-      <div class="field-row"><label>Discord Username</label><input id="profileDiscord" placeholder="e.g. juandelacruz#0001" value="${escapeHtml(p.discord_username || '')}"></div>
+      <div class="field-row"><label>Username (used to log in)</label><input id="profileUsername" placeholder="e.g. jessiepinkman" autocapitalize="off" autocorrect="off" value="${escapeHtml(p.username || '')}"></div>
+      <div class="field-row"><label>Discord Username</label><input id="profileDiscord" placeholder="e.g. jessiepinkman#0001" value="${escapeHtml(p.discord_username || '')}"></div>
       <div class="field-row"><label>Trading Style</label>
         <select id="profileStyle">${PROFILE_STYLE_OPTIONS.map(s => `<option value="${s}" ${p.trading_style===s?'selected':''}>${s}</option>`).join('')}</select>
       </div>
