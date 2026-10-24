@@ -233,6 +233,15 @@ find/replace, try the LF form, then the CRLF form.
   account's currency (`_finRecCur`), not a hard-coded PHP.
 - `tests/sim-finance-bill.js` runs Paid/Undo end-to-end on the owner's real numbers.
 
+## Login page App preview
+
+- "App preview" (and "See inside the app →") on `login.html` opens a slideshow of
+  `img/preview/NN-name.webp` (desktop 1280x800) and `NN-name-m.webp` (phone,
+  used at ≤600px). **Sample data only**: `node tests/capture-preview.js` makes them
+  from fake-supabase.js + its own fictional data; it never touches real Supabase.
+  Re-run it after a big UI change. Never replace them with real screenshots
+  (the owner's trades, money or names). `tests/probe-login-preview.js` checks it.
+
 ## UI conventions
 
 - Reuse the shared modal overlays and share-image pattern (canvas +

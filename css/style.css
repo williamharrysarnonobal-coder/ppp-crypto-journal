@@ -93,6 +93,45 @@
   .auth-card button:hover{filter:brightness(1.08);box-shadow:0 12px 28px -8px color-mix(in srgb, var(--accent) 65%, transparent);}
   .auth-card button:active{transform:scale(.98);}
   .auth-card button:disabled{opacity:.6;cursor:default;box-shadow:none;}
+  /* App preview (login page): pangalawang button, hindi kalaban ng Log in. */
+  .auth-card button.auth-preview-btn{
+    margin-top:12px;background:transparent;color:var(--ink);border:1px solid var(--rule);box-shadow:none;
+    display:flex;align-items:center;justify-content:center;gap:8px;font-weight:600;
+  }
+  .auth-card button.auth-preview-btn:hover{border-color:var(--accent);color:var(--accent);filter:none;box-shadow:none;}
+  .login-preview-link{align-self:flex-start;display:inline-block;margin:-6px 0 22px;padding:0;background:none;border:0;color:var(--accent);font:inherit;font-weight:600;font-size:14px;cursor:pointer;text-align:left;}
+  .login-preview-link:hover{text-decoration:underline;}
+  .login-preview-link:focus-visible,.auth-preview-btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+  .pv-overlay{background:rgba(6,8,12,.82);padding:24px;}
+  .pv-box{width:100%;max-width:1120px;max-height:100%;overflow-y:auto;display:flex;flex-direction:column;gap:12px;
+    background:var(--surface);border:1px solid var(--rule);border-radius:14px;padding:16px;}
+  .pv-head{display:flex;align-items:center;gap:10px;}
+  .pv-tag{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--accent);
+    border:1px solid color-mix(in srgb, var(--accent) 45%, transparent);border-radius:999px;padding:3px 10px;}
+  .pv-count{font-size:12.5px;color:var(--muted);font-variant-numeric:tabular-nums;}
+  .pv-close{margin-left:auto;background:none;border:0;color:var(--muted);font-size:18px;cursor:pointer;padding:4px 8px;border-radius:6px;}
+  .pv-close:hover{color:var(--ink);background:var(--surface-2);}
+  .pv-stage{position:relative;border-radius:10px;overflow:hidden;border:1px solid var(--rule);background:var(--bg);aspect-ratio:1280/800;}
+  .pv-stage img{display:block;width:100%;height:100%;object-fit:contain;}
+  .pv-nav{position:absolute;top:50%;transform:translateY(-50%);width:42px;height:42px;border-radius:50%;
+    border:1px solid var(--rule);background:color-mix(in srgb, var(--surface) 88%, transparent);color:var(--ink);
+    font-size:24px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;}
+  .pv-nav:hover,.pv-nav:focus-visible{border-color:var(--accent);color:var(--accent);outline:none;}
+  .pv-prev{left:12px;} .pv-next{right:12px;}
+  .pv-caption h2{font-family:var(--font-ui);font-size:18px;margin:0 0 4px;text-wrap:balance;}
+  .pv-caption p{margin:0;color:var(--muted);font-size:14px;line-height:1.55;max-width:65ch;}
+  .pv-dots{display:flex;gap:6px;flex-wrap:wrap;justify-content:center;}
+  .pv-dots button{width:8px;height:8px;padding:0;border-radius:50%;border:0;background:var(--rule);cursor:pointer;}
+  .pv-dots button[aria-current="true"]{background:var(--accent);width:22px;border-radius:999px;}
+  @media(max-width:600px){
+    .pv-overlay{padding:10px;}
+    .pv-box{padding:12px;border-radius:12px;}
+    .pv-stage{aspect-ratio:390/640;max-height:62vh;}
+    .pv-nav{width:34px;height:34px;font-size:20px;}
+    .pv-prev{left:6px;} .pv-next{right:6px;}
+    .pv-caption h2{font-size:16px;} .pv-caption p{font-size:13px;}
+  }
+  @media(prefers-reduced-motion:no-preference){ .pv-dots button{transition:width .2s ease, background .2s ease;} }
   .auth-error{color:var(--loss);font-size:13px;margin-top:10px;min-height:16px;}
   .auth-notice{color:var(--win);font-size:13px;margin-top:10px;}
   .auth-switch{margin-top:18px;font-size:12.5px;color:var(--muted);text-align:center;}
