@@ -3478,6 +3478,13 @@ table.breakdown tbody tr{cursor:pointer;}
     flex-direction:row;width:auto;flex-wrap:wrap;gap:4px;position:static;top:auto;margin-bottom:14px;
   }
   .alerts-tab-nav .subnav-item{padding:7px 12px;font-size:12.5px;}
+  /* Finance: ang mga seksyon (Dashboard, Accounts, Transactions…) ay hilera ng
+     tabs sa itaas, hindi listahan sa gilid — buong lapad ang laman. */
+  .fin-tabs-shell{flex-direction:column;align-items:stretch;gap:0;}
+  .fin-tabs-shell > .subnav-content{width:100%;min-width:0;}
+  .fin-tab-nav{flex-direction:row;width:auto;flex-wrap:wrap;gap:4px;position:static;top:auto;
+    margin-bottom:16px;padding-bottom:10px;border-bottom:1px solid var(--rule);}
+  .fin-tab-nav .subnav-item{padding:8px 14px;font-size:13px;}
   .subnav-item.active{background:var(--surface-2);color:var(--accent);font-weight:500;}
   .subnav-content{flex:1;min-width:0;}
   .subnav-panel{display:none;}
