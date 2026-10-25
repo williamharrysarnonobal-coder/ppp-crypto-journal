@@ -4681,7 +4681,8 @@ function showWeekTrades(weekIdx){
   document.getElementById('modalSub').textContent = `${week.count} trade${week.count===1?'':'s'} · ${fmtMoney(week.pnl)}`;
   document.getElementById('modalBody').innerHTML = renderTradeCards(week.trades);
   // Share week at Weekly post: para sa linggo lang — itinatago ng closeModal.
-  _weekShare = { y: calMonth.getFullYear(), m: calMonth.getMonth(), days, trades: week.trades, label: rangeLabel };
+  // Pang-ilang linggo ng buwan: ang hilera sa calendar (ang may petsang 1 ay Week 1).
+  _weekShare = { y: calMonth.getFullYear(), m: calMonth.getMonth(), days, trades: week.trades, label: rangeLabel, weekNo: weekIdx + 1 };
   ['modalShareWeekBtn', 'modalWeeklyPostBtn'].forEach(id => { const b = document.getElementById(id); if(b) b.style.display = ''; });
   document.getElementById('tradeModal').classList.add('open');
 }
@@ -18611,7 +18612,7 @@ function _drawYearShare(cv, modes, showTotals, showAcc){
   const font = (w, s) => `${w} ${s}px "Public Sans", system-ui, sans-serif`;
   const rr = (x, y, w, h, r) => { ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x, y, w, h, r) : ctx.rect(x, y, w, h); };
   const sign = v => v >= -0.005 ? '+' : '−';  // −0.0 ay "+0.0"
-  const valOf = (s, md) => md === 'usd' ? `${sign(s.net)}${Math.abs(s.net).toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+  const valOf = (s, md) => md === 'usd' ? `${sign(s.net)}$${Math.abs(s.net).toLocaleString(undefined, { maximumFractionDigits: 0 })}`
     : md === 'r' ? (s.rN ? `${sign(s.R)}${Math.abs(s.R).toFixed(1)}R` : null)
     : md === 'pct' ? (s.pN ? `${sign(s.pct)}${Math.abs(s.pct).toFixed(2)}%` : null)
     : _wlTxt(s.w, s.l, s.n - s.w - s.l);
@@ -18698,7 +18699,7 @@ function _drawWeekShare(cv, modes, showTotals, showAcc){
   const font = (w, s) => `${w} ${s}px "Public Sans", system-ui, sans-serif`;
   const rr = (x, y, w, h, r) => { ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x, y, w, h, r) : ctx.rect(x, y, w, h); };
   const sign = v => v >= -0.005 ? '+' : '−';
-  const valOf = (s, md) => md === 'usd' ? `${sign(s.net)}${Math.abs(s.net).toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+  const valOf = (s, md) => md === 'usd' ? `${sign(s.net)}$${Math.abs(s.net).toLocaleString(undefined, { maximumFractionDigits: 0 })}`
     : md === 'r' ? (s.rN ? `${sign(s.R)}${Math.abs(s.R).toFixed(1)}R` : null)
     : md === 'pct' ? (s.pN ? `${sign(s.pct)}${Math.abs(s.pct).toFixed(2)}%` : null)
     : _wlTxt(s.w, s.l, s.n - s.w - s.l);
@@ -18709,10 +18710,13 @@ function _drawWeekShare(cv, modes, showTotals, showAcc){
 
   ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
   const L = 56;
-  ctx.fillStyle = C.ink; ctx.font = font(800, 52); ctx.fillText(_weekShare.label, L, 96, W - L * 2);
+  // "Week 3 - October 2026", at ang mga petsa sa ilalim.
+  const _wkTitle = `Week ${_weekShare.weekNo || 1} - ${new Date(yy, mm, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}`;
+  const _wkRange = `  ${new Date(yy, mm, days[0]).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${days[days.length - 1]}`;
+  ctx.fillStyle = C.ink; ctx.font = font(800, 52); ctx.fillText(_wkTitle, L, 96, W - L * 2);
   const acct = document.getElementById('accountFilter')?.value;
   ctx.fillStyle = C.muted; ctx.font = font(500, 22);
-  ctx.fillText((showAcc && acct && acct !== 'all' ? acct : 'Trading week'), L, 134, W - L * 2);
+  ctx.fillText([_wkRange.trim(), showAcc && acct && acct !== 'all' ? acct : 'Trading week'].join('  ·  '), L, 134, W - L * 2);
 
   let gy = 170;
   if(showTotals){
@@ -18805,7 +18809,7 @@ function drawCalendarShare(){
     const p = raw ? _accountPct(raw) : null; if(p !== null){ s.pct += p; s.pN++; }
   });
   const sign = v => v >= -0.005 ? '+' : '−';  // −0.0 ay "+0.0"
-  const valOf = (s, md) => md === 'usd' ? `${sign(s.net)}${Math.abs(s.net).toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+  const valOf = (s, md) => md === 'usd' ? `${sign(s.net)}$${Math.abs(s.net).toLocaleString(undefined, { maximumFractionDigits: 0 })}`
     : md === 'r' ? (s.rN ? `${sign(s.R)}${Math.abs(s.R).toFixed(1)}R` : null)
     : md === 'pct' ? (s.pN ? `${sign(s.pct)}${Math.abs(s.pct).toFixed(2)}%` : null)
     : _wlTxt(s.w, s.l, s.n - s.w - s.l);
@@ -18828,7 +18832,7 @@ function drawCalendarShare(){
     const pT = all.reduce((a, s) => a + s.pct, 0), pN = all.reduce((a, s) => a + s.pN, 0);
     const w = all.reduce((a, s) => a + s.w, 0), l = all.reduce((a, s) => a + s.l, 0);
     const green = all.filter(s => s.net > 0).length;
-    const total = mode === 'usd' ? `${sign(net)}${Math.abs(net).toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+    const total = mode === 'usd' ? `${sign(net)}$${Math.abs(net).toLocaleString(undefined, { maximumFractionDigits: 0 })}`
       : mode === 'pct' ? (pN ? `${sign(pT)}${Math.abs(pT).toFixed(2)}%` : '—')
       : mode === 'r' ? (rN ? `${sign(Rt)}${Math.abs(Rt).toFixed(1)}R` : '—') : _wlTxt(w, l, all.reduce((a, s) => a + s.n - s.w - s.l, 0));
     const boxes = [
