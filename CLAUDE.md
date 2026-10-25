@@ -208,9 +208,10 @@ find/replace, try the LF form, then the CRLF form.
   (record only, `noScore`). Scoring lives in `_confluenceProgress`,
   `_selectCredit`, `_ynCredit`; keep the tooltip, trade page, stats and
   win-rate review consistent with them.
-- `SHARED_CHART_PATTERNS` (Trendline BD/BO, Conso BD/BO, Trendline Bounce/
-  Rejection) are merged into EVERY playbook's chart patterns, built-in or saved
-  (`_withSharedPatterns` in `applyPlaybooks`); saved lists keep their own too.
+- `SHARED_CHART_PATTERNS_BY_DIR` are merged into every playbook by direction:
+  Long gets Trendline BO, Conso BO, Trendline Bounce; Short gets Trendline BD,
+  Conso BD, Trendline Rejection (`_withSharedPatterns(list, key)` in
+  `applyPlaybooks`; the other side is removed even from a saved list).
 - Auto-rules (`_autoUnfollowedRules`) match questions by **exact text**:
   rewording a question can switch an auto-rule off. The editor flags those
   questions and asks before saving a rewording; the list is

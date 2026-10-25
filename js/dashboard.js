@@ -26803,9 +26803,22 @@ const CONFLUENCE_SETUPS = {
 /* MGA CHART PATTERN SA LAHAT NG PLAYBOOK (pinili niya): idinadagdag sa dulo ng
    bawat listahan, built-in man, naka-save o gawa mo — pinagsasama, hindi
    pinapalitan, kaya ang sarili mong mga pattern ay nananatili. */
-const SHARED_CHART_PATTERNS = ['Trendline BD', 'Trendline BO', 'Conso BD', 'Conso BO', 'Trendline Bounce', 'Trendline Rejection'];
-const _withSharedPatterns = list => { const l = Array.isArray(list) ? list : []; return [...l, ...SHARED_CHART_PATTERNS.filter(p => !l.includes(p))]; };
-Object.values(CONFLUENCE_SETUPS).forEach(cfg => { cfg.patterns = _withSharedPatterns(cfg.patterns); });
+/* Ayon sa direksyon ng playbook (pinili niya): ang Long ay breakout/bounce,
+   ang Short ay breakdown/rejection. Ang kabilang panig ay tinatanggal kahit
+   naka-save na ito sa playbook. */
+const SHARED_CHART_PATTERNS_BY_DIR = {
+  Long:  ['Trendline BO', 'Conso BO', 'Trendline Bounce'],
+  Short: ['Trendline BD', 'Conso BD', 'Trendline Rejection']
+};
+const SHARED_CHART_PATTERNS = [...SHARED_CHART_PATTERNS_BY_DIR.Long, ...SHARED_CHART_PATTERNS_BY_DIR.Short];
+const _withSharedPatterns = (list, key) => {
+  const dir = /^short\|/i.test(String(key || '')) ? 'Short' : /^long\|/i.test(String(key || '')) ? 'Long' : null;
+  const mine = dir ? SHARED_CHART_PATTERNS_BY_DIR[dir] : SHARED_CHART_PATTERNS;
+  const other = dir ? SHARED_CHART_PATTERNS_BY_DIR[dir === 'Long' ? 'Short' : 'Long'] : [];
+  const l = (Array.isArray(list) ? list : []).filter(p => !other.includes(p));
+  return [...l, ...mine.filter(p => !l.includes(p))];
+};
+Object.entries(CONFLUENCE_SETUPS).forEach(([k, cfg]) => { cfg.patterns = _withSharedPatterns(cfg.patterns, k); });
 const CONFLUENCE_DEFAULTS = JSON.parse(JSON.stringify(CONFLUENCE_SETUPS));
 /* ANG MGA TANONG NA IPAPAKITA, sa ayos na pinili mo. Ang POSISYON (i) ng
    bawat tanong ay hindi kailanman nagbabago — doon nakatali ang mga sagot ng
@@ -33799,7 +33812,7 @@ function applyPlaybooks(rows){
       name: _pbClean(r.name, 80),
       minConfluencePct: Number.isFinite(Number(r.min_pct)) ? Number(r.min_pct) : DEFAULT_MIN_CONFLUENCE_PCT,
       items: r.items.map(_pbCleanItem),
-      patterns: _withSharedPatterns((Array.isArray(r.chart_patterns) ? r.chart_patterns : []).map(p => _pbClean(p, 40)).filter(Boolean)),
+      patterns: _withSharedPatterns((Array.isArray(r.chart_patterns) ? r.chart_patterns : []).map(p => _pbClean(p, 40)).filter(Boolean), r.key),
       noAutoRules: !!r.no_auto_rules,
       notes: String(r.notes || ''),
       archived: !!r.archived,
@@ -34103,7 +34116,7 @@ function closePlaybookEditor(){
 }
 function newPlaybook(){
   _pbOpenEditor({ isNew: true, key: null, isBuiltin: false, name: '', direction: 'Long', trade_setup: '', pattern_type: '',
-    min_pct: DEFAULT_MIN_CONFLUENCE_PCT, no_auto_rules: false, chart_patterns: SHARED_CHART_PATTERNS.slice(), notes: '',
+    min_pct: DEFAULT_MIN_CONFLUENCE_PCT, no_auto_rules: false, chart_patterns: [], notes: '',
     items: [{ tag: '', text: '', plain: true }], savedLen: 0 });
 }
 function editPlaybook(){
