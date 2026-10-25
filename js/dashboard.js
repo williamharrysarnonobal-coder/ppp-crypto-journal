@@ -26800,6 +26800,12 @@ const CONFLUENCE_SETUPS = {
 /* PLAYBOOKS: ang mga checklist sa itaas ang mga panimulang playbook. Kapag
    in-edit mo ang isa (Playbooks page), ang bersyon mo sa database ang
    pumapalit dito — tingnan ang applyPlaybooks. Itinatabi ang orihinal. */
+/* MGA CHART PATTERN SA LAHAT NG PLAYBOOK (pinili niya): idinadagdag sa dulo ng
+   bawat listahan, built-in man, naka-save o gawa mo — pinagsasama, hindi
+   pinapalitan, kaya ang sarili mong mga pattern ay nananatili. */
+const SHARED_CHART_PATTERNS = ['Trendline BD', 'Trendline BO', 'Conso BD', 'Conso BO', 'Trendline Bounce', 'Trendline Rejection'];
+const _withSharedPatterns = list => { const l = Array.isArray(list) ? list : []; return [...l, ...SHARED_CHART_PATTERNS.filter(p => !l.includes(p))]; };
+Object.values(CONFLUENCE_SETUPS).forEach(cfg => { cfg.patterns = _withSharedPatterns(cfg.patterns); });
 const CONFLUENCE_DEFAULTS = JSON.parse(JSON.stringify(CONFLUENCE_SETUPS));
 /* ANG MGA TANONG NA IPAPAKITA, sa ayos na pinili mo. Ang POSISYON (i) ng
    bawat tanong ay hindi kailanman nagbabago — doon nakatali ang mga sagot ng
@@ -33793,7 +33799,7 @@ function applyPlaybooks(rows){
       name: _pbClean(r.name, 80),
       minConfluencePct: Number.isFinite(Number(r.min_pct)) ? Number(r.min_pct) : DEFAULT_MIN_CONFLUENCE_PCT,
       items: r.items.map(_pbCleanItem),
-      patterns: (Array.isArray(r.chart_patterns) ? r.chart_patterns : []).map(p => _pbClean(p, 40)).filter(Boolean),
+      patterns: _withSharedPatterns((Array.isArray(r.chart_patterns) ? r.chart_patterns : []).map(p => _pbClean(p, 40)).filter(Boolean)),
       noAutoRules: !!r.no_auto_rules,
       notes: String(r.notes || ''),
       archived: !!r.archived,
@@ -34097,7 +34103,7 @@ function closePlaybookEditor(){
 }
 function newPlaybook(){
   _pbOpenEditor({ isNew: true, key: null, isBuiltin: false, name: '', direction: 'Long', trade_setup: '', pattern_type: '',
-    min_pct: DEFAULT_MIN_CONFLUENCE_PCT, no_auto_rules: false, chart_patterns: [], notes: '',
+    min_pct: DEFAULT_MIN_CONFLUENCE_PCT, no_auto_rules: false, chart_patterns: SHARED_CHART_PATTERNS.slice(), notes: '',
     items: [{ tag: '', text: '', plain: true }], savedLen: 0 });
 }
 function editPlaybook(){
