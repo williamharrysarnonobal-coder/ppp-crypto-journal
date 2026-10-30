@@ -180,6 +180,13 @@ find/replace, try the LF form, then the CRLF form.
 - Both v2 tasks also have a **every-10-minutes trigger** with MultipleInstances
   = IgnoreNew: if the bot was killed (e.g. a cancelled Restart from the Start
   menu closed it on 2026-10-22), the task starts it again within 10 minutes.
+- **`xau_live_bot_v2.py`** (2026-10-30, task **"XAU Bot v2"**): gold, Binance
+  XAUUSDT.P (TradFi perpetual), only 5M HL/LH and 15M HL/LH with the BTC v2 rules.
+  Same Telegram bot (@btc_mtf_alert_bot), its own group: `bot_secrets.XAU_CHAT_ID`
+  (empty = app only). `signal_alerts` category `'gold'`, symbol `XAU` → the
+  **Gold** tab in Trade Alerts. Logs `xau_bot_v2.log`.
+- **No quiet hours** on BTC and gold (owner's phone is on DND): `ALERT_QUIET_ENABLED = False`.
+  The ALTS bot still has its 12–7 AM quiet hours.
 - Both v2 tasks run through **`pyw.exe`** (no console window): with `py.exe`
   the bot dies when its window is closed (exit 0xC000013A).
 - v2 Telegram carries **setup alerts only**: `SEND_TELEGRAM_HEARTBEAT` and

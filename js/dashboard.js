@@ -20906,6 +20906,7 @@ async function deleteOldAlerts(){
 function renderAlertsTables(){
   renderAlertsTableFor('bitcoin');
   renderAlertsTableFor('altcoin');
+  renderAlertsTableFor('gold');   // xau_live_bot_v2.py (XAUUSDT.P)
   const label = document.getElementById('alertsCountLabel');
   if(label){
     if(!SIGNAL_ALERTS.length){

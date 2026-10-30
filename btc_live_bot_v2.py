@@ -340,7 +340,14 @@ def count_alert(coin, setup_name):
     return f"{short} - Alert #{per[short]} today"
 
 
+# Quiet hours OFF (2026-10-30, owner's choice: his phone is on Do Not Disturb
+# at night). Every setup is sent whatever the hour.
+ALERT_QUIET_ENABLED = False
+
+
 def in_alert_quiet_hours():
+    if not ALERT_QUIET_ENABLED:
+        return False
     h = datetime.now(UAE_TZ).hour
     return ALERT_QUIET_START_HOUR <= h < ALERT_QUIET_END_HOUR
 
