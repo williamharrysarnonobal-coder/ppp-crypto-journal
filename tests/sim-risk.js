@@ -14,13 +14,21 @@ function fnBody(name) {
   }
 }
 
-const api = new Function('fmtNum', '_leverageTint', `
+const fxConst = js.match(/const PS_FX_CCY = \[[^\]]+\];/)[0];
+let SYM = '';
+const document = { getElementById: id => id === 'psSymbol' ? { value: SYM } : null };
+const api = new Function('fmtNum', '_leverageTint', 'document', `
+  ${fxConst}
+  let _psFxRates = { CHF: 0.8 }, _psFxState = 'ok';
+  function _psLoadFxRates(){}
+  ${fnBody('_psFxPair')}
+  ${fnBody('_psQuoteUsd')}
   ${fnBody('_psRiskCeiling')}
   ${fnBody('_psRiskCeilingNote')}
   ${fnBody('_psMinLeverage')}
   ${fnBody('_psComputeRow')}
   return { ceiling:_psRiskCeiling, note:_psRiskCeilingNote, row:_psComputeRow };
-`)((n,d) => Number(n).toFixed(d), () => 'currentColor');
+`)((n,d) => Number(n).toFixed(d), () => 'currentColor', document);
 
 const accounts = [
   { id:1, account_name:'Upscale 50K', account_size:50000, current_balance:50000, max_leverage:5 },
@@ -69,3 +77,14 @@ console.log('   margin cap (kaya ba)   : ' + (tight.capped ? 'oo, ibinaba sa $' 
 console.log('   0.5% ceiling (dapat ba): ' + (api.note(acc50, 400) ? 'oo, lagpas sa $250' : 'hindi'));
 console.log('   Ang una ay awtomatikong nag-aadjust. Ang pangalawa ay nagbabala lang —');
 console.log('   hindi ko binababa nang tahimik, dahil desisyon mo iyon.');
+
+console.log('\n=== GBPCHF: ang talo ay nasa CHF, hindi USD');
+// 1 USD = 0.8 CHF, kaya 1 CHF = $1.25. $40 / (0.00095 x 1.25) = 33,684 units.
+SYM = 'GBPCHF';
+const fx = api.row(accounts[1], 40, 1.10127, 0.00095);
+const lossUsd = fx.qty * 0.00095 * 1.25;
+console.log('   qty ' + fx.qty.toFixed(0) + '  talo sa SL $' + lossUsd.toFixed(2));
+if (Math.abs(lossUsd - 40) > 0.01) { console.log('MALI: dapat $40 ang talo sa SL'); process.exit(1); }
+SYM = 'BTC/USD';
+const btc = api.row(accounts[1], 40, 64000, 640);
+if (Math.abs(btc.qty - 0.0625) > 1e-9) { console.log('MALI: nagbago ang BTC'); process.exit(1); }

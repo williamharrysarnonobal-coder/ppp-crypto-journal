@@ -116,6 +116,11 @@ find/replace, try the LF form, then the CRLF form.
 - Client-side config (columns, form fields, dropdown options) is in
   `localStorage` (per browser). Saved options are **merged** with options
   added in code, never replaced.
+- Position Size calculator (`_psComputeRow`): forex pairs whose quote is not
+  USD (GBPCHF, EURJPY…) lose in the quote currency, so the SL distance is
+  converted to USD first (`_psQuoteUsd`; USDxxx uses the price itself, crosses
+  use open.er-api rates cached 6h in `ps_fx_rates_v1`). No rate means no size,
+  never a dollar guess. Crypto and xxxUSD are unchanged.
 
 ## Trade Alerts (two tables, don't confuse them)
 

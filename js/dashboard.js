@@ -9300,7 +9300,78 @@ function _psRiskCeilingNote(acc, riskAmount){
   return `<span class="ps-risk-over">Over your ${fmtNum(ceiling.pct,2).replace(/\.?0+$/,'')}% limit by $${over.toLocaleString(undefined,{maximumFractionDigits:2})} — the ceiling is $${ceiling.amount.toLocaleString(undefined,{maximumFractionDigits:2})}</span>`;
 }
 
+// Forex pairs not quoted in USD (GBPCHF, EURJPY…) win and lose in the QUOTE
+// currency: an SL distance of 0.00095 on GBPCHF is 0.00095 CHF per unit, not
+// $0.00095. Sizing as if it were dollars came out ~25% too big on GBPCHF.
+const PS_FX_CCY = ['USD','EUR','GBP','JPY','CHF','AUD','NZD','CAD','SGD','HKD','NOK','SEK','DKK','ZAR','MXN','TRY','PLN','CNH','CZK','HUF'];
+const PS_FX_LS_KEY = 'ps_fx_rates_v1';
+let _psFxRates = null;      // units of each currency per 1 USD
+let _psFxState = 'idle';    // idle | loading | ok | failed
+let _psFxFailedAt = 0;
+
+function _psFxPair(symbol){
+  const s = String(symbol || '').toUpperCase().split('.')[0].replace(/[^A-Z]/g, '');
+  const m = s.match(/^([A-Z]{3})([A-Z]{3})/);
+  if(!m) return null;
+  const [, base, quote] = m;
+  if(quote === 'USD' || !PS_FX_CCY.includes(quote)) return null;
+  if(!PS_FX_CCY.includes(base) && base !== 'XAU' && base !== 'XAG') return null;
+  return { base, quote };
+}
+
+// USD value of one unit of the quote currency: 1 for USD-quoted pairs and
+// crypto, null while a forex rate is still loading (or unavailable).
+function _psQuoteUsd(symbol, entry){
+  const p = _psFxPair(symbol);
+  if(!p) return 1;
+  if(p.base === 'USD' && entry > 0) return 1 / entry; // USDJPY: the price is the rate
+  if(!_psFxRates) _psLoadFxRates(); // a fresh cached copy is picked up synchronously
+  const r = _psFxRates ? Number(_psFxRates[p.quote]) : 0;
+  return r > 0 ? 1 / r : null;
+}
+
+async function _psLoadFxRates(){
+  if(_psFxState === 'loading' || _psFxState === 'ok') return;
+  // A failure re-renders, which would ask again at once; wait a minute.
+  if(_psFxState === 'failed' && Date.now() - _psFxFailedAt < 60000) return;
+  let cached = null;
+  try{ cached = JSON.parse(localStorage.getItem(PS_FX_LS_KEY) || 'null'); }catch(_){}
+  if(cached && cached.rates && Date.now() - cached.t < 6 * 3600 * 1000){
+    _psFxRates = cached.rates; _psFxState = 'ok'; return;
+  }
+  _psFxState = 'loading';
+  try{
+    const res = await fetch(FX_API_URL);
+    if(!res.ok) throw new Error(`HTTP ${res.status}`);
+    const rates = (await res.json())?.rates;
+    if(!rates || !(Number(rates.CHF) > 0)) throw new Error('Rates missing from response');
+    _psFxRates = rates; _psFxState = 'ok';
+    try{ localStorage.setItem(PS_FX_LS_KEY, JSON.stringify({ t: Date.now(), rates })); }catch(_){}
+  }catch(e){
+    console.error("Couldn't fetch FX rates for position sizing:", e);
+    // An old rate beats no rate; with neither, the forex rows stay blocked.
+    if(cached && cached.rates){ _psFxRates = cached.rates; _psFxState = 'ok'; }
+    else { _psFxState = 'failed'; _psFxFailedAt = Date.now(); }
+  }
+  renderPosSizeCalculator();
+}
+
 function _psComputeRow(acc, riskAmount, entry, riskPerUnit){
+  const symbol = (typeof document !== 'undefined' && document.getElementById('psSymbol')?.value) || '';
+  const quoteUsd = _psQuoteUsd(symbol, entry);
+  if(quoteUsd == null){
+    const pair = _psFxPair(symbol);
+    const msg = _psFxState === 'failed' ? `No ${pair.quote} rate — try again later` : `Loading ${pair.quote} rate…`;
+    return {
+      qty: null, minLev: null, margin: null, capped: false, maxRisk: null, effRisk: riskAmount, requested: riskAmount, rpuUsd: null,
+      qtyText: '—', qtyData: '',
+      levHtml: `<span style="color:var(--muted);font-size:11.5px;">${msg}</span>`,
+      marginText: '—'
+    };
+  }
+  // Everything below is in USD from here on.
+  riskPerUnit = riskPerUnit * quoteUsd;
+  entry = entry * quoteUsd;
   const available = Number(acc.current_balance ?? acc.account_size ?? 0);
   const cap = Number(acc.max_leverage) > 0 ? Math.floor(Number(acc.max_leverage)) : 5;
 
@@ -9332,7 +9403,7 @@ function _psComputeRow(acc, riskAmount, entry, riskPerUnit){
   const minLev = notional != null ? _psMinLeverage(notional, available, acc.max_leverage) : null;
   const margin = (minLev != null && notional != null) ? notional / minLev : null;
   return {
-    qty, minLev, margin, capped, maxRisk, effRisk, requested,
+    qty, minLev, margin, capped, maxRisk, effRisk, requested, rpuUsd: riskPerUnit,
     qtyText: qty != null ? qty.toFixed(4) : '—',
     qtyData: qty != null ? qty.toFixed(4) : '',
     // Tinted per leverage level (1x green through 5x red) — the same scale
@@ -9401,7 +9472,13 @@ function renderPosSizeCalculator(){
   document.getElementById('psRR').textContent = Number.isFinite(tp)
     ? `1 : ${(Math.abs(tp - entry) / riskPerUnit).toFixed(2)}`
     : '—';
-  document.getElementById('psRiskPerUnit').textContent = `$${riskPerUnit.toLocaleString(undefined,{maximumFractionDigits:2})}`;
+  // Small forex distances (0.00095) used to round to "$0".
+  const rpuFmt = v => v.toLocaleString(undefined, { maximumFractionDigits: v >= 1 ? 2 : 6 });
+  const fxPair = _psFxPair(document.getElementById('psSymbol')?.value);
+  const quoteUsd = _psQuoteUsd(document.getElementById('psSymbol')?.value, entry);
+  document.getElementById('psRiskPerUnit').textContent = fxPair
+    ? `${rpuFmt(riskPerUnit)} ${fxPair.quote}${quoteUsd != null ? ` ≈ $${rpuFmt(riskPerUnit * quoteUsd)}` : ''}`
+    : `$${rpuFmt(riskPerUnit)}`;
   document.getElementById('psDistSL').textContent = `${(riskPerUnit / entry * 100).toFixed(4)}%`;
   document.getElementById('psDistTP').textContent = Number.isFinite(tp)
     ? `${(Math.abs(tp - entry) / entry * 100).toFixed(4)}%`
@@ -25597,7 +25674,7 @@ async function placeUpscaleOrders(accountIds){
     const c = _psComputeRow(acc, parseFloat(riskRaw) || 0, entry, riskPerUnit);
     const qty = c.qty != null ? _psFloorQty(c.qty) : null;
     return {
-      acc, qty, lev: c.minLev, risk: qty != null ? qty * riskPerUnit : null,
+      acc, qty, lev: c.minLev, risk: qty != null ? qty * c.rpuUsd : null,
       idem: (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(16).slice(2)),
       state: (qty > 0 && c.minLev != null) ? 'loading' : 'skip',
       note: (qty > 0 && c.minLev != null) ? '' : "Won't fit in this account's balance.",
