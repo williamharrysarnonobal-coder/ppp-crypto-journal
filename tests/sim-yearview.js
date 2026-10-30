@@ -15,6 +15,11 @@ function fn(name){
   }
 }
 
+// Ang lumang spreadsheet days (PAST_DAYS) — walang laman dito.
+const PAST_SRC = () => ['let PAST_DAYS = {};',
+  js.match(/const _pastKey = [^\n]*/)[0], js.match(/const _pastWl = [^\n]*/)[0],
+  js.match(/const _PAST_TIP = [^\n]*/)[0], fn('_pastMonth')].join('\n');
+
 /* Ang mga bagong bahagi ng Year overview — ang journey band at ang bilang ng
    rules kept sa bawat month card — isinusulat NANG ISANG BESES.
 
@@ -90,6 +95,7 @@ function render(all, year, accountValue){
     ${fn('_goalTone')}
     ${fn('_yearGoalBar')}
     ${fn('_yearMiniGrid')}
+  ${PAST_SRC()}
     ${EXTRA}
     ${fn('renderYearOverview')}
     renderYearOverview();
@@ -453,6 +459,7 @@ new Function('document','ALL_TRADES','netPnl','escapeHtml','fmtMoney','fmtNum',
   ${fn('_goalTone')}
     ${fn('_yearGoalBar')}
   ${fn('_yearMiniGrid')}
+  ${PAST_SRC()}
   ${fn('_goalTone')}
   ${EXTRA}
     ${fn('renderYearOverview')}
@@ -554,6 +561,7 @@ new Function('document','ALL_TRADES','netPnl','escapeHtml','fmtMoney','fmtNum',
   ${fn('_goalTone')}
     ${fn('_yearGoalBar')}
   ${fn('_yearMiniGrid')}
+  ${PAST_SRC()}
   ${fn('_goalTone')}
   ${EXTRA}
     ${fn('renderYearOverview')}

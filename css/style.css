@@ -5772,6 +5772,29 @@ body.mobile-mode .pi-dd{grid-template-columns:1fr;gap:12px;}
   .cal-cell.notrade{cursor:pointer;}
   .cal-cell.notrade:hover{border-color:var(--accent);}
 
+/* Lumang spreadsheet: numero lang, dashed at mas mahina, hindi mapipindot. */
+.cal-cell.past{border-style:dashed;cursor:default;}
+.cal-cell.past-win{background:rgba(46,204,113,0.06);border-color:rgba(46,204,113,0.4);}
+.cal-cell.past-win .p{color:var(--win);opacity:.8;}
+.cal-cell.past-loss{background:rgba(255,92,92,0.06);border-color:rgba(255,92,92,0.38);}
+.cal-cell.past-loss .p{color:var(--loss);opacity:.8;}
+body.mobile-mode #calGrid .cal-cell.past::after{
+  content:'';width:7px;height:7px;border-radius:50%;margin-top:3px;flex-shrink:0;
+  border:1.5px solid currentColor;box-sizing:border-box;
+}
+body.mobile-mode #calGrid .cal-cell.past-win::after{color:var(--win);}
+body.mobile-mode #calGrid .cal-cell.past-loss::after{color:var(--loss);}
+.cal-past-sub{font-size:10px;color:var(--muted);font-family:'IBM Plex Mono',monospace;}
+.cal-past-tag{font-family:'IBM Plex Mono',monospace;font-size:9.5px;text-transform:uppercase;
+  letter-spacing:.06em;color:var(--muted);border:1px dashed var(--rule);border-radius:4px;padding:0 5px;}
+.cal-past-line{flex:1 1 100%;display:flex;flex-wrap:wrap;align-items:center;gap:6px;
+  padding:7px 12px;border-top:1px dashed var(--rule);font-size:12px;color:var(--muted);}
+.cal-past-line .cal-past-note{font-size:11px;}
+.cal-total-summary:has(.cal-past-line){flex-wrap:wrap;}
+.yo-d.past{opacity:.6;box-shadow:none;outline:1px dashed currentColor;outline-offset:-1px;}
+.yo-past{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:8px;font-size:11px;
+  color:var(--muted);font-family:'IBM Plex Mono',monospace;}
+
 /* Broker API sa Edit account: Upscale o TradeLocker. */
 .up-api-brokers{display:flex;gap:6px;margin:8px 0 10px;flex-wrap:wrap;}
 .up-api-brokers button{padding:6px 12px;border-radius:999px;border:1px solid var(--rule);background:var(--surface-2);color:var(--muted);font:inherit;font-size:12.5px;font-weight:600;cursor:pointer;}

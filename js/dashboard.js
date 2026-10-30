@@ -1039,6 +1039,7 @@ async function initApp(){
   loadAccounts();
   // Ang sarili mong mga playbook ang pumapalit sa mga checklist sa code.
   if(typeof loadPlaybooks === 'function') loadPlaybooks();
+  loadPastDays();
 
   setLoading(30);
 
@@ -3383,7 +3384,8 @@ function renderYearOverview(){
   const MN = ['January','February','March','April','May','June',
               'July','August','September','October','November','December'];
 
-  if(!pool.length){
+  const pastByMonth = Array.from({ length: 12 }, (_, m) => _pastMonth(y, m));
+  if(!pool.length && !pastByMonth.some(Boolean)){
     body.innerHTML = `<div class="empty-state">No closed trades in ${y}.</div>`;
     return;
   }
@@ -3393,7 +3395,7 @@ function renderYearOverview(){
 
   // The year's goal leads. It is the one line that says whether the year did
   // what it was for; the counts underneath are how it got there.
-  const head = `${_yearGoalStrip(y, net, goalUsd, today)}
+  const head = !pool.length ? '' : `${_yearGoalStrip(y, net, goalUsd, today)}
   <div class="yo-stats">
     ${stat('Profit', fmtMoney(net), net >= 0 ? 'win' : 'loss')}
     ${stat('Trades', yr.n)}
@@ -3440,12 +3442,18 @@ function renderYearOverview(){
 
   const grid = months.map(mo => {
     const cls = mo.n === 0 ? 'quiet' : (mo.net > 0 ? 'up' : mo.net < 0 ? 'down' : '');
+    const pm = pastByMonth[mo.m];
+    // Ang lumang spreadsheet ng buwan: sariling linya, hindi kasama sa net.
+    const pastLine = pm ? `<div class="yo-past" title="${_PAST_TIP}"><span class="cal-past-tag">old</span>
+        <b style="color:var(--${pm.pnl >= 0 ? 'win' : 'loss'})">${fmtMoney(pm.pnl)}</b>
+        <span>${_pastWl(pm)} · ${pm.days}d</span></div>` : '';
     return `<div class="yo-month ${cls}">
       <div class="yo-m-head">
         <span class="yo-m-name">${MN[mo.m]}</span>
         <span class="yo-m-net">${mo.n ? fmtMoney(mo.net) : '—'}</span>
       </div>
       ${_yearMiniGrid(y, mo.m, mo.trades)}
+      ${pastLine}
       ${mo.n ? `<div class="yo-m-foot">
         <div class="yo-f-row">
           <span class="yo-c win" title="${mo.wins} won">${mo.wins}W</span>
@@ -3497,11 +3505,14 @@ function renderYearOverview(){
             ><span>Rules Kept</span><b>${kept}/${tg.length}</b><i>${pct}%</i></div>`;
         })()}
         ${_yearGoalBar(mo, goalUsd)}
-      </div>` : `<div class="yo-m-foot empty">no trades</div>`}
+      </div>` : (pm ? '' : `<div class="yo-m-foot empty">no trades</div>`)}
     </div>`;
   }).join('');
 
-  body.innerHTML = head + `<div class="yo-grid">${grid}</div>`;
+  // Walang journal trade sa taong ito, lumang spreadsheet lang: walang stats.
+  body.innerHTML = (pool.length ? head
+    : `<div class="yo-line">No journal trades in ${y}. The days below are from your old spreadsheet and are not counted in any total.</div>`)
+    + `<div class="yo-grid">${grid}</div>`;
 }
 
 /* The whole year against a whole year's salary — the monthly target twelve
@@ -3619,8 +3630,11 @@ function _yearMiniGrid(y, m, trades){
   for(let i = 0; i < first; i++) cells.push('<i class="yo-d pad"></i>');
   for(let d = 1; d <= last; d++){
     const v = byDay[d];
-    const cls = !v ? '' : (v.pnl > 0 ? ' up' : v.pnl < 0 ? ' down' : ' flat');
-    const title = !v ? `${d}`
+    const past = !v && PAST_DAYS[_pastKey(y, m, d)];
+    const cls = past ? ' past ' + (past.pnl >= 0 ? 'up' : 'down')
+      : !v ? '' : (v.pnl > 0 ? ' up' : v.pnl < 0 ? ' down' : ' flat');
+    const title = past ? `${d} — old: ${fmtMoney(past.pnl)} · ${_pastWl(past)}. ${_PAST_TIP}`
+      : !v ? `${d}`
       : `${d} — ${fmtMoney(v.pnl)} · ${v.n} trade${v.n === 1 ? '' : 's'}`;
     cells.push(`<i class="yo-d${cls}" title="${escapeHtml(title)}">${d}</i>`);
   }
@@ -3633,6 +3647,43 @@ function _yearMiniGrid(y, m, trades){
   while(cells.length < 42) cells.push('<i class="yo-d pad"></i>');
   return `<div class="yo-days">${cells.join('')}</div>`;
 }
+
+/* Mga araw mula sa lumang spreadsheet (bago ang journal): kabuuan lang kada
+   araw — P&L at W/L/BE, walang coin o oras. Nasa Calendar at Year overview
+   lang, may markang "old", at HINDI kasama sa anumang total o stat.
+   Table: past_daily_pnl (supabase_past_daily_pnl.sql). */
+let PAST_DAYS = {};   // 'YYYY-MM-DD' -> { pnl, wins, losses, bes }
+async function loadPastDays(){
+  try{
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/past_daily_pnl?select=day,pnl,wins,losses,bes`, {
+      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}` }
+    });
+    if(!res.ok) return;   // table not created yet: nothing to show
+    const map = {};
+    (await res.json()).forEach(r => {
+      map[r.day] = { pnl: Number(r.pnl) || 0, wins: r.wins || 0, losses: r.losses || 0, bes: r.bes || 0 };
+    });
+    PAST_DAYS = map;
+    if(Object.keys(map).length){
+      try{ renderCalendar(); }catch(e){}
+      if(document.getElementById('yearOverviewModal')?.classList.contains('open')) renderYearOverview();
+    }
+  }catch(e){ /* offline: no old days */ }
+}
+const _pastKey = (y, m, d) => `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+const _pastN = p => p.wins + p.losses + p.bes;
+const _pastWl = p => `${p.wins}W ${p.losses}L${p.bes ? ` ${p.bes}BE` : ''}`;
+// One month of old days, summed: { pnl, wins, losses, bes, days } or null.
+function _pastMonth(y, m){
+  const pre = `${y}-${String(m + 1).padStart(2, '0')}-`;
+  const out = { pnl: 0, wins: 0, losses: 0, bes: 0, days: 0 };
+  Object.entries(PAST_DAYS).forEach(([k, p]) => {
+    if(!k.startsWith(pre)) return;
+    out.pnl += p.pnl; out.wins += p.wins; out.losses += p.losses; out.bes += p.bes; out.days++;
+  });
+  return out.days ? out : null;
+}
+const _PAST_TIP = 'From your old spreadsheet. Not counted in any total.';
 
 function renderCalendar(){
   const y = calMonth.getFullYear(), m = calMonth.getMonth();
@@ -3771,6 +3822,15 @@ function renderCalendar(){
         cell('Win rate', winPct + '%', { color:rateColor,
           title: _winRateWhy(winPct, avgRR, winTrades + lossTrades) });
     }
+    // Ang lumang spreadsheet: isang linya, hiwalay, hindi kasama sa itaas.
+    const pm = _pastMonth(y, m);
+    if(pm){
+      summaryEl.innerHTML += `<div class="cal-past-line" title="${_PAST_TIP}">
+        <span class="cal-past-tag">old</span>
+        <b style="color:var(--${pm.pnl >= 0 ? 'win' : 'loss'})">${fmtMoney(pm.pnl)}</b>
+        · ${_pastWl(pm)} · ${pm.days} day${pm.days === 1 ? '' : 's'}
+        <span class="cal-past-note">from your old spreadsheet, not in the totals</span></div>`;
+    }
   }
 
   const firstDow = new Date(y, m, 1).getDay();
@@ -3804,12 +3864,19 @@ function renderCalendar(){
     weekCells.forEach(d => {
       if(d === null){ html += `<div class="cal-cell empty"></div>`; return; }
       const info = byDay[d];
+      const past = PAST_DAYS[_pastKey(y, m, d)];
       let cls = '', pnlHtml = '', click = '';
       if(info){
         cls = info.pnl >= 0 ? 'win' : 'loss';
         if(String(d) === bestDay) cls += ' best';
         pnlHtml = `<div class="p">${fmtMoney(info.pnl)}</div><div class="cal-count" style="font-size:10.5px;color:var(--muted);">${info.count} trade${info.count>1?'s':''}</div>`;
+        if(past) pnlHtml += `<div class="cal-past-sub" title="${_PAST_TIP}">old ${fmtMoney(past.pnl)}</div>`;
         click = `onclick="showDayTrades(${y}, ${m}, ${d})"`;
+      }else if(past){
+        // Numero lang ang nasa lumang araw — walang trade na mabubuksan.
+        cls = 'past ' + (past.pnl >= 0 ? 'past-win' : 'past-loss');
+        pnlHtml = `<div class="p">${fmtMoney(past.pnl)}</div><div class="cal-count" style="font-size:10.5px;color:var(--muted);">${_pastWl(past)} · old</div>`;
+        click = `title="${_PAST_TIP}"`;
       }else if(new Date(y, m, d) <= _now){
         // Walang trade: mapipindot pa rin, para sa Daily post ng araw na umupo ka.
         cls = 'notrade';

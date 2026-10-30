@@ -116,6 +116,11 @@ find/replace, try the LF form, then the CRLF form.
 - Client-side config (columns, form fields, dropdown options) is in
   `localStorage` (per browser). Saved options are **merged** with options
   added in code, never replaced.
+- Old spreadsheet days (`past_daily_pnl`, supabase_past_daily_pnl.sql): one
+  row per day (pnl, wins, losses, bes), nothing else. Loaded into `PAST_DAYS`
+  and drawn ONLY on the Calendar and Year overview, dashed and labelled "old";
+  never added to any total, stat or win rate. Owner asked for numbers only, no
+  trade detail; P/L in his sheets is already net of fee.
 - Pattern Types "15 mins LH - 3ger" (Short, Rejection Play) and its mirror
   "15 mins HL - 3ger" (Long, Bounce Play), exec 5 min: the 15 mins LH/HL checklist without the BB50 execution item; the MACD-cross item is
   replaced by "Where did you put your Trigger Entry?" (0.382–0.618, allGood).
