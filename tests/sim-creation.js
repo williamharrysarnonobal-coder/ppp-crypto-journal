@@ -170,7 +170,7 @@ console.log('\n8. WALANG NASIRA SA WALONG NAUNA\n');
  'Long|1 hour HL','Short|1 hour LH','Long|30 mins Invalidation Play',
  'Short|30 mins Invalidation Play'].forEach(k =>
   ok('"' + k + '" nandoon pa rin', !!SETUPS[k], SETUPS[k] ? SETUPS[k].items.length + ' tanong' : 'NAWALA'));
-ok('labing-apat na setup lahat', Object.keys(SETUPS).length === 14,
+ok('labinlimang setup lahat (kasama ang 15 mins LH - 3ger)', Object.keys(SETUPS).length === 15,
    Object.keys(SETUPS).length + '');
 
 console.log('\n' + (fail ? fail + ' MALI' : 'lahat pumasa'));
