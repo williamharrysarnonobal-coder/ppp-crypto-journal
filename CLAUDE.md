@@ -120,7 +120,10 @@ find/replace, try the LF form, then the CRLF form.
   row per day (pnl, wins, losses, bes), nothing else. Loaded into `PAST_DAYS`
   and used ONLY on the Calendar and Year overview (dashed, labelled "old").
   There they DO count: day/week/month P&L, trades, W/L/BE, win rate, days,
-  goal bars, best/worst, green months (owner's choice). Avg RR and Rules kept
+  goal bars, best/worst, green months, and the Calendar/Week/Year share
+  images (owner's choice). Only with "All accounts" (`_pastOn`); a single
+  account shows no old days. A day with journal + old shows the combined
+  number with "incl. old". Avg RR and Rules kept
   stay journal-only. Never in the Dashboard KPIs or any other stats. Owner
   asked for numbers only, no trade detail; P/L in his sheets is net of fee.
 - Pattern Types "15 mins LH - 3ger" (Short, Rejection Play) and its mirror

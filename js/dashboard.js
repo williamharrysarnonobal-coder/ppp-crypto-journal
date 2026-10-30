@@ -3343,8 +3343,7 @@ function renderYearOverview(){
     const pm = pastByMonth[m];
     const s = _withPast(_tagArmStats(ts), pm);
     const net = ts.reduce((a, t) => a + netPnl(t), 0) + (pm ? pm.pnl : 0);
-    const pastDays = Object.keys(PAST_DAYS).filter(k => k.startsWith(_pastKey(y, m, 1).slice(0, 8)))
-      .map(k => Number(k.slice(8)));
+    const pastDays = _pastDaysOf(y, m);
     const rrs = ts.map(t => t.rr).filter(v => v !== null && !isNaN(v));
     const hit = goalUsd ? net >= goalUsd : null;
     // The same states the Calendar's bar uses, read the same way — a
@@ -3640,7 +3639,7 @@ function _yearMiniGrid(y, m, trades){
   for(let i = 0; i < first; i++) cells.push('<i class="yo-d pad"></i>');
   for(let d = 1; d <= last; d++){
     const v = byDay[d];
-    const past = !v && PAST_DAYS[_pastKey(y, m, d)];
+    const past = !v && _pastDay(y, m, d);
     const cls = past ? ' past ' + (past.pnl >= 0 ? 'up' : 'down')
       : !v ? '' : (v.pnl > 0 ? ' up' : v.pnl < 0 ? ' down' : ' flat');
     const title = past ? `${d} — old: ${fmtMoney(past.pnl)} · ${_pastWl(past)}. ${_PAST_TIP}`
@@ -3683,8 +3682,23 @@ async function loadPastDays(){
 const _pastKey = (y, m, d) => `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
 const _pastN = p => p.wins + p.losses + p.bes;
 const _pastWl = p => `${p.wins}W ${p.losses}L${p.bes ? ` ${p.bes}BE` : ''}`;
+/* Walang account ang lumang spreadsheet, kaya lumalabas lang ito sa
+   "All accounts". Ang pagpili ng isang account ay tanong tungkol sa account
+   na iyon; ang paghalo ng lumang numero roon ay maling sagot. */
+function _pastOn(){
+  const sel = typeof document !== 'undefined' && document.getElementById('accountFilter');
+  return !sel || !sel.value || sel.value === 'all';
+}
+const _pastDay = (y, m, d) => _pastOn() ? PAST_DAYS[_pastKey(y, m, d)] || null : null;
+// Day numbers of the month that have an old-spreadsheet row.
+function _pastDaysOf(y, m){
+  if(!_pastOn()) return [];
+  const pre = _pastKey(y, m, 1).slice(0, 8);
+  return Object.keys(PAST_DAYS).filter(k => k.startsWith(pre)).map(k => Number(k.slice(8)));
+}
 // One month of old days, summed: { pnl, wins, losses, bes, days } or null.
 function _pastMonth(y, m){
+  if(!_pastOn()) return null;
   const pre = `${y}-${String(m + 1).padStart(2, '0')}-`;
   const out = { pnl: 0, wins: 0, losses: 0, bes: 0, days: 0 };
   Object.entries(PAST_DAYS).forEach(([k, p]) => {
@@ -3788,7 +3802,7 @@ function renderCalendar(){
       // Days you actually traded, not days in the month — the count of dates
       // that carry at least one closed trade.
       const tradedDays = new Set(monthTrades.map(t => t.close_date.getDate())
-        .concat(Object.keys(PAST_DAYS).filter(k => k.startsWith(_pastKey(y, m, 1).slice(0, 8))).map(k => Number(k.slice(8))))).size;
+        .concat(_pastDaysOf(y, m))).size;
       const cell = (k, v, opts = {}) => `
         <div class="cal-sum-cell${opts.lead ? ' lead' : ''}${opts.click ? ' clickable' : ''}"${
           opts.click ? ` onclick="${opts.click}"` : ''}${opts.title ? ` title="${opts.title}"` : ''}>
@@ -3887,20 +3901,23 @@ function renderCalendar(){
       if(d === null) return;
       const info = byDay[d];
       if(info){ weekPnl += info.pnl; weekCount += info.count; weekTrades = weekTrades.concat(info.trades); }
-      const past = PAST_DAYS[_pastKey(y, m, d)];
+      const past = _pastDay(y, m, d);
       if(past){ weekPnl += past.pnl; weekCount += _pastN(past); }
     });
 
     weekCells.forEach(d => {
       if(d === null){ html += `<div class="cal-cell empty"></div>`; return; }
       const info = byDay[d];
-      const past = PAST_DAYS[_pastKey(y, m, d)];
+      const past = _pastDay(y, m, d);
       let cls = '', pnlHtml = '', click = '';
       if(info){
-        cls = info.pnl >= 0 ? 'win' : 'loss';
+        // Journal at lumang sheet sa iisang araw: pinagsama, para tugma sa Week total.
+        const dayPnl = info.pnl + (past ? past.pnl : 0);
+        const dayN = info.count + (past ? _pastN(past) : 0);
+        cls = dayPnl >= 0 ? 'win' : 'loss';
         if(String(d) === bestDay) cls += ' best';
-        pnlHtml = `<div class="p">${fmtMoney(info.pnl)}</div><div class="cal-count" style="font-size:10.5px;color:var(--muted);">${info.count} trade${info.count>1?'s':''}</div>`;
-        if(past) pnlHtml += `<div class="cal-past-sub" title="${_PAST_TIP}">old ${fmtMoney(past.pnl)}</div>`;
+        pnlHtml = `<div class="p">${fmtMoney(dayPnl)}</div><div class="cal-count" style="font-size:10.5px;color:var(--muted);">${dayN} trade${dayN>1?'s':''}</div>`;
+        if(past) pnlHtml += `<div class="cal-past-sub" title="${_PAST_TIP}">incl. old ${fmtMoney(past.pnl)}</div>`;
         click = `onclick="showDayTrades(${y}, ${m}, ${d})"`;
       }else if(past){
         // Numero lang ang nasa lumang araw — walang trade na mabubuksan.
@@ -18777,6 +18794,14 @@ function _shareBucket(trades){
   return s;
 }
 
+/* Ang lumang spreadsheet sa isang share bucket: $ at W/L/BE lang (walang R o
+   %), gaya ng Calendar at Year overview na pinanggagalingan ng share. */
+function _addPastToBucket(s, p){
+  if(!p) return s;
+  s.net += p.pnl; s.w += p.wins; s.l += p.losses; s.n += _pastN(p);
+  return s;
+}
+
 /* ANG TAON BILANG LARAWAN — mula sa Year overview: labindalawang buwan, berde
    o pula, at ang mga kabuuan ng taon. Parehong mga pagpipilian gaya ng buwan. */
 function _drawYearShare(cv, modes, showTotals, showAcc){
@@ -18793,8 +18818,10 @@ function _drawYearShare(cv, modes, showTotals, showAcc){
   const mode = modes[0] || 'wl';
   const y = YEAR_OVERVIEW;
   const pool = _yearOverviewPool().filter(t => t.close_date.getFullYear() === y);
-  const months = Array.from({ length: 12 }, (_, m) => _shareBucket(pool.filter(t => t.close_date.getMonth() === m)));
+  const months = Array.from({ length: 12 }, (_, m) =>
+    _addPastToBucket(_shareBucket(pool.filter(t => t.close_date.getMonth() === m)), _pastMonth(y, m)));
   const year = _shareBucket(pool);
+  for(let m = 0; m < 12; m++) _addPastToBucket(year, _pastMonth(y, m));
 
   ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
   const L = 56;
@@ -18879,8 +18906,10 @@ function _drawWeekShare(cv, modes, showTotals, showAcc){
     : _wlTxt(s.w, s.l, s.n - s.w - s.l);
   const mode = modes[0] || 'wl';
   const { y: yy, m: mm, days, trades } = _weekShare;
-  const byDay = days.map(d => ({ d, s: _shareBucket(trades.filter(t => t.close_date && t.close_date.getDate() === d)) }));
+  const byDay = days.map(d => ({ d, s: _addPastToBucket(
+    _shareBucket(trades.filter(t => t.close_date && t.close_date.getDate() === d)), _pastDay(yy, mm, d)) }));
   const wk = _shareBucket(trades);
+  days.forEach(d => _addPastToBucket(wk, _pastDay(yy, mm, d)));
 
   ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
   const L = 56;
@@ -18982,6 +19011,9 @@ function drawCalendarShare(){
     const raw = RAW_TRADES.find(x => x.position_id === t.position_id);
     const p = raw ? _accountPct(raw) : null; if(p !== null){ s.pct += p; s.pN++; }
   });
+  _pastDaysOf(y0, m0).forEach(d => {
+    days[d] = _addPastToBucket(days[d] || { net: 0, R: 0, rN: 0, pct: 0, pN: 0, w: 0, l: 0, n: 0 }, _pastDay(y0, m0, d));
+  });
   const sign = v => v >= -0.005 ? '+' : '−';  // −0.0 ay "+0.0"
   const valOf = (s, md) => md === 'usd' ? `${sign(s.net)}$${Math.abs(s.net).toLocaleString(undefined, { maximumFractionDigits: 0 })}`
     : md === 'r' ? (s.rN ? `${sign(s.R)}${Math.abs(s.R).toFixed(1)}R` : null)
@@ -19012,7 +19044,7 @@ function drawCalendarShare(){
     const boxes = [
       [mode === 'wl' ? 'Result' : 'Month', total, mode === 'wl' ? C.ink : (net >= 0 ? C.win : C.loss)],
       ['Win rate', (w + l) ? `${Math.round(w / (w + l) * 100)}%` : '—', C.ink],
-      ['Trades', String(trades.length), C.ink],
+      ['Trades', String(all.reduce((a, s) => a + s.n, 0)), C.ink],
       ['Green days', `${green} of ${all.length}`, C.ink],
       _rulesFollowedTxt(trades) ? ['Rules followed', _rulesFollowedTxt(trades), C.ink] : null
     ].filter(Boolean);

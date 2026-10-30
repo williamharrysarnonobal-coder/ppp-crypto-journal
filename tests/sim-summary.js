@@ -75,7 +75,7 @@ function build(trades){
     Set,
     Math, String, Number,
     // Walang lumang spreadsheet sa sim na ito.
-    pm: null, PAST_DAYS: {}, y: 2026, m: 7, _pastN: p => p.wins + p.losses + p.bes,
+    pm: null, PAST_DAYS: {}, y: 2026, m: 7, _pastDaysOf: () => [], _pastN: p => p.wins + p.losses + p.bes,
     _pastKey: (y, m, d) => `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`,
   };
   new Function(...Object.keys(scope), BLOCK)(...Object.values(scope));
