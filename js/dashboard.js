@@ -7254,7 +7254,7 @@ const FIELD_OPTIONS = {
   /* Ang "Creation" ay ibang tanong sa mga nauna: hindi kung tumutugma ang isang
      antas na naroon na, kundi kung NABUBUO pa lamang ito. May sariling
      checklist ang bawat isa — tingnan ang CONFLUENCE_SETUPS. */
-  pattern_type: ['5 mins HL','5 mins LH','15 mins HL','15 mins LH','15 mins LH - 3ger','1 hour HL','1 hour LH','30 mins Invalidation Play','4 Hour HL','4 Hour LH',
+  pattern_type: ['5 mins HL','5 mins LH','15 mins HL','15 mins HL - 3ger','15 mins LH','15 mins LH - 3ger','1 hour HL','1 hour LH','30 mins Invalidation Play','4 Hour HL','4 Hour LH',
     '15M HL Creation','15M LH Creation','1H HL Creation','1H LH Creation','4H HL Creation','4H LH Creation'],
   execution_tf: ['1 min','3 min','5 min','15 min','30 min','1 hr'],
   /* Ang Creation ay hindi puwesto sa loob ng isang galaw gaya ng IC/EM/LM —
@@ -24284,7 +24284,7 @@ function syncAccountTypeFromAccount(accountName){
 // belong to Bounce Play, LH patterns to Rejection Play, and the 30 min
 // invalidation pattern is shared since it's used by both plus its own setup.
 const TRADE_SETUP_PATTERN_MAP = {
-  'Bounce Play': ['5 mins HL','15 mins HL','1 hour HL','30 mins Invalidation Play','4 Hour HL'],
+  'Bounce Play': ['5 mins HL','15 mins HL','15 mins HL - 3ger','1 hour HL','30 mins Invalidation Play','4 Hour HL'],
   'Rejection Play': ['5 mins LH','15 mins LH','15 mins LH - 3ger','1 hour LH','30 mins Invalidation Play','4 Hour LH'],
   'Invalidation Play': ['30 mins Invalidation Play']
 };
@@ -24348,7 +24348,7 @@ function syncPatternTypeFromSetup(setupValue){
 // absent — those are picked by hand.
 const PATTERN_EXEC_TF = {
   '5 mins HL':'1 min',   '5 mins LH':'1 min',
-  '15 mins HL':'5 min',  '15 mins LH':'5 min',  '15 mins LH - 3ger':'5 min',
+  '15 mins HL':'5 min',  '15 mins LH':'5 min',  '15 mins LH - 3ger':'5 min',  '15 mins HL - 3ger':'5 min',
   '1 hour HL':'15 min',  '1 hour LH':'15 min'
 };
 // The 5 min plays are scalps, and that pins their AOF Phase outright. This is
@@ -26623,6 +26623,22 @@ const CONFLUENCE_SETUPS = {
         select:['0.382', '0.441', '0.5', '0.559', '0.618'], allGood:true, exec:true},
     ],
     patterns: ['Double Top', 'Triple Top', 'H&S',
+               'FVG', 'FVG + Fib', 'FVG - Partial Fill', 'FVG - Half Fill', 'FVG - Full Fill',
+               'Fib .382', 'Fib .5', 'Fib .618', 'SnR Flip']
+  },
+  // Salamin ng 'Short|15 mins LH - 3ger' para sa Long.
+  'Long|15 mins HL - 3ger': {
+    minConfluencePct: 60,
+    items: [
+      {tag:'MACD · 1H', text:'1H MACD in Bull Territory (Green Histogram)?'},
+      {tag:'MACD · 30M', text:'30M MACD far from the zero line?', almost:true},
+      {tag:'BB50 · 2H', text:'2H BB50 far from price, or before your TP area?', almost:true},
+      {tag:'Sequence', text:'Which 15m HL is this?', select:['1st','2nd','3rd','4th','5th']},
+      {tag:'Divergence', text:'Left Hand Present?', invert:true},
+      {tag:'Execution', text:'Where did you put your Trigger Entry?',
+        select:['0.382', '0.441', '0.5', '0.559', '0.618'], allGood:true, exec:true},
+    ],
+    patterns: ['Double Bottom', 'Triple Bottom', 'Inverse H&S',
                'FVG', 'FVG + Fib', 'FVG - Partial Fill', 'FVG - Half Fill', 'FVG - Full Fill',
                'Fib .382', 'Fib .5', 'Fib .618', 'SnR Flip']
   },
