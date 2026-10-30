@@ -116,6 +116,9 @@ find/replace, try the LF form, then the CRLF form.
 - Client-side config (columns, form fields, dropdown options) is in
   `localStorage` (per browser). Saved options are **merged** with options
   added in code, never replaced.
+- Pattern Type "15 mins LH - 3ger" (Short, Rejection Play, exec 5 min): the
+  15 mins LH checklist without the BB50 execution item; the MACD-cross item is
+  replaced by "Where did you put your Trigger Entry?" (0.382–0.618, allGood).
 - Position Size calculator (`_psComputeRow`): forex pairs whose quote is not
   USD (GBPCHF, EURJPY…) lose in the quote currency, so the SL distance is
   converted to USD first (`_psQuoteUsd`; USDxxx uses the price itself, crosses
