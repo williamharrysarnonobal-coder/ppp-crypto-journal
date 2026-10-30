@@ -118,9 +118,11 @@ find/replace, try the LF form, then the CRLF form.
   added in code, never replaced.
 - Old spreadsheet days (`past_daily_pnl`, supabase_past_daily_pnl.sql): one
   row per day (pnl, wins, losses, bes), nothing else. Loaded into `PAST_DAYS`
-  and drawn ONLY on the Calendar and Year overview, dashed and labelled "old";
-  never added to any total, stat or win rate. Owner asked for numbers only, no
-  trade detail; P/L in his sheets is already net of fee.
+  and used ONLY on the Calendar and Year overview (dashed, labelled "old").
+  There they DO count: day/week/month P&L, trades, W/L/BE, win rate, days,
+  goal bars, best/worst, green months (owner's choice). Avg RR and Rules kept
+  stay journal-only. Never in the Dashboard KPIs or any other stats. Owner
+  asked for numbers only, no trade detail; P/L in his sheets is net of fee.
 - Pattern Types "15 mins LH - 3ger" (Short, Rejection Play) and its mirror
   "15 mins HL - 3ger" (Long, Bounce Play), exec 5 min: the 15 mins LH/HL checklist without the BB50 execution item; the MACD-cross item is
   replaced by "Where did you put your Trigger Entry?" (0.382–0.618, allGood).

@@ -2915,7 +2915,8 @@ function _renderCalGoal(monthTrades, y, m){
   }
 
   const need = salary / aed;
-  const made = monthTrades.reduce((s, t) => s + netPnl(t), 0);
+  // Kasama ang lumang spreadsheet ng buwan — gaya ng mga numero sa Calendar.
+  const made = monthTrades.reduce((s, t) => s + netPnl(t), 0) + (_pastMonth(y, m)?.pnl || 0);
   const pct  = Math.max(0, Math.min(100, made / need * 100));
 
   const today  = new Date();
@@ -3305,9 +3306,18 @@ function renderYearOverview(){
   if(label) label.textContent = y;
 
   const pool = _yearOverviewPool().filter(t => t.close_date.getFullYear() === y);
-  const yr = _tagArmStats(pool);          // counts: W / L / BE
-  const yrRate = _winRateOf(pool);        // rate: the app-wide definition
-  const net = pool.reduce((s, t) => s + netPnl(t), 0);
+  /* Ang lumang spreadsheet ay KASAMA sa Year overview (pinili niya), gaya ng
+     Calendar: P&L, W/L/BE, win rate, mga araw, best/worst, green months at
+     goals. Avg RR at Rules kept: journal lang, walang ganoon sa lumang sheet. */
+  const pastByMonth = Array.from({ length: 12 }, (_, m) => _pastMonth(y, m));
+  const pastYr = pastByMonth.filter(Boolean).reduce((a, p) => ({ pnl: a.pnl + p.pnl,
+    wins: a.wins + p.wins, losses: a.losses + p.losses, bes: a.bes + p.bes, days: a.days + p.days }),
+    { pnl: 0, wins: 0, losses: 0, bes: 0, days: 0 });
+  const hasPast = pastYr.days > 0;
+  const yr = _withPast(_tagArmStats(pool), hasPast ? pastYr : null);   // counts: W / L / BE
+  // rate: the app-wide definition (wins over decided, BE out), old days included
+  const yrRate = hasPast ? _rateWL(yr) : _winRateOf(pool);
+  const net = pool.reduce((s, t) => s + netPnl(t), 0) + pastYr.pnl;
 
   /* Win rate comes from _winRateOf — wins over DECIDED trades, breakevens
      excluded — because that is what the Calendar box, the KPI row and the
@@ -3330,8 +3340,11 @@ function renderYearOverview(){
   const today = new Date();
   const months = Array.from({ length: 12 }, (_, m) => {
     const ts = pool.filter(t => t.close_date.getMonth() === m);
-    const s = _tagArmStats(ts);
-    const net = ts.reduce((a, t) => a + netPnl(t), 0);
+    const pm = pastByMonth[m];
+    const s = _withPast(_tagArmStats(ts), pm);
+    const net = ts.reduce((a, t) => a + netPnl(t), 0) + (pm ? pm.pnl : 0);
+    const pastDays = Object.keys(PAST_DAYS).filter(k => k.startsWith(_pastKey(y, m, 1).slice(0, 8)))
+      .map(k => Number(k.slice(8)));
     const rrs = ts.map(t => t.rr).filter(v => v !== null && !isNaN(v));
     const hit = goalUsd ? net >= goalUsd : null;
     // The same states the Calendar's bar uses, read the same way — a
@@ -3345,8 +3358,9 @@ function renderYearOverview(){
        win rate. */
     const goalTone = goalUsd === null ? 'none'
       : _goalTone(net, goalUsd, { isPast, isFuture: !isNow && !isPast });
-    return { m, trades: ts, ...s, rate: _winRateOf(ts), net,
-             days: new Set(ts.map(t => t.close_date.getDate())).size,
+    return { m, trades: ts, ...s, rate: pm ? _rateWL(s) : _winRateOf(ts), net,
+             days: new Set(ts.map(t => t.close_date.getDate()).concat(pastDays)).size,
+             dayKeys: ts.map(t => m + '-' + t.close_date.getDate()).concat(pastDays.map(d => m + '-' + d)),
              rr: rrs.length ? rrs.reduce((a, v) => a + v, 0) / rrs.length : null,
              rrN: rrs.length,
              /* WALANG floor dito — ito ang huling lugar na nagtatago ng
@@ -3379,13 +3393,11 @@ function renderYearOverview(){
 
      Months you never traded stay out of the divisor, so a gap in the year does
      not read as a quiet month. */
-  const yrDays = new Set(
-    pool.map(t => t.close_date.getMonth() + '-' + t.close_date.getDate())).size;
+  const yrDays = new Set(months.flatMap(mo => mo.dayKeys)).size;
   const MN = ['January','February','March','April','May','June',
               'July','August','September','October','November','December'];
 
-  const pastByMonth = Array.from({ length: 12 }, (_, m) => _pastMonth(y, m));
-  if(!pool.length && !pastByMonth.some(Boolean)){
+  if(!pool.length && !hasPast){
     body.innerHTML = `<div class="empty-state">No closed trades in ${y}.</div>`;
     return;
   }
@@ -3395,7 +3407,7 @@ function renderYearOverview(){
 
   // The year's goal leads. It is the one line that says whether the year did
   // what it was for; the counts underneath are how it got there.
-  const head = !pool.length ? '' : `${_yearGoalStrip(y, net, goalUsd, today)}
+  const head = `${_yearGoalStrip(y, net, goalUsd, today)}
   <div class="yo-stats">
     ${stat('Profit', fmtMoney(net), net >= 0 ? 'win' : 'loss')}
     ${stat('Trades', yr.n)}
@@ -3443,7 +3455,7 @@ function renderYearOverview(){
   const grid = months.map(mo => {
     const cls = mo.n === 0 ? 'quiet' : (mo.net > 0 ? 'up' : mo.net < 0 ? 'down' : '');
     const pm = pastByMonth[mo.m];
-    // Ang lumang spreadsheet ng buwan: sariling linya, hindi kasama sa net.
+    // Magkano sa buwan ang galing sa lumang spreadsheet (kasama na sa net).
     const pastLine = pm ? `<div class="yo-past" title="${_PAST_TIP}"><span class="cal-past-tag">old</span>
         <b style="color:var(--${pm.pnl >= 0 ? 'win' : 'loss'})">${fmtMoney(pm.pnl)}</b>
         <span>${_pastWl(pm)} · ${pm.days}d</span></div>` : '';
@@ -3505,13 +3517,11 @@ function renderYearOverview(){
             ><span>Rules Kept</span><b>${kept}/${tg.length}</b><i>${pct}%</i></div>`;
         })()}
         ${_yearGoalBar(mo, goalUsd)}
-      </div>` : (pm ? '' : `<div class="yo-m-foot empty">no trades</div>`)}
+      </div>` : `<div class="yo-m-foot empty">no trades</div>`}
     </div>`;
   }).join('');
 
-  // Walang journal trade sa taong ito, lumang spreadsheet lang: walang stats.
-  body.innerHTML = (pool.length ? head
-    : `<div class="yo-line">No journal trades in ${y}. The days below are from your old spreadsheet and are not counted in any total.</div>`)
+  body.innerHTML = head + (hasPast ? `<div class="yo-line">Includes ${pastYr.days} day${pastYr.days === 1 ? '' : 's'} from your old spreadsheet (marked "old") — numbers only, so Avg RR and Rules kept come from your journal.</div>` : '')
     + `<div class="yo-grid">${grid}</div>`;
 }
 
@@ -3683,7 +3693,15 @@ function _pastMonth(y, m){
   });
   return out.days ? out : null;
 }
-const _PAST_TIP = 'From your old spreadsheet. Not counted in any total.';
+// Adds an old-spreadsheet month/year ({pnl,wins,losses,bes}) to _tagArmStats counts.
+function _withPast(s, p){
+  if(!p) return s;
+  const n = _pastN(p);
+  return { ...s, n: s.n + n, wins: s.wins + p.wins, losses: s.losses + p.losses,
+           bes: s.bes + p.bes, settled: s.settled + n };
+}
+const _rateWL = s => (s.wins + s.losses) ? s.wins / (s.wins + s.losses) * 100 : null;
+const _PAST_TIP = 'From your old spreadsheet. Counted on the Calendar and Year overview only.';
 
 function renderCalendar(){
   const y = calMonth.getFullYear(), m = calMonth.getMonth();
@@ -3726,20 +3744,30 @@ function renderCalendar(){
   // 9 net-positive days (a day with 3 trades only ever counted as one
   // day before, which didn't match the per-week trade totals).
   const summaryEl = document.getElementById('calTotalSummary');
+  /* Ang lumang spreadsheet ay KASAMA sa mga numero ng Calendar (pinili niya):
+     P&L, bilang ng trade, W/L/BE, win rate at mga araw. Ang Avg RR at Rules
+     kept ay sa journal lang — walang ganoong datos ang lumang sheet. Wala ito
+     sa Dashboard at iba pang stats. */
+  const pm = _pastMonth(y, m);
   if(summaryEl){
-    if(!monthTrades.length){
+    if(!monthTrades.length && !pm){
       summaryEl.innerHTML = '';
     }else{
-      const winTrades = monthTrades.filter(_isWin).length;
-      const lossTrades = monthTrades.filter(_isLoss).length;
-      const winPct = Math.round(_winRateOf(monthTrades) ?? 0);
-      const monthPnl = monthTrades.reduce((s,t) => s + netPnl(t), 0);
+      // Journal lang (para sa click ng Win/Loss/BE, na nagbubukas ng mga trade).
+      const jWin = monthTrades.filter(_isWin).length;
+      const jLoss = monthTrades.filter(_isLoss).length;
+      const jBe = monthTrades.length - jWin - jLoss;
+      const winTrades = jWin + (pm?.wins || 0);
+      const lossTrades = jLoss + (pm?.losses || 0);
+      const winPct = winTrades + lossTrades ? Math.round(winTrades / (winTrades + lossTrades) * 100) : 0;
+      const monthPnl = monthTrades.reduce((s,t) => s + netPnl(t), 0) + (pm?.pnl || 0);
+      const monthN = monthTrades.length + (pm ? _pastN(pm) : 0);
       // Profit + loss counts only DECIDED trades, so on a month with any
       // breakeven or un-set Win/Loss they don't add up to the month's real
       // total — and the only way to find that total was to add the week
       // column by hand. Stated outright, with the undecided remainder named
       // rather than left as an unexplained gap between the numbers.
-      const beTrades = monthTrades.length - winTrades - lossTrades;
+      const beTrades = monthN - winTrades - lossTrades;
       // Banded, not a pass/fail at 50%. A 41% win rate sitting on a profitable
       // month is a working system with a wide R — painting that red would be
       // the panel lying about a month that made money. Amber says look, not
@@ -3759,7 +3787,8 @@ function renderCalendar(){
       const rateColor = _winRateTintRR(winPct, avgRR, winTrades + lossTrades);
       // Days you actually traded, not days in the month — the count of dates
       // that carry at least one closed trade.
-      const tradedDays = new Set(monthTrades.map(t => t.close_date.getDate())).size;
+      const tradedDays = new Set(monthTrades.map(t => t.close_date.getDate())
+        .concat(Object.keys(PAST_DAYS).filter(k => k.startsWith(_pastKey(y, m, 1).slice(0, 8))).map(k => Number(k.slice(8))))).size;
       const cell = (k, v, opts = {}) => `
         <div class="cal-sum-cell${opts.lead ? ' lead' : ''}${opts.click ? ' clickable' : ''}"${
           opts.click ? ` onclick="${opts.click}"` : ''}${opts.title ? ` title="${opts.title}"` : ''}>
@@ -3768,15 +3797,15 @@ function renderCalendar(){
         </div>`;
       summaryEl.innerHTML =
         cell('Profit', fmtMoney(monthPnl), { lead:true, color:`var(--${monthPnl>=0?'win':'loss'})` }) +
-        cell('Trades', monthTrades.length) +
+        cell('Trades', monthN) +
         // Only wired up when there is something behind the click — a cell
         // showing 0 that opens an empty modal is a dead end that still looks
-        // like a button.
-        cell('Win', winTrades, winTrades ? { dot:'win', title:"This month's winning trades",
+        // like a button. Old spreadsheet days have no trades to open.
+        cell('Win', winTrades, jWin ? { dot:'win', title:"This month's winning trades",
           click:"showMonthResultTrades('win')" } : { dot:'win' }) +
-        cell('Loss', lossTrades, lossTrades ? { dot:'loss', title:"This month's losing trades",
+        cell('Loss', lossTrades, jLoss ? { dot:'loss', title:"This month's losing trades",
           click:"showMonthResultTrades('loss')" } : { dot:'loss' }) +
-        cell('BE', beTrades, beTrades ? { dot:'be',
+        cell('BE', beTrades, jBe ? { dot:'be',
           title:'Breakeven, or Win/Loss not set — click to see them',
           click:"showMonthResultTrades('be')" } : { dot:'be' }) +
         // Averaged over the trades that HAVE an RR, not over the month — a
@@ -3794,7 +3823,7 @@ function renderCalendar(){
               + `trade${monthTrades.length === 1 ? '' : 's'} that have one recorded` }) +
         cell('Days traded', tradedDays, {
           title: `${tradedDays} day${tradedDays === 1 ? '' : 's'} this month have at least one `
-            + `closed trade — ${fmtNum(monthTrades.length / tradedDays, 1)} trades on an average `
+            + `closed trade — ${fmtNum(monthN / tradedDays, 1)} trades on an average `
             + `day you traded` }) +
         /* Gaano ka ka-kulit ngayong buwan. Ang bilang na ito lang sa buong
            hilera ang BUO mong kontrolado — hindi ito nakadepende sa market.
@@ -3822,14 +3851,13 @@ function renderCalendar(){
         cell('Win rate', winPct + '%', { color:rateColor,
           title: _winRateWhy(winPct, avgRR, winTrades + lossTrades) });
     }
-    // Ang lumang spreadsheet: isang linya, hiwalay, hindi kasama sa itaas.
-    const pm = _pastMonth(y, m);
+    // Kung magkano rito ang galing sa lumang spreadsheet (kasama na sa itaas).
     if(pm){
       summaryEl.innerHTML += `<div class="cal-past-line" title="${_PAST_TIP}">
         <span class="cal-past-tag">old</span>
         <b style="color:var(--${pm.pnl >= 0 ? 'win' : 'loss'})">${fmtMoney(pm.pnl)}</b>
         · ${_pastWl(pm)} · ${pm.days} day${pm.days === 1 ? '' : 's'}
-        <span class="cal-past-note">from your old spreadsheet, not in the totals</span></div>`;
+        <span class="cal-past-note">from your old spreadsheet, included above${monthTrades.length ? '' : ' (no RR or rule tags in it)'}</span></div>`;
     }
   }
 
@@ -3859,6 +3887,8 @@ function renderCalendar(){
       if(d === null) return;
       const info = byDay[d];
       if(info){ weekPnl += info.pnl; weekCount += info.count; weekTrades = weekTrades.concat(info.trades); }
+      const past = PAST_DAYS[_pastKey(y, m, d)];
+      if(past){ weekPnl += past.pnl; weekCount += _pastN(past); }
     });
 
     weekCells.forEach(d => {
@@ -3896,7 +3926,7 @@ function renderCalendar(){
       : `<div class="cal-count" style="font-size:10.5px;color:var(--muted);">—</div>`;
     const weekIdx = window._calByWeek.length;
     window._calByWeek.push({trades: weekTrades, pnl: weekPnl, count: weekCount, days: weekCells.filter(d => d !== null)});
-    const wkClick = weekCount > 0 ? `onclick="showWeekTrades(${weekIdx})"` : '';
+    const wkClick = weekTrades.length ? `onclick="showWeekTrades(${weekIdx})"` : '';
     html += `<div class="cal-cell week-cell ${wkCls}" ${wkClick}><div class="d" style="color:var(--accent);">Σ</div>${wkBody}</div>`;
   }
 

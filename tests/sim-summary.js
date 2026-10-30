@@ -6,7 +6,7 @@ const js = fs.readFileSync(__ROOT + '/js/dashboard.js', 'utf8');
 
 // The strip block sits inside renderCalendar, between `const winTrades` and
 // the closing of the else — pull exactly that.
-const start = js.indexOf('const winTrades = monthTrades.filter(_isWin).length;');
+const start = js.indexOf('const jWin = monthTrades.filter(_isWin).length;');
 /* Ang Win rate ang huling cell. Ang anchor ay ang PANGALAN lang, hindi ang
    buong tawag — dalawang beses nang nabasag ang sim na ito nang dagdagan ko
    ang cell na iyon ng title at ng bagong kulay. Ang pangalan ay hindi
@@ -74,6 +74,9 @@ function build(trades){
     fmtNum: (n, d) => Number(n).toFixed(d),
     Set,
     Math, String, Number,
+    // Walang lumang spreadsheet sa sim na ito.
+    pm: null, PAST_DAYS: {}, y: 2026, m: 7, _pastN: p => p.wins + p.losses + p.bes,
+    _pastKey: (y, m, d) => `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`,
   };
   new Function(...Object.keys(scope), BLOCK)(...Object.values(scope));
   return el.innerHTML;

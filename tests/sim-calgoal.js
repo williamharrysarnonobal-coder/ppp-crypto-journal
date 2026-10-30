@@ -42,6 +42,7 @@ function render(monthTrades, y, m, opts){
     ${/const _GOAL_TROPHY = `[\s\S]*?`;/.exec(js)[0]}
     ${fn('_tradingDaysLeft')}
     ${fn('_goalTone')}
+    const _pastMonth = () => null;
     ${fn('_renderCalGoal')}
     _renderCalGoal(monthTrades, y, m);
   `)(scope.document, scope.netPnl,
