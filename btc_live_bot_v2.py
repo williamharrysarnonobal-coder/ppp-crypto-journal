@@ -568,12 +568,12 @@ while True:
         cond_5m_hl = (h1 > 0 and m1 > 0 and h15 > 0 and m15 > 0 and h5 < 0 and m5 > 0 and mm1 < 0)
         cond_5m_lh = (h1 < 0 and m1 < 0 and h15 < 0 and m15 < 0 and h5 > 0 and m5 < 0 and mm1 > 0)
         # 30M must be in bull territory with a green histogram (2026-10-16).
-        cond_15m_hl = (h4 > 0 and h1 > 0 and m1 > 0 and m30 > 0 and h30 > 0 and h15 < 0 and m15 > 0 and h5 > 0 and m5 < 0)
-        cond_15m_lh = (h4 < 0 and h1 < 0 and m1 < 0 and m30 < 0 and h30 < 0 and h15 > 0 and m15 < 0 and h5 < 0 and m5 > 0)
+        cond_15m_hl = (h1 > 0 and m1 > 0 and m30 > 0 and h30 > 0 and h15 < 0 and m15 > 0 and h5 > 0 and m5 < 0)
+        cond_15m_lh = (h1 < 0 and m1 < 0 and m30 < 0 and h30 < 0 and h15 > 0 and m15 < 0 and h5 < 0 and m5 > 0)
         # 30M Long Invalidation: 1H MACD on the far side of zero with the histogram turned (as in the Playbook), so it never fires together with 15M HL/LH.
-        cond_30m_long = ((h4 > 0 or m4 > 0) and m1 < 0 and h1 > 0 and h30 > 0 and m30 > 0 and h15 < 0 and m15 > 0 and h5 < 0 and m5 < 0)
+        cond_30m_long = (m1 < 0 and h1 > 0 and h30 > 0 and m30 > 0 and h15 < 0 and m15 > 0 and h5 < 0 and m5 < 0)
         # 30M Short Invalidation: 1H MACD above zero with a red histogram.
-        cond_30m_short = ((h4 < 0 or m4 < 0) and m1 > 0 and h1 < 0 and h30 < 0 and m30 < 0 and h15 > 0 and m15 < 0 and h5 > 0 and m5 > 0)
+        cond_30m_short = (m1 > 0 and h1 < 0 and h30 < 0 and m30 < 0 and h15 > 0 and m15 < 0 and h5 > 0 and m5 > 0)
 
         # Individual confluence checks per setup, used for the heartbeat's
         # "closest to triggering" calculation and met/unmet breakdown
@@ -597,7 +597,6 @@ while True:
                 ("1M MACD positive", mm1 > 0, mm1, mm1_std),
             ]),
             ("15M Higher Low", [
-                ("4H Histogram positive", h4 > 0, h4, h4_std),
                 ("1H MACD positive", m1 > 0, m1, m1_std),
                 ("1H Histogram positive", h1 > 0, h1, h1_std),
                 ("30M MACD positive", m30 > 0, m30, m30_std),
@@ -608,7 +607,6 @@ while True:
                 ("5M Histogram positive", h5 > 0, h5, h5_std),
             ]),
             ("15M Lower High", [
-                ("4H Histogram negative", h4 < 0, h4, h4_std),
                 ("1H MACD negative", m1 < 0, m1, m1_std),
                 ("1H Histogram negative", h1 < 0, h1, h1_std),
                 ("30M MACD negative", m30 < 0, m30, m30_std),
@@ -619,7 +617,6 @@ while True:
                 ("5M Histogram negative", h5 < 0, h5, h5_std),
             ]),
             ("30M Long Invalidation", [
-                ("4H Histogram or MACD positive", (h4 > 0 or m4 > 0), h4, h4_std),
                 ("1H MACD negative", m1 < 0, m1, m1_std),
                 ("1H Histogram positive", h1 > 0, h1, h1_std),
                 ("30M MACD positive", m30 > 0, m30, m30_std),
@@ -630,7 +627,6 @@ while True:
                 ("5M Histogram negative", h5 < 0, h5, h5_std),
             ]),
             ("30M Short Invalidation", [
-                ("4H Histogram or MACD negative", (h4 < 0 or m4 < 0), h4, h4_std),
                 ("1H MACD positive", m1 > 0, m1, m1_std),
                 ("1H Histogram negative", h1 < 0, h1, h1_std),
                 ("30M MACD negative", m30 < 0, m30, m30_std),

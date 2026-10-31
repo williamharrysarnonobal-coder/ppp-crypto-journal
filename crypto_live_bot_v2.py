@@ -392,16 +392,15 @@ def evaluate_setups(d):
 
     conditions = {
         # 30M must be in bull territory with a green histogram (2026-10-16).
-        "15M Higher Low": (h4 > 0 and h1 > 0 and m1 > 0 and m30 > 0 and h30 > 0 and h15 < 0 and m15 > 0 and h5 > 0 and m5 < 0),
-        "15M Lower High": (h4 < 0 and h1 < 0 and m1 < 0 and m30 < 0 and h30 < 0 and h15 > 0 and m15 < 0 and h5 < 0 and m5 > 0),
+        "15M Higher Low": (h1 > 0 and m1 > 0 and m30 > 0 and h30 > 0 and h15 < 0 and m15 > 0 and h5 > 0 and m5 < 0),
+        "15M Lower High": (h1 < 0 and m1 < 0 and m30 < 0 and h30 < 0 and h15 > 0 and m15 < 0 and h5 < 0 and m5 > 0),
         # 30M Invalidation: 1H MACD on the far side of zero with the histogram turned (as in the Playbook), so it never fires together with 15M HL/LH.
-        "30M Long Invalidation": ((h4 > 0 or m4 > 0) and m1 < 0 and h1 > 0 and h30 > 0 and m30 > 0 and h15 < 0 and m15 > 0 and h5 < 0 and m5 < 0),
-        "30M Short Invalidation": ((h4 < 0 or m4 < 0) and m1 > 0 and h1 < 0 and h30 < 0 and m30 < 0 and h15 > 0 and m15 < 0 and h5 > 0 and m5 > 0),
+        "30M Long Invalidation": (m1 < 0 and h1 > 0 and h30 > 0 and m30 > 0 and h15 < 0 and m15 > 0 and h5 < 0 and m5 < 0),
+        "30M Short Invalidation": (m1 > 0 and h1 < 0 and h30 < 0 and m30 < 0 and h15 > 0 and m15 < 0 and h5 > 0 and m5 > 0),
     }
 
     confluence = {
         "15M Higher Low": [
-            ("4H Histogram positive", h4 > 0, h4, d["4h"]["hist_std"]),
             ("1H MACD positive", m1 > 0, m1, d["1h"]["macd_std"]),
             ("1H Histogram positive", h1 > 0, h1, d["1h"]["hist_std"]),
             ("30M MACD positive", m30 > 0, m30, d["30m"]["macd_std"]),
@@ -412,7 +411,6 @@ def evaluate_setups(d):
             ("5M Histogram positive", h5 > 0, h5, d["5m"]["hist_std"]),
         ],
         "15M Lower High": [
-            ("4H Histogram negative", h4 < 0, h4, d["4h"]["hist_std"]),
             ("1H MACD negative", m1 < 0, m1, d["1h"]["macd_std"]),
             ("1H Histogram negative", h1 < 0, h1, d["1h"]["hist_std"]),
             ("30M MACD negative", m30 < 0, m30, d["30m"]["macd_std"]),
@@ -423,7 +421,6 @@ def evaluate_setups(d):
             ("5M Histogram negative", h5 < 0, h5, d["5m"]["hist_std"]),
         ],
         "30M Long Invalidation": [
-            ("4H Histogram or MACD positive", (h4 > 0 or m4 > 0), h4, d["4h"]["hist_std"]),
             ("1H MACD negative", m1 < 0, m1, d["1h"]["macd_std"]),
             ("1H Histogram positive", h1 > 0, h1, d["1h"]["hist_std"]),
             ("30M MACD positive", m30 > 0, m30, d["30m"]["macd_std"]),
@@ -434,7 +431,6 @@ def evaluate_setups(d):
             ("5M Histogram negative", h5 < 0, h5, d["5m"]["hist_std"]),
         ],
         "30M Short Invalidation": [
-            ("4H Histogram or MACD negative", (h4 < 0 or m4 < 0), h4, d["4h"]["hist_std"]),
             ("1H MACD positive", m1 > 0, m1, d["1h"]["macd_std"]),
             ("1H Histogram negative", h1 < 0, h1, d["1h"]["hist_std"]),
             ("30M MACD negative", m30 < 0, m30, d["30m"]["macd_std"]),
