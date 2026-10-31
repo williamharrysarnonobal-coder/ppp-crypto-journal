@@ -203,6 +203,9 @@ find/replace, try the LF form, then the CRLF form.
   Same Telegram bot (@btc_mtf_alert_bot) and, by the owner's choice, the same
   BTC Signal Alert group (`bot_secrets.XAU_CHAT_ID = BTC_CHAT_ID`; empty = app only). `signal_alerts` category `'gold'`, symbol `XAU` → the
   **Gold** tab in Trade Alerts. Logs `xau_bot_v2.log`.
+- **No 4H check** (2026-10-31, owner's choice) in 15M HL/LH and 30M Long/Short
+  Invalidation, in all three v2 bots: the lowest higher timeframe is the 1H.
+  The 4H stays only in the Telegram "Bias" line.
 - **No quiet hours** on BTC and gold (owner's phone is on DND): `ALERT_QUIET_ENABLED = False`.
   The ALTS bot still has its 12–7 AM quiet hours.
 - Both v2 tasks run through **`pyw.exe`** (no console window): with `py.exe`
