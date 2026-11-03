@@ -354,6 +354,9 @@ find/replace, try the LF form, then the CRLF form.
   re-renders the page so the Confluence tab follows. Both rows are `.tp-side`
   (label beside value, same as Details).
   The old confluence checklist is untouched (owner's call: keep it for now).
+- Trade **Add Note** modal (`tradeNoteModal`) has the same "Hold to speak"
+  `.mic-bar` as Setup Notes: `voiceHoldStart(event,'tradeNoteNewEntry','text',this)`
+  → `/api/transcribe` (Tagalog) → `_voiceInsert` into the note box.
 - **Confluence Score column** is hidden from Trade Journals once (owner: "alisin
   muna"). `loadColumnConfig` sets `visible:false` + `hid1:1` on its COLUMN_CONFIG
   entry; the marker lives in the config (synced to the profile), so an old
