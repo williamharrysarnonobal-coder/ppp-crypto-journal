@@ -110,8 +110,8 @@ check('wala nang row.no', /row\.no\b/.test(js), false);
    ay may kasunod na rebuild. Ang bilang na ito ay isang bantay lamang na may
    napapansin kapag may bagong daan na naidagdag. */
 check('tinatawag sa bawat pagbuo ng ALL_TRADES',
-  // +2: ang Bulk Edit at ang bulk Confluence ng Trade Journals. +1: Save changes sa trade page. +1: Quick Add.
-  (js.match(/_rebuildTradeNumbers\(\);/g) || []).length, 8);
+  // +2: ang Bulk Edit at ang bulk Confluence ng Trade Journals. +1: Save changes sa trade page. +1: Quick Add. +1: Add RR.
+  (js.match(/_rebuildTradeNumbers\(\);/g) || []).length, 9);
 check('may kasunod na rebuild ang bawat ALL_TRADES =',
   (js.match(/ALL_TRADES = (data|RAW_TRADES)\.map\(normalizeTrade\);\r?\n\s*_rebuildTradeNumbers\(\);/g) || []).length,
   (js.match(/ALL_TRADES = (data|RAW_TRADES)\.map\(normalizeTrade\);/g) || []).length);
