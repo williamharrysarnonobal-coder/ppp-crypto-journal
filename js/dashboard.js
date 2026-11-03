@@ -18407,14 +18407,26 @@ function _tpToneClass(key, v){
    listahan: isang button na may mga napili, at pagpindot ay isang dropdown na
    may checkbox. Pumapasok din sa _tpDirty gaya ng ibang dropdown. */
 const _tpList = v => String(v || '').split(/[,;]/).map(x => x.trim()).filter(Boolean);
-function _tpMulti(key, row, chipCls){
+// Kulay ng chip: ang Trade Tags ay ayon sa uri (pula = nilabag, berde = Rules
+// Followed, grey = note); ang iba ay iisang kulay, at ang N/A ay neutral.
+function _tpChipCls(key, tag){
+  if(key === 'unfollowed_rules'){ const k = _tagKind(tag); return k === 'breach' ? 'rule' : k === 'sentinel' ? 'clean' : 'note'; }
+  if(tag === 'N/A') return '';
+  return key === 'mistakes' ? 'rule' : '';
+}
+function _tpMultiBtnHtml(key, picked){
+  return (picked.length ? picked.map(c => `<span class="tp-tag ${_tpChipCls(key, c)}">${escapeHtml(c)}</span>`).join('') : '<span class="tp-muted">Choose…</span>') + '<span class="tp-caret">▾</span>';
+}
+function _tpMulti(key, row){
   const f = ALL_DRAWER_FIELDS.find(x => x.key === key);
   if(!f || !Array.isArray(f.options)) return null;
   const cur = _tpList(key in _tpDirty ? _tpDirty[key] : row[key]);
-  const opts = [...cur.filter(c => !f.options.includes(c)), ...f.options];
+  // Trade Tags: ang buhay na listahan mula sa Options (hindi ang kopya sa field).
+  const base = key === 'unfollowed_rules' ? _unfollowedOptionsFor(null, []) : f.options;
+  const opts = [...cur.filter(c => !base.includes(c)), ...base];
   return `<div class="tp-multi" data-k="${key}">
     <button type="button" class="tp-multi-btn${key in _tpDirty ? ' dirty' : ''}" aria-haspopup="true" onclick="toggleTpMulti(this)">
-      ${cur.length ? cur.map(c => `<span class="tp-tag ${c === 'N/A' ? '' : (chipCls || '')}">${escapeHtml(c)}</span>`).join('') : '<span class="tp-muted">Choose…</span>'}<span class="tp-caret">▾</span></button>
+      ${_tpMultiBtnHtml(key, cur)}</button>
     <div class="tp-multi-pop" hidden>${opts.map(o => `<label><input type="checkbox" value="${escapeHtml(o)}" ${cur.includes(o) ? 'checked' : ''} onchange="onTpMultiChange(this)"> ${escapeHtml(o)}</label>`).join('')}</div>
   </div>`;
 }
@@ -18463,6 +18475,15 @@ function _mistakesNaExclusive(cb, all){
   if(!cb.checked) return;
   [...all].forEach(o => { if(o !== cb && (cb.value === 'N/A' || o.value === 'N/A')) o.checked = false; });
 }
+/* Trade Tags: ang "Rules Followed" (sentinel) ay hindi kasabay ng nilabag na
+   rule. Ang pagpili ng isa ay nag-aalis ng kabila; ang note ay hindi ginagalaw. */
+function _tagsSentinelExclusive(cb, all){
+  if(!cb.checked) return;
+  const k = _tagKind(cb.value);
+  if(k !== 'sentinel' && k !== 'breach') return;
+  const other = k === 'sentinel' ? 'breach' : 'sentinel';
+  [...all].forEach(o => { if(o !== cb && _tagKind(o.value) === other) o.checked = false; });
+}
 document.addEventListener('change', e => {
   const cb = e.target;
   if(cb && cb.matches && cb.matches('[data-checklist="mistakes"]'))
@@ -18474,15 +18495,27 @@ function onTpMultiChange(cb){
   const box = cb.closest('.tp-multi');
   const k = box.dataset.k;
   _mistakesNaExclusive(cb, box.querySelectorAll('input[type="checkbox"]'));
+  if(k === 'unfollowed_rules') _tagsSentinelExclusive(cb, box.querySelectorAll('input[type="checkbox"]'));
   const picked = [...box.querySelectorAll('input:checked')].map(i => i.value);
   const v = picked.length ? picked.join(', ') : null;
   const before = _tpList(row[k]).join(', ') || null;
   if(before === v) delete _tpDirty[k]; else _tpDirty[k] = v;
+  // Ang Rules Followed? ay galing sa Trade Tags, gaya ng sa Edit form.
+  if(k === 'unfollowed_rules'){
+    const rf = _deriveRulesFollowed({ ...row, unfollowed_rules: v || '' });
+    const sel = document.querySelector('#tpReview select[data-k="rules_followed"]');
+    if(rf && sel){
+      if((row.rules_followed ?? null) === rf) delete _tpDirty.rules_followed; else _tpDirty.rules_followed = rf;
+      sel.value = rf;
+      sel.classList.toggle('dirty', 'rules_followed' in _tpDirty);
+      sel.classList.remove('tone-win', 'tone-loss', 'tone-be');
+      const t = _tpToneClass('rules_followed', rf).trim(); if(t) sel.classList.add(t);
+    }
+  }
   _renderTradeSaveBar();
   const btn = box.querySelector('.tp-multi-btn');
-  const cls = k === 'mistakes' ? 'rule' : '';
   btn.classList.toggle('dirty', k in _tpDirty);
-  btn.innerHTML = (picked.length ? picked.map(c => `<span class="tp-tag ${c === 'N/A' ? '' : cls}">${escapeHtml(c)}</span>`).join('') : '<span class="tp-muted">Choose…</span>') + '<span class="tp-caret">▾</span>';
+  btn.innerHTML = _tpMultiBtnHtml(k, picked);
 }
 function onTradeInlineChange(sel){
   const row = tradeViewList[tradeViewIndex];
@@ -18774,7 +18807,8 @@ function _renderTradeReview(row){
       </div>
       <div class="tp-rv tp-rv-wide">
         <div class="tp-rv-k" title="Your Trade Tags column. Red = a rule you broke, green = Rules Followed, grey = a note (not a rule).">Trade Tags</div>
-        <div class="tp-tags">${tags.length ? chips(broke, 'rule') + chips(tags.filter(t => _tagKind(t) === 'sentinel'), 'clean') + chips(notes, 'note') : '<span class="tp-muted">—</span>'}</div>
+        ${_drawerIsPaper(row) ? `<div class="tp-tags">${tags.length ? chips(broke, 'rule') + chips(tags.filter(t => _tagKind(t) === 'sentinel'), 'clean') + chips(notes, 'note') : '<span class="tp-muted">—</span>'}</div>`
+          : _tpMulti('unfollowed_rules', row)}
       </div>
       <div class="tp-rv tp-rv-wide">
         <div class="tp-rv-k">Mistakes</div>
@@ -25157,7 +25191,7 @@ function _checklistBoxesHtml(key, options, selected){
   const norm = s => String(s).trim().toLowerCase();
   // Ticking a tag is what decides Rules Followed?, so the answer updates as
   // you tick rather than only appearing after a save.
-  const onchange = key === 'unfollowed_rules' ? ' onchange="_refreshDerivedRulesFollowed()"' : '';
+  const onchange = key === 'unfollowed_rules' ? ' onchange="_refreshDerivedRulesFollowed(this)"' : '';
   // The help line rides on the label's title. Several of these names are near
   // enough to each other to be picked wrongly, and a wrong tick sends the trade
   // to the other side of the report it feeds.
@@ -25250,7 +25284,9 @@ function _checklistBoxesHtml(key, options, selected){
 // common case needs no thought. It is a suggestion, not a lock: the select stays
 // editable and whatever it says at save time is what gets stored.
 let _drawerRow = null;
-function _refreshDerivedRulesFollowed(){
+function _refreshDerivedRulesFollowed(cb){
+  // Una ang "Rules Followed" ⟷ nilabag na rule, bago kuwentahin ang sagot.
+  if(cb) _tagsSentinelExclusive(cb, document.querySelectorAll('#drawerBody [data-checklist="unfollowed_rules"]'));
   const sel = document.querySelector('#drawerBody [data-field="rules_followed"]');
   if(!sel) return;
   const ticked = [...document.querySelectorAll('#drawerBody [data-checklist="unfollowed_rules"]:checked')]

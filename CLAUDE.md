@@ -357,6 +357,15 @@ find/replace, try the LF form, then the CRLF form.
 - Trade **Add Note** modal (`tradeNoteModal`) has the same "Hold to speak"
   `.mic-bar` as Setup Notes: `voiceHoldStart(event,'tradeNoteNewEntry','text',this)`
   → `/api/transcribe` (Tagalog) → `_voiceInsert` into the note box.
+- **Trade Tags editable inline** on the trade page Review tab (real trades; paper
+  keeps read-only chips): `_tpMulti('unfollowed_rules', row)` with the live
+  `_unfollowedOptionsFor` list; chip colour per tag kind via `_tpChipCls`
+  (breach red / sentinel green / observation grey). Changing tags re-derives
+  Rules Followed? (`_deriveRulesFollowed`) into `_tpDirty` + the select.
+  "Rules Followed" (sentinel) and any breach are mutually exclusive
+  (`_tagsSentinelExclusive`) here AND in the Edit form checklist
+  (`_refreshDerivedRulesFollowed(this)` applies it before deriving). Trade-off:
+  the chips there no longer click through to the journal filter.
 - **Confluence Score column** is hidden from Trade Journals once (owner: "alisin
   muna"). `loadColumnConfig` sets `visible:false` + `hid1:1` on its COLUMN_CONFIG
   entry; the marker lives in the config (synced to the profile), so an old

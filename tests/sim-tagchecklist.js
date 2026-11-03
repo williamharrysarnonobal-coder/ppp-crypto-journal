@@ -73,7 +73,8 @@ check('editable pa rin', /\{key:'rules_followed'[^}]*editable:true/.test(js), tr
 check('walang locked na static', /id="drawerRulesFollowed"/.test(js), false);
 check('may live na tulong', /_refreshDerivedRulesFollowed/.test(js), true);
 check('naka-kabit sa checklist',
-  /onchange="_refreshDerivedRulesFollowed\(\)"/.test(js), true);
+  // (this): para maalis muna ang "Rules Followed" ⟷ nilabag na rule.
+  /onchange="_refreshDerivedRulesFollowed\(this\)"/.test(js), true);
 check('inililipat ang select, hindi ang static',
   /sel\.value = v;/.test(js), true);
 check('hindi pinapatungan ng save ang sagot mo',
