@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Log in — Tanaydana</title>
+<title>Log in â€” Tanaydana</title>
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="img/forgefolio-logo.png">
 <link rel="apple-touch-icon" href="img/forgefolio-logo.png">
@@ -15,7 +15,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Public+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<link rel="stylesheet" href="css/style.css?v=396">
+<link rel="stylesheet" href="css/style.css?v=397">
 </head>
 <body>
 
@@ -30,8 +30,8 @@
 
   <div class="login-marketing">
     <h1 class="login-headline">Trade with <span class="hl">discipline</span>,<br>not guesswork.</h1>
-    <p class="login-sub">Every trade, every prop firm account, every decision — logged and measured, so you know exactly where your edge really is.</p>
-    <a class="login-preview-link" href="#appTour">See inside the app ↓</a>
+    <p class="login-sub">Every trade, every prop firm account, every decision â€” logged and measured, so you know exactly where your edge really is.</p>
+    <a class="login-preview-link" href="#appTour">See inside the app â†“</a>
     <div class="login-trust-badges">
       <span>Funded Traders</span>
       <span>Profitable Traders</span>
@@ -54,7 +54,7 @@
     <div class="login-features">
       <div class="login-feature">
         <div class="login-feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V4a1 1 0 0 0-1-1H6.5A2.5 2.5 0 0 0 4 5.5v14z"/><path d="M4 19.5A2.5 2.5 0 0 0 6.5 22H20"/></svg></div>
-        <div><strong>Easy Log Every Trade</strong><span>Every trade logged in seconds — setup, RR, exit type, and a real post-trade review.</span></div>
+        <div><strong>Easy Log Every Trade</strong><span>Every trade logged in seconds â€” setup, RR, exit type, and a real post-trade review.</span></div>
       </div>
       <div class="login-feature">
         <div class="login-feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg></div>
@@ -66,7 +66,7 @@
       </div>
       <div class="login-feature">
         <div class="login-feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5.5"/><circle cx="12" cy="12" r="2"/></svg></div>
-        <div><strong>Gamified Challenges</strong><span>Turn discipline into a game — challenges that keep your habits honest, not just your P/L.</span></div>
+        <div><strong>Gamified Challenges</strong><span>Turn discipline into a game â€” challenges that keep your habits honest, not just your P/L.</span></div>
       </div>
       <div class="login-feature">
         <div class="login-feature-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15h11l3-4h2v4a2 2 0 0 1-2 2H8L4 15z"/><path d="M7 17v4M17 17v4"/></svg></div>
@@ -84,7 +84,7 @@
       <input id="loginUsername" placeholder="e.g. jessiepinkman" autocapitalize="off" autocorrect="off">
 
       <label>Password</label>
-      <input id="loginPassword" type="password" placeholder="••••••••">
+      <input id="loginPassword" type="password" placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢">
 
       <button id="loginBtn">Log in</button>
       <div id="loginError" class="auth-error"></div>
@@ -113,8 +113,8 @@
           <source id="tourImgM" media="(max-width: 600px)" srcset="">
           <img id="tourImg" alt="" width="1280" height="800" loading="lazy">
         </picture>
-        <button type="button" class="tour-nav tour-prev" onclick="tourStep(-1)" aria-label="Previous screen">‹</button>
-        <button type="button" class="tour-nav tour-next" onclick="tourStep(1)" aria-label="Next screen">›</button>
+        <button type="button" class="tour-nav tour-prev" onclick="tourStep(-1)" aria-label="Previous screen">â€¹</button>
+        <button type="button" class="tour-nav tour-next" onclick="tourStep(1)" aria-label="Next screen">â€º</button>
       </div>
     </div>
     <div class="tour-caption" aria-live="polite">
@@ -125,7 +125,7 @@
   </div>
 </section>
 
-<footer class="site-footer">© 2026 Tanaydana. All rights reserved.</footer>
+<footer class="site-footer">Â© 2026 Tanaydana. All rights reserved.</footer>
 
 
 <script src="js/supabase.js"></script>
@@ -146,9 +146,9 @@ async function doLogin(){
   }
 
   btn.disabled = true;
-  btn.textContent = "Logging in…";
+  btn.textContent = "Logging inâ€¦";
   try{
-    // Accepts an email too (not just username) — a safety net during the
+    // Accepts an email too (not just username) â€” a safety net during the
     // switch to username login, so nobody who hasn't set a username yet
     // gets locked out of their own account.
     if(username.includes('@')){
@@ -165,9 +165,9 @@ async function doLogin(){
   }
 }
 
-/* TOUR NG APP — slideshow sa ilalim ng login. Lumilipat nang kusa bawat 6
+/* TOUR NG APP â€” slideshow sa ilalim ng login. Lumilipat nang kusa bawat 6
    segundo (hindi kapag naka-hover/focus, nakatago ang tab, o reduced motion),
-   may arrow, chips, keyboard at swipe. Sa phone (≤600px) ang '-m' na larawan. */
+   may arrow, chips, keyboard at swipe. Sa phone (â‰¤600px) ang '-m' na larawan. */
 const TOUR = [
   ['01-dashboard', 'Dashboard', 'Your trading at a glance', 'Total P&L, win rate, profit factor and streaks, filtered by year, month and account.'],
   ['02-calendar', 'P&L calendar', 'Every day on a calendar', 'Green and red days, weekly totals, rules kept and a monthly goal.'],

@@ -4440,6 +4440,20 @@ table.journal td.paper-why-col{line-height:1.5;}
 }
 .ea-hint b{color:var(--ink);font-weight:600;display:block;margin-bottom:7px;}
 
+/* Quick Add: ang nabasa sa idinikit, bago i-save. */
+.qa-preview:empty{display:none;}
+.qa-preview{margin-top:10px;padding:10px 12px;border-radius:6px;background:var(--surface-2);border:1px solid var(--rule);font-size:13px;display:grid;gap:8px;}
+.qa-head{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;}
+.qa-head b{font-size:15px;color:var(--ink);}
+.qa-head span{color:var(--muted);}
+.qa-head .qa-wl{margin-left:auto;font-weight:600;font-variant-numeric:tabular-nums;}
+.qa-wl.up{color:var(--win);} .qa-wl.down{color:var(--loss);} .qa-wl.be{color:#E8A33D;}
+.qa-grid{display:grid;grid-template-columns:auto 1fr;gap:3px 14px;}
+.qa-grid span{color:var(--muted);}
+.qa-grid em{font-style:normal;color:var(--ink);font-variant-numeric:tabular-nums;text-align:right;}
+.qa-warn{color:#E8A33D;font-size:12.5px;}
+.qa-ok{color:var(--win);font-weight:600;}
+
 /* ---- Buong listahan, nakalabas, nakagrupo ----
 
    Ang dalawang tanong ng paper trade ay ang buong dahilan kung bakit may

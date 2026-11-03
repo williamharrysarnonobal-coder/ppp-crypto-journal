@@ -239,8 +239,8 @@ check('blangkong exit -> iniiwan', applyPatch({}).post_cutloss_result, 'undefine
 check('hindi pinapatungan ang sagot',
   applyPatch({ exit_type:'TP Hit', post_cutloss_result:'SL After Cutloss' }).post_cutloss_result,
   'SL After Cutloss');
-check('nasa dalawang landas (drawer + queue)',
-  (js.match(/patch\.post_cutloss_result = 'N\/A';/g) || []).length, 2);
+check('nasa tatlong landas (drawer + queue + Quick Add)',
+  (js.match(/patch\.post_cutloss_result = 'N\/A';/g) || []).length, 3);
 
 // ---------- 6. Ang hatol sa Edge Map ----------
 

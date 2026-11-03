@@ -318,6 +318,13 @@ find/replace, try the LF form, then the CRLF form.
   Setup, right after Place Order (`_linkSetupToOrder`), or at Journal time
   (`_linkPlacedOrderToSetup`). Orders placed in the Upscale terminal itself, or
   from another device, can't be linked, so those still need a paste.
+- **Quick Add** (Trade Journals header, `openQuickAddModal`, 2026-11-03): paste one
+  closed trade from The5ers or Upscale (auto-detected: a `Pnl:` line = Upscale), pick
+  the account (remembered per browser), see a preview, **Save trade** inserts it at
+  once as a plain Win/Loss: no drawer, no setup. Same parsers and fee convention as
+  Easy Add. Account Type is filled from the account; Session/Day/Duration/Objective
+  are derived on load as usual. Same account+symbol+close time warns ("Save anyway").
+  The modal stays open, ready for the next paste.
 - Calendar shares: a day popup has **Share day** + **Daily post**; a week (Σ)
   popup has **Share week** (`calShareModal` with `_calShareKind = 'week'`) +
   **Weekly post** (the Daily post modal with `_dpostScope = 'week'`: one row

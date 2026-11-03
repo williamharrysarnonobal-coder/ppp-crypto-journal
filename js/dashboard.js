@@ -17745,6 +17745,148 @@ function _mergeSetupFieldsIntoPrefill(prefill, setupId){
   return prefill;
 }
 
+/* ---------------- Quick Add (Trade Journals) ----------------
+   Isang trade mula sa The5ers o Upscale, idinikit at sine-save AGAD bilang
+   Win/Loss lang — walang drawer, walang setup, walang confluence. Para ito sa
+   kasaysayang gusto lang niyang maipasok; ang iba ay puwedeng punan mamaya sa
+   Edit. Ang parehong parser ng Easy Add ang bumabasa, kaya iisa ang
+   pagkakaintindi sa fee at sa lots. */
+const QUICK_ADD_LS = 'tanaydana-quickadd-account';
+let _quickAddParsed = null;
+
+// Ang Upscale card ay may "Pnl:"; ang hilera ng The5ers ay wala.
+function _quickAddParse(raw){
+  if(!raw.trim()) return null;
+  const broker = /^\s*P[nr]l:/im.test(raw) ? 'upscale' : 'the5ers';
+  const p = broker === 'upscale' ? parseUpscaleEasyAddText(raw) : parseThe5ersEasyAddText(raw);
+  if(!p.symbol || p.profit_loss == null || !p.close_date) return { broker, p, missing: true };
+  return { broker, p };
+}
+
+function openQuickAddModal(){
+  const sel = document.getElementById('quickAddAccount');
+  const names = (FIELD_OPTIONS.account || []).filter(Boolean);
+  let last = null;
+  try{ last = localStorage.getItem(QUICK_ADD_LS); }catch(e){}
+  sel.innerHTML = '<option value="">— Pick an account —</option>' +
+    names.map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join('');
+  if(last && names.includes(last)) sel.value = last;
+  document.getElementById('quickAddInput').value = '';
+  document.getElementById('quickAddError').textContent = '';
+  renderQuickAddPreview();
+  document.getElementById('quickAddModal').classList.add('open');
+  document.getElementById('quickAddInput').focus();
+}
+
+function closeQuickAddModal(){
+  document.getElementById('quickAddModal').classList.remove('open');
+  _quickAddParsed = null;
+}
+
+function _quickAddDuplicate(acc, p){
+  const key = s => String(s || '').replace(' ', 'T').slice(0, 16);
+  return (RAW_TRADES || []).some(r => r.account === acc && r.symbol === p.symbol &&
+    key(r.close_date) === key(p.close_date));
+}
+
+function renderQuickAddPreview(){
+  const out = document.getElementById('quickAddPreview');
+  const btn = document.getElementById('quickAddSaveBtn');
+  const sel = document.getElementById('quickAddAccount');
+  document.getElementById('quickAddError').textContent = '';
+  const r = _quickAddParse(document.getElementById('quickAddInput').value);
+  _quickAddParsed = null;
+  btn.disabled = true;
+  btn.textContent = 'Save trade';
+  if(!r){ out.innerHTML = ''; return; }
+  if(r.missing){
+    out.innerHTML = `<div class="qa-warn">Couldn't read this as a closed trade. Copy the whole ${r.broker === 'upscale' ? 'Upscale position card' : 'The5ers trade row (with the symbol)'}.</div>`;
+    return;
+  }
+  const p = r.p;
+  // Ang naidikit ay galing sa ibang broker kaysa sa napiling account, at iisa
+  // lang ang account ng broker na iyon: iyon na ang piliin.
+  const fits = TRADING_ACCOUNTS.filter(a => _brokerForAccount(a.account_name) === r.broker).map(a => a.account_name);
+  if(fits.length === 1 && _brokerForAccount(sel.value) !== r.broker) sel.value = fits[0];
+
+  const net = (Number(p.profit_loss) || 0) - (Number(p.fee) || 0);
+  const wl = p.win_loss || (net > 0 ? 'Win' : net < 0 ? 'Loss' : 'Breakeven');
+  const when = s => { const d = new Date(s); return isNaN(d) ? '—' : d.toLocaleString(undefined, {day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit'}); };
+  const money = v => (v < 0 ? '-$' : '+$') + Math.abs(v).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2});
+  const cls = wl === 'Win' ? 'up' : wl === 'Loss' ? 'down' : 'be';
+  const dup = sel.value && _quickAddDuplicate(sel.value, p);
+  out.innerHTML = `
+    <div class="qa-head"><b>${escapeHtml(p.symbol)}</b> <span>${escapeHtml(p.trade_type || '')}</span>
+      <span class="qa-wl ${cls}">${wl} ${money(net)}</span></div>
+    <div class="qa-grid">
+      <span>From</span><em>${r.broker === 'upscale' ? 'Upscale' : 'The5ers'}</em>
+      <span>Opened</span><em>${when(p.open_date)}</em>
+      <span>Closed</span><em>${when(p.close_date)}</em>
+      <span>Entry → Exit</span><em>${p.entry_price ?? '—'} → ${p.close_price ?? '—'}</em>
+      <span>Fee</span><em>${p.fee != null ? '$' + Number(p.fee).toFixed(2) : '—'}</em>
+    </div>
+    ${dup ? '<div class="qa-warn">This trade looks like it is already in your journal (same account, symbol and close time).</div>' : ''}`;
+  _quickAddParsed = p;
+  btn.disabled = !sel.value;
+  if(dup) btn.textContent = 'Save anyway';
+}
+
+async function saveQuickAdd(){
+  const acc = document.getElementById('quickAddAccount').value;
+  const errEl = document.getElementById('quickAddError');
+  const btn = document.getElementById('quickAddSaveBtn');
+  if(!_quickAddParsed || !acc) return;
+  const patch = { ..._quickAddParsed, account: acc };
+  // Ang Session, Day of Week, Duration at Objective ay kinukuwenta mula sa
+  // petsa at account tuwing naglo-load, kaya hindi kailangang isulat dito.
+  // Ang Account Type ay naka-imbak, kaya ito lang ang pinupunan.
+  const accType = _accountTypeFor(acc);
+  if(accType) patch.account_type = accType;
+  if(!patch.win_loss){
+    const net = (Number(patch.profit_loss) || 0) - (Number(patch.fee) || 0);
+    patch.win_loss = net > 0 ? 'Win' : net < 0 ? 'Loss' : 'Breakeven';
+  }
+  // Gaya ng _collectDrawerPatch: ang hindi cut o stop profit ay may iisang sagot.
+  if(!patch.post_cutloss_result && patch.exit_type &&
+     String(patch.exit_type).trim().toLowerCase() !== 'cut loss'){
+    patch.post_cutloss_result = 'N/A';
+  }
+  if(!patch.post_stop_profit_result && patch.exit_type &&
+     String(patch.exit_type).trim().toLowerCase() !== 'stop profit'){
+    patch.post_stop_profit_result = 'N/A';
+  }
+  const maxNo = RAW_TRADES.reduce((m, r) => { const n = parseFloat(r.no); return !isNaN(n) && n > m ? n : m; }, 0);
+  patch.no = maxNo + 1;
+  patch.position_id = 'WEB-' + Date.now().toString(36).toUpperCase();
+
+  btn.disabled = true; btn.textContent = 'Saving…'; errEl.textContent = '';
+  try{
+    const res = await _journalSend(`${SUPABASE_URL}/rest/v1/${TABLE_NAME}`, 'POST', patch);
+    if(!res.ok) throw new Error(await res.text());
+    const inserted = await res.json();
+    RAW_TRADES.push(inserted[0] || patch);
+    try{ localStorage.setItem(QUICK_ADD_LS, acc); }catch(e){}
+    _rebuildTradeArrays();
+    _rebuildTradeNumbers();
+    populateAccountFilter();
+    populateDashPeriodFilters();
+    populateJournalFilters();
+    applyFilters();
+    renderJournalTable();
+    refreshAllNavBadges();
+    await adjustAccountBalance(acc, (Number(patch.profit_loss) || 0) - (Number(patch.fee) || 0));
+    // Handa na para sa susunod na trade: parehong account, walang laman ang kahon.
+    document.getElementById('quickAddInput').value = '';
+    renderQuickAddPreview();
+    document.getElementById('quickAddPreview').innerHTML =
+      `<div class="qa-ok">Saved ${escapeHtml(patch.symbol)} · ${patch.win_loss}. Paste the next one, or close.</div>`;
+    document.getElementById('quickAddInput').focus();
+  }catch(e){
+    errEl.textContent = "Couldn't save: " + e.message;
+    btn.disabled = false; btn.textContent = 'Save trade';
+  }
+}
+
 /* ---------------- Trade View popup (read-only, with Previous/Next) ---------------- */
 let tradeViewList = [];
 let tradeViewIndex = -1;
