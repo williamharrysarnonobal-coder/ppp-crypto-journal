@@ -18534,6 +18534,113 @@ async function saveTradeInline(){
     btn.disabled = false; btn.textContent = 'Save changes';
   }
 }
+/* ---------- Add RR (trade page) ----------
+   Ang order ticket ng broker ay may Entry price, PROFIT LEVEL (Ticks, Price) at
+   STOP LEVEL (Ticks, Price). Ang "Price" sa ilalim ng bawat isa ang kinukuha —
+   hindi ang Ticks. Napupunan ang tatlong kahon at puwede pang baguhin bago i-save.
+   Ang Entry ng trade ay pinupunan lang kung blangko (ang naka-save ay ang tunay
+   na pasok); ang RR ay kinukuwenta sa Entry na nasa kahon. */
+function _parseLevelsPaste(raw){
+  const lines = String(raw || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  const num = s => { const m = String(s).replace(/[,$\s]/g, '').match(/^-?\d+(?:\.\d+)?$/); return m ? parseFloat(m[0]) : null; };
+  const out = {};
+  let sec = null, wantPrice = false;
+  const take = (key, i, rest) => {
+    const v = num(rest) ?? (lines[i + 1] != null ? num(lines[i + 1]) : null);
+    if(v != null && out[key] == null) out[key] = v;
+  };
+  lines.forEach((l, i) => {
+    let m;
+    if((m = l.match(/^entry(?:\s*price)?\s*:?\s*(.*)$/i))){ sec = null; take('entry', i, m[1]); return; }
+    if(/^(profit\s*level|take\s*profit|tp)\b/i.test(l)){ sec = 'tp'; m = l.match(/[-\d.,]+\s*$/); if(m && /:/.test(l)) take('tp', i, m[0]); return; }
+    if(/^(stop\s*level|stop\s*loss|sl)\b/i.test(l)){ sec = 'sl'; m = l.match(/[-\d.,]+\s*$/); if(m && /:/.test(l)) take('sl', i, m[0]); return; }
+    if(sec && (m = l.match(/^price\s*:?\s*(.*)$/i))) take(sec, i, m[1]);
+  });
+  return out;
+}
+function openTradeRRModal(){
+  const row = tradeViewList[tradeViewIndex];
+  if(!row) return;
+  const raw = RAW_TRADES.find(r => r.position_id === row.position_id) || row;
+  const v = x => (x === null || x === undefined || x === '') ? '' : String(x);
+  document.getElementById('tradeRRInput').value = '';
+  document.getElementById('tradeRREntry').value = v(raw.entry_price);
+  document.getElementById('tradeRRSl').value = v(raw.sl_price);
+  document.getElementById('tradeRRTp').value = v(raw.tp_price);
+  document.getElementById('tradeRRError').textContent = '';
+  document.getElementById('tradeRRSub').textContent = `${raw.symbol || 'Trade'}${raw.trade_type ? ' · ' + raw.trade_type : ''} — paste the order ticket (Entry price, Profit level, Stop level), or type the prices.`;
+  renderTradeRR();
+  document.getElementById('tradeRRModal').classList.add('open');
+  document.getElementById('tradeRRInput').focus();
+}
+function closeTradeRRModal(){ document.getElementById('tradeRRModal').classList.remove('open'); }
+function onTradeRRPaste(){
+  const p = _parseLevelsPaste(document.getElementById('tradeRRInput').value);
+  if(p.entry != null) document.getElementById('tradeRREntry').value = p.entry;
+  if(p.sl != null) document.getElementById('tradeRRSl').value = p.sl;
+  if(p.tp != null) document.getElementById('tradeRRTp').value = p.tp;
+  renderTradeRR();
+}
+function _tradeRRValues(){
+  const lv = id => { const v = document.getElementById(id).value; return v === '' ? null : parseFloat(v); };
+  return { entry_price: lv('tradeRREntry'), sl_price: lv('tradeRRSl'), tp_price: lv('tradeRRTp') };
+}
+function renderTradeRR(){
+  const row = tradeViewList[tradeViewIndex] || {};
+  const raw = RAW_TRADES.find(r => r.position_id === row.position_id) || row;
+  const v = _tradeRRValues();
+  const rr = _rrFromPrices(v);
+  const out = document.getElementById('tradeRRPreview');
+  const btn = document.getElementById('tradeRRSaveBtn');
+  btn.disabled = rr == null;
+  if(rr == null){ out.innerHTML = ''; return; }
+  // Ang direksyon ng mga presyo laban sa Trade Type ng trade.
+  const long = v.tp_price > v.entry_price && v.sl_price < v.entry_price;
+  const short = v.tp_price < v.entry_price && v.sl_price > v.entry_price;
+  const dir = long ? 'Long' : short ? 'Short' : null;
+  const tt = String(raw.trade_type || '');
+  const notes = [];
+  if(!dir) notes.push('TP and SL are on the same side of the entry. Check the prices.');
+  else if(/^(long|short)$/i.test(tt) && dir.toLowerCase() !== tt.toLowerCase()) notes.push(`These prices are a ${dir} but this trade is a ${tt}.`);
+  const old = raw.rr;
+  if(old !== null && old !== undefined && old !== '' && Math.abs(Number(old) - rr) > 0.005) notes.push(`Replaces the current RR 1:${Number(old).toFixed(2)}.`);
+  const savedEntry = raw.entry_price;
+  if(savedEntry != null && savedEntry !== '' && Number(savedEntry) !== v.entry_price) notes.push(`The trade's entry stays ${savedEntry}; RR uses ${v.entry_price}.`);
+  out.innerHTML = `<div class="qa-head"><b>RR 1:${rr.toFixed(2)}</b>${dir ? `<span>${dir}</span>` : ''}
+    <span class="qa-wl">Risk ${Math.abs(v.entry_price - v.sl_price).toLocaleString(undefined,{maximumFractionDigits:6})} · Reward ${Math.abs(v.tp_price - v.entry_price).toLocaleString(undefined,{maximumFractionDigits:6})}</span></div>
+    ${notes.map(n => `<div class="qa-warn">${escapeHtml(n)}</div>`).join('')}`;
+}
+async function saveTradeRR(){
+  const row = tradeViewList[tradeViewIndex];
+  if(!row) return;
+  const raw = RAW_TRADES.find(r => r.position_id === row.position_id) || row;
+  const v = _tradeRRValues();
+  const rr = _rrFromPrices(v);
+  if(rr == null) return;
+  const patch = { sl_price: v.sl_price, tp_price: v.tp_price, rr };
+  if(raw.entry_price === null || raw.entry_price === undefined || raw.entry_price === '') patch.entry_price = v.entry_price;
+  const btn = document.getElementById('tradeRRSaveBtn');
+  const errEl = document.getElementById('tradeRRError');
+  btn.disabled = true; btn.textContent = 'Saving…'; errEl.textContent = '';
+  try{
+    const res = await _journalSend(`${SUPABASE_URL}/rest/v1/${TABLE_NAME}?position_id=eq.${encodeURIComponent(row.position_id)}`, 'PATCH', patch);
+    if(!res.ok) throw new Error(await res.text());
+    Object.assign(raw, patch);
+    _rebuildTradeArrays();
+    _rebuildTradeNumbers();
+    applyFilters();
+    renderJournalTable();
+    refreshAllNavBadges();
+    closeTradeRRModal();
+    renderTradeViewModal();
+    showToast(`RR 1:${rr.toFixed(2)} saved`);
+  }catch(e){
+    errEl.textContent = "Couldn't save: " + e.message;
+  }finally{
+    btn.disabled = false; btn.textContent = 'Save RR';
+  }
+}
+
 // Bago umalis sa trade na may hindi pa naise-save.
 async function _tpConfirmLeave(){
   if(!Object.keys(_tpDirty).length) return true;

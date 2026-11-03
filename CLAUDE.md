@@ -332,6 +332,12 @@ find/replace, try the LF form, then the CRLF form.
   gets the ⚠️ ("RR" in `_journalMissingFields`); its Fill in shows Entry/SL/TP
   instead of RR. SL/TP themselves are NOT required (95 old trades have RR from a
   Setup but no SL/TP). Quick Add shows "RR — · needed" but still saves.
+- **Add RR** button on the trade page (next to Confluence, `openTradeRRModal`): paste
+  the broker order ticket ("Entry price / PROFIT LEVEL Ticks,Price / STOP LEVEL
+  Ticks,Price"; `_parseLevelsPaste` takes the Price, never the Ticks; one-line
+  "Take Profit: x" works too) or type Entry/SL/TP. Saves SL, TP and RR (an explicit
+  action, so it replaces an existing RR, with a note); Entry only if the trade had
+  none. Warns if the prices point the other way from the trade's Long/Short.
 - Trade page multi-select dropdowns (`.tp-multi-pop`, Mistakes / Trade Management)
   are `position:fixed`, placed by `_placeTpMultiPop` (below, or above when there's
   no room) so a card's overflow can't clip them; closed on scroll/resize.
