@@ -325,6 +325,9 @@ find/replace, try the LF form, then the CRLF form.
   Easy Add. Account Type is filled from the account; Session/Day/Duration/Objective
   are derived on load as usual. Same account+symbol+close time warns ("Save anyway").
   The modal stays open, ready for the next paste.
+- Trade page multi-select dropdowns (`.tp-multi-pop`, Mistakes / Trade Management)
+  are `position:fixed`, placed by `_placeTpMultiPop` (below, or above when there's
+  no room) so a card's overflow can't clip them; closed on scroll/resize.
 - The ⚠️ on a Trade Journals row is a button (`fillJournalMissing`): it opens the
   normal Edit drawer scoped (`_drawerScope = {only}`) to the missing + invalid fields
   only (plus Post-BE/Cut/Stop when Exit Type or Win/Loss is missing; Trade Tags are

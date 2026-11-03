@@ -18369,7 +18369,35 @@ function toggleTpMulti(btn){
   const open = pop.hidden;
   document.querySelectorAll('.tp-multi-pop').forEach(p => { p.hidden = true; });
   pop.hidden = !open;
+  if(open) _placeTpMultiPop(btn, pop);
 }
+/* Ang listahan ay pinuputol ng card na may overflow kapag malapit ito sa ibaba.
+   Kaya naka-fixed ito sa screen, nakasukat sa pindutan: sa ilalim kung may
+   puwang, sa itaas kung wala, at ang taas ay hanggang sa puwang lang. */
+function _placeTpMultiPop(btn, pop){
+  const r = btn.getBoundingClientRect();
+  const gap = 4, edge = 8;
+  const below = window.innerHeight - r.bottom - gap - edge;
+  const above = r.top - gap - edge;
+  const want = Math.min(280, pop.scrollHeight || 280);
+  const up = below < want && above > below;
+  const room = Math.max(120, Math.min(280, up ? above : below));
+  const w = Math.max(230, r.width);
+  pop.style.position = 'fixed';
+  pop.style.maxHeight = room + 'px';
+  pop.style.minWidth = w + 'px';
+  pop.style.left = Math.max(edge, Math.min(r.left, window.innerWidth - w - edge)) + 'px';
+  // 'auto', hindi '': ang blangko ay bumabalik sa top ng CSS, at ang top at
+  // bottom na sabay ay pumipiga sa listahan.
+  pop.style.top = up ? 'auto' : (r.bottom + gap) + 'px';
+  pop.style.bottom = up ? (window.innerHeight - r.top + gap) + 'px' : 'auto';
+}
+// Naka-fixed ang listahan, kaya isinasara ito kapag nag-scroll o nag-resize
+// para hindi ito maiwang lumulutang sa maling lugar.
+['scroll', 'resize'].forEach(ev => window.addEventListener(ev, e => {
+  if(e.type === 'scroll' && e.target && e.target.closest && e.target.closest('.tp-multi-pop')) return;
+  document.querySelectorAll('.tp-multi-pop:not([hidden])').forEach(p => { p.hidden = true; });
+}, true));
 document.addEventListener('click', e => {
   if(e.target.closest && e.target.closest('.tp-multi')) return;
   document.querySelectorAll('.tp-multi-pop').forEach(p => { p.hidden = true; });
