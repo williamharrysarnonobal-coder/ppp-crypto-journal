@@ -351,7 +351,8 @@ find/replace, try the LF form, then the CRLF form.
   `.ec-box[data-k]` → `_ecSet` → `onTradeInlineTags` → `_tpDirty` / Save bar),
   under an "Entry" title with Pattern Type shown READ-ONLY above it (owner: "para
   alam ko lang"); Pattern Type is still edited in Details, and changing it there
-  re-renders the page so the Confluence tab follows.
+  re-renders the page so the Confluence tab follows. Both rows are `.tp-side`
+  (label beside value, same as Details).
   The old confluence checklist is untouched (owner's call: keep it for now).
 - Mistakes has **N/A** (= no mistake): always first (moved there even after an old
   saved Options list is merged), exclusive with every other mistake

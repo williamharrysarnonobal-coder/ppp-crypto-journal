@@ -19740,8 +19740,8 @@ function _tpEntryConfluenceHtml(row){
   // mungkahing tag); sa Details pa rin ito pinapalitan.
   const pt = ('pattern_type' in _tpDirty ? _tpDirty.pattern_type : row.pattern_type) || '';
   return `<div class="field-row span-2 field-group-title">Entry</div>
-    <div class="field-row span-2"><label>Pattern Type</label><div class="field-static">${pt ? escapeHtml(pt) : '<span class="tp-muted">Not set. Pick it in Details.</span>'}</div></div>
-    <div class="field-row span-2"><label>Entry Confluence</label><div class="ec-box tp-ec${'entry_confluence' in _tpDirty ? ' dirty' : ''}" data-k="entry_confluence">
+    <div class="field-row span-2 tp-side"><label>Pattern Type</label><div class="field-static">${pt ? escapeHtml(pt) : '<span class="tp-muted">Not set. Pick it in Details.</span>'}</div></div>
+    <div class="field-row span-2 tp-side"><label>Entry Confluence</label><div class="ec-box tp-ec${'entry_confluence' in _tpDirty ? ' dirty' : ''}" data-k="entry_confluence">
       <input type="hidden" value="${escapeHtml(vals.join(', '))}">
       <div class="ec-chips">${_ecChipsHtml(vals)}</div>
       <input type="text" class="ec-input" placeholder="${escapeHtml(f.placeholder || '')}" autocomplete="off"

@@ -4964,6 +4964,12 @@ body.mobile-mode .drawer.drawer-inline #drawerBody{grid-template-columns:minmax(
 #tradeViewBody .field-row:not(.field-group-title) > label{margin:0;flex:0 0 130px;}
 #tradeViewBody .field-row:not(.field-group-title) > .field-static{flex:1;min-width:0;}
 @media(max-width:700px){#tradeViewBody .field-row:not(.field-group-title) > label{flex-basis:105px;}}
+/* Ang Entry (Pattern Type, Entry Confluence) sa Confluence tab: gaya ng Details. */
+#tpConfluence .field-row.tp-side{display:flex;align-items:center;gap:12px;min-height:38px;}
+#tpConfluence .field-row.tp-side > label{margin:0;flex:0 0 130px;}
+#tpConfluence .field-row.tp-side > .field-static,#tpConfluence .field-row.tp-side > .ec-box{flex:1;min-width:0;}
+#tpConfluence .field-row.tp-side > .field-static,#tpConfluence .tp-side .ec-input{font-family:var(--font-ui);font-size:13px;}
+@media(max-width:700px){#tpConfluence .field-row.tp-side > label{flex-basis:105px;}}
 /* IISANG ITSURA NG LAHAT NG DROPDOWN sa trade page — ang Mistakes button ang
    batayan: parehong kahon, border, laki, font at ▾. */
 #view-trade select.tp-inl{
