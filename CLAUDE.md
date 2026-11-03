@@ -348,7 +348,10 @@ find/replace, try the LF form, then the CRLF form.
   tag shows "(New)"; Enter/comma adds, Backspace removes; an existing tag typed in
   another case reuses its spelling. On the trade page it is NOT in Details; it sits
   at the top of the Confluence tab, editable inline (`_tpEntryConfluenceHtml`,
-  `.ec-box[data-k]` → `_ecSet` → `onTradeInlineTags` → `_tpDirty` / Save bar).
+  `.ec-box[data-k]` → `_ecSet` → `onTradeInlineTags` → `_tpDirty` / Save bar),
+  under an "Entry" title with Pattern Type shown READ-ONLY above it (owner: "para
+  alam ko lang"); Pattern Type is still edited in Details, and changing it there
+  re-renders the page so the Confluence tab follows.
   The old confluence checklist is untouched (owner's call: keep it for now).
 - Mistakes has **N/A** (= no mistake): always first (moved there even after an old
   saved Options list is merged), exclusive with every other mistake

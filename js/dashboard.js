@@ -18481,7 +18481,8 @@ function onTradeInlineChange(sel){
   if((row[k] ?? null) === v) delete _tpDirty[k]; else _tpDirty[k] = v;
   _renderTradeSaveBar();
   // Ang Pattern Type ay nakadepende sa Trade Setup — iguhit ulit ang mga select.
-  if(k === 'trade_setup') renderTradeViewModal();
+  // Ang Pattern Type naman ay ipinapakita rin sa Confluence tab.
+  if(k === 'trade_setup' || k === 'pattern_type') renderTradeViewModal();
   else{
     sel.classList.toggle('dirty', k in _tpDirty);
     sel.classList.remove('tone-win', 'tone-loss', 'tone-be');
@@ -19735,8 +19736,12 @@ function _tpEntryConfluenceHtml(row){
   const f = ALL_DRAWER_FIELDS.find(x => x.key === 'entry_confluence');
   if(!f) return '';
   const vals = _tpList('entry_confluence' in _tpDirty ? _tpDirty.entry_confluence : row.entry_confluence);
-  return `<div class="field-row span-2 field-group-title">Entry Confluence</div>
-    <div class="field-row span-2"><div class="ec-box tp-ec${'entry_confluence' in _tpDirty ? ' dirty' : ''}" data-k="entry_confluence">
+  // Ang Pattern Type ay pang-reference lang dito (dito nakabatay ang mga
+  // mungkahing tag); sa Details pa rin ito pinapalitan.
+  const pt = ('pattern_type' in _tpDirty ? _tpDirty.pattern_type : row.pattern_type) || '';
+  return `<div class="field-row span-2 field-group-title">Entry</div>
+    <div class="field-row span-2"><label>Pattern Type</label><div class="field-static">${pt ? escapeHtml(pt) : '<span class="tp-muted">Not set. Pick it in Details.</span>'}</div></div>
+    <div class="field-row span-2"><label>Entry Confluence</label><div class="ec-box tp-ec${'entry_confluence' in _tpDirty ? ' dirty' : ''}" data-k="entry_confluence">
       <input type="hidden" value="${escapeHtml(vals.join(', '))}">
       <div class="ec-chips">${_ecChipsHtml(vals)}</div>
       <input type="text" class="ec-input" placeholder="${escapeHtml(f.placeholder || '')}" autocomplete="off"
