@@ -3442,6 +3442,9 @@ table.breakdown tbody tr{cursor:pointer;}
    the list long, and an unbounded box would push the Save button off the
    bottom of the drawer. */
 .checklist-box[data-checklist-for="unfollowed_rules"]{max-height:none;}
+/* Trade Tags popup sa trade page */
+.tt-box{margin-top:12px;}
+.tt-rf{margin-top:10px;font-size:13px;color:var(--ink);}
 .chk-cols{display:grid;grid-template-columns:repeat(auto-fill,minmax(185px,1fr));gap:0 12px;}
 .chk-cols label{padding:3px 0;}
 

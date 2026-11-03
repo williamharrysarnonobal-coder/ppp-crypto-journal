@@ -357,15 +357,17 @@ find/replace, try the LF form, then the CRLF form.
 - Trade **Add Note** modal (`tradeNoteModal`) has the same "Hold to speak"
   `.mic-bar` as Setup Notes: `voiceHoldStart(event,'tradeNoteNewEntry','text',this)`
   → `/api/transcribe` (Tagalog) → `_voiceInsert` into the note box.
-- **Trade Tags editable inline** on the trade page Review tab (real trades; paper
-  keeps read-only chips): `_tpMulti('unfollowed_rules', row)` with the live
-  `_unfollowedOptionsFor` list; chip colour per tag kind via `_tpChipCls`
-  (breach red / sentinel green / observation grey). Changing tags re-derives
-  Rules Followed? (`_deriveRulesFollowed`) into `_tpDirty` + the select.
+- **Trade Tags without Edit** on the trade page Review tab (real trades; paper
+  keeps read-only chips): a `.tt-open` button with the chips (colour per kind via
+  `_tpChipCls`: breach red / sentinel green / observation grey) opens the
+  `tradeTagsModal` POPUP — owner wanted it grouped, not a flat dropdown. It reuses
+  the Edit form's grouped `_checklistBoxesHtml('unfollowed_rules', …)`; the boxes'
+  `_refreshDerivedRulesFollowed(this)` hands off to `_onTradeTagsTick` when inside
+  the modal. Shows "Rules Followed? will be Yes/No"; `saveTradeTags` PATCHes
+  `unfollowed_rules` + derived `rules_followed` straight away (no Save bar).
   "Rules Followed" (sentinel) and any breach are mutually exclusive
-  (`_tagsSentinelExclusive`) here AND in the Edit form checklist
-  (`_refreshDerivedRulesFollowed(this)` applies it before deriving). Trade-off:
-  the chips there no longer click through to the journal filter.
+  (`_tagsSentinelExclusive`) in the popup AND the Edit form. Trade-off: those
+  chips no longer click through to the journal filter.
 - Trade Tags **TP Could Reach 1:3 / 1:4 / 1:5 / 1:6** (owner request): notes, not
   rules — listed in BOTH `UNFOLLOWED_RULES_OPTIONS` and `TAG_OBSERVATIONS` (a tag in
   the options list but not in observations becomes a breach), plus `TAG_HELP`.

@@ -18505,23 +18505,10 @@ function onTpMultiChange(cb){
   const box = cb.closest('.tp-multi');
   const k = box.dataset.k;
   _mistakesNaExclusive(cb, box.querySelectorAll('input[type="checkbox"]'));
-  if(k === 'unfollowed_rules') _tagsSentinelExclusive(cb, box.querySelectorAll('input[type="checkbox"]'));
   const picked = [...box.querySelectorAll('input:checked')].map(i => i.value);
   const v = picked.length ? picked.join(', ') : null;
   const before = _tpList(row[k]).join(', ') || null;
   if(before === v) delete _tpDirty[k]; else _tpDirty[k] = v;
-  // Ang Rules Followed? ay galing sa Trade Tags, gaya ng sa Edit form.
-  if(k === 'unfollowed_rules'){
-    const rf = _deriveRulesFollowed({ ...row, unfollowed_rules: v || '' });
-    const sel = document.querySelector('#tpReview select[data-k="rules_followed"]');
-    if(rf && sel){
-      if((row.rules_followed ?? null) === rf) delete _tpDirty.rules_followed; else _tpDirty.rules_followed = rf;
-      sel.value = rf;
-      sel.classList.toggle('dirty', 'rules_followed' in _tpDirty);
-      sel.classList.remove('tone-win', 'tone-loss', 'tone-be');
-      const t = _tpToneClass('rules_followed', rf).trim(); if(t) sel.classList.add(t);
-    }
-  }
   _renderTradeSaveBar();
   const btn = box.querySelector('.tp-multi-btn');
   btn.classList.toggle('dirty', k in _tpDirty);
@@ -18690,6 +18677,69 @@ async function saveTradeRR(){
   }
 }
 
+/* ---------- Trade Tags popup (trade page) ----------
+   Ang parehong naka-group na checklist ng Edit form (_checklistBoxesHtml), sa
+   isang popup na direktang nagse-save — hindi kalat na dropdown. */
+function _tradeTagsTicked(){
+  return [...document.querySelectorAll('#tradeTagsBox [data-checklist="unfollowed_rules"]:checked')].map(c => c.value);
+}
+function _renderTradeTagsRF(){
+  const row = tradeViewList[tradeViewIndex];
+  const rf = _deriveRulesFollowed({ ...(row || {}), unfollowed_rules: _tradeTagsTicked().join(', ') });
+  document.getElementById('tradeTagsRF').innerHTML = rf
+    ? `Rules Followed? will be <b class="${rf === 'Yes' ? 'pos' : 'neg'}">${rf}</b>`
+    : '<span class="tp-muted">Nothing ticked yet.</span>';
+}
+function _onTradeTagsTick(cb){
+  _tagsSentinelExclusive(cb, document.querySelectorAll('#tradeTagsBox [data-checklist="unfollowed_rules"]'));
+  _renderTradeTagsRF();
+}
+function openTradeTagsModal(){
+  const row = tradeViewList[tradeViewIndex];
+  if(!row) return;
+  const raw = RAW_TRADES.find(r => r.position_id === row.position_id) || row;
+  const cur = _canonicalTags('unfollowed_rules' in _tpDirty ? _tpDirty.unfollowed_rules : raw.unfollowed_rules);
+  document.getElementById('tradeTagsBox').innerHTML =
+    _checklistBoxesHtml('unfollowed_rules', _unfollowedOptionsFor(null, cur), cur);
+  document.getElementById('tradeTagsError').textContent = '';
+  _renderTradeTagsRF();
+  document.getElementById('tradeTagsModal').classList.add('open');
+}
+function closeTradeTagsModal(){
+  document.getElementById('tradeTagsModal').classList.remove('open');
+}
+async function saveTradeTags(){
+  const row = tradeViewList[tradeViewIndex];
+  if(!row) return;
+  const raw = RAW_TRADES.find(r => r.position_id === row.position_id) || row;
+  const ticked = _tradeTagsTicked();
+  const patch = { unfollowed_rules: ticked.length ? ticked.join(', ') : null };
+  const rf = _deriveRulesFollowed({ ...raw, unfollowed_rules: patch.unfollowed_rules || '' });
+  if(rf) patch.rules_followed = rf;
+  const btn = document.getElementById('tradeTagsSaveBtn');
+  const errEl = document.getElementById('tradeTagsError');
+  btn.disabled = true; btn.textContent = 'Saving…'; errEl.textContent = '';
+  try{
+    const res = await _journalSend(`${SUPABASE_URL}/rest/v1/${TABLE_NAME}?position_id=eq.${encodeURIComponent(row.position_id)}`, 'PATCH', patch);
+    if(!res.ok) throw new Error(await res.text());
+    Object.assign(raw, patch);
+    // Ang ibang hindi pa naise-save sa pahina ay naiiwan; ang dalawang ito ay tapos na.
+    delete _tpDirty.unfollowed_rules; delete _tpDirty.rules_followed;
+    _rebuildTradeArrays();
+    _rebuildTradeNumbers();
+    applyFilters();
+    renderJournalTable();
+    _renderTradeSaveBar();
+    closeTradeTagsModal();
+    renderTradeViewModal();
+    showToast('Trade Tags saved');
+  }catch(e){
+    errEl.textContent = "Couldn't save: " + e.message;
+  }finally{
+    btn.disabled = false; btn.textContent = 'Save tags';
+  }
+}
+
 // Bago umalis sa trade na may hindi pa naise-save.
 async function _tpConfirmLeave(){
   if(!Object.keys(_tpDirty).length) return true;
@@ -18818,7 +18868,7 @@ function _renderTradeReview(row){
       <div class="tp-rv tp-rv-wide">
         <div class="tp-rv-k" title="Your Trade Tags column. Red = a rule you broke, green = Rules Followed, grey = a note (not a rule).">Trade Tags</div>
         ${_drawerIsPaper(row) ? `<div class="tp-tags">${tags.length ? chips(broke, 'rule') + chips(tags.filter(t => _tagKind(t) === 'sentinel'), 'clean') + chips(notes, 'note') : '<span class="tp-muted">—</span>'}</div>`
-          : _tpMulti('unfollowed_rules', row)}
+          : `<button type="button" class="tp-multi-btn tt-open" onclick="openTradeTagsModal()" aria-haspopup="dialog">${_tpMultiBtnHtml('unfollowed_rules', tags)}</button>`}
       </div>
       <div class="tp-rv tp-rv-wide">
         <div class="tp-rv-k">Mistakes</div>
@@ -25295,6 +25345,8 @@ function _checklistBoxesHtml(key, options, selected){
 // editable and whatever it says at save time is what gets stored.
 let _drawerRow = null;
 function _refreshDerivedRulesFollowed(cb){
+  // Ang popup ng Trade Tags sa trade page ay may sariling sagot.
+  if(cb && cb.closest('#tradeTagsModal')){ _onTradeTagsTick(cb); return; }
   // Una ang "Rules Followed" ⟷ nilabag na rule, bago kuwentahin ang sagot.
   if(cb) _tagsSentinelExclusive(cb, document.querySelectorAll('#drawerBody [data-checklist="unfollowed_rules"]'));
   const sel = document.querySelector('#drawerBody [data-field="rules_followed"]');
