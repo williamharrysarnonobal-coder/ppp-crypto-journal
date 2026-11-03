@@ -328,7 +328,10 @@ find/replace, try the LF form, then the CRLF form.
   it an RR (live "RR 1:x" next to them).
 - **RR** is the planned reward:risk. From a Setup it is carried over; otherwise
   `_collectDrawerPatch` fills a BLANK `rr` from Entry/SL/TP (`_rrFromPrices`) on
-  save. An existing RR is never overwritten.
+  save. An existing RR is never overwritten. A real (non-paper) trade with no RR
+  gets the ⚠️ ("RR" in `_journalMissingFields`); its Fill in shows Entry/SL/TP
+  instead of RR. SL/TP themselves are NOT required (95 old trades have RR from a
+  Setup but no SL/TP). Quick Add shows "RR — · needed" but still saves.
 - Trade page multi-select dropdowns (`.tp-multi-pop`, Mistakes / Trade Management)
   are `position:fixed`, placed by `_placeTpMultiPop` (below, or above when there's
   no room) so a card's overflow can't clip them; closed on scroll/resize.

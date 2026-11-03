@@ -15942,6 +15942,12 @@ function _journalMissingFields(r){
      visible.has('post_stop_profit_result') && isBlank('post_stop_profit_result')){
     missing.push(labelOf('post_stop_profit_result'));
   }
+  // RR: mahalaga, pero hindi isinusulat — kinukuwenta mula sa SL at TP (o galing
+  // sa Setup). Kaya ang SL/TP ay HINDI pinipilit (marami ang may RR na wala sila);
+  // ang RR mismo ang hinahanap, at ang "Fill in" ay nagbubukas ng SL at TP.
+  if(visible.has('rr') && !r.is_paper && isBlank('rr')){
+    missing.push(labelOf('rr'));
+  }
   return missing;
 }
 
@@ -15961,6 +15967,8 @@ function fillJournalMissing(pid){
   if(!keys.size){ openTradeViewModal(r.position_id); return; }
   if(keys.has('exit_type') || keys.has('win_loss')) ['post_be_result','post_cutloss_result','post_stop_profit_result'].forEach(k => keys.add(k));
   if(keys.has('trade_setup')) ['pattern_type','execution_tf'].forEach(k => keys.add(k));
+  // Ang RR ay kinukuwenta, hindi isinusulat: ang SL at TP ang ipinapakita.
+  if(keys.has('rr')){ keys.delete('rr'); ['entry_price','sl_price','tp_price'].forEach(k => keys.add(k)); }
   _drawerScope = { only: keys };
   openDrawer('view', r.position_id);
   enterEditMode();
@@ -17876,6 +17884,9 @@ function renderQuickAddRR(){
   const lv = id => { const v = document.getElementById(id).value; return v === '' ? null : parseFloat(v); };
   const rr = _quickAddParsed ? _rrFromPrices({ entry_price: _quickAddParsed.entry_price, sl_price: lv('quickAddSl'), tp_price: lv('quickAddTp') }) : null;
   el.textContent = rr != null ? `RR 1:${rr.toFixed(2)}` : 'RR —';
+  // Paalala lang, hindi harang: ang trade na walang RR ay may ⚠️ hanggang mapunan.
+  el.classList.toggle('qa-rr-missing', !!_quickAddParsed && rr == null);
+  el.title = rr == null ? 'Add SL and TP to get the RR. You can also add them later from the ⚠️ in Trade Journals.' : '';
 }
 
 async function saveQuickAdd(){

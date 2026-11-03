@@ -50,7 +50,7 @@ const check = (label, got, want) => {
 console.log('Aling column ang binabantayan, at alin ang hindi:\n');
 // Columns that are legitimately blank on a normal trade — flagging these would
 // make the warning constant and therefore ignored.
-const OK_BLANK = new Set(['no','pnl_percent','rr','entry_price','close_price','tp_price','sl_price',
+const OK_BLANK = new Set(['no','pnl_percent','entry_price','close_price','tp_price','sl_price',
   'position_size','fee','duration','objective','notes','trade_summary','link',
   'trade_quality',   // kinukuwenta mula sa Rules Followed? × Win/Loss
   'screenshot_before','screenshot_after','confluence_score','day_of_week','account_type',
@@ -65,7 +65,8 @@ const OK_BLANK = new Set(['no','pnl_percent','rr','entry_price','close_price','t
   'entry_confluence']);
 // Watched, but only under a condition, so they are not in the flat required
 // list and are not "legitimately blank" either.
-const CONDITIONAL = new Set(['unfollowed_rules','post_be_result','post_cutloss_result','post_stop_profit_result']);
+// RR: binabantayan sa tunay na trade lang (hindi paper), at pinupunan ng SL/TP.
+const CONDITIONAL = new Set(['unfollowed_rules','post_be_result','post_cutloss_result','post_stop_profit_result','rr']);
 ALL_COLS.forEach(c => {
   const watched = REQ.includes(c.key);
   const cond = CONDITIONAL.has(c.key);
@@ -79,6 +80,11 @@ console.log('\n   binabantayan: ' + REQ.length + ' · may kondisyon: ' + CONDITI
 const base = {};
 REQ.forEach(k => base[k] = 'x');
 base.win_loss = 'Win';
+base.rr = 2;
+
+check('walang RR -> babala', API._journalMissingFields({ ...base, rr: null }).includes('RR'), true);
+check('may RR -> walang babala', API._journalMissingFields(base).includes('RR'), false);
+check('paper trade na walang RR -> walang babala', API._journalMissingFields({ ...base, rr: null, is_paper: true }).includes('RR'), false);
 
 console.log('\nBawat required na column, kapag blangko:');
 REQ.forEach(k => {

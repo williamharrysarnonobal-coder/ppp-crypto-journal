@@ -4480,6 +4480,8 @@ table.journal td.paper-why-col{line-height:1.5;}
 .qa-levels label small{text-transform:none;letter-spacing:0;opacity:.8;}
 .qa-levels input{width:100%;padding:8px 10px;background:var(--surface-2);border:1px solid var(--rule);border-radius:6px;color:var(--ink);font:inherit;font-size:13px;}
 .qa-rr{font-size:13px;font-weight:600;color:var(--ink);padding-bottom:9px;white-space:nowrap;font-variant-numeric:tabular-nums;}
+.qa-rr.qa-rr-missing{color:#E8A33D;}
+.qa-rr.qa-rr-missing::after{content:' · needed';font-weight:500;font-size:12px;}
 .qa-ok{color:var(--win);font-weight:600;}
 
 /* ---- Buong listahan, nakalabas, nakagrupo ----
