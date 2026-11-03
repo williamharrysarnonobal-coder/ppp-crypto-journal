@@ -4447,6 +4447,7 @@ table.journal td.paper-why-col{line-height:1.5;}
 .ec-box{position:relative;display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:6px 8px;min-height:40px;
   background:var(--surface-2);border:1px solid var(--rule);border-radius:6px;}
 .ec-box:focus-within{border-color:var(--accent);}
+.ec-box.dirty{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent);}
 .ec-chips{display:contents;}
 .ec-chip{display:inline-flex;align-items:center;gap:4px;padding:3px 4px 3px 10px;border-radius:999px;font-size:12.5px;
   background:color-mix(in srgb, var(--accent) 16%, transparent);color:var(--ink);border:1px solid color-mix(in srgb, var(--accent) 40%, transparent);}

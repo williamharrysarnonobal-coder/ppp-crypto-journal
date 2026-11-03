@@ -18220,7 +18220,8 @@ function renderTradeViewModal(){
   // Ang nasa kaliwang box na ay hindi na inuulit sa Details tab. Ang mga
   // dropdown ay napapalitan agad (tingnan ang _tpSelect).
   const renderGroup = g => {
-    const fields = g.keys.filter(k => !TP_LEFT_KEYS.has(k)).map(k => fieldByKey[k]).filter(Boolean);
+    // Ang Entry Confluence ay nasa Confluence tab na, hindi rito.
+    const fields = g.keys.filter(k => !TP_LEFT_KEYS.has(k) && k !== 'entry_confluence').map(k => fieldByKey[k]).filter(Boolean);
     if(!fields.length) return '';
     return `<div class="field-row span-2 field-group-title">${g.title}</div>` +
       fields.map(f => {
@@ -18233,13 +18234,6 @@ function renderTradeViewModal(){
         // TP/SL Area: direktang nae-edit din, may mungkahi mula sa dati.
         if(f.suggest === 'history'){
           return `<div class="field-row"><label>${f.label}</label><div class="field-static">${_tpText(f, row)}</div></div>`;
-        }
-        // Entry Confluence: mga chip; binabago sa Edit, kung nasaan ang mungkahi.
-        if(f.widget === 'tags'){
-          const v = _tpList(row[f.key]);
-          return `<div class="field-row"><label>${f.label}</label><div class="field-static"><div class="tp-tags">${v.length
-            ? v.map(t => `<span class="tp-tag">${escapeHtml(t)}</span>`).join('')
-            : '<span class="tp-muted">None yet. Add with Edit.</span>'}</div></div></div>`;
         }
         const sel = f.widget === 'select' ? _tpSelect(f.key, row) : null;
         return sel ? `<div class="field-row"><label>${f.label}</label><div class="field-static">${sel}</div></div>`
@@ -18254,7 +18248,8 @@ function renderTradeViewModal(){
   document.getElementById('tradeViewBody').innerHTML =
     JOURNAL_FIELD_GROUPS.slice(0, JOURNAL_FIELD_GROUPS_PRE_CONFLUENCE_COUNT).map(renderGroup).join('')
     + renderGroup({ title: 'Links', keys: ['link'] });
-  document.getElementById('tpConfluence').innerHTML = _renderTradeViewConfluenceGroup(row);
+  document.getElementById('tpConfluence').innerHTML = _tpEntryConfluenceHtml(row)
+    + _renderTradeViewConfluenceGroup(row);
   document.getElementById('tpSummary').innerHTML =
     `<div class="tp-summary-head"><span class="tp-muted">Everything about this trade in one block, ready to paste anywhere.</span>
       <button class="tp-btn" onclick="copyTradeSummaryToClipboard(this)" data-summary="${escapeHtml(computeTradeSummaryPlain(row))}">${copyIconSVG()} Copy</button></div>
@@ -19723,13 +19718,42 @@ function _ecVals(box){ return _tpList(box.querySelector('input[type="hidden"]').
 function _ecSet(box, vals){
   box.querySelector('input[type="hidden"]').value = vals.join(', ');
   box.querySelector('.ec-chips').innerHTML = _ecChipsHtml(vals);
+  // Sa Confluence tab ng trade page: pumapasok sa Save bar gaya ng ibang field.
+  if(box.dataset.k) onTradeInlineTags(box, vals);
+}
+function onTradeInlineTags(box, vals){
+  const row = tradeViewList[tradeViewIndex];
+  if(!row) return;
+  const k = box.dataset.k;
+  const v = vals.length ? vals.join(', ') : null;
+  if((_tpList(row[k]).join(', ') || null) === v) delete _tpDirty[k]; else _tpDirty[k] = v;
+  box.classList.toggle('dirty', k in _tpDirty);
+  _renderTradeSaveBar();
+}
+// Ang Entry Confluence sa itaas ng Confluence tab, direktang nae-edit.
+function _tpEntryConfluenceHtml(row){
+  const f = ALL_DRAWER_FIELDS.find(x => x.key === 'entry_confluence');
+  if(!f) return '';
+  const vals = _tpList('entry_confluence' in _tpDirty ? _tpDirty.entry_confluence : row.entry_confluence);
+  return `<div class="field-row span-2 field-group-title">Entry Confluence</div>
+    <div class="field-row span-2"><div class="ec-box tp-ec${'entry_confluence' in _tpDirty ? ' dirty' : ''}" data-k="entry_confluence">
+      <input type="hidden" value="${escapeHtml(vals.join(', '))}">
+      <div class="ec-chips">${_ecChipsHtml(vals)}</div>
+      <input type="text" class="ec-input" placeholder="${escapeHtml(f.placeholder || '')}" autocomplete="off"
+        aria-label="${escapeHtml(f.label)}" oninput="ecSuggest(this)" onfocus="ecSuggest(this)"
+        onkeydown="ecKey(event, this)" onblur="setTimeout(() => ecHide(this), 150)">
+      <div class="ec-pop" hidden></div>
+    </div></div>`;
 }
 function ecSuggest(input){
   const box = _ecBox(input), pop = box.querySelector('.ec-pop');
   const q = input.value.trim().replace(/,/g, ' ');
   const ql = q.toLowerCase();
   const have = new Set(_ecVals(box).map(v => v.toLowerCase()));
-  const pattern = (document.querySelector('#drawerBody [data-field="pattern_type"]') || {}).value || '';
+  // Ang Pattern Type: sa trade page ay galing sa trade (o sa hindi pa naise-save).
+  const tpRow = box.dataset.k ? tradeViewList[tradeViewIndex] : null;
+  const pattern = tpRow ? (('pattern_type' in _tpDirty ? _tpDirty.pattern_type : tpRow.pattern_type) || '')
+    : (document.querySelector('#drawerBody [data-field="pattern_type"]') || {}).value || '';
   const st = _ecTagStats(pattern);
   const fit = t => !have.has(t.tag.toLowerCase()) && (!ql || t.tag.toLowerCase().includes(ql));
   let items = st.list.filter(fit).slice(0, 8).map(t => ({ tag: t.tag, n: t.n }));

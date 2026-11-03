@@ -346,7 +346,9 @@ find/replace, try the LF form, then the CRLF form.
   Pattern Type in the drawer. Suggestions = tags used before on the SAME Pattern
   Type, most used first, topped up from other patterns ("· other pattern"); a new
   tag shows "(New)"; Enter/comma adds, Backspace removes; an existing tag typed in
-  another case reuses its spelling. Trade page Details shows chips (edit via Edit).
+  another case reuses its spelling. On the trade page it is NOT in Details; it sits
+  at the top of the Confluence tab, editable inline (`_tpEntryConfluenceHtml`,
+  `.ec-box[data-k]` → `_ecSet` → `onTradeInlineTags` → `_tpDirty` / Save bar).
   The old confluence checklist is untouched (owner's call: keep it for now).
 - Mistakes has **N/A** (= no mistake): always first (moved there even after an old
   saved Options list is merged), exclusive with every other mistake
