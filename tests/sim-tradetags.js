@@ -104,7 +104,8 @@ check('bagong option ay note ang default', CORE._tagKind('Kung Ano Man Bukas'), 
 check('"TP area was just right" ay note', CORE._tagKind('TP area was just right'), 'observation');
 check('13 breach', kinds.breach.length, 13);
 // Nadagdagan ng "Stopped Out Then Hit TP" — observation din, hindi breach.
-check('10 observation', kinds.observation.length, 10);
+// +4: TP Could Reach 1:3 / 1:4 / 1:5 / 1:6 (mga tala).
+check('14 observation', kinds.observation.length, 14);
 
 console.log('\n   Hindi na binibilang na kasalanan:');
 check('walang breach tag', CORE._brokenRuleTags('No BE at Prev High/Low').length, 0);
@@ -130,7 +131,7 @@ check('lahat lumalabas kapag walang sagot',
 
 console.log('\n3. ANG BAGONG TAG\n');
 check('wala na sa listahan', CORE.UNFOLLOWED_RULES_OPTIONS.includes("BE'd at Prev High/Low"), false);
-check('23 -> 24 na option', CORE.UNFOLLOWED_RULES_OPTIONS.length, 24);
+check('24 -> 28 na option', CORE.UNFOLLOWED_RULES_OPTIONS.length, 28);
 // Walang TAHIMIK na nawala: bawat orihinal na tag ay nasa listahan pa rin, o
 // may kapalit sa TAG_ALIASES, o sinadyang tinanggal dahil may ibang column na
 // nagtatala nito. Walang pangatlong posibilidad.

@@ -8101,6 +8101,9 @@ const UNFOLLOWED_RULES_OPTIONS = [
   // Idinagdag niya ito sa Options editor; rule ito, hindi tala — kaya nandito
   // sa listahan ng mga rule, para hindi ito maging note sa _tagKind.
   'Daily Trade Limit Reached',
+  // Hiniling niya: kung hanggang saang RR pa sana umabot ang TP. Mga tala
+  // (nasa TAG_OBSERVATIONS din), lumalabas sa "Everything else".
+  'TP Could Reach 1:3','TP Could Reach 1:4','TP Could Reach 1:5','TP Could Reach 1:6',
 ];
 
 /* This column holds two different kinds of thing, and treating them as one was
@@ -8184,6 +8187,10 @@ const TAG_HELP = {
   'Stopped Out Then Hit TP':
     'Your stop was hit and price went on to your target anyway — sometimes days later. '
     + 'The direction was right; the stop was too tight or too early. Not a rule broken.',
+  'TP Could Reach 1:3': 'Price went on far enough for a 1:3 target. A note to see if your TP is too small. Not a rule broken.',
+  'TP Could Reach 1:4': 'Price went on far enough for a 1:4 target. A note to see if your TP is too small. Not a rule broken.',
+  'TP Could Reach 1:5': 'Price went on far enough for a 1:5 target. A note to see if your TP is too small. Not a rule broken.',
+  'TP Could Reach 1:6': 'Price went on far enough for a 1:6 target. A note to see if your TP is too small. Not a rule broken.',
 };
 
 const TAG_OBSERVATIONS = [
@@ -8213,7 +8220,10 @@ const TAG_OBSERVATIONS = [
   // confirmed is already what the confluence score measures, so counting it
   // here charged the same thing twice — once through the score dropping below
   // the bar, and again as a rule broken.
-  'Entered Without Confirmation'
+  'Entered Without Confirmation',
+  // Gaano kalayo pa sana ang naabot ng TP. Tala ito, hindi rule — sinusukat
+  // kung masyadong maliit ang TP niya. Nasa "Everything else" sila.
+  'TP Could Reach 1:3','TP Could Reach 1:4','TP Could Reach 1:5','TP Could Reach 1:6'
 ];
 // "Nothing was broken" — answered, and clean. Not an observation: it is the
 // absence of a breach rather than a fact about the trade.

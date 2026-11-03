@@ -366,6 +366,11 @@ find/replace, try the LF form, then the CRLF form.
   (`_tagsSentinelExclusive`) here AND in the Edit form checklist
   (`_refreshDerivedRulesFollowed(this)` applies it before deriving). Trade-off:
   the chips there no longer click through to the journal filter.
+- Trade Tags **TP Could Reach 1:3 / 1:4 / 1:5 / 1:6** (owner request): notes, not
+  rules — listed in BOTH `UNFOLLOWED_RULES_OPTIONS` and `TAG_OBSERVATIONS` (a tag in
+  the options list but not in observations becomes a breach), plus `TAG_HELP`.
+  They land in the "What happened → Everything else" group. Write them as literal
+  strings: sims slice these array literals from the source, so a spread breaks ~20.
 - **Confluence Score column** is hidden from Trade Journals once (owner: "alisin
   muna"). `loadColumnConfig` sets `visible:false` + `hid1:1` on its COLUMN_CONFIG
   entry; the marker lives in the config (synced to the profile), so an old

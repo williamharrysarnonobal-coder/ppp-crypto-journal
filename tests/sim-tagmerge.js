@@ -30,9 +30,10 @@ const check = (label, got, want) => {
 console.log('ANG LISTAHAN: 21 -> ' + A.UNFOLLOWED_RULES_OPTIONS.length + '\n');
 // Nadagdagan ng "Stopped Out Then Hit TP" — observation din ito, dahil
 // nangyayari ito kapag TAMA ka sa direksyon at masyadong malapit ang stop.
-check('24 na option', A.UNFOLLOWED_RULES_OPTIONS.length, 24);
+// +4: TP Could Reach 1:3 / 1:4 / 1:5 / 1:6 (mga tala).
+check('28 na option', A.UNFOLLOWED_RULES_OPTIONS.length, 28);
 check('13 breach', A.UNFOLLOWED_RULES_OPTIONS.filter(t => A._tagKind(t)==='breach').length, 13);
-check('10 observation', A.UNFOLLOWED_RULES_OPTIONS.filter(t => A._tagKind(t)==='observation').length, 10);
+check('14 observation', A.UNFOLLOWED_RULES_OPTIONS.filter(t => A._tagKind(t)==='observation').length, 14);
 
 console.log('\n1. WALA NANG DALAWANG PANGALAN SA IISANG BAGAY\n');
 check('wala na ang Entered Early', A.UNFOLLOWED_RULES_OPTIONS.includes('Entered Early'), false);

@@ -114,7 +114,8 @@ const breaches = A.UNFOLLOWED_RULES_OPTIONS.filter(t => A._tagKind(t) === 'breac
 check('13 breach na lang', breaches.length, 13);
 // Sampu na — nadagdagan ng "Stopped Out Then Hit TP", na observation din:
 // nangyayari ito kapag TAMA ka sa direksyon at masyadong malapit ang stop.
-check('10 observation', A.UNFOLLOWED_RULES_OPTIONS.filter(t => A._tagKind(t)==='observation').length, 10);
+// +4: TP Could Reach 1:3 / 1:4 / 1:5 / 1:6 (mga tala).
+check('14 observation', A.UNFOLLOWED_RULES_OPTIONS.filter(t => A._tagKind(t)==='observation').length, 14);
 check('wala nang "Read where the move already is"',
   A.RULE_GROUPS.some(g => g.name === 'Read where the move already is'), false);
 check('bawat breach ay may grupo', breaches.every(t => grouped.includes(t)), true);
