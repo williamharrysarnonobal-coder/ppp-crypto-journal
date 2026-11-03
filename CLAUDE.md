@@ -328,6 +328,10 @@ find/replace, try the LF form, then the CRLF form.
 - Trade page multi-select dropdowns (`.tp-multi-pop`, Mistakes / Trade Management)
   are `position:fixed`, placed by `_placeTpMultiPop` (below, or above when there's
   no room) so a card's overflow can't clip them; closed on scroll/resize.
+- Mistakes has **N/A** (= no mistake): always first (moved there even after an old
+  saved Options list is merged), exclusive with every other mistake
+  (`_mistakesNaExclusive`, trade page dropdown + drawer checklist), neutral chip,
+  and left out of the Rules Followed tooltip's mistakes.
 - The ⚠️ on a Trade Journals row is a button (`fillJournalMissing`): it opens the
   normal Edit drawer scoped (`_drawerScope = {only}`) to the missing + invalid fields
   only (plus Post-BE/Cut/Stop when Exit Type or Win/Loss is missing; Trade Tags are

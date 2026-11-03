@@ -7349,7 +7349,8 @@ const FIELD_OPTIONS = {
   /* Review ng isang trade: ang mga pagkakamali (hiwalay sa Trade Tags, sa
      kahilingan niya), ang damdamin sa pagpasok at paglabas, at kung paano
      hinawakan ang trade. Nae-edit ang lahat sa Configuration. */
-  mistakes: ['Entered too early','Chased the entry','No confirmation','Oversized','Undersized',
+  // 'N/A' = walang mistake. Laging nasa unahan, at hindi kasabay ng iba.
+  mistakes: ['N/A','Entered too early','Chased the entry','No confirmation','Oversized','Undersized',
     'SL too tight','SL too wide','Moved SL','Exited too early','Held too long','Ignored the plan','Doubted the plan',
     'Traded against bias','Traded the news','Overtraded','Revenge trade','FOMO entry'],
   emotion: ['Calm','Confident','Focused','Patient','Excited','Greedy','Impatient','Anxious','Nervous','Fearful',
@@ -8555,6 +8556,9 @@ function loadOptionsConfig(){
         FIELD_OPTIONS[k].push(...saved, ...missing);
       });
     }
+    // Ang N/A ng Mistakes ay sa unahan, kahit sa dulo ito idinugtong ng merge.
+    const mi = FIELD_OPTIONS.mistakes.indexOf('N/A');
+    if(mi > 0){ FIELD_OPTIONS.mistakes.splice(mi, 1); FIELD_OPTIONS.mistakes.unshift('N/A'); }
     const savedUnfollowed = JSON.parse(localStorage.getItem('ledger-unfollowed-rules-options') || 'null');
     if(savedUnfollowed){
       // Merge, don't replace. A saved copy predates any option added since,
@@ -16051,7 +16055,9 @@ function renderJournalTable(){
           // trade reads as a fault — the tooltip was the last place the two
           // were still being shown as one list.
           // Pati ang Mistakes na pinili mo — lumalabas din sa hover.
-          const mistakesTxt = typeof _tpList === 'function' ? _tpList(r.mistakes).join(', ') : String(r.mistakes || '');
+          // Ang "N/A" ay walang mistake — hindi ito ipinapakita bilang isa.
+          const mistakesTxt = (typeof _tpList === 'function' ? _tpList(r.mistakes) : String(r.mistakes || '').split(','))
+            .map(x => x.trim()).filter(x => x && x !== 'N/A').join(', ');
           if(c.key === 'rules_followed' && (_ruleTags(r.unfollowed_rules).length || mistakesTxt)){
             const tags = _canonicalTags(r.unfollowed_rules);
             const broke = tags.filter(t => _tagKind(t) === 'breach');
@@ -18360,7 +18366,7 @@ function _tpMulti(key, row, chipCls){
   const opts = [...cur.filter(c => !f.options.includes(c)), ...f.options];
   return `<div class="tp-multi" data-k="${key}">
     <button type="button" class="tp-multi-btn${key in _tpDirty ? ' dirty' : ''}" aria-haspopup="true" onclick="toggleTpMulti(this)">
-      ${cur.length ? cur.map(c => `<span class="tp-tag ${chipCls || ''}">${escapeHtml(c)}</span>`).join('') : '<span class="tp-muted">Choose…</span>'}<span class="tp-caret">▾</span></button>
+      ${cur.length ? cur.map(c => `<span class="tp-tag ${c === 'N/A' ? '' : (chipCls || '')}">${escapeHtml(c)}</span>`).join('') : '<span class="tp-muted">Choose…</span>'}<span class="tp-caret">▾</span></button>
     <div class="tp-multi-pop" hidden>${opts.map(o => `<label><input type="checkbox" value="${escapeHtml(o)}" ${cur.includes(o) ? 'checked' : ''} onchange="onTpMultiChange(this)"> ${escapeHtml(o)}</label>`).join('')}</div>
   </div>`;
 }
@@ -18402,11 +18408,24 @@ document.addEventListener('click', e => {
   if(e.target.closest && e.target.closest('.tp-multi')) return;
   document.querySelectorAll('.tp-multi-pop').forEach(p => { p.hidden = true; });
 });
+/* Mistakes "N/A" = walang pagkakamali, kaya hindi ito kasabay ng iba: ang
+   pagpili ng N/A ay nag-aalis ng iba, at ang pagpili ng iba ay nag-aalis ng N/A.
+   Para sa dropdown sa pahina ng trade at sa checklist ng drawer. */
+function _mistakesNaExclusive(cb, all){
+  if(!cb.checked) return;
+  [...all].forEach(o => { if(o !== cb && (cb.value === 'N/A' || o.value === 'N/A')) o.checked = false; });
+}
+document.addEventListener('change', e => {
+  const cb = e.target;
+  if(cb && cb.matches && cb.matches('[data-checklist="mistakes"]'))
+    _mistakesNaExclusive(cb, document.querySelectorAll('[data-checklist="mistakes"]'));
+});
 function onTpMultiChange(cb){
   const row = tradeViewList[tradeViewIndex];
   if(!row) return;
   const box = cb.closest('.tp-multi');
   const k = box.dataset.k;
+  _mistakesNaExclusive(cb, box.querySelectorAll('input[type="checkbox"]'));
   const picked = [...box.querySelectorAll('input:checked')].map(i => i.value);
   const v = picked.length ? picked.join(', ') : null;
   const before = _tpList(row[k]).join(', ') || null;
@@ -18415,7 +18434,7 @@ function onTpMultiChange(cb){
   const btn = box.querySelector('.tp-multi-btn');
   const cls = k === 'mistakes' ? 'rule' : '';
   btn.classList.toggle('dirty', k in _tpDirty);
-  btn.innerHTML = (picked.length ? picked.map(c => `<span class="tp-tag ${cls}">${escapeHtml(c)}</span>`).join('') : '<span class="tp-muted">Choose…</span>') + '<span class="tp-caret">▾</span>';
+  btn.innerHTML = (picked.length ? picked.map(c => `<span class="tp-tag ${c === 'N/A' ? '' : cls}">${escapeHtml(c)}</span>`).join('') : '<span class="tp-muted">Choose…</span>') + '<span class="tp-caret">▾</span>';
 }
 function onTradeInlineChange(sel){
   const row = tradeViewList[tradeViewIndex];
