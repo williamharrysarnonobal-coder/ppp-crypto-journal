@@ -325,6 +325,10 @@ find/replace, try the LF form, then the CRLF form.
   Easy Add. Account Type is filled from the account; Session/Day/Duration/Objective
   are derived on load as usual. Same account+symbol+close time warns ("Save anyway").
   The modal stays open, ready for the next paste.
+- The ⚠️ on a Trade Journals row is a button (`fillJournalMissing`): it opens the
+  normal Edit drawer scoped (`_drawerScope = {only}`) to the missing + invalid fields
+  only (plus Post-BE/Cut/Stop when Exit Type or Win/Loss is missing; Trade Tags are
+  not added). Same save; `closeDrawer` clears the scope so the next Edit is full.
 - Calendar shares: a day popup has **Share day** + **Daily post**; a week (Σ)
   popup has **Share week** (`calShareModal` with `_calShareKind = 'week'`) +
   **Weekly post** (the Daily post modal with `_dpostScope = 'week'`: one row

@@ -15937,6 +15937,29 @@ function _journalMissingFields(r){
   return missing;
 }
 
+/* ANG ⚠️ SA TRADE JOURNALS, PINIPINDOT. Bumubukas ang parehong drawer ng
+   Edit, pero ang mga field na kulang (o may maling halaga) lang ang nakikita —
+   ang iba ay nakatago lang gaya ng Edit sa pahina ng trade, kaya pareho ang
+   save at walang nabubura. Ang Post-BE/Cut/Stop ay isinasama kapag kulang ang
+   Exit Type o Win/Loss, para hindi sila nakatago kapag lumabas. Ang Trade Tags
+   ay hindi (mahabang listahan ito): kung "No" ang Rules Followed?, lalabas
+   ulit ang ⚠️ para sa tags. */
+function fillJournalMissing(pid){
+  const r = (ALL_TRADES || []).find(x => String(x.position_id) === String(pid))
+         || RAW_TRADES.find(x => String(x.position_id) === String(pid));
+  if(!r) return;
+  const keyOf = label => (ALL_DRAWER_FIELDS.find(f => f.label === label) || {}).key;
+  const keys = new Set([..._journalMissingFields(r).map(keyOf), ..._journalInvalidFields(r).map(b => b.key)].filter(Boolean));
+  if(!keys.size){ openTradeViewModal(r.position_id); return; }
+  if(keys.has('exit_type') || keys.has('win_loss')) ['post_be_result','post_cutloss_result','post_stop_profit_result'].forEach(k => keys.add(k));
+  if(keys.has('trade_setup')) ['pattern_type','execution_tf'].forEach(k => keys.add(k));
+  _drawerScope = { only: keys };
+  openDrawer('view', r.position_id);
+  enterEditMode();
+  _applyDrawerScope();
+  document.getElementById('drawerTitle').textContent = `Fill in · ${RAW_TRADES.find(x => x.position_id === r.position_id)?.symbol || 'Trade'}`;
+}
+
 function renderJournalTable(){
   const table = document.getElementById('journalTable');
   if(!table) return;
@@ -15996,7 +16019,10 @@ function renderJournalTable(){
         if(invalid.length) parts.push('Not a valid option: ' +
           invalid.map(b => `${b.label} = "${b.value}"`).join(', '));
         const cls = invalid.length ? 'journal-warn journal-warn-invalid' : 'journal-warn';
-        return `<td class="${cls}" title="${escapeHtml(parts.join(' · '))}">${warnIconSVG()}</td>`;
+        // Pindot: bubukas ang form na ang mga kulang lang ang laman.
+        return `<td class="${cls}" onclick="event.stopPropagation();"><button type="button" class="journal-warn-btn"
+          title="${escapeHtml(parts.join(' · ') + ' — click to fill in')}" aria-label="Fill in missing fields"
+          data-pid="${escapeHtml(String(r.position_id))}" onclick="fillJournalMissing(this.dataset.pid)">${warnIconSVG()}</button></td>`;
       })()}
       ${JOURNAL_COLUMNS.map(c => {
         if(c.key === 'link'){
@@ -19850,6 +19876,12 @@ function closeDrawer(){
   document.getElementById('drawerOverlay').classList.remove('open');
   document.getElementById('drawer').classList.remove('open');
   if(typeof _tpReturnDrawer === 'function') _tpReturnDrawer();
+  // Ang "Fill in" mula sa ⚠️ ay naglalagay din ng saklaw sa drawer na wala sa
+  // pahina ng trade — linisin ito para buo ang susunod na bubukas.
+  if(_drawerScope){
+    _drawerScope = null;
+    document.querySelectorAll('#drawerBody .tp-out').forEach(el => el.classList.remove('tp-out'));
+  }
   // Bukas ang pahina ng trade sa likod: iguhit ulit, baka na-edit.
   if(typeof currentView !== 'undefined' && currentView === 'trade') setTimeout(() => { try{ renderTradeViewModal(); }catch(e){} }, 50);
   // Dismissing the drawer abandons a multi-account run — including the tickets

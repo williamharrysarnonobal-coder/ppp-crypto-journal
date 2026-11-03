@@ -1581,6 +1581,9 @@ table.breakdown tbody tr{cursor:pointer;}
      rule `table.journal td` sets color:var(--ink) at a higher specificity, so
      a lone class lost to it and the icon rendered white. */
   table.journal td.journal-warn{color:var(--loss);line-height:0;text-align:center;cursor:help;}
+  table.journal td.journal-warn .journal-warn-btn{background:none;border:0;padding:4px;margin:-4px;color:inherit;cursor:pointer;line-height:0;border-radius:6px;}
+  table.journal td.journal-warn .journal-warn-btn:hover{background:color-mix(in srgb, currentColor 14%, transparent);}
+  table.journal td.journal-warn .journal-warn-btn:focus-visible{outline:2px solid currentColor;outline-offset:1px;}
   .journal-warn-count{
     color:var(--loss);font-weight:600;cursor:pointer;text-decoration:underline;
     text-underline-offset:2px;
