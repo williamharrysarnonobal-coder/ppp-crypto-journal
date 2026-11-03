@@ -328,6 +328,13 @@ find/replace, try the LF form, then the CRLF form.
 - Trade page multi-select dropdowns (`.tp-multi-pop`, Mistakes / Trade Management)
   are `position:fixed`, placed by `_placeTpMultiPop` (below, or above when there's
   no room) so a card's overflow can't clip them; closed on scroll/resize.
+- **Entry Confluence** (`entry_confluence`, comma-joined text, widget `'tags'`,
+  `supabase_trading_journal_entry_confluence.sql`): chips + type-ahead right after
+  Pattern Type in the drawer. Suggestions = tags used before on the SAME Pattern
+  Type, most used first, topped up from other patterns ("· other pattern"); a new
+  tag shows "(New)"; Enter/comma adds, Backspace removes; an existing tag typed in
+  another case reuses its spelling. Trade page Details shows chips (edit via Edit).
+  The old confluence checklist is untouched (owner's call: keep it for now).
 - Mistakes has **N/A** (= no mistake): always first (moved there even after an old
   saved Options list is merged), exclusive with every other mistake
   (`_mistakesNaExclusive`, trade page dropdown + drawer checklist), neutral chip,

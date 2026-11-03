@@ -64,6 +64,7 @@ const DRAWER_ONLY = {
   post_cutloss_result: 'pareho',
   post_stop_profit_result: 'pareho',
   mistakes: 'review sa drawer',
+  entry_confluence: 'mga tag sa drawer, may mungkahi ayon sa Pattern Type',
   entry_area: 'isinusulat mo, may mungkahi',
   tp_area: 'isinusulat mo, may mungkahi',
   sl_area: 'pareho',

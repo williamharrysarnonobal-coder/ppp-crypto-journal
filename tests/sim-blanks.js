@@ -60,7 +60,9 @@ const OK_BLANK = new Set(['no','pnl_percent','rr','entry_price','close_price','t
      mo — at ang babalang laging naroon ay hindi na babala. */
   'leverage',
   // Review: opsyonal, blangko sa bawat lumang trade.
-  'mistakes','entry_emotion','exit_emotion','trade_management','entry_area','tp_area','sl_area']);
+  'mistakes','entry_emotion','exit_emotion','trade_management','entry_area','tp_area','sl_area',
+  // Entry Confluence: bago, blangko sa bawat lumang trade; hindi pinipilit.
+  'entry_confluence']);
 // Watched, but only under a condition, so they are not in the flat required
 // list and are not "legitimately blank" either.
 const CONDITIONAL = new Set(['unfollowed_rules','post_be_result','post_cutloss_result','post_stop_profit_result']);

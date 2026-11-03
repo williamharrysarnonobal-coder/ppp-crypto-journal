@@ -8693,6 +8693,8 @@ const ALL_DRAWER_FIELDS = [
   {key:'trade_type', label:'Trade Type', widget:'select', editable:true, options:FIELD_OPTIONS.trade_type},
   {key:'trade_setup', label:'Trade Setup', widget:'select', editable:true, options:FIELD_OPTIONS.trade_setup},
   {key:'pattern_type', label:'Pattern Type', widget:'select', editable:true, options:FIELD_OPTIONS.pattern_type},
+  // Mga tag sa sariling salita; ang mungkahi ay galing sa parehong Pattern Type.
+  {key:'entry_confluence', label:'Entry Confluence', widget:'tags', editable:true, placeholder:'Type or pick, e.g. 15M bearish div'},
   {key:'execution_tf', label:'Execution TF', widget:'select', editable:true, options:FIELD_OPTIONS.execution_tf},
   {key:'aof_phase', label:'AOF Phase', widget:'select', editable:true, options:FIELD_OPTIONS.aof_phase},
   // Filled in for you as the tags are ticked, but still yours to change — the
@@ -8846,6 +8848,7 @@ const ALL_JOURNAL_COLUMNS = [
   {key:'post_be_result', label:'Post-BE Result'},
   {key:'post_cutloss_result', label:'Post-Cutloss Result'},
   {key:'post_stop_profit_result', label:'Post-Stop Profit'},
+  {key:'entry_confluence', label:'Entry Confluence'},
   {key:'entry_area', label:'Entry Area'},
   {key:'tp_area', label:'TP Area'},
   {key:'sl_area', label:'SL Area'},
@@ -9284,6 +9287,7 @@ const DB_CHECKS = [
   { file:'supabase_position_setups_areas_exit_emotion.sql', what:'Areas & Emotions on Pending Setups (Entry/SL/TP Area, Exit Emotion)', table:'position_setups', col:'entry_area,sl_area,tp_area,exit_emotion' },
   { file:'supabase_trading_journal_tp_sl_area.sql', what:'TP Area and SL Area on trades', table:'trading_journal', col:'tp_area,sl_area' },
   { file:'supabase_trading_journal_entry_area.sql', what:'Entry Area on trades', table:'trading_journal', col:'entry_area' },
+  { file:'supabase_trading_journal_entry_confluence.sql', what:'Entry Confluence tags on trades', table:'trading_journal', col:'entry_confluence' },
   { file:'supabase_trading_journal_chart_shots.sql', what:'Chart screenshots (Higher / Setup / Entry TF)', table:'trading_journal', col:'chart_shots', also:{ table:'position_setups', col:'chart_shots' } },
   { file:'supabase_daily_plans.sql', what:'Daily Plan and the psychology check-in', table:'daily_plans', col:'psych' },
   { file:'supabase_app_visits.sql', what:'Daily Check-in Streak (days you opened the app)', table:'app_visits', col:'visit_date' },
@@ -15657,7 +15661,7 @@ function warnIconSVG(){
    sabihin nito ay WALANG trade na mase-save. Kaya: kapag tinanggihan dahil sa
    isa sa mga ito, alisin ito at subukan ulit, at huwag na itong ipadala sa
    natitirang session. Ang tanging nawawala ay ang sagot sa bagong field. */
-const _OPTIONAL_JOURNAL_COLS = ['post_stop_profit_result', 'mistakes', 'entry_emotion', 'exit_emotion', 'trade_management', 'entry_area', 'tp_area', 'sl_area'];
+const _OPTIONAL_JOURNAL_COLS = ['post_stop_profit_result', 'mistakes', 'entry_emotion', 'exit_emotion', 'trade_management', 'entry_area', 'tp_area', 'sl_area', 'entry_confluence'];
 const _missingJournalCols = new Set();
 async function _journalSend(url, method, body){
   const strip = b => {
@@ -17984,7 +17988,7 @@ const JOURNAL_FIELD_GROUPS = [
                               'no_trade_reason','paper_outcome','planned_rr'] },
   { title: 'Result', keys: ['win_loss','profit_loss','pnl_percent','rr','fee','entry_price','close_price','tp_price','sl_price','position_size','leverage','risk_amount'] },
   { title: 'Account', keys: ['account','account_type','session','day_of_week'] },
-  { title: 'Setup & Strategy', keys: ['trade_type','trade_setup','pattern_type','execution_tf','aof_phase','entry_area','tp_area','sl_area'] },
+  { title: 'Setup & Strategy', keys: ['trade_type','trade_setup','pattern_type','entry_confluence','execution_tf','aof_phase','entry_area','tp_area','sl_area'] },
   { title: 'Discipline', keys: ['rules_followed','unfollowed_rules','mistakes','entry_emotion','exit_emotion','trade_management','exit_type','post_be_result','post_cutloss_result','post_stop_profit_result'] },
 ];
 const JOURNAL_FIELD_GROUPS_PRE_CONFLUENCE_COUNT = 4; // Overview, Result, Account, Setup & Strategy
@@ -18197,6 +18201,13 @@ function renderTradeViewModal(){
         // TP/SL Area: direktang nae-edit din, may mungkahi mula sa dati.
         if(f.suggest === 'history'){
           return `<div class="field-row"><label>${f.label}</label><div class="field-static">${_tpText(f, row)}</div></div>`;
+        }
+        // Entry Confluence: mga chip; binabago sa Edit, kung nasaan ang mungkahi.
+        if(f.widget === 'tags'){
+          const v = _tpList(row[f.key]);
+          return `<div class="field-row"><label>${f.label}</label><div class="field-static"><div class="tp-tags">${v.length
+            ? v.map(t => `<span class="tp-tag">${escapeHtml(t)}</span>`).join('')
+            : '<span class="tp-muted">None yet. Add with Edit.</span>'}</div></div></div>`;
         }
         const sel = f.widget === 'select' ? _tpSelect(f.key, row) : null;
         return sel ? `<div class="field-row"><label>${f.label}</label><div class="field-static">${sel}</div></div>`
@@ -19542,6 +19553,113 @@ function _updateDrawerRiskAmount(){
   });
 }
 
+/* ---------------- Entry Confluence (tags na may mungkahi) ----------------
+   Isinusulat niya sa sariling salita kung bakit siya pumasok. Ang mungkahi ay
+   ang mga tag na nagamit na niya sa PAREHONG Pattern Type, pinakamadalas muna,
+   kaya iisa ang baybay ng iisang bagay at mabibilang ito balang araw. Ang
+   bagong tag ay "(New)" sa listahan. Naka-imbak bilang comma-joined na teksto
+   sa isang hidden input, kaya ang save ng drawer ay walang binago. */
+function _ecChipsHtml(vals){
+  return vals.map(v => `<span class="ec-chip">${escapeHtml(v)}<button type="button" aria-label="Remove ${escapeHtml(v)}"
+    onmousedown="event.preventDefault()" onclick="ecRemove(this)">✕</button></span>`).join('');
+}
+// [{tag, n}] mula sa mga trade: sa Pattern Type na ito kung meron, kung wala ay lahat.
+function _ecTagStats(pattern){
+  const count = (rows) => {
+    const by = new Map();
+    rows.forEach(r => _tpList(r.entry_confluence).forEach(t => {
+      const k = t.toLowerCase();
+      const e = by.get(k) || { tag: t, n: 0 };
+      e.n++; by.set(k, e);
+    }));
+    return [...by.values()].sort((a, b) => b.n - a.n || a.tag.localeCompare(b.tag));
+  };
+  const all = count(RAW_TRADES || []);
+  if(!pattern) return { list: all, scoped: false };
+  const mine = count((RAW_TRADES || []).filter(r => r.pattern_type === pattern));
+  return { list: mine, scoped: true, all };
+}
+function _ecBox(el){ return el.closest('.ec-box'); }
+function _ecVals(box){ return _tpList(box.querySelector('input[type="hidden"]').value); }
+function _ecSet(box, vals){
+  box.querySelector('input[type="hidden"]').value = vals.join(', ');
+  box.querySelector('.ec-chips').innerHTML = _ecChipsHtml(vals);
+}
+function ecSuggest(input){
+  const box = _ecBox(input), pop = box.querySelector('.ec-pop');
+  const q = input.value.trim().replace(/,/g, ' ');
+  const ql = q.toLowerCase();
+  const have = new Set(_ecVals(box).map(v => v.toLowerCase()));
+  const pattern = (document.querySelector('#drawerBody [data-field="pattern_type"]') || {}).value || '';
+  const st = _ecTagStats(pattern);
+  const fit = t => !have.has(t.tag.toLowerCase()) && (!ql || t.tag.toLowerCase().includes(ql));
+  let items = st.list.filter(fit).slice(0, 8).map(t => ({ tag: t.tag, n: t.n }));
+  // Kulang sa Pattern Type na ito? Dagdagan ng galing sa iba, nakamarka.
+  if(st.scoped && items.length < 8){
+    const seen = new Set(items.map(i => i.tag.toLowerCase()));
+    st.all.filter(t => fit(t) && !seen.has(t.tag.toLowerCase())).slice(0, 8 - items.length)
+      .forEach(t => items.push({ tag: t.tag, n: t.n, other: true }));
+  }
+  const known = st.list.concat(st.all || []).some(t => t.tag.toLowerCase() === ql);
+  if(q && !known && !have.has(ql)) items.push({ tag: q, isNew: true });
+  if(!items.length){ pop.hidden = true; pop.innerHTML = ''; return; }
+  const head = st.scoped ? `From your ${escapeHtml(pattern)} trades` : 'Pick a Pattern Type to see what you used on it';
+  pop.innerHTML = `<div class="ec-head">${head}</div>` + items.map((it, i) => `
+    <button type="button" class="ec-opt${i === 0 && q ? ' on' : ''}" data-tag="${escapeHtml(it.tag)}"
+      onmousedown="event.preventDefault()" onclick="ecAdd(this)">
+      <span>${escapeHtml(it.tag)}${it.isNew ? ' <em>(New)</em>' : ''}</span>
+      <small>${it.isNew ? '' : `${it.n} trade${it.n === 1 ? '' : 's'}${it.other ? ' · other pattern' : ''}`}</small>
+    </button>`).join('');
+  pop.hidden = false;
+}
+function ecAdd(el, text){
+  const box = _ecBox(el);
+  let tag = String(text != null ? text : el.dataset.tag).replace(/,/g, ' ').replace(/\s+/g, ' ').trim();
+  if(!tag) return;
+  // Ang dating baybay ang ginagamit kung pareho lang sa laki ng titik.
+  const prev = _ecTagStats('').list.find(t => t.tag.toLowerCase() === tag.toLowerCase());
+  if(prev) tag = prev.tag;
+  const vals = _ecVals(box);
+  if(!vals.some(v => v.toLowerCase() === tag.toLowerCase())) vals.push(tag);
+  _ecSet(box, vals);
+  const input = box.querySelector('.ec-input');
+  input.value = '';
+  input.focus();
+  ecSuggest(input);
+}
+function ecRemove(btn){
+  const box = _ecBox(btn);
+  const chip = btn.closest('.ec-chip');
+  const i = [...box.querySelectorAll('.ec-chip')].indexOf(chip);
+  const vals = _ecVals(box); vals.splice(i, 1);
+  _ecSet(box, vals);
+}
+function ecHide(input){
+  const pop = _ecBox(input) && _ecBox(input).querySelector('.ec-pop');
+  if(pop) pop.hidden = true;
+}
+function ecKey(e, input){
+  const box = _ecBox(input), pop = box.querySelector('.ec-pop');
+  const opts = [...pop.querySelectorAll('.ec-opt')];
+  const cur = opts.findIndex(o => o.classList.contains('on'));
+  if(e.key === 'ArrowDown' || e.key === 'ArrowUp'){
+    if(!opts.length || pop.hidden) return;
+    e.preventDefault();
+    const n = e.key === 'ArrowDown' ? (cur + 1) % opts.length : (cur <= 0 ? opts.length - 1 : cur - 1);
+    opts.forEach((o, i) => o.classList.toggle('on', i === n));
+    opts[n].scrollIntoView({ block: 'nearest' });
+  }else if(e.key === 'Enter' || e.key === ','){
+    e.preventDefault();
+    if(cur >= 0 && !pop.hidden) ecAdd(opts[cur]);
+    else if(input.value.trim()) ecAdd(input, input.value);
+  }else if(e.key === 'Backspace' && !input.value){
+    const vals = _ecVals(box);
+    if(vals.length){ vals.pop(); _ecSet(box, vals); ecSuggest(input); }
+  }else if(e.key === 'Escape'){
+    pop.hidden = true;
+  }
+}
+
 function _renderDrawerFieldRow(f, mode, row){
   /* Sa paper trade, ang Open Date ay hindi kung kailan bumukas ang posisyon —
      walang posisyong bumukas. Ito ay kung kailan mo NAKITA ang setup, at
@@ -19596,6 +19714,19 @@ function _renderDrawerFieldRow(f, mode, row){
   // after Easy Add prefills only some of them.
   const isEmpty = raw === undefined || raw === null || raw === '';
   const rowCls = (mode === 'create' && isEmpty) ? 'field-row needs-input' : 'field-row';
+
+  if(f.widget === 'tags'){
+    const vals = _tpList(raw);
+    return `<div class="${rowCls}"><label>${f.label}</label>
+      <div class="ec-box">
+        <input type="hidden" data-field="${f.key}" value="${escapeHtml(vals.join(', '))}">
+        <div class="ec-chips">${_ecChipsHtml(vals)}</div>
+        <input type="text" class="ec-input" placeholder="${escapeHtml(f.placeholder || '')}" autocomplete="off"
+          aria-label="${escapeHtml(f.label)}" oninput="ecSuggest(this)" onfocus="ecSuggest(this)"
+          onkeydown="ecKey(event, this)" onblur="setTimeout(() => ecHide(this), 150)">
+        <div class="ec-pop" hidden></div>
+      </div></div>`;
+  }
 
   if(f.widget === 'select'){
     let selectOptions = f.options;
