@@ -354,6 +354,10 @@ find/replace, try the LF form, then the CRLF form.
   re-renders the page so the Confluence tab follows. Both rows are `.tp-side`
   (label beside value, same as Details).
   The old confluence checklist is untouched (owner's call: keep it for now).
+- **Confluence Score column** is hidden from Trade Journals once (owner: "alisin
+  muna"). `loadColumnConfig` sets `visible:false` + `hid1:1` on its COLUMN_CONFIG
+  entry; the marker lives in the config (synced to the profile), so an old
+  profile copy can't bring it back, and re-enabling it in Column settings sticks.
 - Mistakes has **N/A** (= no mistake): always first (moved there even after an old
   saved Options list is merged), exclusive with every other mistake
   (`_mistakesNaExclusive`, trade page dropdown + drawer checklist), neutral chip,

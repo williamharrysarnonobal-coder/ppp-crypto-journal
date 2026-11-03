@@ -8911,6 +8911,16 @@ function loadColumnConfig(){
         localStorage.setItem('ledger-tq-hidden-once', '1');
       }
     }catch(e){}
+    /* Confluence Score: itinago rin muna niya ("alisin muna"). Ang marka (hid1)
+       ay nasa config mismo, hindi sa localStorage, para ang lumang config na
+       darating mula sa profile ay hindi ito ibalik. Kapag ibinalik niya sa
+       Column settings, may marka na at iginagalang. */
+    const cs = COLUMN_CONFIG.find(c => c.key === 'confluence_score');
+    if(cs && !cs.hid1){
+      cs.visible = false; cs.hid1 = 1;
+      try{ localStorage.setItem('ledger-column-config', JSON.stringify(COLUMN_CONFIG)); }catch(e){}
+      setTimeout(() => { try{ syncUIPrefsToProfile(); }catch(e){} }, 0);
+    }
     [['post_stop_profit_result', ['post_cutloss_result','post_be_result','exit_type']]].forEach(([key, anchors]) => {
       if(savedKeys.has(key)) return;
       const i = COLUMN_CONFIG.findIndex(c => c.key === key);
