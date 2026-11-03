@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Tanaydana â€” Analytics</title>
+<title>Tanaydana — Analytics</title>
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="img/forgefolio-logo.png">
 <link rel="apple-touch-icon" href="img/forgefolio-logo.png">
@@ -30,7 +30,7 @@
 <div id="pendingApprovalScreen" style="display:none;">
   <div class="auth-card">
     <h1 id="pendingScreenTitle">Waiting for approval</h1>
-    <p id="pendingScreenText">â€”</p>
+    <p id="pendingScreenText">—</p>
     <button onclick="confirmLogout()">Log out</button>
   </div>
 </div>
@@ -42,9 +42,9 @@
     <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
     <span class="nav-badge notif-bell-badge" id="notifBellBadge" style="display:none;"></span>
   </button>
-  <!-- Ang ðŸ”” sa phone: nasa itaas katabi ng â˜° (ang floating ay sa computer lang). -->
+  <!-- Ang 🔔 sa phone: nasa itaas katabi ng ☰ (ang floating ay sa computer lang). -->
   <button class="notif-bell-btn notif-top-btn" id="notifTopBtn" onclick="event.stopPropagation(); toggleNotifFab()" title="Notifications" aria-label="Notifications"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg><span class="notif-fab-badge" id="notifTopBadge" hidden>0</span></button>
-  <button class="notif-bell-btn mobile-menu-btn" id="mobileMenuBtn" onclick="toggleMobileMenu()" title="Menu">â˜°</button>
+  <button class="notif-bell-btn mobile-menu-btn" id="mobileMenuBtn" onclick="toggleMobileMenu()" title="Menu">☰</button>
   <div class="notif-center-panel" id="notifCenterPanel">
     <div class="notif-center-title">Notifications <button class="notif-clear-btn" onclick="clearAllNotifications()">Clear All</button></div>
     <div id="notifCenterBody"></div>
@@ -58,7 +58,7 @@
         <img src="img/Forgefolio-removebg-preview.png" alt="Tanaydana" class="brand-logo-img">
         <span class="brand-text">Tanaydana</span>
       </span>
-      <button class="toggle-btn" onclick="toggleSidebar()" title="Collapse menu">â˜°</button>
+      <button class="toggle-btn" onclick="toggleSidebar()" title="Collapse menu">☰</button>
     </div>
     <div class="nav-item active" data-view="profile" onclick="switchView('profile')"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg> <span class="nav-label">Profile</span><span class="nav-tooltip">Profile</span></div>
     <div class="nav-section-label">Trading</div>
@@ -99,7 +99,7 @@
   <header class="top">
     <div>
       <h1>Dashboard</h1>
-      <div class="sub" id="tradeCountLabel">â€”</div>
+      <div class="sub" id="tradeCountLabel">—</div>
     </div>
     <div class="filters">
       <!-- Tatlong magkaibang trabaho ang walong kontrol na ito, at magkakasama
@@ -149,9 +149,9 @@
           <button class="poscalc-accent-btn" id="monthReviewBtn" onclick="openMonthReview()">Review trades</button>
           <button class="poscalc-accent-btn" onclick="openShareCalendar()" title="Make an image of this month to share">Share</button>
           <span class="nav">
-            <button onclick="shiftMonth(-1)">â€¹</button>
-            <span id="calLabel">â€”</span>
-            <button onclick="shiftMonth(1)">â€º</button>
+            <button onclick="shiftMonth(-1)">‹</button>
+            <span id="calLabel">—</span>
+            <button onclick="shiftMonth(1)">›</button>
           </span>
         </span>
       </h2>
@@ -168,9 +168,9 @@
 
     <!-- Trade Quality ang pumalit sa Win/Loss donut (kapareho lang iyon ng Win
          rate at Total trades sa itaas). Ang Best days at Session ay nasa
-         Breakdown na â€” may tab doon ang Day of week at Session. -->
+         Breakdown na — may tab doon ang Day of week at Session. -->
     <div class="panel panel-fixed-h-sm">
-      <h2>Trade Quality<button type="button" class="panel-info-btn" title="Rules Followed? Ã— Win/Loss" onclick="event.stopPropagation(); openPanelInfo('quality')"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button></h2>
+      <h2>Trade Quality<button type="button" class="panel-info-btn" title="Rules Followed? × Win/Loss" onclick="event.stopPropagation(); openPanelInfo('quality')"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button></h2>
       <div id="tradeQualityBody" class="tq-body"></div>
     </div>
 
@@ -180,7 +180,7 @@
     </div>
   </div>
 
-  <!-- Weekly Â· Monthly Â· Yearly: bawat isa may sariling â€¹ â€º -->
+  <!-- Weekly · Monthly · Yearly: bawat isa may sariling ‹ › -->
   <div class="row rv-grid">
     <div class="panel"><h2>Weekly</h2><div id="review-week" class="rv-body"></div></div>
     <div class="panel"><h2>Monthly</h2><div id="review-month" class="rv-body"></div></div>
@@ -210,11 +210,11 @@
   
 <div class="panel" style="margin-bottom:20px;">
     <h2>Account comparison<button type="button" class="panel-info-btn" title="How this is worked out" onclick="event.stopPropagation(); openPanelInfo('acccompare')"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button></h2>
-    <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:14px;">The same setup taken on different accounts â€” where you actually run it better.</div>
+    <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:14px;">The same setup taken on different accounts — where you actually run it better.</div>
     <div id="accountCompareBody"></div>
   </div>
 
-<!-- Iisang Discipline panel: ang score at radar, at ang Rules / Notes â€”
+<!-- Iisang Discipline panel: ang score at radar, at ang Rules / Notes —
      dating dalawang magkahiwalay na panel tungkol sa iisang paksa. -->
 <div class="panel discipline-panel" style="margin-bottom:20px;">
     <h2>Discipline<button type="button" class="panel-info-btn" title="How this is worked out" onclick="event.stopPropagation(); openPanelInfo('radar')"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button></h2>
@@ -229,12 +229,12 @@
         <div class="discipline-score-label">Discipline Score</div>
         <div class="discipline-score-tag" id="disciplineScoreTag"></div>
       </div>
-      <div class="discipline-score-value" id="disciplineScoreValue">â€”</div>
+      <div class="discipline-score-value" id="disciplineScoreValue">—</div>
     </div>
     <div class="discipline-score-bar"><div class="discipline-score-marker" id="disciplineScoreMarker"></div></div>
     </div>
     <div data-disc-pane="tags" hidden>
-      <div class="sub" style="font-size:11.5px;color:var(--muted);margin-bottom:14px;">Your Trade Tags, read as the two different things they are: rules to drive to zero, and notes â€” open questions to answer.</div>
+      <div class="sub" style="font-size:11.5px;color:var(--muted);margin-bottom:14px;">Your Trade Tags, read as the two different things they are: rules to drive to zero, and notes — open questions to answer.</div>
       <div id="disciplineBody"></div>
     </div>
   </div>
@@ -244,7 +244,7 @@
        laman ang Paper Trade Journal. -->
   <div class="panel" id="triggerPanel" style="margin-bottom:20px;display:none;">
     <h2>Why you did not pull the trigger<button type="button" class="panel-info-btn" title="How this is worked out" onclick="event.stopPropagation(); openPanelInfo('trigger')"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg></button></h2>
-    <div class="sub" style="margin-bottom:12px;">From your Paper Trade Journal â€” the setups you saw and let go.</div>
+    <div class="sub" style="margin-bottom:12px;">From your Paper Trade Journal — the setups you saw and let go.</div>
     <div id="triggerBody"></div>
   </div>
 
@@ -256,7 +256,7 @@
 
 
 <div class="panel" style="margin-bottom:20px;">
-    <h2>Breakdown â€” where you're actually effective<button type="button" class="panel-info-btn" title="How this is worked out" onclick="event.stopPropagation(); openPanelInfo('breakdown')"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button></h2>
+    <h2>Breakdown — where you're actually effective<button type="button" class="panel-info-btn" title="How this is worked out" onclick="event.stopPropagation(); openPanelInfo('breakdown')"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button></h2>
     <div class="tabs" id="breakdownTabs"></div>
     <div class="row-2 breakdown-row">
       <div><canvas id="breakdownChart" height="180"></canvas></div>
@@ -267,10 +267,10 @@
   <!-- Mga bihirang tingnan: nakatiklop, pero sumusunod pa rin sa parehong
        filter ng Dashboard. -->
   <details class="panel more-stats" id="moreStats" style="margin-bottom:20px;">
-    <summary>More stats <span class="more-stats-sub">How long you hold Â· Fees</span></summary>
+    <summary>More stats <span class="more-stats-sub">How long you hold · Fees</span></summary>
     <div class="more-stats-body">
       <h3 class="more-stats-h">How long you hold<button type="button" class="panel-info-btn" title="How this is worked out" onclick="event.stopPropagation(); openPanelInfo('holdtime')"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button></h3>
-      <div class="sub" style="font-size:11.5px;color:var(--muted);margin-bottom:14px;">How long winners are held against losers â€” cutting winners early and sitting in losers are opposite mistakes with the same cause.</div>
+      <div class="sub" style="font-size:11.5px;color:var(--muted);margin-bottom:14px;">How long winners are held against losers — cutting winners early and sitting in losers are opposite mistakes with the same cause.</div>
       <div id="holdTimeBody"></div>
       <h3 class="more-stats-h" style="margin-top:22px;">Fees</h3>
       <div id="feesBody"></div>
@@ -278,8 +278,8 @@
   </details>
 
   <div class="ai-panel">
-    <h2>âœ¦ AI Insights<button type="button" class="panel-info-btn" title="How this is worked out" onclick="event.stopPropagation(); openPanelInfo('ai')"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button></h2>
-    <div class="sub">Generates a short read on your recent performance and one or two concrete adjustments to try â€” based only on the trades currently in view.</div>
+    <h2>✦ AI Insights<button type="button" class="panel-info-btn" title="How this is worked out" onclick="event.stopPropagation(); openPanelInfo('ai')"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button></h2>
+    <div class="sub">Generates a short read on your recent performance and one or two concrete adjustments to try — based only on the trades currently in view.</div>
     <button class="ai-btn" id="aiBtn" onclick="generateInsights()">Generate insights</button>
     <div class="ai-output" id="aiOutput"></div>
   </div>
@@ -289,16 +289,16 @@
     <header class="top">
       <div>
         <h1>Trade Journals</h1>
-        <div class="sub" id="journalCountLabel">â€”</div>
+        <div class="sub" id="journalCountLabel">—</div>
       </div>
       <button type="button" class="poscalc-accent-btn" onclick="openQuickAddModal()">+ Quick Add</button>
     </header>
     <div class="journal-toolbar">
-      <input id="journalSearch" placeholder="Search symbol, setup, position IDâ€¦" oninput="renderJournalTable()">
+      <input id="journalSearch" placeholder="Search symbol, setup, position ID…" oninput="renderJournalTable()">
       <select id="journalYearFilter" onchange="onJournalYearChange()"></select>
       <select id="journalMonthFilter" onchange="renderJournalTable()"></select>
-      <!-- Ang custom na saklaw ng petsa. Iisang axis ito ng Year at Month â€” ang
-           panahon â€” kaya hindi sila magkasabay: ang paglagay ng saklaw ay
+      <!-- Ang custom na saklaw ng petsa. Iisang axis ito ng Year at Month — ang
+           panahon — kaya hindi sila magkasabay: ang paglagay ng saklaw ay
            naglilinis ng Year at Month, at ang pagpili ng taon ay naglilinis ng
            saklaw. Tingnan ang onJournalRangeChange sa dashboard.js. -->
       <div class="jf-range" id="journalRangeWrap">
@@ -337,7 +337,7 @@
     <header class="top">
       <div>
         <h1>Notebook</h1>
-        <div class="sub">Your trading thoughts, strategy notes, and reflections â€” kept separate from the structured Trade Journal.</div>
+        <div class="sub">Your trading thoughts, strategy notes, and reflections — kept separate from the structured Trade Journal.</div>
       </div>
       <div class="header-actions">
         <button class="ai-btn" onclick="openNoteModal()">+ New Note</button>
@@ -346,7 +346,7 @@
 
     <div class="notebook-layout">
       <div class="panel note-list-panel">
-        <input class="note-search" id="noteSearchInput" placeholder="Search notesâ€¦" oninput="renderNoteList()">
+        <input class="note-search" id="noteSearchInput" placeholder="Search notes…" oninput="renderNoteList()">
         <div class="tag-filter-row" id="noteTagFilterRow"></div>
         <div id="noteListItems"></div>
       </div>
@@ -355,19 +355,19 @@
         <div class="empty-state" id="noteDetailEmpty">Select a note to view it here.</div>
         <div id="noteDetailWrap" style="display:none;">
           <div class="note-detail-top">
-            <span class="pill" id="noteDetailTag">â€”</span>
+            <span class="pill" id="noteDetailTag">—</span>
             <div class="note-detail-actions">
               <button class="drawer-secondary-btn" title="Edit" style="padding:8px 10px;" onclick="editSelectedNote()"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>
               <button class="note-delete-btn" onclick="deleteSelectedNote()"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px;"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>Delete</button>
             </div>
           </div>
-          <h3 id="noteDetailTitle" style="margin:14px 0 4px;">â€”</h3>
-          <div class="note-detail-date" id="noteDetailDate">â€”</div>
+          <h3 id="noteDetailTitle" style="margin:14px 0 4px;">—</h3>
+          <div class="note-detail-date" id="noteDetailDate">—</div>
           <div class="note-detail-text" id="noteDetailText"></div>
         </div>
         <div id="noteDetailChecklistWrap" style="display:none;">
-          <h3 style="margin:0 0 4px;">ðŸž Bread &amp; Butter Setup</h3>
-          <div class="note-detail-date">Live reference only â€” nothing here gets saved.</div>
+          <h3 style="margin:0 0 4px;">🍞 Bread &amp; Butter Setup</h3>
+          <div class="note-detail-date">Live reference only — nothing here gets saved.</div>
           <div class="field-row" style="margin-top:14px;">
             <label>Trade Type</label>
             <select id="bbTradeType" onchange="onBbTradeTypeChange()"></select>
@@ -383,14 +383,14 @@
   </div>
 
   <!-- Ang buong pahina ng isang trade (dating popup). Binubuksan mula sa
-       Trade Journals; ang â€¹ Previous / Next â€º ay sumusunod sa listahang iyon. -->
+       Trade Journals; ang ‹ Previous / Next › ay sumusunod sa listahang iyon. -->
   <div class="view" id="view-trade">
     <div class="tp-top">
-      <button type="button" class="tp-back" onclick="closeTradeViewModal()">â† <span id="tpBackLabel">Trade Journals</span></button>
+      <button type="button" class="tp-back" onclick="closeTradeViewModal()">← <span id="tpBackLabel">Trade Journals</span></button>
     </div>
     <header class="tp-head">
       <div class="tp-title-wrap">
-        <h1 id="tradeViewTitle" class="tp-title">â€”</h1>
+        <h1 id="tradeViewTitle" class="tp-title">—</h1>
         <div id="tpChips" class="tp-chips"></div>
       </div>
       <div class="tp-actions">
@@ -400,8 +400,8 @@
         <button type="button" class="tp-btn tp-btn-primary" onclick="editFromTradeView()">Edit</button>
         <button type="button" class="tp-btn tp-btn-icon" onclick="deleteFromTradeView()" title="Delete trade" aria-label="Delete trade"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button>
         <div class="tp-nav">
-          <button type="button" class="tp-btn" id="tradeViewPrevBtn" onclick="navigateTradeView(-1)">â€¹ Previous</button>
-          <button type="button" class="tp-btn" id="tradeViewNextBtn" onclick="navigateTradeView(1)">Next trade â€º</button>
+          <button type="button" class="tp-btn" id="tradeViewPrevBtn" onclick="navigateTradeView(-1)">‹ Previous</button>
+          <button type="button" class="tp-btn" id="tradeViewNextBtn" onclick="navigateTradeView(1)">Next trade ›</button>
         </div>
       </div>
     </header>
@@ -447,7 +447,7 @@
     </div>
   </div>
 
-  <!-- DAILY PLAN: plano bago ang session, review pagkatapos â€” sa calendar,
+  <!-- DAILY PLAN: plano bago ang session, review pagkatapos — sa calendar,
        katabi ng mga trade ng araw na iyon. -->
   <div class="view" id="view-plan">
     <header class="top">
@@ -463,16 +463,16 @@
     <div class="panel">
       <h2>Plan Calendar
         <span class="nav">
-          <button onclick="shiftPlanMonth(-1)" aria-label="Previous month">â€¹</button>
-          <span id="dpCalLabel">â€”</span>
-          <button onclick="shiftPlanMonth(1)" aria-label="Next month">â€º</button>
+          <button onclick="shiftPlanMonth(-1)" aria-label="Previous month">‹</button>
+          <span id="dpCalLabel">—</span>
+          <button onclick="shiftPlanMonth(1)" aria-label="Next month">›</button>
         </span>
       </h2>
       <div class="dp-legend">
         <span><i class="dp-dot bull"></i>Bullish</span><span><i class="dp-dot bear"></i>Bearish</span>
         <span><i class="dp-dot neutral"></i>Neutral</span><span><i class="dp-dot none"></i>No trade</span>
         <span class="dp-legend-sep"></span>
-        <span><b class="pos">âœ“</b> Followed</span><span><b class="tp-acc">~</b> Partly</span><span><b class="neg">âœ—</b> Not followed</span>
+        <span><b class="pos">✓</b> Followed</span><span><b class="tp-acc">~</b> Partly</span><span><b class="neg">✗</b> Not followed</span>
       </div>
       <div class="cal-grid dp-cal-grid" id="dpCalGrid"></div>
     </div>
@@ -483,15 +483,15 @@
     </div>
     <div class="panel" style="margin-top:20px;">
       <h2 style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
-        <span>Diary â€” recent entries</span>
+        <span>Diary — recent entries</span>
         <select id="moodRecentFilter" onchange="renderMoodRecent()" style="max-width:180px;font-size:11.5px;padding:4px 8px;">
           <option value="all">All sections</option>
-          <option value="note_trading">ðŸ“ˆ Trading</option>
-          <option value="note_work">ðŸ’¼ Work</option>
-          <option value="note_life">ðŸŒ± Life</option>
+          <option value="note_trading">📈 Trading</option>
+          <option value="note_work">💼 Work</option>
+          <option value="note_life">🌱 Life</option>
         </select>
       </h2>
-      <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">Your latest written entries, newest first â€” click one to open that day.</div>
+      <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">Your latest written entries, newest first — click one to open that day.</div>
       <div id="moodRecentList"></div>
     </div>
   </div>
@@ -500,7 +500,7 @@
     <header class="top">
       <div>
         <h1>Diary</h1>
-        <div class="sub">A quick daily mood check-in â€” pick how you felt, jot down what happened.</div>
+        <div class="sub">A quick daily mood check-in — pick how you felt, jot down what happened.</div>
       </div>
       <div class="header-actions">
         <button class="ai-btn" onclick="openMoodModal(_moodTodayISO())">+ Log Today</button>
@@ -510,9 +510,9 @@
     <div class="panel">
       <h2>Mood Calendar
         <span class="nav">
-          <button onclick="shiftMoodMonth(-1)">â€¹</button>
-          <span id="moodCalLabel">â€”</span>
-          <button onclick="shiftMoodMonth(1)">â€º</button>
+          <button onclick="shiftMoodMonth(-1)">‹</button>
+          <span id="moodCalLabel">—</span>
+          <button onclick="shiftMoodMonth(1)">›</button>
         </span>
       </h2>
       <div class="cal-grid mood-cal-grid" id="moodCalGrid"></div>
@@ -525,7 +525,7 @@
     <header class="top">
       <div>
         <h1>Trade Alerts</h1>
-        <div class="sub" id="alertsCountLabel">â€”</div>
+        <div class="sub" id="alertsCountLabel">—</div>
         <div class="sub" id="alertsLastSync" style="font-size:11px;"></div>
       </div>
       <div class="header-actions">
@@ -576,9 +576,9 @@
               <option value="pct_desc">Sort: 24H % (High to Low)</option>
               <option value="macd_match_desc">Sort: MACD Match with BTC</option>
             </select>
-            <div class="sub" id="screenerCountLabel">â€”</div>
+            <div class="sub" id="screenerCountLabel">—</div>
           </div>
-          <div class="empty-state" id="screenerEmpty" style="display:none;">No screener data yet â€” the scanner script hasn't pushed any rows.</div>
+          <div class="empty-state" id="screenerEmpty" style="display:none;">No screener data yet — the scanner script hasn't pushed any rows.</div>
           <div class="journal-wrap" id="screenerWrap" style="display:none;">
             <table class="journal">
               <thead><tr>
@@ -622,7 +622,7 @@
       </div>
       <div class="profile-rank-badge" id="profileRankBadge" onclick="switchView('challenges')" title="View Challenges">
         <span class="profile-rank-icon" id="profileRankIcon"></span>
-        <span class="profile-rank-title" id="profileRankTitle">â€”</span>
+        <span class="profile-rank-title" id="profileRankTitle">—</span>
       </div>
     </div>
 
@@ -669,10 +669,10 @@
     <div class="row profile-layout" style="grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:start;">
       <div class="panel">
         <h2>My Trading Rules</h2>
-        <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">Your personal checklist â€” a reminder every time you open your profile.</div>
+        <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">Your personal checklist — a reminder every time you open your profile.</div>
         <div id="profileRulesList"></div>
         <div class="config-add-row" id="profileRulesAddRow" style="display:none;">
-          <input id="newRuleInput" placeholder="New ruleâ€¦" onkeydown="if(event.key==='Enter'){ event.preventDefault(); addProfileRule(); }">
+          <input id="newRuleInput" placeholder="New rule…" onkeydown="if(event.key==='Enter'){ event.preventDefault(); addProfileRule(); }">
           <button class="ai-btn" style="padding:8px 14px;" onclick="addProfileRule()">Add</button>
         </div>
       </div>
@@ -681,7 +681,7 @@
         <h2>My Vision Board</h2>
         <div class="profile-inspo-wrap" id="profileInspoWrap">
           <div class="profile-inspo-placeholder" id="profileInspoPlaceholder">
-            <div>No inspiration image yet â€” add one from Edit mode.</div>
+            <div>No inspiration image yet — add one from Edit mode.</div>
           </div>
           <img id="profileInspoImg" style="display:none;">
           <div class="profile-inspo-edit-hint" id="profileInspoEditHint" style="display:none;" onclick="document.getElementById('profileInspoInput').click()">Click to change image</div>
@@ -706,7 +706,7 @@
     <div id="pbSqlNote"></div>
     <div class="notebook-layout">
       <div class="panel note-list-panel">
-        <input class="note-search" id="pbSearch" placeholder="Search playbooksâ€¦" oninput="renderPlaybookList()">
+        <input class="note-search" id="pbSearch" placeholder="Search playbooks…" oninput="renderPlaybookList()">
         <div id="pbList"></div>
       </div>
       <div class="panel note-detail-panel" id="pbDetail"></div>
@@ -742,14 +742,14 @@
       <h2>New York at 4pm or the US market at 5:30pm?</h2>
       <p><b>4:00pm, New York session.</b> The New York forex desks open. US news (CPI, NFP, jobless claims) comes out at <b>4:30pm</b>. This is the one gold reacts to most.</p>
       <p><b>5:30pm, US stock market open.</b> The stock exchange opens. This is the "US open" people wait for, and crypto often moves with US stocks here.</p>
-      <p>For crypto and gold, watch both: the news at 4:30pm, then the stock open at 5:30pm. ðŸ”” sends a notification 30 minutes before a market opens and when it closes, while the app is open.</p>
+      <p>For crypto and gold, watch both: the news at 4:30pm, then the stock open at 5:30pm. 🔔 sends a notification 30 minutes before a market opens and when it closes, while the app is open.</p>
     </div>
   </div>
   <div class="view" id="view-reports">
     <header class="top">
       <div>
         <h1>Reports</h1>
-        <div class="sub">A combined recap of your trading, finances, and mood â€” export a clean PDF summary anytime.</div>
+        <div class="sub">A combined recap of your trading, finances, and mood — export a clean PDF summary anytime.</div>
       </div>
       <div class="header-actions">
         <button class="poscalc-accent-btn" onclick="downloadReportPDF()"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Download PDF</button>
@@ -781,13 +781,13 @@
     <header class="top">
       <div>
         <h1>My Accounts</h1>
-        <div class="sub">Your prop firm / trading accounts and their rules â€” used for account-compliance challenges.</div>
+        <div class="sub">Your prop firm / trading accounts and their rules — used for account-compliance challenges.</div>
       </div>
       <div class="header-actions">
         <button class="ai-btn" onclick="openAccountModal()">+ Add Account</button>
       </div>
     </header>
-    <div class="empty-state" id="accountsEmptyState" style="display:none;">No accounts yet â€” add your prop firm account and its rules.</div>
+    <div class="empty-state" id="accountsEmptyState" style="display:none;">No accounts yet — add your prop firm account and its rules.</div>
 
     <div class="panel" id="accountsPropFirmPanel" style="margin-bottom:20px;display:none;">
       <h2>Prop Firm Accounts</h2>
@@ -822,10 +822,10 @@
           <button class="drawer-danger-btn" onclick="clearCalculatorDraft()">Clear</button>
         </span>
       </h2>
-      <div class="sub" style="margin-bottom:12px;">Risk-based position sizing across your accounts â€” enter the prices, everything else is worked out for you.</div>
+      <div class="sub" style="margin-bottom:12px;">Risk-based position sizing across your accounts — enter the prices, everything else is worked out for you.</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;">
         <button class="poscalc-accent-btn" onclick="openPosPasteModal()">Paste from exchange</button>
-        <button class="poscalc-accent-btn" onclick="openPsBbModal()">ðŸž BnB Check</button>
+        <button class="poscalc-accent-btn" onclick="openPsBbModal()">🍞 BnB Check</button>
       </div>
 
       <div class="field-row">
@@ -845,7 +845,7 @@
           <input id="psEntry" type="text" inputmode="decimal" placeholder="e.g. 63040.20" oninput="onPosSizeInput()" style="color:var(--accent);font-weight:600;">
           <button type="button" class="poscalc-accent-btn" onclick="pasteIntoField('psEntry')">Paste</button>
           <button type="button" class="poscalc-accent-btn" onclick="copyFieldValue('psEntry', this)">Copy</button>
-          <button type="button" class="mic-bar mic-bar-inline" title="Hold to speak the price" onpointerdown="voiceHoldStart(event,'psEntry','number',this)" onpointerup="voiceHoldEnd(event,this)" onpointercancel="voiceHoldEnd(event,this)" onpointerleave="voiceHoldEnd(event,this)" oncontextmenu="return false"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="9" y1="21" x2="15" y2="21"/></svg><span class="mic-bar-idle">Hold to speak</span><span class="mic-bar-live">Listening â€” let go when done</span></button>
+          <button type="button" class="mic-bar mic-bar-inline" title="Hold to speak the price" onpointerdown="voiceHoldStart(event,'psEntry','number',this)" onpointerup="voiceHoldEnd(event,this)" onpointercancel="voiceHoldEnd(event,this)" onpointerleave="voiceHoldEnd(event,this)" oncontextmenu="return false"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="9" y1="21" x2="15" y2="21"/></svg><span class="mic-bar-idle">Hold to speak</span><span class="mic-bar-live">Listening — let go when done</span></button>
         </div>
       </div>
       <div class="field-row">
@@ -854,7 +854,7 @@
           <input id="psTP" type="text" inputmode="decimal" placeholder="e.g. 63455.00" oninput="onPosSizeInput()" style="color:var(--win);font-weight:600;">
           <button type="button" class="poscalc-accent-btn" onclick="pasteIntoField('psTP')">Paste</button>
           <button type="button" class="poscalc-accent-btn" onclick="copyFieldValue('psTP', this)">Copy</button>
-          <button type="button" class="mic-bar mic-bar-inline" title="Hold to speak the price" onpointerdown="voiceHoldStart(event,'psTP','number',this)" onpointerup="voiceHoldEnd(event,this)" onpointercancel="voiceHoldEnd(event,this)" onpointerleave="voiceHoldEnd(event,this)" oncontextmenu="return false"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="9" y1="21" x2="15" y2="21"/></svg><span class="mic-bar-idle">Hold to speak</span><span class="mic-bar-live">Listening â€” let go when done</span></button>
+          <button type="button" class="mic-bar mic-bar-inline" title="Hold to speak the price" onpointerdown="voiceHoldStart(event,'psTP','number',this)" onpointerup="voiceHoldEnd(event,this)" onpointercancel="voiceHoldEnd(event,this)" onpointerleave="voiceHoldEnd(event,this)" oncontextmenu="return false"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="9" y1="21" x2="15" y2="21"/></svg><span class="mic-bar-idle">Hold to speak</span><span class="mic-bar-live">Listening — let go when done</span></button>
         </div>
       </div>
       <div class="field-row">
@@ -863,7 +863,7 @@
           <input id="psSL" type="text" inputmode="decimal" placeholder="e.g. 62900.00" oninput="onPosSizeInput()" style="color:var(--loss);font-weight:600;">
           <button type="button" class="poscalc-accent-btn" onclick="pasteIntoField('psSL')">Paste</button>
           <button type="button" class="poscalc-accent-btn" onclick="copyFieldValue('psSL', this)">Copy</button>
-          <button type="button" class="mic-bar mic-bar-inline" title="Hold to speak the price" onpointerdown="voiceHoldStart(event,'psSL','number',this)" onpointerup="voiceHoldEnd(event,this)" onpointercancel="voiceHoldEnd(event,this)" onpointerleave="voiceHoldEnd(event,this)" oncontextmenu="return false"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="9" y1="21" x2="15" y2="21"/></svg><span class="mic-bar-idle">Hold to speak</span><span class="mic-bar-live">Listening â€” let go when done</span></button>
+          <button type="button" class="mic-bar mic-bar-inline" title="Hold to speak the price" onpointerdown="voiceHoldStart(event,'psSL','number',this)" onpointerup="voiceHoldEnd(event,this)" onpointercancel="voiceHoldEnd(event,this)" onpointerleave="voiceHoldEnd(event,this)" oncontextmenu="return false"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="9" y1="21" x2="15" y2="21"/></svg><span class="mic-bar-idle">Hold to speak</span><span class="mic-bar-live">Listening — let go when done</span></button>
         </div>
       </div>
 
@@ -873,25 +873,25 @@
         <div class="ps-readout-strip">
           <div>
             <div class="ps-readout-label">Risk-Reward Ratio</div>
-            <div class="ps-readout-value" id="psRR">â€”</div>
+            <div class="ps-readout-value" id="psRR">—</div>
           </div>
           <div>
             <div class="ps-readout-label">Risk Per Unit</div>
-            <div class="ps-readout-value" id="psRiskPerUnit">â€”</div>
+            <div class="ps-readout-value" id="psRiskPerUnit">—</div>
           </div>
           <div>
             <div class="ps-readout-label">Distance to SL</div>
-            <div class="ps-readout-value" id="psDistSL" style="color:var(--loss);">â€”</div>
+            <div class="ps-readout-value" id="psDistSL" style="color:var(--loss);">—</div>
           </div>
           <div>
             <div class="ps-readout-label">Distance to TP</div>
-            <div class="ps-readout-value" id="psDistTP" style="color:var(--win);">â€”</div>
+            <div class="ps-readout-value" id="psDistTP" style="color:var(--win);">—</div>
           </div>
         </div>
 
         <!-- Lumalabas lang kapag may account na may Upscale API key. -->
         <div class="up-order-all" id="psOrderAllRow" style="display:none;">
-          <button type="button" class="up-order-btn" onclick="placeUpscaleOrders()">Place Order â€” all API accounts</button>
+          <button type="button" class="up-order-btn" onclick="placeUpscaleOrders()">Place Order — all API accounts</button>
           <span class="up-order-all-sub" id="psOrderAllSub"></span>
         </div>
         <div style="overflow-x:auto;">
@@ -907,14 +907,14 @@
     <div class="panel" style="margin-top:20px;">
       <h2>Pending Setups</h2>
       <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">Taking the same setup on more than one account? Tick them and fill the confluence once for all of them.</div>
-      <div class="empty-state" id="pendingSetupsEmptyState" style="display:none;">No pending setups yet â€” use "Trade This Setup" above to save one.</div>
+      <div class="empty-state" id="pendingSetupsEmptyState" style="display:none;">No pending setups yet — use "Trade This Setup" above to save one.</div>
       <div id="setupBulkBar" style="display:none;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:12px;font-size:12.5px;">
         <span id="setupBulkCount"></span>
         <button class="poscalc-accent-btn" onclick="openConfluenceModalBulk()">Add Confluence</button>
         <button class="poscalc-accent-btn" onclick="openSetupDetailsModal()">Areas &amp; Emotions</button>
         <button class="poscalc-accent-btn" onclick="openBulkNotesModal()">Add New Notes</button>
         <select id="setupBulkStatus" class="ps-emo-sel" aria-label="Set status for the selected setups" onchange="bulkSetSetupStatus(this)">
-          <option value="">Set Statusâ€¦</option>
+          <option value="">Set Status…</option>
           <option value="Pending">Pending</option>
           <option value="In Position">In Position</option>
           <option value="Closed">Closed</option>
@@ -937,7 +937,7 @@
                 onclick="toggleJournaledSetups()">Hide</button>
       </h2>
       <div id="journaledSetupsWrap">
-        <div class="empty-state" id="journaledSetupsEmptyState" style="display:none;">No journaled setups yet â€” click "Journal" on a pending setup once its trade is logged.</div>
+        <div class="empty-state" id="journaledSetupsEmptyState" style="display:none;">No journaled setups yet — click "Journal" on a pending setup once its trade is logged.</div>
         <div style="overflow-x:auto;">
           <table class="breakdown poscalc-table" id="journaledSetupsTable" style="display:none;">
             <thead><tr><th>Symbol</th><th>Date</th><th>Account</th><th>Leverage</th><th>Risk Amount ($)</th><th>Quantity</th><th>Entry Price</th><th>TP Price</th><th>SL Price</th><th>Confluence</th><th>Entry Emotion</th><th>Status</th><th></th></tr></thead>
@@ -956,7 +956,7 @@
     <header class="top">
       <div>
         <h1>Paper Trade Journal</h1>
-        <div class="sub">The setups you saw but did not take â€” and why.</div>
+        <div class="sub">The setups you saw but did not take — and why.</div>
       </div>
       <div class="filters">
         <span class="fgroup fgroup-tools">
@@ -973,11 +973,11 @@
     </header>
 
     <!-- Tab 1: ang MISMONG calculator, inilipat dito. Ang banner ay hindi
-         palamuti â€” ito lang ang nagsasabi kung saan mapupunta ang isasave mo. -->
+         palamuti — ito lang ang nagsasabi kung saan mapupunta ang isasave mo. -->
     <div id="paperTabCalc">
       <div class="paper-banner">
         <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M2 12h20"/></svg>
-        <span><b>Paper mode.</b> This is the same calculator you always use â€” but anything
+        <span><b>Paper mode.</b> This is the same calculator you always use — but anything
           you journal from here is saved as a paper trade. It never touches your P&amp;L,
           win rate, salary goal or prop firm drawdown.</span>
       </div>
@@ -991,13 +991,13 @@
           <span class="grp-s" id="paperCount"></span>
         </h2>
         <div class="sub" style="margin-bottom:12px;">Every setup you logged but did not take.
-          The last column is the one that matters â€” it is the only field a real trade does not have.</div>
+          The last column is the one that matters — it is the only field a real trade does not have.</div>
 
         <!-- Parehong +Filter ng Trade Journals, sa parehong hugis at parehong
-             CSS â€” ang natatangi lang ay ang pinagmumulan ng hilera. Tingnan
+             CSS — ang natatangi lang ay ang pinagmumulan ng hilera. Tingnan
              ang PAPER_ACTIVE_FILTERS sa dashboard.js. -->
         <div class="journal-toolbar">
-          <input id="paperSearch" placeholder="Search symbol, setup, position IDâ€¦"
+          <input id="paperSearch" placeholder="Search symbol, setup, position ID…"
                  oninput="renderPaperTable()">
           <div class="jf-add-wrap">
             <button class="poscalc-accent-btn" id="paperAddFilterBtn" style="padding:8px 14px;"
@@ -1025,7 +1025,7 @@
     <header class="top">
       <div>
         <h1>Payslip vs P&amp;L</h1>
-        <div class="sub">What the job pays you per day â€” and what trading has to do to match it.</div>
+        <div class="sub">What the job pays you per day — and what trading has to do to match it.</div>
       </div>
       <div class="filters">
         <label class="real-toggle" title="Count only Funded and Exchange accounts. Demo and Evaluation P&amp;L is a score in a test, not a payslip you can compare against. Your choice is remembered and follows your account.">
@@ -1038,7 +1038,7 @@
 
     <div class="sal-answer" id="salAnswerBox">
       <div class="sal-answer-q">Can trading pay for your life without the job?</div>
-      <div class="sal-answer-a" id="salAnswerText">â€”</div>
+      <div class="sal-answer-a" id="salAnswerText">—</div>
       <div class="sal-answer-why" id="salAnswerWhy">Enter your monthly salary below.</div>
     </div>
 
@@ -1046,7 +1046,7 @@
       <div class="sal-journey-head">
         <div>
           <div class="sal-journey-label">The journey so far</div>
-          <div class="sal-journey-total" id="salJourneyTotal">â€”</div>
+          <div class="sal-journey-total" id="salJourneyTotal">—</div>
           <div class="sal-journey-sub" id="salJourneySub"></div>
         </div>
         <div class="sal-journey-note" id="salJourneyNote"></div>
@@ -1087,12 +1087,12 @@
       </div>
       <div class="sal-fx-row">
         <button class="poscalc-accent-btn" id="salFxBtn" onclick="fetchFxRates(true)">Refresh rates</button>
-        <span class="sub" id="salFxStatus" style="font-size:11px;color:var(--muted);">AED is pegged and barely moves. PHP floats â€” rates refresh once a day, or tap Refresh.</span>
+        <span class="sub" id="salFxStatus" style="font-size:11px;color:var(--muted);">AED is pegged and barely moves. PHP floats — rates refresh once a day, or tap Refresh.</span>
       </div>
     </div>
 
     <div class="sal-disclaimer">
-      Trading income is not guaranteed. A month that clears the bar once isn't income â€” consistency is.
+      Trading income is not guaranteed. A month that clears the bar once isn't income — consistency is.
     </div>
   </div>
 
@@ -1118,7 +1118,7 @@
         <div class="subnav-panel active" id="configPanel-columns">
           <div class="panel">
             <h2>Trade Journal Columns</h2>
-            <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">Check to show a column. Drag a row (â ¿) to reorder.</div>
+            <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">Check to show a column. Drag a row (⠿) to reorder.</div>
             <div id="columnConfigList"></div>
             <button class="drawer-secondary-btn" style="margin-top:14px;" onclick="resetColumnConfig()">Reset to default</button>
           </div>
@@ -1131,7 +1131,7 @@
             <select id="optionsFieldPicker" onchange="renderOptionsListFor(this.value)"></select>
             <div id="optionsList" style="margin-top:14px;"></div>
             <div class="config-add-row">
-              <input id="newOptionInput" placeholder="New optionâ€¦" onkeydown="if(event.key==='Enter'){ event.preventDefault(); addOption(); }">
+              <input id="newOptionInput" placeholder="New option…" onkeydown="if(event.key==='Enter'){ event.preventDefault(); addOption(); }">
               <button class="ai-btn" style="padding:8px 14px;" onclick="addOption()">Add</button>
             </div>
           </div>
@@ -1140,7 +1140,7 @@
         <div class="subnav-panel" id="configPanel-formfields">
           <div class="panel">
             <h2>Trade Detail / Add Form Fields</h2>
-            <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">Controls both the trade detail view (click a row) and the "+ Add Trade" form. Check to show a field. Drag a row (â ¿) to reorder.</div>
+            <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">Controls both the trade detail view (click a row) and the "+ Add Trade" form. Check to show a field. Drag a row (⠿) to reorder.</div>
             <div id="formFieldConfigList"></div>
             <button class="drawer-secondary-btn" style="margin-top:14px;" onclick="resetFormFieldConfig()">Reset to default</button>
           </div>
@@ -1197,11 +1197,11 @@
         </div>
 
         <!-- Aling SQL ang napatakbo na. Kapag kulang ang column, ang datos para
-             roon ay tahimik na hindi nase-save â€” kaya ito ang pinakaunang tinitingnan. -->
+             roon ay tahimik na hindi nase-save — kaya ito ang pinakaunang tinitingnan. -->
         <div class="subnav-panel" id="configPanel-dbstatus">
           <div class="panel">
             <h2>Database status</h2>
-            <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">Each feature that needs a column in Supabase. A red row means that SQL file has not been run yet, and what it stores is not being saved. Run it in Supabase â†’ SQL Editor, then press Check again.</div>
+            <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">Each feature that needs a column in Supabase. A red row means that SQL file has not been run yet, and what it stores is not being saved. Run it in Supabase → SQL Editor, then press Check again.</div>
             <div id="dbStatusList"></div>
             <button class="drawer-secondary-btn" style="margin-top:14px;" onclick="checkDatabaseStatus()">Check again</button>
           </div>
@@ -1242,7 +1242,7 @@
 
     <div class="panel" style="margin-bottom:20px;max-width:560px;">
       <h2>Accent Color</h2>
-      <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:14px;">The highlight color used for buttons, active nav items, and chart lines â€” combines with whichever Theme you're using.</div>
+      <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:14px;">The highlight color used for buttons, active nav items, and chart lines — combines with whichever Theme you're using.</div>
       <div class="settings-option-grid" id="accentOptionGrid"></div>
     </div>
 
@@ -1254,7 +1254,7 @@
 
     <div class="panel" style="max-width:560px;">
       <h2>Layout</h2>
-      <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:14px;">Mobile Mode swaps the sidebar for a corner menu and centers everything in one column â€” made for phones.</div>
+      <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:14px;">Mobile Mode swaps the sidebar for a corner menu and centers everything in one column — made for phones.</div>
       <div class="settings-option-grid" id="mobileModeOptionGrid"></div>
     </div>
   </div>
@@ -1268,7 +1268,7 @@
       <!-- Dalawang trabaho, dalawang tab: kung SINO ang nakakapasok, at KUMUSTA
            sila kapag nakapasok na.
 
-           PAREHONG hugis ng tab ng Paper Trade Journal â€” hindi isang bagong
+           PAREHONG hugis ng tab ng Paper Trade Journal — hindi isang bagong
            estilo. Ang unang bersyon nito ay dalawang pindutan sa ilalim ng
            header, at hindi niya ito nakita: hindi sila mukhang tab, kaya
            dumaan lang ang mata sa kanila. Isang tab na dapat matutuhan, hindi
@@ -1301,7 +1301,7 @@
     <div class="panel">
       <h2 style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
         <span>All users</span>
-        <input id="adminUserSearch" type="text" placeholder="Search by email, username, or nameâ€¦" oninput="filterAdminUserList()" style="max-width:260px;padding:8px 10px;background:var(--surface-2);border:1px solid var(--rule);border-radius:6px;color:var(--ink);font-size:13px;font-family:'IBM Plex Mono',monospace;">
+        <input id="adminUserSearch" type="text" placeholder="Search by email, username, or name…" oninput="filterAdminUserList()" style="max-width:260px;padding:8px 10px;background:var(--surface-2);border:1px solid var(--rule);border-radius:6px;color:var(--ink);font-size:13px;font-family:'IBM Plex Mono',monospace;">
       </h2>
       <div style="overflow-x:auto;">
         <table class="breakdown admin-user-table">
@@ -1341,7 +1341,7 @@
     <header class="top">
       <div>
         <h1>Achievements</h1>
-        <div class="sub" id="achievementsCountLabel">â€”</div>
+        <div class="sub" id="achievementsCountLabel">—</div>
       </div>
       <button class="ai-btn" onclick="openAchievementModal()">+ Add Achievement</button>
     </header>
@@ -1357,7 +1357,7 @@
     <header class="top">
       <div>
         <h1>Challenges</h1>
-        <div class="sub" id="challengesCountLabel">â€”</div>
+        <div class="sub" id="challengesCountLabel">—</div>
       </div>
       <div class="header-actions">
         <button class="poscalc-accent-btn" onclick="switchView('leaderboard')"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px;"><path d="M8 21h8"/><path d="M12 17v4"/><path d="M7 4h10v5a5 5 0 0 1-10 0V4Z"/><path d="M17 5h3a2 2 0 0 1-2 4h-1"/><path d="M7 5H4a2 2 0 0 0 2 4h1"/></svg>Leaderboard</button>
@@ -1365,20 +1365,20 @@
     </header>
 
     <div class="challenge-caution-banner">
-      These reflect your trading â€” they shouldn't decide it. If a challenge ever tempts you to force a trade, skip a valid setup, or hold back a good exit just to protect a number, ignore the challenge. Your trading plan comes first, always.
+      These reflect your trading — they shouldn't decide it. If a challenge ever tempts you to force a trade, skip a valid setup, or hold back a good exit just to protect a number, ignore the challenge. Your trading plan comes first, always.
     </div>
 
     <div class="panel challenge-rank-panel" style="margin-bottom:20px;">
-      <div class="challenge-rank-label" id="challengeRankLabel">â€”</div>
+      <div class="challenge-rank-label" id="challengeRankLabel">—</div>
       <div class="challenge-points-total" id="challengePointsTotal">0</div>
       <div class="challenge-points-caption">TOTAL POINTS</div>
       <div class="rank-ladder" id="rankLadder"></div>
-      <div class="challenge-points-away" id="challengePointsAway">â€”</div>
+      <div class="challenge-points-away" id="challengePointsAway">—</div>
     </div>
 
     <div class="panel" style="margin-bottom:20px;">
       <h2>On the Anvil</h2>
-      <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">Automatically tracked from your logged trades and achievements â€” nothing to mark manually.</div>
+      <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">Automatically tracked from your logged trades and achievements — nothing to mark manually.</div>
       <div class="tabs" id="challengeFilterTabs">
         <div class="tab active" data-f="all" onclick="switchChallengeFilter('all')">All</div>
         <div class="tab" data-f="achieved" onclick="switchChallengeFilter('achieved')">Achieved</div>
@@ -1389,7 +1389,7 @@
 
     <div class="panel">
       <h2>Still in the Furnace</h2>
-      <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">These need extra data before we can track them â€” this shows what's still missing.</div>
+      <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">These need extra data before we can track them — this shows what's still missing.</div>
       <div class="challenge-grid" id="challengesLockedGrid"></div>
     </div>
   </div>
@@ -1401,7 +1401,7 @@
         <div class="sub">Ranked by total challenge points, across every trader here.</div>
       </div>
       <div class="header-actions">
-        <button class="drawer-secondary-btn" onclick="switchView('challenges')">â€¹ Back to Challenges</button>
+        <button class="drawer-secondary-btn" onclick="switchView('challenges')">‹ Back to Challenges</button>
       </div>
     </header>
     <div class="panel">
@@ -1413,7 +1413,7 @@
     <header class="top">
       <div>
         <h1>Calendar</h1>
-        <div class="sub">Upcoming economic events â€” check impact before you trade around news.</div>
+        <div class="sub">Upcoming economic events — check impact before you trade around news.</div>
         <div class="sub" id="econLastSync" style="font-size:11px;"></div>
       </div>
       <div class="header-actions">
@@ -1426,9 +1426,9 @@
       <div class="panel econ-cal-list-panel">
         <h2>Calendar
           <span class="nav">
-            <button onclick="shiftEconCalMonth(-1)">â€¹</button>
-            <span id="econCalLabel">â€”</span>
-            <button onclick="shiftEconCalMonth(1)">â€º</button>
+            <button onclick="shiftEconCalMonth(-1)">‹</button>
+            <span id="econCalLabel">—</span>
+            <button onclick="shiftEconCalMonth(1)">›</button>
           </span>
         </h2>
         <div class="tag-filter-row" id="econImpactFilterRow"></div>
@@ -1445,7 +1445,7 @@
     <header class="top">
       <div>
         <h1>Finance</h1>
-        <div class="sub">Your personal money tracker â€” income, expenses, and where it all goes.</div>
+        <div class="sub">Your personal money tracker — income, expenses, and where it all goes.</div>
       </div>
     </header>
 
@@ -1484,9 +1484,9 @@
             <div class="panel fin-dash-list-panel">
               <h2>Calendar
                 <span class="nav">
-                  <button onclick="shiftFinDashMonth(-1)">â€¹</button>
-                  <span id="finDashLabel">â€”</span>
-                  <button onclick="shiftFinDashMonth(1)">â€º</button>
+                  <button onclick="shiftFinDashMonth(-1)">‹</button>
+                  <span id="finDashLabel">—</span>
+                  <button onclick="shiftFinDashMonth(1)">›</button>
                 </span>
               </h2>
               <div class="cal-grid" id="finDashGrid"></div>
@@ -1512,7 +1512,7 @@
           </div>
 
           <div class="panel" style="margin-bottom:20px;">
-            <h2>Equity curve â€” cumulative net (Income âˆ’ Expense)</h2>
+            <h2>Equity curve — cumulative net (Income − Expense)</h2>
             <div class="chart-fill" style="height:260px;"><canvas id="finDashEquityChart"></canvas></div>
             <div id="finDashEquityEmpty" class="empty-state" style="display:none;">No transactions in this period.</div>
           </div>
@@ -1525,7 +1525,7 @@
                 <div class="discipline-score-label">Discipline Score</div>
                 <div class="discipline-score-tag" id="finDashDisciplineTag"></div>
               </div>
-              <div class="discipline-score-value" id="finDashDisciplineValue">â€”</div>
+              <div class="discipline-score-value" id="finDashDisciplineValue">—</div>
             </div>
             <div class="discipline-score-bar"><div class="discipline-score-marker" id="finDashDisciplineMarker"></div></div>
           </div>
@@ -1548,8 +1548,8 @@
         <div class="subnav-panel" id="financePanel-accounts">
           <div class="panel">
             <h2 style="display:flex;align-items:center;justify-content:space-between;gap:10px;">Accounts <span style="display:flex;gap:8px;"><button class="poscalc-accent-btn" id="finHideBalBtn" onclick="toggleFinBalances()">Hide Balances</button><button class="poscalc-accent-btn" onclick="openFinAccountModal()">+ Add Account</button></span></h2>
-            <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">Where your money lives â€” banks, e-wallets, cash, crypto.</div>
-            <div class="empty-state" id="finAccountsEmpty" style="display:none;">No accounts yet â€” click "+ Add Account" to add your first one.</div>
+            <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">Where your money lives — banks, e-wallets, cash, crypto.</div>
+            <div class="empty-state" id="finAccountsEmpty" style="display:none;">No accounts yet — click "+ Add Account" to add your first one.</div>
             <div id="finAccountsSections"></div>
             <div class="sub" id="finAccountsTotals" style="font-size:12px;margin-top:14px;"></div>
           </div>
@@ -1558,9 +1558,9 @@
         <div class="subnav-panel" id="financePanel-transactions">
           <div class="panel">
             <h2 style="display:flex;align-items:center;justify-content:space-between;gap:10px;">Transactions <span style="display:flex;gap:8px;"><button class="poscalc-accent-btn" onclick="openFinTxEasyAddModal()">Easy Add</button><button class="poscalc-accent-btn" onclick="openFinTxModal({tx_type:'Transfer'})">Transfer</button><button class="poscalc-accent-btn" onclick="openFinTxModal()">+ Add Transaction</button></span></h2>
-            <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">Every peso in and out â€” income, expenses, and transfers between accounts. Balances update automatically.</div>
+            <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">Every peso in and out — income, expenses, and transfers between accounts. Balances update automatically.</div>
             <div class="fin-tx-filters" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px;">
-              <input type="text" id="finTxSearchFilter" placeholder="Search description, category, accountâ€¦" oninput="renderFinanceTransactions()" style="flex:1;min-width:180px;max-width:260px;">
+              <input type="text" id="finTxSearchFilter" placeholder="Search description, category, account…" oninput="renderFinanceTransactions()" style="flex:1;min-width:180px;max-width:260px;">
               <select id="finTxPeriodFilter" onchange="onFinTxPeriodFilterChange()" style="max-width:170px;">
                 <option value="all">All time</option>
                 <option value="this" selected>This Month</option>
@@ -1590,7 +1590,7 @@
               <button class="poscalc-accent-btn" onclick="openFinBulkCategoryModal()">Edit Category</button>
               <button class="drawer-secondary-btn" onclick="clearFinTxSelection()">Clear</button>
             </div>
-            <div class="empty-state" id="finTxEmpty" style="display:none;">No transactions yet â€” click "+ Add Transaction" to log your first one.</div>
+            <div class="empty-state" id="finTxEmpty" style="display:none;">No transactions yet — click "+ Add Transaction" to log your first one.</div>
             <div class="journal-wrap" id="finTxWrap" style="display:none;">
               <table class="journal">
                 <thead><tr><th><input type="checkbox" id="finTxSelectAll" onchange="toggleFinTxSelectAll(this.checked)"></th><th>Date</th><th>Type</th><th>Amount</th><th>Account</th><th>Category</th><th>Description</th><th>Status</th><th></th></tr></thead>
@@ -1603,7 +1603,7 @@
         <div class="subnav-panel" id="financePanel-recurring">
           <div class="panel" style="margin-bottom:20px;">
             <h2 style="display:flex;align-items:center;justify-content:space-between;gap:10px;">Installments <button class="poscalc-accent-btn" onclick="openFinRecModal('Installment')">+ Add Installment</button></h2>
-            <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">Credit card installments â€” gadgets, appliances, anything paid in fixed monthly parts.</div>
+            <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">Credit card installments — gadgets, appliances, anything paid in fixed monthly parts.</div>
             <div class="empty-state" id="finInstEmpty" style="display:none;">No installments yet.</div>
             <div class="journal-wrap" id="finInstWrap" style="display:none;">
               <table class="journal">
@@ -1628,7 +1628,7 @@
 
           <div class="panel">
             <h2 style="display:flex;align-items:center;justify-content:space-between;gap:10px;">Subscriptions <button class="poscalc-accent-btn" onclick="openFinRecModal('Subscription')">+ Add Subscription</button></h2>
-            <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">Recurring services â€” streaming, tools, memberships.</div>
+            <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">Recurring services — streaming, tools, memberships.</div>
             <div class="empty-state" id="finSubEmpty" style="display:none;">No subscriptions yet.</div>
             <div class="journal-wrap" id="finSubWrap" style="display:none;">
               <table class="journal">
@@ -1643,22 +1643,22 @@
         <div class="subnav-panel" id="financePanel-config">
           <div class="panel">
             <h2>Configuration</h2>
-            <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">Add or remove the choices for each Finance dropdown â€” account types, currencies, and income/expense categories.</div>
+            <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">Add or remove the choices for each Finance dropdown — account types, currencies, and income/expense categories.</div>
             <select id="finOptionsPicker" onchange="renderFinanceOptionsListFor(this.value)"></select>
             <div id="finOptionsList" style="margin-top:14px;"></div>
             <div class="config-add-row">
-              <input id="finNewOptionInput" placeholder="New optionâ€¦" onkeydown="if(event.key==='Enter') addFinanceOption()">
+              <input id="finNewOptionInput" placeholder="New option…" onkeydown="if(event.key==='Enter') addFinanceOption()">
               <button class="ai-btn" style="padding:8px 14px;" onclick="addFinanceOption()">Add</button>
             </div>
           </div>
 
           <div class="panel" style="margin-top:20px;">
             <h2 style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">Expense Subcategories <span style="display:flex;gap:8px;flex-wrap:wrap;"><button class="poscalc-accent-btn" onclick="addMissingFinanceCategories()">Add Missing Categories</button><button class="ai-btn" style="padding:8px 14px;" onclick="loadRecommendedFinanceTaxonomy()">Reset to Recommended</button></span></h2>
-            <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">Optional finer breakdown under each expense category â€” so "Food &amp; Groceries" can split into Grocery, Restaurant, Coffee, etc.</div>
+            <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">Optional finer breakdown under each expense category — so "Food &amp; Groceries" can split into Grocery, Restaurant, Coffee, etc.</div>
             <select id="finSubcatPicker" onchange="renderFinanceSubcategoryListFor(this.value)"></select>
             <div id="finSubcatList" style="margin-top:14px;"></div>
             <div class="config-add-row">
-              <input id="finNewSubcatInput" placeholder="New subcategoryâ€¦" onkeydown="if(event.key==='Enter') addFinanceSubcategory()">
+              <input id="finNewSubcatInput" placeholder="New subcategory…" onkeydown="if(event.key==='Enter') addFinanceSubcategory()">
               <button class="ai-btn" style="padding:8px 14px;" onclick="addFinanceSubcategory()">Add</button>
             </div>
           </div>
@@ -1667,7 +1667,7 @@
         <div class="subnav-panel" id="financePanel-budget">
           <div class="panel">
             <h2>Monthly Budgets</h2>
-            <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:14px;">Set a target per expense category, tracked against THIS calendar month's actual spending â€” resets automatically each month, no rollover.</div>
+            <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:14px;">Set a target per expense category, tracked against THIS calendar month's actual spending — resets automatically each month, no rollover.</div>
             <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;">
               <div class="field-row" style="flex:1;min-width:180px;margin-bottom:0;">
                 <label>Category</label>
@@ -1680,29 +1680,29 @@
               <button class="ai-btn" style="padding:9px 16px;flex-shrink:0;" onclick="saveFinanceBudget()">Save</button>
             </div>
             <div id="finBudgetError" class="auth-error"></div>
-            <div class="empty-state" id="finBudgetEmpty" style="display:none;margin-top:16px;">No budgets set yet â€” pick a category above and give it a monthly amount.</div>
+            <div class="empty-state" id="finBudgetEmpty" style="display:none;margin-top:16px;">No budgets set yet — pick a category above and give it a monthly amount.</div>
             <div id="finBudgetList" style="margin-top:18px;"></div>
           </div>
         </div>
 
         <div class="subnav-panel" id="financePanel-challenges">
-          <div class="sub" id="financeChallengesCountLabel" style="margin-bottom:10px;">â€”</div>
+          <div class="sub" id="financeChallengesCountLabel" style="margin-bottom:10px;">—</div>
 
           <div class="challenge-caution-banner">
-            These reflect your money habits â€” they shouldn't decide them. Breaking a No-Spend streak for a real emergency, or a real need, is always the right call. Ignore the challenge.
+            These reflect your money habits — they shouldn't decide them. Breaking a No-Spend streak for a real emergency, or a real need, is always the right call. Ignore the challenge.
           </div>
 
           <div class="panel challenge-rank-panel" style="margin-bottom:20px;">
-            <div class="challenge-rank-label" id="financeChallengeRankLabel">â€”</div>
+            <div class="challenge-rank-label" id="financeChallengeRankLabel">—</div>
             <div class="challenge-points-total" id="financeChallengePointsTotal">0</div>
             <div class="challenge-points-caption">TOTAL POINTS</div>
             <div class="rank-ladder" id="financeRankLadder"></div>
-            <div class="challenge-points-away" id="financeChallengePointsAway">â€”</div>
+            <div class="challenge-points-away" id="financeChallengePointsAway">—</div>
           </div>
 
           <div class="panel" style="margin-bottom:20px;">
-            <h2 style="display:flex;align-items:center;justify-content:space-between;gap:10px;">Finance Challenges <button class="poscalc-accent-btn" onclick="renderFinanceLeaderboard(); document.getElementById('financeLeaderboardPanel').scrollIntoView({behavior:'smooth'});">Leaderboard â†“</button></h2>
-            <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">Automatically tracked from your accounts, transactions, and recurring bills â€” nothing to mark manually.</div>
+            <h2 style="display:flex;align-items:center;justify-content:space-between;gap:10px;">Finance Challenges <button class="poscalc-accent-btn" onclick="renderFinanceLeaderboard(); document.getElementById('financeLeaderboardPanel').scrollIntoView({behavior:'smooth'});">Leaderboard ↓</button></h2>
+            <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">Automatically tracked from your accounts, transactions, and recurring bills — nothing to mark manually.</div>
             <div class="tabs" id="financeChallengeFilterTabs">
               <div class="tab active" data-f="all" onclick="switchFinanceChallengeFilter('all')">All</div>
               <div class="tab" data-f="achieved" onclick="switchFinanceChallengeFilter('achieved')">Achieved</div>
@@ -1713,7 +1713,7 @@
 
           <div class="panel" style="margin-bottom:20px;">
             <h2>Still Locked</h2>
-            <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">These need extra data before we can track them â€” this shows what's still missing.</div>
+            <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">These need extra data before we can track them — this shows what's still missing.</div>
             <div class="challenge-grid" id="financeChallengesLockedGrid"></div>
           </div>
 
@@ -1732,7 +1732,7 @@
 
 <div class="modal-overlay" id="recModal" onclick="if(event.target===this) closeRecommendations()">
   <div class="modal-box rec-box" style="position:relative;">
-    <button class="modal-close" onclick="closeRecommendations()">âœ•</button>
+    <button class="modal-close" onclick="closeRecommendations()">✕</button>
     <h3>What should I trade?</h3>
     <div class="modal-sub" id="recSub"></div>
     <div class="rec-controls">
@@ -1749,25 +1749,25 @@
 
 <div class="modal-overlay" id="tradeModal" onclick="if(event.target===this) closeModal()">
   <div class="modal-box" style="position:relative;">
-    <button class="modal-close" onclick="closeModal()">âœ•</button>
-    <h3 id="modalTitle">â€”</h3>
+    <button class="modal-close" onclick="closeModal()">✕</button>
+    <h3 id="modalTitle">—</h3>
     <div class="modal-sub" id="modalSub"></div>
     <button class="poscalc-accent-btn" id="weekReviewBtn" style="display:none;margin-bottom:14px;" onclick="openWeekReview()">Review this week</button>
     <button class="poscalc-accent-btn" id="modalShareDayBtn" style="display:none;margin-bottom:14px;" onclick="openShareDay()">Share day</button>
     <button class="poscalc-accent-btn" id="modalDailyPostBtn" style="display:none;margin-bottom:14px;" onclick="openDailyPost()">Daily post</button>
     <button class="poscalc-accent-btn" id="modalShareWeekBtn" style="display:none;margin-bottom:14px;" onclick="openShareWeek()">Share week</button>
     <button class="poscalc-accent-btn" id="modalWeeklyPostBtn" style="display:none;margin-bottom:14px;" onclick="openWeeklyPost()">Weekly post</button>
-    <button class="poscalc-accent-btn" id="modalViewTradesBtn" style="display:none;margin-bottom:14px;" onclick="journalDrillFromModal()">View Trades â†’</button>
+    <button class="poscalc-accent-btn" id="modalViewTradesBtn" style="display:none;margin-bottom:14px;" onclick="journalDrillFromModal()">View Trades →</button>
     <div id="modalBody"></div>
   </div>
 </div>
 
 <div class="modal-overlay" id="askDataModal" onclick="if(event.target===this) closeAskData()">
   <div class="modal-box ask-box" style="position:relative;">
-    <button class="modal-close" onclick="closeAskData()">âœ•</button>
+    <button class="modal-close" onclick="closeAskData()">✕</button>
     <div class="ask-head-bar">
       <h3>Ask my data</h3>
-      <span class="ask-sub">Twelve questions, answered from your own trades â€” nothing guessed</span>
+      <span class="ask-sub">Twelve questions, answered from your own trades — nothing guessed</span>
     </div>
     <div id="askDataBody"></div>
   </div>
@@ -1775,7 +1775,7 @@
 
 <div class="modal-overlay" id="setupCheckModal" onclick="if(event.target===this) closeSetupCheck()">
   <div class="modal-box sc-box" style="position:relative;">
-    <button class="modal-close" onclick="closeSetupCheck()">âœ•</button>
+    <button class="modal-close" onclick="closeSetupCheck()">✕</button>
     <div class="sc-head">
       <h3>Setup check</h3>
       <div class="sc-picks">
@@ -1793,21 +1793,21 @@
 
 <div class="modal-overlay" id="yearOverviewModal" onclick="if(event.target===this) closeYearOverview()">
   <div class="modal-box yo-box" style="position:relative;">
-    <button class="modal-close" onclick="closeYearOverview()">âœ•</button>
+    <button class="modal-close" onclick="closeYearOverview()">✕</button>
     <div class="yo-head">
       <h3>Year overview</h3>
       <!-- Sariling kahon dito dahil buong screen ang modal na ito: hindi mo
            maaabot ang nasa dashboard nang hindi ito isinasara. Iisa pa rin ang
-           pagpili â€” sabay silang gumagalaw. -->
+           pagpili — sabay silang gumagalaw. -->
       <label class="real-toggle" title="Count only Funded and Exchange accounts. Demo and Evaluation P&amp;L is a score in a test, not money you can spend. Your choice is remembered and follows your account.">
         <input type="checkbox" class="real-money-box" id="yoRealMoneyOnly" onchange="setRealMoneyOnly(this.checked)">
         Real money only
       </label>
       <button type="button" class="poscalc-accent-btn" onclick="openShareYear()" title="Make an image of this year to share">Share</button>
       <div class="yo-nav">
-        <button type="button" onclick="shiftOverviewYear(-1)" title="Previous year">â€¹</button>
-        <span id="yearOverviewLabel">â€”</span>
-        <button type="button" onclick="shiftOverviewYear(1)" title="Next year">â€º</button>
+        <button type="button" onclick="shiftOverviewYear(-1)" title="Previous year">‹</button>
+        <span id="yearOverviewLabel">—</span>
+        <button type="button" onclick="shiftOverviewYear(1)" title="Next year">›</button>
       </div>
     </div>
     <div id="yearOverviewBody"></div>
@@ -1816,7 +1816,7 @@
 
 <div class="modal-overlay" id="weekReviewModal" onclick="if(event.target===this) closeWeekReview()">
   <div class="modal-box wr-box" style="position:relative;">
-    <button class="modal-close" onclick="closeWeekReview()">âœ•</button>
+    <button class="modal-close" onclick="closeWeekReview()">✕</button>
     <h3 id="weekReviewTitle" style="margin-right:30px;">Weekly Review</h3>
     <div class="modal-sub" id="weekReviewSub"></div>
     <div id="weekReviewBody"></div>
@@ -1825,7 +1825,7 @@
 
 <div class="modal-overlay" id="easyAddModal" onclick="if(event.target===this) closeEasyAddModal()">
   <div class="modal-box" style="position:relative;">
-    <button class="modal-close" onclick="closeEasyAddModal()">âœ•</button>
+    <button class="modal-close" onclick="closeEasyAddModal()">✕</button>
     <h3>Easy Add</h3>
     <div class="modal-sub" id="easyAddSub">Copy the position card from your exchange (select the text and copy) and paste it below.</div>
     <div id="easyAddTarget" class="ea-target" style="display:none;"></div>
@@ -1834,7 +1834,7 @@
       <select id="easyAddBroker" onchange="switchEasyAddBroker()">
         <option value="upscale">Upscale</option>
         <option value="the5ers">The5ers</option>
-        <option value="manual">Manual â€” any other broker or prop firm</option>
+        <option value="manual">Manual — any other broker or prop firm</option>
       </select>
     </div>
     <!-- Ang gabay ay isang halimbawa, hindi isang paglalarawan: mas mabilis
@@ -1845,34 +1845,34 @@
       <b>A filled-in example</b>
       <div class="ea-eg">
         <span>Open Date</span><em>15/03/2026 &nbsp; 09:30</em>
-        <span>Symbol</span><em>BTC &nbsp; <i>â†’ saved as BTC/USD</i></em>
+        <span>Symbol</span><em>BTC &nbsp; <i>→ saved as BTC/USD</i></em>
         <span>Entry Price</span><em>64000</em>
         <span>SL Price</span><em>63500</em>
-        <span>Realized P&amp;L</span><em>450.25 &nbsp; <i>use âˆ’450.25 for a loss</i></em>
+        <span>Realized P&amp;L</span><em>450.25 &nbsp; <i>use −450.25 for a loss</i></em>
         <span>Account</span><em>FTMO 50K &nbsp; <i>type a new firm, or pick a saved one</i></em>
       </div>
-      Fill in what you have â€” anything left blank stays blank.
+      Fill in what you have — anything left blank stays blank.
     </div>
     <div class="ea-form" id="easyAddForm" style="display:none;"></div>
-    <textarea id="easyAddInput" placeholder="Paste hereâ€¦" style="width:100%;min-height:200px;margin-top:10px;padding:10px 12px;background:var(--surface-2);border:1px solid var(--rule);border-radius:6px;color:var(--ink);font-size:13px;font-family:'IBM Plex Mono',monospace;resize:vertical;"></textarea>
+    <textarea id="easyAddInput" placeholder="Paste here…" style="width:100%;min-height:200px;margin-top:10px;padding:10px 12px;background:var(--surface-2);border:1px solid var(--rule);border-radius:6px;color:var(--ink);font-size:13px;font-family:'IBM Plex Mono',monospace;resize:vertical;"></textarea>
     <div id="easyAddError" class="auth-error"></div>
     <button class="ai-btn" style="margin-top:14px;width:100%;" onclick="parseEasyAddText()">Proceed</button>
   </div>
 </div>
 
 <!-- Quick Add: idikit ang trade mula sa The5ers o Upscale, i-save agad bilang
-     Win/Loss lang. Walang drawer, walang setup â€” ang mga iyon ay puwedeng
+     Win/Loss lang. Walang drawer, walang setup — ang mga iyon ay puwedeng
      punan mamaya sa Edit. -->
 <div class="modal-overlay" id="quickAddModal" onclick="if(event.target===this) closeQuickAddModal()">
   <div class="modal-box" style="position:relative;">
-    <button class="modal-close" onclick="closeQuickAddModal()">âœ•</button>
+    <button class="modal-close" onclick="closeQuickAddModal()">✕</button>
     <h3>Quick Add</h3>
     <div class="modal-sub">Paste one closed trade from The5ers or Upscale. It's saved as a plain Win/Loss; add the setup later with Edit if you want.</div>
     <div class="field-row" style="margin-top:12px;">
       <label>Account</label>
       <select id="quickAddAccount" onchange="renderQuickAddPreview()"></select>
     </div>
-    <textarea id="quickAddInput" oninput="renderQuickAddPreview()" placeholder="Paste the trade hereâ€¦" style="width:100%;min-height:160px;margin-top:10px;padding:10px 12px;background:var(--surface-2);border:1px solid var(--rule);border-radius:6px;color:var(--ink);font-size:13px;font-family:'IBM Plex Mono',monospace;resize:vertical;"></textarea>
+    <textarea id="quickAddInput" oninput="renderQuickAddPreview()" placeholder="Paste the trade here…" style="width:100%;min-height:160px;margin-top:10px;padding:10px 12px;background:var(--surface-2);border:1px solid var(--rule);border-radius:6px;color:var(--ink);font-size:13px;font-family:'IBM Plex Mono',monospace;resize:vertical;"></textarea>
     <div id="quickAddPreview" class="qa-preview"></div>
     <div id="quickAddError" class="auth-error"></div>
     <button class="ai-btn" id="quickAddSaveBtn" style="margin-top:14px;width:100%;" onclick="saveQuickAdd()" disabled>Save trade</button>
@@ -1881,7 +1881,7 @@
 
 <div class="modal-overlay" id="posPasteModal" onclick="if(event.target===this) closePosPasteModal()">
   <div class="modal-box" style="position:relative;">
-    <button class="modal-close" onclick="closePosPasteModal()">âœ•</button>
+    <button class="modal-close" onclick="closePosPasteModal()">✕</button>
     <h3>Paste from exchange</h3>
     <div class="modal-sub">Copy the order ticket (entry, profit level, stop level) and paste it here. Direction is worked out from whether your target sits above or below entry.</div>
     <textarea id="posPasteInput" placeholder="Entry price&#10;64808.053&#10;PROFIT LEVEL&#10;Ticks&#10;129046828&#10;Price&#10;64937.100&#10;STOP LEVEL&#10;Ticks&#10;613470749&#10;Price&#10;64746.706" style="width:100%;min-height:220px;margin-top:12px;padding:10px 12px;background:var(--surface-2);border:1px solid var(--rule);border-radius:6px;color:var(--ink);font-size:12.5px;font-family:'IBM Plex Mono',monospace;resize:vertical;"></textarea>
@@ -1893,8 +1893,8 @@
 
 <div class="modal-overlay" id="psBbModal" onclick="if(event.target===this) closePsBbModal()">
   <div class="modal-box psbb-box" style="position:relative;">
-    <button class="modal-close" onclick="closePsBbModal()">âœ•</button>
-    <h3 style="margin-right:30px;">ðŸž Bread &amp; Butter Check</h3>
+    <button class="modal-close" onclick="closePsBbModal()">✕</button>
+    <h3 style="margin-right:30px;">🍞 Bread &amp; Butter Check</h3>
     <div class="modal-sub">Run the setup you're sizing through the same checklist, and see how trades like it have gone for you before. Saved automatically on this device.</div>
     <div class="field-row" style="margin-top:14px;">
       <label>Trade Type</label>
@@ -1915,16 +1915,16 @@
 
 <div class="modal-overlay" id="finPayHistModal" onclick="if(event.target===this) closeFinPayHistory()">
   <div class="modal-box" style="position:relative;max-width:460px;">
-    <button class="modal-close" onclick="closeFinPayHistory()">âœ•</button>
+    <button class="modal-close" onclick="closeFinPayHistory()">✕</button>
     <h3 id="finPayHistTitle" style="padding-right:28px;">Payment history</h3>
     <div id="finPayHistBody" style="margin-top:10px;"></div>
   </div>
 </div>
 <div class="modal-overlay" id="finAccountDetailsModal" onclick="if(event.target===this) closeFinAccountDetailsModal()">
   <div class="modal-box" style="position:relative;max-width:460px;">
-    <button class="modal-close" onclick="closeFinAccountDetailsModal()">âœ•</button>
+    <button class="modal-close" onclick="closeFinAccountDetailsModal()">✕</button>
     <h3 style="display:flex;align-items:center;gap:8px;padding-right:28px;">
-      <button id="finAccDetailsBackBtn" onclick="finAccDetailsGoBack()" title="Back" style="display:none;background:none;border:none;color:var(--muted);cursor:pointer;font-size:18px;line-height:1;padding:0;flex-shrink:0;">â†</button>
+      <button id="finAccDetailsBackBtn" onclick="finAccDetailsGoBack()" title="Back" style="display:none;background:none;border:none;color:var(--muted);cursor:pointer;font-size:18px;line-height:1;padding:0;flex-shrink:0;">←</button>
       <span id="finAccDetailsTitle" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0;">Account</span>
       <button class="poscalc-accent-btn" id="finAccDetailsHideBalBtn" style="display:none;font-size:11px;padding:4px 9px;flex-shrink:0;" onclick="toggleFinBalances()">Hide Balances</button>
     </h3>
@@ -1934,14 +1934,14 @@
 
 <div class="modal-overlay" id="finAccountModal" onclick="if(event.target===this) closeFinAccountModal()">
   <div class="modal-box" style="position:relative;max-height:88vh;overflow-y:auto;">
-    <button class="modal-close" onclick="closeFinAccountModal()">âœ•</button>
+    <button class="modal-close" onclick="closeFinAccountModal()">✕</button>
     <h3 id="finAccountModalTitle">Add Account</h3>
-    <div class="sub" id="finSubAccountNotice" style="display:none;margin-top:8px;">Sub-account of <strong id="finSubAccountParentName"></strong> â€” same currency, no separate class or icon.</div>
+    <div class="sub" id="finSubAccountNotice" style="display:none;margin-top:8px;">Sub-account of <strong id="finSubAccountParentName"></strong> — same currency, no separate class or icon.</div>
     <div class="field-row fin-parent-only" style="margin-top:14px;">
       <label>Account Class</label>
       <select id="finAccClass" onchange="onFinAccClassChange()">
-        <option value="Debit">Debit â€” my own money (bank, e-wallet, cash)</option>
-        <option value="Credit">Credit â€” credit card / credit line</option>
+        <option value="Debit">Debit — my own money (bank, e-wallet, cash)</option>
+        <option value="Credit">Credit — credit card / credit line</option>
         <option value="BorrowLend" disabled>Borrow / Lend (coming soon)</option>
         <option value="Invest" disabled>Invest (coming soon)</option>
       </select>
@@ -1956,7 +1956,7 @@
       <input id="finAccName" placeholder="e.g. BPI, GCash, Cash on hand">
     </div>
     <div class="field-row">
-      <label>Card / Account Number â€” last 4 digits only</label>
+      <label>Card / Account Number — last 4 digits only</label>
       <input id="finAccCardNumber" maxlength="4" inputmode="numeric" placeholder="e.g. 5678">
     </div>
     <div class="field-row" id="finAccCurrencyRow">
@@ -1970,7 +1970,7 @@
     <div class="field-row fin-credit-row" style="display:none;">
       <label>Credit Limit</label>
       <input id="finAccLimit" type="number" step="any" placeholder="e.g. 50000">
-      <div class="sub" style="font-size:11px;margin-top:4px;">Owed and available credit are fully automatic â€” computed from your installments and card transactions.</div>
+      <div class="sub" style="font-size:11px;margin-top:4px;">Owed and available credit are fully automatic — computed from your installments and card transactions.</div>
     </div>
     <div class="field-row fin-credit-row" style="display:none;">
       <label>Billing Date (day of month)</label>
@@ -1991,13 +1991,13 @@
 
 <div class="modal-overlay" id="finTxEasyAddModal" onclick="if(event.target===this) closeFinTxEasyAddModal()">
   <div class="modal-box" style="position:relative;max-height:88vh;overflow-y:auto;">
-    <button class="modal-close" onclick="closeFinTxEasyAddModal()">âœ•</button>
+    <button class="modal-close" onclick="closeFinTxEasyAddModal()">✕</button>
     <h3>Easy Add</h3>
     <div class="field-row" style="margin-top:10px;">
       <label>Format</label>
       <select id="finTxEasyAddFormat" onchange="onFinTxEasyAddFormatChange()">
-        <option value="text">Text â€” single purchase alert</option>
-        <option value="statement">Statement â€” bulk paste from a card statement</option>
+        <option value="text">Text — single purchase alert</option>
+        <option value="statement">Statement — bulk paste from a card statement</option>
       </select>
     </div>
 
@@ -2023,7 +2023,7 @@
 
 <div class="modal-overlay" id="finCreditPaymentModal" onclick="if(event.target===this) closeFinCreditPaymentModal()">
   <div class="modal-box" style="position:relative;">
-    <button class="modal-close" onclick="closeFinCreditPaymentModal()">âœ•</button>
+    <button class="modal-close" onclick="closeFinCreditPaymentModal()">✕</button>
     <h3>Pay Bill</h3>
     <div class="modal-sub" id="finCreditPaymentInfo"></div>
     <div class="field-row" style="margin-top:12px;">
@@ -2037,7 +2037,7 @@
 
 <div class="modal-overlay" id="finBulkCategoryModal" onclick="if(event.target===this) closeFinBulkCategoryModal()">
   <div class="modal-box" style="position:relative;">
-    <button class="modal-close" onclick="closeFinBulkCategoryModal()">âœ•</button>
+    <button class="modal-close" onclick="closeFinBulkCategoryModal()">✕</button>
     <h3>Edit Category</h3>
     <div class="modal-sub" id="finBulkCategoryInfo"></div>
     <div class="field-row" style="margin-top:12px;">
@@ -2055,7 +2055,7 @@
 
 <div class="modal-overlay" id="finTxModal" onclick="if(event.target===this) closeFinTxModal()">
   <div class="modal-box" style="position:relative;">
-    <button class="modal-close" onclick="closeFinTxModal()">âœ•</button>
+    <button class="modal-close" onclick="closeFinTxModal()">✕</button>
     <h3 id="finTxModalTitle">Add Transaction</h3>
     <div class="field-row" style="margin-top:14px;">
       <label>Date</label>
@@ -2100,7 +2100,7 @@
 
 <div class="modal-overlay" id="finRecModal" onclick="if(event.target===this) closeFinRecModal()">
   <div class="modal-box" style="position:relative;">
-    <button class="modal-close" onclick="closeFinRecModal()">âœ•</button>
+    <button class="modal-close" onclick="closeFinRecModal()">✕</button>
     <h3 id="finRecModalTitle">Add Installment</h3>
     <div class="field-row" style="margin-top:14px;">
       <label id="finRecNameLabel">Name</label>
@@ -2125,12 +2125,12 @@
     </div>
     <div class="field-row fin-rec-inst" style="display:none;">
       <label>Monthly (computed)</label>
-      <div class="field-static" id="finRecMonthly">â€”</div>
+      <div class="field-static" id="finRecMonthly">—</div>
     </div>
     <div class="field-row fin-rec-inst" style="display:none;">
       <label>Payments Made So Far</label>
       <input id="finRecAlreadyPaid" type="number" min="0" step="1" placeholder="e.g. 8" oninput="updateFinRecMonthly()">
-      <div class="sub" style="font-size:11px;margin-top:4px;">Payments already made in real life (before or outside this tracker) â€” nothing gets charged for these. Use the "Mark as Paid" button for each one from here on.</div>
+      <div class="sub" style="font-size:11px;margin-top:4px;">Payments already made in real life (before or outside this tracker) — nothing gets charged for these. Use the "Mark as Paid" button for each one from here on.</div>
     </div>
     <div class="field-row fin-rec-sub" style="display:none;">
       <label>Price</label>
@@ -2159,9 +2159,9 @@
 
 <div class="modal-overlay" id="setupNotesModal" onclick="if(event.target===this) closeSetupNotesModal()">
   <div class="modal-box" style="position:relative;max-width:760px;width:92vw;max-height:92vh;display:flex;flex-direction:column;overflow-y:auto;">
-    <button class="modal-close" onclick="closeSetupNotesModal()">âœ•</button>
+    <button class="modal-close" onclick="closeSetupNotesModal()">✕</button>
     <h3>Setup Notes</h3>
-    <div class="modal-sub">Jot the symbol and log how the trade's going â€” every note gets its own timestamp.</div>
+    <div class="modal-sub">Jot the symbol and log how the trade's going — every note gets its own timestamp.</div>
     <div class="field-row" style="margin-top:14px;flex-shrink:0;">
       <label>Symbol</label>
       <input id="setupNotesSymbol" placeholder="e.g. BTC/USDT">
@@ -2173,11 +2173,11 @@
     <div class="field-row" style="flex-shrink:0;">
       <label>New Note</label>
       <textarea id="setupNotesNewEntry" placeholder="What are you feeling right now?" style="width:100%;min-height:80px;padding:10px 12px;background:var(--surface-2);border:1px solid var(--rule);border-radius:6px;color:var(--ink);font-size:13px;font-family:var(--font-ui);resize:vertical;"></textarea>
-      <button type="button" class="mic-bar" onpointerdown="voiceHoldStart(event,'setupNotesNewEntry','text',this)" onpointerup="voiceHoldEnd(event,this)" onpointercancel="voiceHoldEnd(event,this)" onpointerleave="voiceHoldEnd(event,this)" oncontextmenu="return false"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="9" y1="21" x2="15" y2="21"/></svg><span class="mic-bar-idle">Hold to speak</span><span class="mic-bar-live">Listening â€” let go when done</span><span class="mic-bar-busy">Transcribingâ€¦</span></button>
+      <button type="button" class="mic-bar" onpointerdown="voiceHoldStart(event,'setupNotesNewEntry','text',this)" onpointerup="voiceHoldEnd(event,this)" onpointercancel="voiceHoldEnd(event,this)" onpointerleave="voiceHoldEnd(event,this)" oncontextmenu="return false"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="9" y1="21" x2="15" y2="21"/></svg><span class="mic-bar-idle">Hold to speak</span><span class="mic-bar-live">Listening — let go when done</span><span class="mic-bar-busy">Transcribing…</span></button>
     </div>
     <div class="field-row" style="flex-shrink:0;">
       <label>Screenshots</label>
-      <!-- Higher TF Â· Setup TF Â· Entry TF â€” pareho sa pahina ng trade, kung
+      <!-- Higher TF · Setup TF · Entry TF — pareho sa pahina ng trade, kung
            saan lumalabas din sila kapag na-journal na. -->
       <div class="setup-notes-shots" style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;">
         <div>
@@ -2209,7 +2209,7 @@
 
 <div class="modal-overlay" id="bulkNotesModal" onclick="if(event.target===this) closeBulkNotesModal()">
   <div class="modal-box" style="position:relative;">
-    <button class="modal-close" onclick="closeBulkNotesModal()">âœ•</button>
+    <button class="modal-close" onclick="closeBulkNotesModal()">✕</button>
     <h3>Add New Notes</h3>
     <div class="modal-sub">One note, timestamped once, appended to every ticked setup.</div>
     <div class="ea-target">
@@ -2219,7 +2219,7 @@
     <div class="field-row">
     <label>Note</label>
     <textarea id="bulkNotesEntry" placeholder="What's happening with this setup?" style="width:100%;min-height:110px;padding:10px 12px;background:var(--surface-2);border:1px solid var(--rule);border-radius:6px;color:var(--ink);font-size:13px;font-family:var(--font-ui);resize:vertical;"></textarea>
-    <button type="button" class="mic-bar" onpointerdown="voiceHoldStart(event,'bulkNotesEntry','text',this)" onpointerup="voiceHoldEnd(event,this)" onpointercancel="voiceHoldEnd(event,this)" onpointerleave="voiceHoldEnd(event,this)" oncontextmenu="return false"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="9" y1="21" x2="15" y2="21"/></svg><span class="mic-bar-idle">Hold to speak</span><span class="mic-bar-live">Listening â€” let go when done</span><span class="mic-bar-busy">Transcribingâ€¦</span></button>
+    <button type="button" class="mic-bar" onpointerdown="voiceHoldStart(event,'bulkNotesEntry','text',this)" onpointerup="voiceHoldEnd(event,this)" onpointercancel="voiceHoldEnd(event,this)" onpointerleave="voiceHoldEnd(event,this)" oncontextmenu="return false"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="9" y1="21" x2="15" y2="21"/></svg><span class="mic-bar-idle">Hold to speak</span><span class="mic-bar-live">Listening — let go when done</span><span class="mic-bar-busy">Transcribing…</span></button>
     </div>
     <div id="bulkNotesError" class="auth-error"></div>
     <button class="ai-btn" id="bulkNotesSaveBtn" style="margin-top:14px;width:100%;" onclick="saveBulkNotes()">Add note</button>
@@ -2228,9 +2228,9 @@
 
 <div class="modal-overlay" id="confluenceModal" onclick="if(event.target===this) closeConfluenceModal()">
   <div class="modal-box" style="position:relative;max-width:640px;width:92vw;max-height:92vh;display:flex;flex-direction:column;overflow-y:auto;">
-    <button class="modal-close" onclick="closeConfluenceModal()">âœ•</button>
+    <button class="modal-close" onclick="closeConfluenceModal()">✕</button>
     <h3>Confluence</h3>
-    <div class="modal-sub">Why and how you entered â€” fill this in before you Journal this setup.</div>
+    <div class="modal-sub">Why and how you entered — fill this in before you Journal this setup.</div>
     <div class="field-row" style="margin-top:14px;flex-shrink:0;">
       <label>Trade Type</label>
       <select id="confluenceTradeType" onchange="onConfluenceTradeTypeChange()"></select>
@@ -2239,7 +2239,7 @@
       <label>Pattern Type</label>
       <select id="confluencePatternType" onchange="onConfluenceTypeChange()"></select>
     </div>
-    <!-- Ang damdamin bago pumasok, kasama ng confluence â€” dala ng setup hanggang
+    <!-- Ang damdamin bago pumasok, kasama ng confluence — dala ng setup hanggang
          sa Entry Emotion ng journal. -->
     <div class="field-row" style="flex-shrink:0;">
       <label for="confluenceEmotion">Entry Emotion</label>
@@ -2253,16 +2253,16 @@
 
 <div class="modal-overlay" id="tradeNoteModal" onclick="if(event.target===this) closeTradeNoteModal()">
   <div class="modal-box" style="position:relative;max-width:560px;width:92vw;max-height:85vh;display:flex;flex-direction:column;overflow-y:auto;">
-    <button class="modal-close" onclick="closeTradeNoteModal()">âœ•</button>
+    <button class="modal-close" onclick="closeTradeNoteModal()">✕</button>
     <h3 id="tradeNoteModalTitle">Notes</h3>
-    <div class="modal-sub">Quick timestamped notes on this trade â€” no need to open Edit.</div>
+    <div class="modal-sub">Quick timestamped notes on this trade — no need to open Edit.</div>
     <div class="field-row" style="margin-top:14px;flex-shrink:0;">
       <label>Log</label>
       <div id="tradeNoteLog" style="min-height:100px;max-height:30vh;overflow-y:auto;background:var(--surface-2);border:1px solid var(--rule);border-radius:6px;padding:12px 14px;"></div>
     </div>
     <div class="field-row" style="flex-shrink:0;">
       <label>New Note</label>
-      <textarea id="tradeNoteNewEntry" placeholder="Type a quick noteâ€¦" style="width:100%;min-height:80px;padding:10px 12px;background:var(--surface-2);border:1px solid var(--rule);border-radius:6px;color:var(--ink);font-size:13px;font-family:var(--font-ui);resize:vertical;"></textarea>
+      <textarea id="tradeNoteNewEntry" placeholder="Type a quick note…" style="width:100%;min-height:80px;padding:10px 12px;background:var(--surface-2);border:1px solid var(--rule);border-radius:6px;color:var(--ink);font-size:13px;font-family:var(--font-ui);resize:vertical;"></textarea>
     </div>
     <div id="tradeNoteError" class="auth-error"></div>
     <button class="ai-btn" style="margin-top:6px;width:100%;flex-shrink:0;" onclick="saveTradeNote()">Add Note</button>
@@ -2271,16 +2271,16 @@
 
 <div class="modal-overlay" id="accountModal" onclick="if(event.target===this) closeAccountModal()">
   <div class="modal-box" style="position:relative;">
-    <button class="modal-close" onclick="closeAccountModal()">âœ•</button>
+    <button class="modal-close" onclick="closeAccountModal()">✕</button>
     <h3 id="accountModalTitle">+ Add Account</h3>
     <div class="field-row" style="margin-top:14px;">
       <label>Current Balance ($)</label>
       <input id="accBalance" type="number" step="0.01" placeholder="e.g. 51200">
     </div>
-    <!-- Ang balanse ay manwal nang sadya â€” ang broker ang awtoridad doon, at
+    <!-- Ang balanse ay manwal nang sadya — ang broker ang awtoridad doon, at
          hindi lahat ng trade ay laging naitatala. Pero kapag nawala ito (o
          napatungan gaya ng ginawa ng lumang auto-advance), ang journal ang
-         tanging natitirang tala â€” at ang muling pagkuwenta mula roon ay mas
+         tanging natitirang tala — at ang muling pagkuwenta mula roon ay mas
          mabuti kaysa sa isang blangkong kahon. Ipinapakita muna bago isulat. -->
     <div class="field-row" id="accRecalcRow" style="margin-top:-6px;">
       <label></label>
@@ -2303,7 +2303,7 @@
          hindi na ipinapakita ulit. Lumalabas lang kapag nag-e-edit (kailangan
          ng account id). -->
     <div class="up-api" id="accUpscaleApi" style="display:none;">
-      <div class="up-api-head">Broker API <span class="up-api-sub">â€” place orders from the calculator</span></div>
+      <div class="up-api-head">Broker API <span class="up-api-sub">— place orders from the calculator</span></div>
       <div class="up-api-brokers" id="accBrokerTabs" role="tablist" aria-label="Broker">
         <button type="button" role="tab" data-broker="upscale" aria-selected="true" onclick="setAccBroker('upscale')">Upscale</button>
         <button type="button" role="tab" data-broker="tradelocker" aria-selected="false" onclick="setAccBroker('tradelocker')">TradeLocker <span>(GFT and others)</span></button>
@@ -2315,7 +2315,7 @@
       </div>
       <div id="accUpscaleForm">
         <div class="up-api-row" id="accUpRowKey">
-          <input id="accUpscaleKey" type="password" autocomplete="off" spellcheck="false" placeholder="usk_â€¦  (Upscale terminal â†’ Account settings â†’ API keys)">
+          <input id="accUpscaleKey" type="password" autocomplete="off" spellcheck="false" placeholder="usk_…  (Upscale terminal → Account settings → API keys)">
           <button type="button" class="acct-recalc-btn" id="accUpscaleCheckBtn" onclick="checkUpscaleApiKey()">Connect</button>
         </div>
         <!-- TradeLocker: ang login ay ipinapadala sa Worker, ine-encrypt doon, at
@@ -2364,7 +2364,7 @@
           <label>Challenge Type</label>
           <select id="accChallengeType" onchange="applyAccountPreset()"></select>
         </div>
-        <div class="sub" id="accPresetHint" style="font-size:11px;color:var(--muted);margin:-4px 0 12px;display:none;">Auto-fills everything below from Upscale Trade's official numbers â€” still yours to edit.</div>
+        <div class="sub" id="accPresetHint" style="font-size:11px;color:var(--muted);margin:-4px 0 12px;display:none;">Auto-fills everything below from Upscale Trade's official numbers — still yours to edit.</div>
 
         <div class="field-row" id="accSizePresetRow" style="display:none;">
           <label>Account Size ($)</label>
@@ -2384,7 +2384,7 @@
       <div id="accPropFirmFields2">
         <!-- Phase / Phase Start Date / Phase Start Balance are fully automatic
              now (Phase auto-advances, the other two default to Start Date /
-             Current Balance) â€” no visible controls, just a hidden Phase value
+             Current Balance) — no visible controls, just a hidden Phase value
              so the rule summary below knows which phase's target % to show. -->
         <input type="hidden" id="accPhase" value="Evaluation Phase 1">
 
@@ -2396,7 +2396,7 @@
             <option value="Failed">Failed</option>
           </select>
         </div>
-        <div class="sub" style="font-size:11px;color:var(--muted);margin:-4px 0 12px;">Status normally updates on its own â€” Failed the moment a rule is breached, Passed once Funded is reached. Only change this by hand to correct a mistake.</div>
+        <div class="sub" style="font-size:11px;color:var(--muted);margin:-4px 0 12px;">Status normally updates on its own — Failed the moment a rule is breached, Passed once Funded is reached. Only change this by hand to correct a mistake.</div>
 
         <div id="accPresetSummary" style="display:none;background:var(--surface-2);border:1px solid var(--rule);border-radius:8px;padding:12px 14px;margin-bottom:14px;font-size:12.5px;color:var(--ink);line-height:1.9;"></div>
 
@@ -2445,7 +2445,7 @@
             <option value="Other">Other</option>
           </select>
         </div>
-        <div class="sub" style="font-size:11px;color:var(--muted);margin:-4px 0 12px;">Auto-import of trades via API isn't wired up yet â€” for now, add this account for tracking and keep logging trades in your Journal as usual.</div>
+        <div class="sub" style="font-size:11px;color:var(--muted);margin:-4px 0 12px;">Auto-import of trades via API isn't wired up yet — for now, add this account for tracking and keep logging trades in your Journal as usual.</div>
       </div>
     </div>
 
@@ -2461,9 +2461,9 @@
      binabago; ang Trade Tags ay Idagdag / Alisin; ang Note ay idinudugtong. -->
 <div class="modal-overlay" id="journalBulkModal" onclick="if(event.target===this) closeJournalBulkEdit()">
   <div class="modal-box jbulk-modal" style="position:relative;">
-    <button class="modal-close" onclick="closeJournalBulkEdit()">âœ•</button>
+    <button class="modal-close" onclick="closeJournalBulkEdit()">✕</button>
     <h3 style="margin:0 0 4px;" id="journalBulkTitle">Edit trades</h3>
-    <div class="sub" style="margin:0 0 14px;">Fields show the current value when every selected trade shares it. Only what you change is written â€” anything marked "Mixed" stays as it is on each trade.</div>
+    <div class="sub" style="margin:0 0 14px;">Fields show the current value when every selected trade shares it. Only what you change is written — anything marked "Mixed" stays as it is on each trade.</div>
     <div id="journalBulkBody"></div>
     <div id="journalBulkError" class="auth-error"></div>
     <div style="display:flex;gap:10px;margin-top:6px;">
@@ -2476,7 +2476,7 @@
 <!-- Kumpirmasyon bago magpadala sa Upscale. Ang bawat hilera ay isang account. -->
 <div class="modal-overlay" id="upOrderModal" onclick="if(event.target===this) closeUpscaleOrderModal()">
   <div class="modal-box" style="max-width:640px;position:relative;">
-    <button class="modal-close" onclick="closeUpscaleOrderModal()">âœ•</button>
+    <button class="modal-close" onclick="closeUpscaleOrderModal()">✕</button>
     <h3 style="margin:0 0 4px;">Place order</h3>
     <div class="sub" id="upOrderSummary" style="margin:0 0 14px;"></div>
     <div id="upOrderNews"></div>
@@ -2491,13 +2491,13 @@
 
 <div class="modal-overlay" id="accountDetailModal" onclick="if(event.target===this) closeAccountDetail()">
   <div class="modal-box" style="max-width:640px;position:relative;">
-    <button class="modal-close" onclick="closeAccountDetail()">âœ•</button>
+    <button class="modal-close" onclick="closeAccountDetail()">✕</button>
     <div class="acc-detail-header">
       <div>
         <h3 id="accDetailName" style="margin:0;">Account</h3>
         <div class="sub" id="accDetailSub" style="margin:2px 0 0;"></div>
       </div>
-      <div class="acc-detail-badge" id="accDetailBadge">â¬¡</div>
+      <div class="acc-detail-badge" id="accDetailBadge">⬡</div>
     </div>
 
     <div class="acc-stat-box">
@@ -2509,13 +2509,13 @@
     <div class="acc-stat-grid-2">
       <div class="acc-stat-box">
         <div class="acc-stat-label">Trade Balance</div>
-        <div class="acc-stat-value" id="accDetailBalance">â€”</div>
+        <div class="acc-stat-value" id="accDetailBalance">—</div>
         <div class="account-progress-bar acc-balance-bar" style="margin-top:8px;"><div class="account-progress-fill" id="accDetailBalanceFill" style="width:0%;"></div><span class="acc-balance-start" id="accDetailBalanceStart" title="Where this phase started" style="display:none;"></span></div>
         <div class="acc-stat-range" id="accDetailBalanceRange"></div>
       </div>
       <div class="acc-stat-box">
         <div class="acc-stat-label">Daily Drawdown</div>
-        <div class="acc-stat-value" id="accDetailDailyLoss">â€”</div>
+        <div class="acc-stat-value" id="accDetailDailyLoss">—</div>
         <div class="acc-stat-range" id="accDetailDailyRange"></div>
       </div>
     </div>
@@ -2523,11 +2523,11 @@
     <div class="acc-stat-grid-2">
       <div class="acc-stat-box">
         <div class="acc-stat-label">Profitable Trading Days</div>
-        <div class="acc-stat-value" id="accDetailProfitDays">â€”</div>
+        <div class="acc-stat-value" id="accDetailProfitDays">—</div>
       </div>
       <div class="acc-stat-box">
         <div class="acc-stat-label">Daily Profit</div>
-        <div class="acc-stat-value" id="accDetailDailyProfit">â€”</div>
+        <div class="acc-stat-value" id="accDetailDailyProfit">—</div>
         <div class="acc-stat-range" id="accDetailDailyProfitCountdown"></div>
       </div>
     </div>
@@ -2537,7 +2537,7 @@
         <div class="acc-stat-label">Total Earn</div>
         <div class="acc-stat-pct" id="accDetailEarnPct"></div>
       </div>
-      <div class="acc-stat-value" id="accDetailEarn">â€”</div>
+      <div class="acc-stat-value" id="accDetailEarn">—</div>
       <div class="chart-fill" style="height:160px;margin-top:8px;"><canvas id="accDetailChart"></canvas></div>
     </div>
   </div>
@@ -2545,11 +2545,11 @@
 
 <div class="modal-overlay" id="econEventModal" onclick="if(event.target===this) closeEconEventModal()">
   <div class="modal-box" style="position:relative;">
-    <button class="modal-close" onclick="closeEconEventModal()">âœ•</button>
-    <h3 id="econEventTitle" style="margin:0 36px 8px 0;">â€”</h3>
+    <button class="modal-close" onclick="closeEconEventModal()">✕</button>
+    <h3 id="econEventTitle" style="margin:0 36px 8px 0;">—</h3>
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;">
-      <span class="pill" id="econEventImpact">â€”</span>
-      <span style="font-size:11px;color:var(--muted);" id="econEventDate">â€”</span>
+      <span class="pill" id="econEventImpact">—</span>
+      <span style="font-size:11px;color:var(--muted);" id="econEventDate">—</span>
     </div>
     <div class="acc-stat-grid" id="econEventValues" style="margin-bottom:16px;"></div>
 
@@ -2565,8 +2565,8 @@
 
     <div style="display:flex;justify-content:space-between;align-items:center;margin-top:18px;padding-top:14px;border-top:1px solid var(--rule);">
       <div style="display:flex;gap:8px;">
-        <button class="drawer-secondary-btn" id="econEventPrevBtn" onclick="navigateEconEvent(-1)">â€¹ Previous</button>
-        <button class="drawer-secondary-btn" id="econEventNextBtn" onclick="navigateEconEvent(1)">Next â€º</button>
+        <button class="drawer-secondary-btn" id="econEventPrevBtn" onclick="navigateEconEvent(-1)">‹ Previous</button>
+        <button class="drawer-secondary-btn" id="econEventNextBtn" onclick="navigateEconEvent(1)">Next ›</button>
       </div>
       <button class="drawer-secondary-btn" id="econEventLangBtn" style="display:none;padding:6px 12px;font-size:12px;" onclick="toggleEconEventLang()">Translate</button>
     </div>
@@ -2575,11 +2575,11 @@
 
 <div class="modal-overlay" id="noteModal" onclick="if(event.target===this) closeNoteModal()">
   <div class="modal-box" style="position:relative;">
-    <button class="modal-close" onclick="closeNoteModal()">âœ•</button>
+    <button class="modal-close" onclick="closeNoteModal()">✕</button>
     <h3 id="noteModalTitle">+ New Note</h3>
     <div class="field-row" style="margin-top:14px;">
       <label>Title</label>
-      <input id="noteTitleInput" placeholder="Note titleâ€¦">
+      <input id="noteTitleInput" placeholder="Note title…">
     </div>
     <div class="field-row">
       <label>Tag</label>
@@ -2594,7 +2594,7 @@
     </div>
     <div class="field-row">
       <label>Body</label>
-      <textarea id="noteBodyInput" placeholder="Write your noteâ€¦" style="min-height:220px;"></textarea>
+      <textarea id="noteBodyInput" placeholder="Write your note…" style="min-height:220px;"></textarea>
     </div>
     <div id="noteModalError" class="auth-error"></div>
     <button class="ai-btn" id="noteSaveBtn" style="width:100%;" onclick="saveNote()">Save</button>
@@ -2604,7 +2604,7 @@
 
 <div class="modal-overlay" id="achievementModal" onclick="if(event.target===this) closeAchievementModal()">
   <div class="modal-box" style="position:relative;">
-    <button class="modal-close" onclick="closeAchievementModal()">âœ•</button>
+    <button class="modal-close" onclick="closeAchievementModal()">✕</button>
     <h3 id="achModalTitle">+ Add Achievement</h3>
     <div class="field-row" style="margin-top:14px;">
       <label>Category</label>
@@ -2619,11 +2619,11 @@
     </div>
     <div class="field-row">
       <label>Subject</label>
-      <input id="achSubject" placeholder="e.g. 1st Place â€” Weekly Scalping Tournament">
+      <input id="achSubject" placeholder="e.g. 1st Place — Weekly Scalping Tournament">
     </div>
     <div class="field-row">
       <label>Body</label>
-      <textarea id="achBody" placeholder="Notes / detailsâ€¦"></textarea>
+      <textarea id="achBody" placeholder="Notes / details…"></textarea>
     </div>
     <div class="field-row">
       <label>Image</label>
@@ -2637,9 +2637,9 @@
 
 <div class="modal-overlay" id="challengeDetailModal" onclick="if(event.target===this) closeChallengeDetail()">
   <div class="modal-box" style="position:relative;">
-    <button class="modal-close" onclick="closeChallengeDetail()">âœ•</button>
+    <button class="modal-close" onclick="closeChallengeDetail()">✕</button>
     <div class="challenge-badge" id="challengeDetailBadge" style="width:64px;height:64px;margin-bottom:16px;"></div>
-    <h3 id="challengeDetailTitle">â€”</h3>
+    <h3 id="challengeDetailTitle">—</h3>
     <div class="modal-sub" id="challengeDetailPoints"></div>
     <div style="margin-top:16px;font-size:13px;color:var(--ink);line-height:1.6;" id="challengeDetailHowTo"></div>
     <div id="challengeDetailProgressWrap" style="margin-top:18px;"></div>
@@ -2649,13 +2649,13 @@
 
 <div class="modal-overlay" id="achievementDetailModal" onclick="if(event.target===this) closeAchievementDetail()">
   <div class="modal-box" style="position:relative;max-width:min(90vw,640px);">
-    <button class="modal-close" onclick="closeAchievementDetail()">âœ•</button>
+    <button class="modal-close" onclick="closeAchievementDetail()">✕</button>
     <img id="achDetailImg" style="width:100%;height:auto;max-height:360px;object-fit:cover;border-radius:8px;display:block;margin:14px 0;cursor:zoom-in;" onclick="openLightbox(this.src)">
-    <h3 id="achDetailSubject" style="margin-bottom:8px;">â€”</h3>
+    <h3 id="achDetailSubject" style="margin-bottom:8px;">—</h3>
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
-      <span class="pill" id="achDetailCategory">â€”</span>
-      <span class="pill pill-orange" id="achDetailAmount" style="display:none;">â€”</span>
-      <span style="font-size:11px;color:var(--muted);" id="achDetailDate">â€”</span>
+      <span class="pill" id="achDetailCategory">—</span>
+      <span class="pill pill-orange" id="achDetailAmount" style="display:none;">—</span>
+      <span style="font-size:11px;color:var(--muted);" id="achDetailDate">—</span>
     </div>
     <div style="font-size:13px;color:var(--ink);white-space:pre-wrap;margin-bottom:20px;" id="achDetailBody"></div>
     <div style="display:flex;gap:10px;">
@@ -2667,7 +2667,7 @@
 
 <div class="modal-overlay" id="customAlertModal" onclick="if(event.target===this) resolveCustomAlert()">
   <div class="modal-box" style="position:relative;max-width:380px;">
-    <button class="modal-close" onclick="resolveCustomAlert()">âœ•</button>
+    <button class="modal-close" onclick="resolveCustomAlert()">✕</button>
     <h3 id="customAlertTitle" style="margin:0 24px 10px 0;">Heads up</h3>
     <p id="customAlertMessage" style="font-size:13.5px;color:var(--muted);line-height:1.6;margin:0 0 20px;white-space:pre-wrap;"></p>
     <button class="ai-btn" style="width:100%;" onclick="resolveCustomAlert()">OK</button>
@@ -2676,7 +2676,7 @@
 
 <div class="modal-overlay" id="notifDetailModal" onclick="if(event.target===this) closeNotifDetailModal()">
   <div class="modal-box" style="position:relative;max-width:400px;">
-    <button class="modal-close" onclick="closeNotifDetailModal()">âœ•</button>
+    <button class="modal-close" onclick="closeNotifDetailModal()">✕</button>
     <h3 id="notifDetailTitle" style="margin:0 24px 10px 0;"></h3>
     <div id="notifDetailBody" style="font-size:13.5px;color:var(--muted);line-height:1.6;margin:0 0 20px;"></div>
     <button class="ai-btn" style="width:100%;" id="notifDetailOkBtn" onclick="runNotifDetailOk()">OK</button>
@@ -2687,7 +2687,7 @@
      serbisyong pinadadalhan). -->
 <div class="modal-overlay" id="shareModal" onclick="if(event.target===this) closeShareTrade()">
   <div class="modal-box share-modal" style="position:relative;">
-    <button class="modal-close" onclick="closeShareTrade()">âœ•</button>
+    <button class="modal-close" onclick="closeShareTrade()">✕</button>
     <h3 style="padding-right:24px;margin-bottom:12px;">Share trade</h3>
     <div class="share-opts">
       <label><input type="checkbox" id="shareMoney" checked onchange="drawShareCard()"> Show $ amounts</label>
@@ -2698,7 +2698,7 @@
     <div class="sub" id="shareNote" style="margin-top:8px;"></div>
     <div class="share-actions">
       <button class="tp-btn" onclick="copyShareCard('shareCanvas')">Copy image</button>
-      <button class="tp-btn" id="shareNativeBtn" onclick="nativeShareCard('shareCanvas')" style="display:none;">Shareâ€¦</button>
+      <button class="tp-btn" id="shareNativeBtn" onclick="nativeShareCard('shareCanvas')" style="display:none;">Share…</button>
       <button class="ai-btn" onclick="downloadShareCard('shareCanvas')">Download PNG</button>
     </div>
   </div>
@@ -2707,7 +2707,7 @@
 <!-- SHARE CALENDAR: ang buwang nakabukas sa Calendar, bilang larawan. -->
 <div class="modal-overlay" id="dailyPostModal" onclick="if(event.target===this) closeDailyPost()">
   <div class="modal-box share-modal" style="position:relative;">
-    <button class="modal-close" onclick="closeDailyPost()">âœ•</button>
+    <button class="modal-close" onclick="closeDailyPost()">✕</button>
     <h3 id="dailyPostTitle" style="padding-right:24px;margin-bottom:12px;">Daily post</h3>
     <div class="share-opts">
       <label><input type="checkbox" id="dailyPostUsd" checked onchange="drawDailyPost()"> Show $ amounts</label>
@@ -2724,14 +2724,14 @@
     <div class="share-canvas-wrap"><canvas id="dailyPostCanvas" width="1080" height="1350"></canvas></div>
     <div class="share-actions">
       <button class="tp-btn" onclick="copyShareCard('dailyPostCanvas')">Copy image</button>
-      <button class="tp-btn" id="dailyPostNativeBtn" onclick="nativeShareCard('dailyPostCanvas')" style="display:none;">Shareâ€¦</button>
+      <button class="tp-btn" id="dailyPostNativeBtn" onclick="nativeShareCard('dailyPostCanvas')" style="display:none;">Share…</button>
       <button class="ai-btn" onclick="downloadShareCard('dailyPostCanvas')">Download PNG</button>
     </div>
   </div>
 </div>
 <div class="modal-overlay" id="dayShareModal" onclick="if(event.target===this) closeShareDay()">
   <div class="modal-box share-modal" style="position:relative;">
-    <button class="modal-close" onclick="closeShareDay()">âœ•</button>
+    <button class="modal-close" onclick="closeShareDay()">✕</button>
     <h3 id="dayShareTitle" style="padding-right:24px;margin-bottom:12px;">Share day</h3>
     <div class="share-opts">
       <label><input type="checkbox" id="dayShareUsd" checked onchange="drawDayShare()"> Show $ amounts</label>
@@ -2740,14 +2740,14 @@
     <div class="share-canvas-wrap"><canvas id="dayShareCanvas" width="1200" height="675"></canvas></div>
     <div class="share-actions">
       <button class="tp-btn" onclick="copyShareCard('dayShareCanvas')">Copy image</button>
-      <button class="tp-btn" id="dayShareNativeBtn" onclick="nativeShareCard('dayShareCanvas')" style="display:none;">Shareâ€¦</button>
+      <button class="tp-btn" id="dayShareNativeBtn" onclick="nativeShareCard('dayShareCanvas')" style="display:none;">Share…</button>
       <button class="ai-btn" onclick="downloadShareCard('dayShareCanvas')">Download PNG</button>
     </div>
   </div>
 </div>
 <div class="modal-overlay" id="calShareModal" onclick="if(event.target===this) closeShareCalendar()">
   <div class="modal-box share-modal" style="position:relative;">
-    <button class="modal-close" onclick="closeShareCalendar()">âœ•</button>
+    <button class="modal-close" onclick="closeShareCalendar()">✕</button>
     <h3 style="padding-right:24px;margin-bottom:12px;">Share <span id="calShareMonth">month</span></h3>
     <div class="share-opts">
       <label class="share-text">Main number
@@ -2771,7 +2771,7 @@
     <div class="share-canvas-wrap"><canvas id="calShareCanvas" width="1200" height="1080"></canvas></div>
     <div class="share-actions">
       <button class="tp-btn" onclick="copyShareCard('calShareCanvas')">Copy image</button>
-      <button class="tp-btn" id="calShareNativeBtn" onclick="nativeShareCard('calShareCanvas')" style="display:none;">Shareâ€¦</button>
+      <button class="tp-btn" id="calShareNativeBtn" onclick="nativeShareCard('calShareCanvas')" style="display:none;">Share…</button>
       <button class="ai-btn" onclick="downloadShareCard('calShareCanvas')">Download PNG</button>
     </div>
   </div>
@@ -2779,29 +2779,29 @@
 
 <div class="modal-overlay" id="dpModal" onclick="if(event.target===this) closeDailyPlan()">
   <div class="modal-box dp-modal" style="position:relative;">
-    <button class="modal-close" onclick="closeDailyPlan()">âœ•</button>
+    <button class="modal-close" onclick="closeDailyPlan()">✕</button>
     <div class="dp-head">
-      <h3 id="dpTitle">â€”</h3>
+      <h3 id="dpTitle">—</h3>
       <b id="dpReady" class="dp-ready"></b>
     </div>
 
     <div class="dp-phase">Before the session</div>
     <div class="dp-grid-2">
       <section class="dp-card">
-        <div class="dp-card-h"><span class="dp-ico">â˜¾</span>Body</div>
+        <div class="dp-card-h"><span class="dp-ico">☾</span>Body</div>
         <div id="dpPsychBody" class="dp-psych-grid"></div>
       </section>
       <section class="dp-card">
-        <div class="dp-card-h"><span class="dp-ico">â—Ž</span>Mind</div>
+        <div class="dp-card-h"><span class="dp-ico">◎</span>Mind</div>
         <div id="dpPsychMind" class="dp-psych-grid"></div>
       </section>
     </div>
     <section class="dp-card">
-      <div class="dp-card-h"><span class="dp-ico">â™¡</span>Feeling right now</div>
+      <div class="dp-card-h"><span class="dp-ico">♡</span>Feeling right now</div>
       <div id="dpPsychFeel" class="dp-psych-grid"></div>
     </section>
     <section class="dp-card">
-      <div class="dp-card-h"><span class="dp-ico">â—‡</span>Plan</div>
+      <div class="dp-card-h"><span class="dp-ico">◇</span>Plan</div>
       <div class="dp-grid-2 inner">
         <div>
           <div class="field-row">
@@ -2821,11 +2821,11 @@
         <div>
           <div class="field-row">
             <label for="dpLevels">Key levels</label>
-            <textarea id="dpLevels" rows="2" placeholder="Prev high 64,250 Â· Asia low 62,900 Â· 4H FVG 63,400â€“63,600"></textarea><button type="button" class="mic-bar" onpointerdown="voiceHoldStart(event,'dpLevels','text',this)" onpointerup="voiceHoldEnd(event,this)" onpointercancel="voiceHoldEnd(event,this)" onpointerleave="voiceHoldEnd(event,this)" oncontextmenu="return false"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="9" y1="21" x2="15" y2="21"/></svg><span class="mic-bar-idle">Hold to speak</span><span class="mic-bar-live">Listening â€” let go when done</span><span class="mic-bar-busy">Transcribingâ€¦</span></button>
+            <textarea id="dpLevels" rows="2" placeholder="Prev high 64,250 · Asia low 62,900 · 4H FVG 63,400–63,600"></textarea><button type="button" class="mic-bar" onpointerdown="voiceHoldStart(event,'dpLevels','text',this)" onpointerup="voiceHoldEnd(event,this)" onpointercancel="voiceHoldEnd(event,this)" onpointerleave="voiceHoldEnd(event,this)" oncontextmenu="return false"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="9" y1="21" x2="15" y2="21"/></svg><span class="mic-bar-idle">Hold to speak</span><span class="mic-bar-live">Listening — let go when done</span><span class="mic-bar-busy">Transcribing…</span></button>
           </div>
           <div class="field-row">
             <label for="dpPlan">What I'm waiting for</label>
-            <textarea id="dpPlan" rows="2" placeholder="Sweep of Asia low into the 4H FVG, then a 15m bounce play. Nothing before London open."></textarea><button type="button" class="mic-bar" onpointerdown="voiceHoldStart(event,'dpPlan','text',this)" onpointerup="voiceHoldEnd(event,this)" onpointercancel="voiceHoldEnd(event,this)" onpointerleave="voiceHoldEnd(event,this)" oncontextmenu="return false"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="9" y1="21" x2="15" y2="21"/></svg><span class="mic-bar-idle">Hold to speak</span><span class="mic-bar-live">Listening â€” let go when done</span><span class="mic-bar-busy">Transcribingâ€¦</span></button>
+            <textarea id="dpPlan" rows="2" placeholder="Sweep of Asia low into the 4H FVG, then a 15m bounce play. Nothing before London open."></textarea><button type="button" class="mic-bar" onpointerdown="voiceHoldStart(event,'dpPlan','text',this)" onpointerup="voiceHoldEnd(event,this)" onpointercancel="voiceHoldEnd(event,this)" onpointerleave="voiceHoldEnd(event,this)" oncontextmenu="return false"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="9" y1="21" x2="15" y2="21"/></svg><span class="mic-bar-idle">Hold to speak</span><span class="mic-bar-live">Listening — let go when done</span><span class="mic-bar-busy">Transcribing…</span></button>
           </div>
         </div>
       </div>
@@ -2835,7 +2835,7 @@
     <div class="dp-phase">After the session</div>
     <div class="dp-grid-2">
       <section class="dp-card">
-        <div class="dp-card-h"><span class="dp-ico">âœ“</span>Review</div>
+        <div class="dp-card-h"><span class="dp-ico">✓</span>Review</div>
         <div class="field-row">
           <label>Trades that day</label>
           <div id="dpTrades" class="dp-trades"></div>
@@ -2850,32 +2850,32 @@
         </div>
         <div class="field-row">
           <label for="dpWell">What went well</label>
-          <textarea id="dpWell" rows="2"></textarea><button type="button" class="mic-bar" onpointerdown="voiceHoldStart(event,'dpWell','text',this)" onpointerup="voiceHoldEnd(event,this)" onpointercancel="voiceHoldEnd(event,this)" onpointerleave="voiceHoldEnd(event,this)" oncontextmenu="return false"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="9" y1="21" x2="15" y2="21"/></svg><span class="mic-bar-idle">Hold to speak</span><span class="mic-bar-live">Listening â€” let go when done</span><span class="mic-bar-busy">Transcribingâ€¦</span></button>
+          <textarea id="dpWell" rows="2"></textarea><button type="button" class="mic-bar" onpointerdown="voiceHoldStart(event,'dpWell','text',this)" onpointerup="voiceHoldEnd(event,this)" onpointercancel="voiceHoldEnd(event,this)" onpointerleave="voiceHoldEnd(event,this)" oncontextmenu="return false"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="9" y1="21" x2="15" y2="21"/></svg><span class="mic-bar-idle">Hold to speak</span><span class="mic-bar-live">Listening — let go when done</span><span class="mic-bar-busy">Transcribing…</span></button>
         </div>
         <div class="field-row">
           <label for="dpImprove">What to do better</label>
-          <textarea id="dpImprove" rows="2"></textarea><button type="button" class="mic-bar" onpointerdown="voiceHoldStart(event,'dpImprove','text',this)" onpointerup="voiceHoldEnd(event,this)" onpointercancel="voiceHoldEnd(event,this)" onpointerleave="voiceHoldEnd(event,this)" oncontextmenu="return false"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="9" y1="21" x2="15" y2="21"/></svg><span class="mic-bar-idle">Hold to speak</span><span class="mic-bar-live">Listening â€” let go when done</span><span class="mic-bar-busy">Transcribingâ€¦</span></button>
+          <textarea id="dpImprove" rows="2"></textarea><button type="button" class="mic-bar" onpointerdown="voiceHoldStart(event,'dpImprove','text',this)" onpointerup="voiceHoldEnd(event,this)" onpointercancel="voiceHoldEnd(event,this)" onpointerleave="voiceHoldEnd(event,this)" oncontextmenu="return false"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="9" y1="21" x2="15" y2="21"/></svg><span class="mic-bar-idle">Hold to speak</span><span class="mic-bar-live">Listening — let go when done</span><span class="mic-bar-busy">Transcribing…</span></button>
         </div>
       </section>
       <section class="dp-card">
-        <div class="dp-card-h"><span class="dp-ico">âš¡</span>Emotions in the session</div>
+        <div class="dp-card-h"><span class="dp-ico">⚡</span>Emotions in the session</div>
         <div id="dpPsychPost" class="dp-psych-grid one"></div>
       </section>
     </div>
     <!-- Ang dating Diary, dito na: ang mood ng araw at ang mga tala. Nasa
          mood_entries pa rin ang datos, kaya walang nawala. -->
     <section class="dp-card">
-      <div class="dp-card-h"><span class="dp-ico">âœŽ</span>Diary <span class="dp-card-sub">how the day went</span></div>
+      <div class="dp-card-h"><span class="dp-ico">✎</span>Diary <span class="dp-card-sub">how the day went</span></div>
       <div class="field-row"><label>Mood</label><div id="dpMood" class="mood-dot-row"></div></div>
       <div class="dp-grid-2 inner">
-        <div class="field-row"><label for="dpMoodTrading">ðŸ“ˆ Trading</label><textarea id="dpMoodTrading" rows="2" placeholder="How did the session go? What did you see, take, or skip?"></textarea><button type="button" class="mic-bar" onpointerdown="voiceHoldStart(event,'dpMoodTrading','text',this)" onpointerup="voiceHoldEnd(event,this)" onpointercancel="voiceHoldEnd(event,this)" onpointerleave="voiceHoldEnd(event,this)" oncontextmenu="return false"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="9" y1="21" x2="15" y2="21"/></svg><span class="mic-bar-idle">Hold to speak</span><span class="mic-bar-live">Listening â€” let go when done</span><span class="mic-bar-busy">Transcribingâ€¦</span></button></div>
-        <div class="field-row"><label for="dpMoodWork">ðŸ’¼ Work</label><textarea id="dpMoodWork" rows="2" placeholder="The job: what happened, what drained you, what went well."></textarea><button type="button" class="mic-bar" onpointerdown="voiceHoldStart(event,'dpMoodWork','text',this)" onpointerup="voiceHoldEnd(event,this)" onpointercancel="voiceHoldEnd(event,this)" onpointerleave="voiceHoldEnd(event,this)" oncontextmenu="return false"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="9" y1="21" x2="15" y2="21"/></svg><span class="mic-bar-idle">Hold to speak</span><span class="mic-bar-live">Listening â€” let go when done</span><span class="mic-bar-busy">Transcribingâ€¦</span></button></div>
-        <div class="field-row"><label for="dpMoodLife">ðŸŒ± Life</label><textarea id="dpMoodLife" rows="2" placeholder="Family, health, rest, everything outside the screens."></textarea><button type="button" class="mic-bar" onpointerdown="voiceHoldStart(event,'dpMoodLife','text',this)" onpointerup="voiceHoldEnd(event,this)" onpointercancel="voiceHoldEnd(event,this)" onpointerleave="voiceHoldEnd(event,this)" oncontextmenu="return false"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="9" y1="21" x2="15" y2="21"/></svg><span class="mic-bar-idle">Hold to speak</span><span class="mic-bar-live">Listening â€” let go when done</span><span class="mic-bar-busy">Transcribingâ€¦</span></button></div>
-        <div class="field-row"><label for="dpMoodNote">Anything else</label><textarea id="dpMoodNote" rows="2"></textarea><button type="button" class="mic-bar" onpointerdown="voiceHoldStart(event,'dpMoodNote','text',this)" onpointerup="voiceHoldEnd(event,this)" onpointercancel="voiceHoldEnd(event,this)" onpointerleave="voiceHoldEnd(event,this)" oncontextmenu="return false"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="9" y1="21" x2="15" y2="21"/></svg><span class="mic-bar-idle">Hold to speak</span><span class="mic-bar-live">Listening â€” let go when done</span><span class="mic-bar-busy">Transcribingâ€¦</span></button></div>
+        <div class="field-row"><label for="dpMoodTrading">📈 Trading</label><textarea id="dpMoodTrading" rows="2" placeholder="How did the session go? What did you see, take, or skip?"></textarea><button type="button" class="mic-bar" onpointerdown="voiceHoldStart(event,'dpMoodTrading','text',this)" onpointerup="voiceHoldEnd(event,this)" onpointercancel="voiceHoldEnd(event,this)" onpointerleave="voiceHoldEnd(event,this)" oncontextmenu="return false"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="9" y1="21" x2="15" y2="21"/></svg><span class="mic-bar-idle">Hold to speak</span><span class="mic-bar-live">Listening — let go when done</span><span class="mic-bar-busy">Transcribing…</span></button></div>
+        <div class="field-row"><label for="dpMoodWork">💼 Work</label><textarea id="dpMoodWork" rows="2" placeholder="The job: what happened, what drained you, what went well."></textarea><button type="button" class="mic-bar" onpointerdown="voiceHoldStart(event,'dpMoodWork','text',this)" onpointerup="voiceHoldEnd(event,this)" onpointercancel="voiceHoldEnd(event,this)" onpointerleave="voiceHoldEnd(event,this)" oncontextmenu="return false"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="9" y1="21" x2="15" y2="21"/></svg><span class="mic-bar-idle">Hold to speak</span><span class="mic-bar-live">Listening — let go when done</span><span class="mic-bar-busy">Transcribing…</span></button></div>
+        <div class="field-row"><label for="dpMoodLife">🌱 Life</label><textarea id="dpMoodLife" rows="2" placeholder="Family, health, rest, everything outside the screens."></textarea><button type="button" class="mic-bar" onpointerdown="voiceHoldStart(event,'dpMoodLife','text',this)" onpointerup="voiceHoldEnd(event,this)" onpointercancel="voiceHoldEnd(event,this)" onpointerleave="voiceHoldEnd(event,this)" oncontextmenu="return false"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="9" y1="21" x2="15" y2="21"/></svg><span class="mic-bar-idle">Hold to speak</span><span class="mic-bar-live">Listening — let go when done</span><span class="mic-bar-busy">Transcribing…</span></button></div>
+        <div class="field-row"><label for="dpMoodNote">Anything else</label><textarea id="dpMoodNote" rows="2"></textarea><button type="button" class="mic-bar" onpointerdown="voiceHoldStart(event,'dpMoodNote','text',this)" onpointerup="voiceHoldEnd(event,this)" onpointercancel="voiceHoldEnd(event,this)" onpointerleave="voiceHoldEnd(event,this)" oncontextmenu="return false"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="9" y1="21" x2="15" y2="21"/></svg><span class="mic-bar-idle">Hold to speak</span><span class="mic-bar-live">Listening — let go when done</span><span class="mic-bar-busy">Transcribing…</span></button></div>
       </div>
     </section>
     <div class="dp-lock" id="dpLock" hidden>
-      <div class="dp-lock-box"><b>ðŸ”’ After the session</b><span id="dpLockText">Opens this evening.</span>
+      <div class="dp-lock-box"><b>🔒 After the session</b><span id="dpLockText">Opens this evening.</span>
         <button type="button" class="ai-btn" onclick="unlockDpAfter()">I'm done trading, unlock now</button></div>
     </div>
     </div>
@@ -2890,8 +2890,8 @@
 
 <div class="modal-overlay" id="moodModal" onclick="if(event.target===this) closeMoodModal()">
   <div class="modal-box" style="position:relative;">
-    <button class="modal-close" onclick="closeMoodModal()">âœ•</button>
-    <h3 id="moodModalTitle" style="padding-right:24px;">â€”</h3>
+    <button class="modal-close" onclick="closeMoodModal()">✕</button>
+    <h3 id="moodModalTitle" style="padding-right:24px;">—</h3>
 
     <div id="moodViewWrap" style="display:none;">
       <div class="mood-view-badge" id="moodViewBadge">
@@ -2908,24 +2908,24 @@
     <div id="moodEditWrap">
       <div class="mood-picker" id="moodPicker"></div>
       <div class="field-row" style="margin-top:18px;">
-        <label>ðŸ“ˆ Trading</label>
+        <label>📈 Trading</label>
         <textarea id="moodNoteTrading" rows="3" placeholder="How did the session go? What did you see, take, or skip?"></textarea>
-        <button type="button" class="mic-bar" onpointerdown="voiceHoldStart(event,'moodNoteTrading','text',this)" onpointerup="voiceHoldEnd(event,this)" onpointercancel="voiceHoldEnd(event,this)" onpointerleave="voiceHoldEnd(event,this)" oncontextmenu="return false"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="9" y1="21" x2="15" y2="21"/></svg><span class="mic-bar-idle">Hold to speak</span><span class="mic-bar-live">Listening â€” let go when done</span><span class="mic-bar-busy">Transcribingâ€¦</span></button>
+        <button type="button" class="mic-bar" onpointerdown="voiceHoldStart(event,'moodNoteTrading','text',this)" onpointerup="voiceHoldEnd(event,this)" onpointercancel="voiceHoldEnd(event,this)" onpointerleave="voiceHoldEnd(event,this)" oncontextmenu="return false"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="9" y1="21" x2="15" y2="21"/></svg><span class="mic-bar-idle">Hold to speak</span><span class="mic-bar-live">Listening — let go when done</span><span class="mic-bar-busy">Transcribing…</span></button>
       </div>
       <div class="field-row">
-        <label>ðŸ’¼ Work</label>
-        <textarea id="moodNoteWork" rows="3" placeholder="The job â€” what happened, what drained you, what went well."></textarea>
-        <button type="button" class="mic-bar" onpointerdown="voiceHoldStart(event,'moodNoteWork','text',this)" onpointerup="voiceHoldEnd(event,this)" onpointercancel="voiceHoldEnd(event,this)" onpointerleave="voiceHoldEnd(event,this)" oncontextmenu="return false"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="9" y1="21" x2="15" y2="21"/></svg><span class="mic-bar-idle">Hold to speak</span><span class="mic-bar-live">Listening â€” let go when done</span><span class="mic-bar-busy">Transcribingâ€¦</span></button>
+        <label>💼 Work</label>
+        <textarea id="moodNoteWork" rows="3" placeholder="The job — what happened, what drained you, what went well."></textarea>
+        <button type="button" class="mic-bar" onpointerdown="voiceHoldStart(event,'moodNoteWork','text',this)" onpointerup="voiceHoldEnd(event,this)" onpointercancel="voiceHoldEnd(event,this)" onpointerleave="voiceHoldEnd(event,this)" oncontextmenu="return false"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="9" y1="21" x2="15" y2="21"/></svg><span class="mic-bar-idle">Hold to speak</span><span class="mic-bar-live">Listening — let go when done</span><span class="mic-bar-busy">Transcribing…</span></button>
       </div>
       <div class="field-row">
-        <label>ðŸŒ± Life</label>
+        <label>🌱 Life</label>
         <textarea id="moodNoteLife" rows="3" placeholder="Family, health, rest, everything outside the screens."></textarea>
-        <button type="button" class="mic-bar" onpointerdown="voiceHoldStart(event,'moodNoteLife','text',this)" onpointerup="voiceHoldEnd(event,this)" onpointercancel="voiceHoldEnd(event,this)" onpointerleave="voiceHoldEnd(event,this)" oncontextmenu="return false"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="9" y1="21" x2="15" y2="21"/></svg><span class="mic-bar-idle">Hold to speak</span><span class="mic-bar-live">Listening â€” let go when done</span><span class="mic-bar-busy">Transcribingâ€¦</span></button>
+        <button type="button" class="mic-bar" onpointerdown="voiceHoldStart(event,'moodNoteLife','text',this)" onpointerup="voiceHoldEnd(event,this)" onpointercancel="voiceHoldEnd(event,this)" onpointerleave="voiceHoldEnd(event,this)" oncontextmenu="return false"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="9" y1="21" x2="15" y2="21"/></svg><span class="mic-bar-idle">Hold to speak</span><span class="mic-bar-live">Listening — let go when done</span><span class="mic-bar-busy">Transcribing…</span></button>
       </div>
       <div class="field-row">
         <label>Anything else</label>
         <textarea id="moodNote" rows="2" placeholder="Whatever doesn't fit above."></textarea>
-        <button type="button" class="mic-bar" onpointerdown="voiceHoldStart(event,'moodNote','text',this)" onpointerup="voiceHoldEnd(event,this)" onpointercancel="voiceHoldEnd(event,this)" onpointerleave="voiceHoldEnd(event,this)" oncontextmenu="return false"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="9" y1="21" x2="15" y2="21"/></svg><span class="mic-bar-idle">Hold to speak</span><span class="mic-bar-live">Listening â€” let go when done</span><span class="mic-bar-busy">Transcribingâ€¦</span></button>
+        <button type="button" class="mic-bar" onpointerdown="voiceHoldStart(event,'moodNote','text',this)" onpointerup="voiceHoldEnd(event,this)" onpointercancel="voiceHoldEnd(event,this)" onpointerleave="voiceHoldEnd(event,this)" oncontextmenu="return false"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="9" y1="21" x2="15" y2="21"/></svg><span class="mic-bar-idle">Hold to speak</span><span class="mic-bar-live">Listening — let go when done</span><span class="mic-bar-busy">Transcribing…</span></button>
       </div>
       <div class="sub" id="moodModalError" style="color:var(--loss);margin-top:6px;"></div>
       <div style="display:flex;justify-content:flex-end;align-items:center;margin-top:16px;">
@@ -2937,7 +2937,7 @@
 
 <div class="modal-overlay" id="customConfirmModal" onclick="if(event.target===this) resolveCustomConfirm(false)">
   <div class="modal-box" style="position:relative;max-width:380px;">
-    <button class="modal-close" onclick="resolveCustomConfirm(false)">âœ•</button>
+    <button class="modal-close" onclick="resolveCustomConfirm(false)">✕</button>
     <h3 id="customConfirmTitle" style="margin:0 24px 10px 0;">Are you sure?</h3>
     <p id="customConfirmMessage" style="font-size:13.5px;color:var(--muted);line-height:1.6;margin:0 0 20px;"></p>
     <div style="display:flex;gap:10px;">
@@ -2949,9 +2949,9 @@
 
 <div class="modal-overlay" id="featureAccessModal" onclick="if(event.target===this) closeFeatureAccessModal()">
   <div class="modal-box" style="position:relative;max-width:400px;">
-    <button class="modal-close" onclick="closeFeatureAccessModal()">âœ•</button>
+    <button class="modal-close" onclick="closeFeatureAccessModal()">✕</button>
     <h3 style="margin:0 24px 10px 0;">Feature Access</h3>
-    <p style="font-size:13.5px;color:var(--muted);line-height:1.6;margin:0 0 16px;">Unchecked features stay visible in their sidebar but locked â€” clicking one shows a permission message instead of opening it.</p>
+    <p style="font-size:13.5px;color:var(--muted);line-height:1.6;margin:0 0 16px;">Unchecked features stay visible in their sidebar but locked — clicking one shows a permission message instead of opening it.</p>
     <div id="featureAccessList" class="checklist-box" style="max-height:none;"></div>
     <button class="ai-btn" style="margin-top:14px;width:100%;" onclick="saveFeatureAccess()">Save</button>
   </div>
@@ -2959,7 +2959,7 @@
 
 <div class="modal-overlay" id="logoutConfirmModal" onclick="if(event.target===this) closeLogoutConfirm()">
   <div class="modal-box" style="position:relative;max-width:380px;">
-    <button class="modal-close" onclick="closeLogoutConfirm()">âœ•</button>
+    <button class="modal-close" onclick="closeLogoutConfirm()">✕</button>
     <h3 style="margin:0 24px 10px 0;">Log out?</h3>
     <p style="font-size:13.5px;color:var(--muted);line-height:1.6;margin:0 0 20px;">You'll need to log back in to see your trades, accounts, and everything else.</p>
     <div style="display:flex;gap:10px;">
@@ -2971,7 +2971,7 @@
 
 <div class="modal-overlay" id="lightboxModal" onclick="if(event.target===this) closeLightbox()">
   <div class="modal-box" style="position:relative;max-width:min(90vw,900px);">
-    <button class="modal-close" onclick="closeLightbox()">âœ•</button>
+    <button class="modal-close" onclick="closeLightbox()">✕</button>
     <img id="lightboxImg" style="max-width:100%;max-height:85vh;width:auto;height:auto;border-radius:8px;display:block;margin:0 auto;">
   </div>
 </div>
@@ -2980,13 +2980,13 @@
 <div class="drawer" id="drawer">
   <div class="drawer-head">
     <h3 id="drawerTitle">Trade</h3>
-    <button class="modal-close" style="position:static;" onclick="closeDrawer()">âœ•</button>
+    <button class="modal-close" style="position:static;" onclick="closeDrawer()">✕</button>
   </div>
   <div id="drawerBody"></div>
   <!-- Dalawang hilera, at may dahilan ang pagkakahati. Sa itaas ang mga
        bumubukas ng ibang bagay para sa trade na ito; sa ibaba ang nagsasara ng
        drawer. Noong iisang hilera ito, ang bilang ng button ay nagbabago ayon sa
-       mode kaya iba-iba ang punto ng pagbalot â€” nauuwi ang Cancel sa tabi ng
+       mode kaya iba-iba ang punto ng pagbalot — nauuwi ang Cancel sa tabi ng
        Move at ang Delete ay naiiwang mag-isa sa dulo. Ang nakapirming grupo ay
        laging pareho ang hitsura. -->
   <div class="drawer-actions">
@@ -3017,7 +3017,7 @@
 
 <div class="modal-overlay" id="mhShareModal" onclick="if(event.target===this) closeShareMarketHours()">
   <div class="modal-box share-modal" style="position:relative;">
-    <button class="modal-close" onclick="closeShareMarketHours()">âœ•</button>
+    <button class="modal-close" onclick="closeShareMarketHours()">✕</button>
     <h3 style="padding-right:24px;margin-bottom:12px;">Share today's market hours</h3>
     <div class="share-canvas-wrap"><canvas id="mhShareCanvas" width="1200" height="1350"></canvas></div>
     <label class="share-text" style="display:block;margin-top:12px;">Text for WhatsApp or Discord
@@ -3026,26 +3026,26 @@
     <div class="share-actions">
       <button class="tp-btn" onclick="copyMarketHoursText()">Copy text</button>
       <button class="tp-btn" onclick="copyShareCard('mhShareCanvas')">Copy image</button>
-      <button class="tp-btn" id="mhShareNativeBtn" onclick="nativeShareMarketHours()" style="display:none;">Shareâ€¦</button>
+      <button class="tp-btn" id="mhShareNativeBtn" onclick="nativeShareMarketHours()" style="display:none;">Share…</button>
       <button class="ai-btn" onclick="downloadShareCard('mhShareCanvas')">Download PNG</button>
     </div>
   </div>
 </div>
 <div class="modal-overlay" id="econShareModal" onclick="if(event.target===this) closeEconShare()">
   <div class="modal-box share-modal" style="position:relative;">
-    <button class="modal-close" onclick="closeEconShare()">âœ•</button>
+    <button class="modal-close" onclick="closeEconShare()">✕</button>
     <h3 id="econShareTitle" style="padding-right:24px;margin-bottom:12px;">Share news</h3>
     <div class="share-canvas-wrap"><canvas id="econShareCanvas" width="1200" height="900"></canvas></div>
     <div class="share-actions">
       <button class="tp-btn" onclick="copyShareCard('econShareCanvas')">Copy image</button>
-      <button class="tp-btn" id="econShareNativeBtn" onclick="nativeShareCard('econShareCanvas')" style="display:none;">Shareâ€¦</button>
+      <button class="tp-btn" id="econShareNativeBtn" onclick="nativeShareCard('econShareCanvas')" style="display:none;">Share…</button>
       <button class="ai-btn" onclick="downloadShareCard('econShareCanvas')">Download PNG</button>
     </div>
   </div>
 </div>
 <div class="modal-overlay" id="nfShareModal" onclick="if(event.target===this) closeNotifShare()">
   <div class="modal-box share-modal" style="position:relative;">
-    <button class="modal-close" onclick="closeNotifShare()">âœ•</button>
+    <button class="modal-close" onclick="closeNotifShare()">✕</button>
     <h3 style="padding-right:24px;margin-bottom:12px;">Share notification</h3>
     <div class="share-canvas-wrap"><canvas id="nfShareCanvas" width="1200" height="630"></canvas></div>
     <label class="share-text" style="display:block;margin-top:12px;">Text to paste
@@ -3054,40 +3054,40 @@
     <div class="share-actions">
       <button class="tp-btn" onclick="copyNotifShareText()">Copy text</button>
       <button class="tp-btn" onclick="copyShareCard('nfShareCanvas')">Copy image</button>
-      <button class="tp-btn" id="nfShareNativeBtn" onclick="nativeShareNotif()" style="display:none;">Shareâ€¦</button>
+      <button class="tp-btn" id="nfShareNativeBtn" onclick="nativeShareNotif()" style="display:none;">Share…</button>
       <button class="ai-btn" onclick="downloadShareCard('nfShareCanvas')">Download PNG</button>
     </div>
   </div>
 </div>
 <div class="modal-overlay" id="profShareModal" onclick="if(event.target===this) closeShareProfile()">
   <div class="modal-box share-modal" style="position:relative;">
-    <button class="modal-close" onclick="closeShareProfile()">âœ•</button>
+    <button class="modal-close" onclick="closeShareProfile()">✕</button>
     <h3 style="padding-right:24px;margin-bottom:12px;">Share your trader card</h3>
     <div class="share-canvas-wrap"><canvas id="profShareCanvas" width="1200" height="630"></canvas></div>
     <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:8px;">No money on it: just your rank, badges and habits.</div>
     <div class="share-actions">
       <button class="tp-btn" onclick="copyShareCard('profShareCanvas')">Copy image</button>
-      <button class="tp-btn" id="profShareNativeBtn" onclick="nativeShareProfile()" style="display:none;">Shareâ€¦</button>
+      <button class="tp-btn" id="profShareNativeBtn" onclick="nativeShareProfile()" style="display:none;">Share…</button>
       <button class="ai-btn" onclick="downloadShareCard('profShareCanvas')">Download PNG</button>
     </div>
   </div>
 </div>
 <div class="modal-overlay" id="panelShareModal" onclick="if(event.target===this) closePanelShare()">
   <div class="modal-box share-modal" style="position:relative;">
-    <button class="modal-close" onclick="closePanelShare()">âœ•</button>
+    <button class="modal-close" onclick="closePanelShare()">✕</button>
     <h3 style="padding-right:24px;margin-bottom:12px;">Share <span id="panelShareName">panel</span></h3>
-    <div id="panelShareState" class="sub" style="padding:24px 0;color:var(--muted);">Making the imageâ€¦</div>
+    <div id="panelShareState" class="sub" style="padding:24px 0;color:var(--muted);">Making the image…</div>
     <div class="share-canvas-wrap"><canvas id="panelShareCanvas" width="10" height="10"></canvas></div>
     <div class="share-actions">
       <button class="tp-btn" onclick="copyShareCard('panelShareCanvas')">Copy image</button>
-      <button class="tp-btn" id="panelShareNativeBtn" onclick="nativeSharePanel()" style="display:none;">Shareâ€¦</button>
+      <button class="tp-btn" id="panelShareNativeBtn" onclick="nativeSharePanel()" style="display:none;">Share…</button>
       <button class="ai-btn" onclick="downloadShareCard('panelShareCanvas')">Download PNG</button>
     </div>
   </div>
 </div>
 <div class="modal-overlay" id="pbEditModal" onclick="if(event.target===this) closePlaybookEditor()">
   <div class="modal-box pb-edit-box" style="position:relative;">
-    <button class="modal-close" onclick="closePlaybookEditor()">âœ•</button>
+    <button class="modal-close" onclick="closePlaybookEditor()">✕</button>
     <h3 id="pbEditTitle">Edit playbook</h3>
     <div id="pbEditBody"></div>
     <div id="pbEditError" class="auth-error"></div>
@@ -3097,7 +3097,7 @@
 
 <div class="modal-overlay" id="pbCodeModal" onclick="if(event.target===this) closePlaybookCode()">
   <div class="modal-box" style="position:relative;">
-    <button class="modal-close" onclick="closePlaybookCode()">âœ•</button>
+    <button class="modal-close" onclick="closePlaybookCode()">✕</button>
     <h3 id="pbCodeTitle">Share playbook</h3>
     <div class="modal-sub" id="pbCodeSub"></div>
     <textarea id="pbCodeText" class="pb-code" rows="6" spellcheck="false"></textarea>
@@ -3108,7 +3108,7 @@
 
 <div class="modal-overlay" id="setupDetailsModal" onclick="if(event.target===this) closeSetupDetailsModal()">
   <div class="modal-box" style="position:relative;">
-    <button class="modal-close" onclick="closeSetupDetailsModal()">âœ•</button>
+    <button class="modal-close" onclick="closeSetupDetailsModal()">✕</button>
     <h3>Areas &amp; Emotions</h3>
     <div class="modal-sub">Where the entry, stop and target sit, and how you felt. Carried into the trade when you journal it.</div>
     <div class="ea-target">

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Sign up â€” Tanaydana</title>
+<title>Sign up — Tanaydana</title>
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="img/forgefolio-logo.png">
 <link rel="apple-touch-icon" href="img/forgefolio-logo.png">
@@ -54,7 +54,7 @@
 </div>
 </div>
 
-<footer class="site-footer">Â© 2026 Tanaydana. All rights reserved.</footer>
+<footer class="site-footer">© 2026 Tanaydana. All rights reserved.</footer>
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=2"></script>
@@ -87,7 +87,7 @@ async function doSignup(){
   }
 
   btn.disabled = true;
-  btn.textContent = "Creating accountâ€¦";
+  btn.textContent = "Creating account…";
   try{
     const data = await authSignUp(email, password, {
       display_name: fullName,
@@ -101,7 +101,7 @@ async function doSignup(){
     }
   }catch(e){
     errEl.textContent = e.message?.includes('duplicate') || e.message?.includes('username')
-      ? "That username is already taken â€” please pick another."
+      ? "That username is already taken — please pick another."
       : (e.message || "Couldn't create account.");
   }finally{
     btn.disabled = false;
