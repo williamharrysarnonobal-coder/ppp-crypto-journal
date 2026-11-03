@@ -17808,6 +17808,8 @@ function openQuickAddModal(){
     names.map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join('');
   if(last && names.includes(last)) sel.value = last;
   document.getElementById('quickAddInput').value = '';
+  document.getElementById('quickAddSl').value = '';
+  document.getElementById('quickAddTp').value = '';
   document.getElementById('quickAddError').textContent = '';
   renderQuickAddPreview();
   document.getElementById('quickAddModal').classList.add('open');
@@ -17865,6 +17867,15 @@ function renderQuickAddPreview(){
   _quickAddParsed = p;
   btn.disabled = !sel.value;
   if(dup) btn.textContent = 'Save anyway';
+  renderQuickAddRR();
+}
+
+function renderQuickAddRR(){
+  const el = document.getElementById('quickAddRR');
+  if(!el) return;
+  const lv = id => { const v = document.getElementById(id).value; return v === '' ? null : parseFloat(v); };
+  const rr = _quickAddParsed ? _rrFromPrices({ entry_price: _quickAddParsed.entry_price, sl_price: lv('quickAddSl'), tp_price: lv('quickAddTp') }) : null;
+  el.textContent = rr != null ? `RR 1:${rr.toFixed(2)}` : 'RR —';
 }
 
 async function saveQuickAdd(){
@@ -17873,6 +17884,14 @@ async function saveQuickAdd(){
   const btn = document.getElementById('quickAddSaveBtn');
   if(!_quickAddParsed || !acc) return;
   const patch = { ..._quickAddParsed, account: acc };
+  // SL at TP: opsyonal, pero sila lang ang makakapagbigay ng RR sa trade na
+  // walang Setup.
+  const lv = id => { const v = document.getElementById(id).value; return v === '' ? null : parseFloat(v); };
+  const sl = lv('quickAddSl'), tp = lv('quickAddTp');
+  if(sl != null) patch.sl_price = sl;
+  if(tp != null) patch.tp_price = tp;
+  const rr = _rrFromPrices(patch);
+  if(rr != null) patch.rr = rr;
   // Ang Session, Day of Week, Duration at Objective ay kinukuwenta mula sa
   // petsa at account tuwing naglo-load, kaya hindi kailangang isulat dito.
   // Ang Account Type ay naka-imbak, kaya ito lang ang pinupunan.
@@ -17913,6 +17932,8 @@ async function saveQuickAdd(){
     await adjustAccountBalance(acc, (Number(patch.profit_loss) || 0) - (Number(patch.fee) || 0));
     // Handa na para sa susunod na trade: parehong account, walang laman ang kahon.
     document.getElementById('quickAddInput').value = '';
+    document.getElementById('quickAddSl').value = '';
+    document.getElementById('quickAddTp').value = '';
     renderQuickAddPreview();
     document.getElementById('quickAddPreview').innerHTML =
       `<div class="qa-ok">Saved ${escapeHtml(patch.symbol)} · ${patch.win_loss}. Paste the next one, or close.</div>`;
@@ -20177,7 +20198,23 @@ function _collectDrawerPatch(){
     if(rf) patch.rules_followed = rf;
   }
 
+  // RR: blangko lang ang pinupunan. Ang galing sa Setup (ang plano) ay hindi
+  // pinapalitan; ang trade na walang Setup (Quick Add, Manual) ay nakakakuha
+  // nito kapag nailagay na ang SL at TP.
+  const rowRR = drawerRowData ? drawerRowData.rr : null;
+  if((rowRR === null || rowRR === undefined || rowRR === '') && patch.rr == null){
+    const rr = _rrFromPrices(patch);
+    if(rr != null) patch.rr = rr;
+  }
+
   return patch;
+}
+
+// Ang RR mula sa Entry, SL at TP — null kung may kulang (ang Number(null) ay 0).
+function _rrFromPrices(p){
+  if(!p || [p.entry_price, p.sl_price, p.tp_price].some(v => v === null || v === undefined || v === '')) return null;
+  const rr = _plannedRR(p);
+  return rr != null && Number.isFinite(rr) ? +rr.toFixed(2) : null;
 }
 
 // A loss that closed WORSE than its own recorded stop means that stop wasn't

@@ -324,7 +324,11 @@ find/replace, try the LF form, then the CRLF form.
   once as a plain Win/Loss: no drawer, no setup. Same parsers and fee convention as
   Easy Add. Account Type is filled from the account; Session/Day/Duration/Objective
   are derived on load as usual. Same account+symbol+close time warns ("Save anyway").
-  The modal stays open, ready for the next paste.
+  The modal stays open, ready for the next paste. Optional SL/TP Price inputs give
+  it an RR (live "RR 1:x" next to them).
+- **RR** is the planned reward:risk. From a Setup it is carried over; otherwise
+  `_collectDrawerPatch` fills a BLANK `rr` from Entry/SL/TP (`_rrFromPrices`) on
+  save. An existing RR is never overwritten.
 - Trade page multi-select dropdowns (`.tp-multi-pop`, Mistakes / Trade Management)
   are `position:fixed`, placed by `_placeTpMultiPop` (below, or above when there's
   no room) so a card's overflow can't clip them; closed on scroll/resize.
