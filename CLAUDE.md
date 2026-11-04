@@ -332,6 +332,12 @@ find/replace, try the LF form, then the CRLF form.
   gets the ⚠️ ("RR" in `_journalMissingFields`); its Fill in shows Entry/SL/TP
   instead of RR. SL/TP themselves are NOT required (95 old trades have RR from a
   Setup but no SL/TP). Quick Add shows "RR — · needed" but still saves.
+- **Unjournaled trades** (`position_id` starts with `UNJ-`, `_isUnjournaled`): real
+  broker trades the owner never journaled and already typed into the account's
+  Current Balance. They are in `ALL_TRADES` (Calendar, Dashboard, account card) but
+  `_realRawTrades` and `_rebuildTradeNumbers` skip them, so they are not in Trade
+  Journals and have no "No.". Inserted directly, never through `adjustAccountBalance`
+  (that would double the balance), and deleting one doesn't touch the balance.
 - **Add RR** button on the trade page (next to Confluence, `openTradeRRModal`): paste
   the broker order ticket ("Entry price / PROFIT LEVEL Ticks,Price / STOP LEVEL
   Ticks,Price"; `_parseLevelsPaste` takes the Price, never the Ticks; one-line

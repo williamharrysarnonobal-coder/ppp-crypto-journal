@@ -170,9 +170,15 @@ function _isPaperMode(){
    at nabilang silang lahat bilang "incomplete", dahil wala nga silang account,
    win/loss o P&L at hindi naman sila dapat magkaroon.
 
-   Ito ang nawawalang piraso: hilaw, pero tunay lamang. */
+   Ito ang nawawalang piraso: hilaw, pero tunay lamang.
+
+   Ang UNJ- ay trade na hindi na-journal: nasa broker history at nasa manual
+   balance na, kaya binibilang sa Calendar, Dashboard at account card (nasa
+   ALL_TRADES), pero wala sa Trade Journals at walang numero. */
+const _isUnjournaled = r => String(r?.position_id || '').startsWith('UNJ-');
 function _realRawTrades(){
-  return (RAW_TRADES || []).filter(r => !(r.is_paper === true || r.is_paper === 'true'));
+  return (RAW_TRADES || []).filter(r => !(r.is_paper === true || r.is_paper === 'true')
+    && !String(r.position_id || '').startsWith('UNJ-'));
 }
 
 function _rebuildTradeArrays(){
@@ -9122,7 +9128,7 @@ function _rmDue(){
       body: 'They are marked Closed in Pending Setups.', go: () => switchView('calculator') });
   }
   if(s.types.incomplete && typeof _journalMissingFields === 'function'){
-    const raw = (typeof RAW_TRADES !== 'undefined' ? RAW_TRADES : []).filter(r => r.close_date && _dpIso(new Date(r.close_date)) === today && !(r.is_paper === true || r.is_paper === 'true'));
+    const raw = (typeof RAW_TRADES !== 'undefined' ? RAW_TRADES : []).filter(r => r.close_date && _dpIso(new Date(r.close_date)) === today && !(r.is_paper === true || r.is_paper === 'true') && !_isUnjournaled(r));
     const inc = raw.filter(r => _journalMissingFields(r).length);
     if(inc.length) out.push({ key: 'incomplete', title: `${inc.length} of today's trades have blank fields`,
       body: 'Fill them in while you still remember.', go: () => { switchView('journal'); JOURNAL_INCOMPLETE_ONLY = true; renderJournalTable(); } });
@@ -15042,6 +15048,7 @@ function _rebuildTradeNumbers(){
   };
   _TRADE_NO = new Map(
     [...(ALL_TRADES || [])]
+      .filter(t => !String(t.position_id || '').startsWith('UNJ-'))
       .sort((a,b) =>
         at(a) - at(b) ||
         ((a.open_date ? +new Date(a.open_date) : 0) - (b.open_date ? +new Date(b.open_date) : 0)) ||
@@ -20657,7 +20664,8 @@ async function deleteDrawer(){
     renderJournalTable();
     refreshAllNavBadges();
 
-    if(deletedAccount) await adjustAccountBalance(deletedAccount, -deletedNet);
+    // Ang UNJ- ay hindi kailanman nagdagdag sa balanse, kaya walang ibabalik.
+    if(deletedAccount && !_isUnjournaled(drawerRowData)) await adjustAccountBalance(deletedAccount, -deletedNet);
     if(linkedSetupId) setSetupStatus(linkedSetupId, 'Pending');
 
     closeDrawer();
