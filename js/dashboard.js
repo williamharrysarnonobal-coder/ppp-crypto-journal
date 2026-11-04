@@ -27693,7 +27693,7 @@ const CONFLUENCE_SETUPS = {
    naka-save na ito sa playbook. */
 const SHARED_CHART_PATTERNS_BY_DIR = {
   Long:  ['Trendline BO', 'Conso BO', 'Trendline Bounce'],
-  Short: ['Trendline BD', 'Conso BD', 'Trendline Rejection']
+  Short: ['Trendline BD', 'Conso BD', 'Trendline Rejection', 'Support BD', 'Resistance BD']
 };
 const SHARED_CHART_PATTERNS = [...SHARED_CHART_PATTERNS_BY_DIR.Long, ...SHARED_CHART_PATTERNS_BY_DIR.Short];
 const _withSharedPatterns = (list, key) => {
