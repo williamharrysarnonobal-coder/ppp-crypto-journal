@@ -79,7 +79,7 @@ NEW.forEach(([p, dir]) => {
      hilera na may parehong siyam na hugis ng ibang setup. */
   const react = cfg.items.find(it => it.tag === 'Reaction');
   ok('"' + p + '" ay may Reaction na select',
-     !!react && Array.isArray(react.select) && react.select.length === 5,
+     !!react && Array.isArray(react.select) && react.select.length === 6,
      react && react.select ? react.select.join(' · ') : 'WALA');
   /* allGood: ang tanong ay SAAN, hindi GAANO KABUTI. Kung wala ito, ang FVG ay
      ikalimang pagpipilian at makakakuha ng zero — isang tamang sagot na

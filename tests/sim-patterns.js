@@ -83,7 +83,7 @@ check('buong NEUTRAL sa lahat',
 check('may Reaction na select ang bawat Creation',
   Object.keys(CS).filter(isCreation).every(k =>
     CS[k].items.some(it => it.tag === 'Reaction' && Array.isArray(it.select)
-                        && it.select.length === 5 && it.allGood)), true);
+                        && it.select.length === 6 && it.allGood)), true);
 
 console.log('\nAng dating naka-save na pattern ay nananatiling nakikita');
 const longInval = CS['Long|30 mins Invalidation Play'];

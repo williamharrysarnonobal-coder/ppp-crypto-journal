@@ -27576,7 +27576,7 @@ const CONFLUENCE_SETUPS = {
       /* Ang "Reaction Area" na hilera ng talahanayan niya: ang tanong ay
          nasa Reaction, ang mga sagot ay ang limang lugar. */
       {tag:'Reaction',            text:'Where did it bounce?',
-        select:['.382', '.5', '.618', 'Market OB', 'FVG'], allGood:true},
+        select:['.382', '.5', '.618', '.786', 'Market OB', 'FVG'], allGood:true},
     ],
     // Ang huling hilera ng talahanayan: anong hugis ang nabuo.
     patterns: ['Double Bottom', 'Triple Bottom', 'Inverse H&S',
@@ -27597,7 +27597,7 @@ const CONFLUENCE_SETUPS = {
       /* Ang "Reaction Area" na hilera ng talahanayan niya: ang tanong ay
          nasa Reaction, ang mga sagot ay ang limang lugar. */
       {tag:'Reaction',            text:'Where did it reject?',
-        select:['.382', '.5', '.618', 'Market OB', 'FVG'], allGood:true},
+        select:['.382', '.5', '.618', '.786', 'Market OB', 'FVG'], allGood:true},
     ],
     // Ang huling hilera ng talahanayan: anong hugis ang nabuo.
     patterns: ['Double Top', 'Triple Top', 'H&S',
@@ -27619,7 +27619,7 @@ const CONFLUENCE_SETUPS = {
       /* Ang "Reaction Area" na hilera ng talahanayan niya: ang tanong ay
          nasa Reaction, ang mga sagot ay ang limang lugar. */
       {tag:'Reaction',            text:'Where did it bounce?',
-        select:['.382', '.5', '.618', 'Market OB', 'FVG'], allGood:true},
+        select:['.382', '.5', '.618', '.786', 'Market OB', 'FVG'], allGood:true},
     ],
     // Ang huling hilera ng talahanayan: anong hugis ang nabuo.
     patterns: ['Double Bottom', 'Triple Bottom', 'Inverse H&S',
@@ -27640,7 +27640,7 @@ const CONFLUENCE_SETUPS = {
       /* Ang "Reaction Area" na hilera ng talahanayan niya: ang tanong ay
          nasa Reaction, ang mga sagot ay ang limang lugar. */
       {tag:'Reaction',            text:'Where did it reject?',
-        select:['.382', '.5', '.618', 'Market OB', 'FVG'], allGood:true},
+        select:['.382', '.5', '.618', '.786', 'Market OB', 'FVG'], allGood:true},
     ],
     // Ang huling hilera ng talahanayan: anong hugis ang nabuo.
     patterns: ['Double Top', 'Triple Top', 'H&S',
@@ -27662,7 +27662,7 @@ const CONFLUENCE_SETUPS = {
       /* Ang "Reaction Area" na hilera ng talahanayan niya: ang tanong ay
          nasa Reaction, ang mga sagot ay ang limang lugar. */
       {tag:'Reaction',            text:'Where did it bounce?',
-        select:['.382', '.5', '.618', 'Market OB', 'FVG'], allGood:true},
+        select:['.382', '.5', '.618', '.786', 'Market OB', 'FVG'], allGood:true},
     ],
     // Ang huling hilera ng talahanayan: anong hugis ang nabuo.
     patterns: ['Double Bottom', 'Triple Bottom', 'Inverse H&S',
@@ -27683,7 +27683,7 @@ const CONFLUENCE_SETUPS = {
       /* Ang "Reaction Area" na hilera ng talahanayan niya: ang tanong ay
          nasa Reaction, ang mga sagot ay ang limang lugar. */
       {tag:'Reaction',            text:'Where did it reject?',
-        select:['.382', '.5', '.618', 'Market OB', 'FVG'], allGood:true},
+        select:['.382', '.5', '.618', '.786', 'Market OB', 'FVG'], allGood:true},
     ],
     // Ang huling hilera ng talahanayan: anong hugis ang nabuo.
     patterns: ['Double Top', 'Triple Top', 'H&S',
@@ -27881,7 +27881,7 @@ function _applyConfluenceImplications(items, answers, changedIdx){
    natitira ay wala.
 
    `allGood` para sa tanong kung saan PANTAY ang bawat sagot. Ang "saan ito
-   tumalbog — .382, .5, .618, Market OB, FVG" ay hindi ranggo: alinman doon ay
+   tumalbog — .382, .5, .618, .786, Market OB, FVG" ay hindi ranggo: alinman doon ay
    isang tamang sagot, at ang tanong ay SAAN at hindi GAANO KABUTI. Kung wala
    ito, ang FVG ay ikalimang pagpipilian at makakakuha ng zero — isang tamang
    sagot na binibilang na parang hindi mo sinagot. */
