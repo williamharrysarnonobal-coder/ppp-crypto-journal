@@ -332,6 +332,8 @@ find/replace, try the LF form, then the CRLF form.
   gets the ⚠️ ("RR" in `_journalMissingFields`); its Fill in shows Entry/SL/TP
   instead of RR. SL/TP themselves are NOT required (95 old trades have RR from a
   Setup but no SL/TP). Quick Add shows "RR — · needed" but still saves.
+- Entry Confluence suggestions (`ecSuggest`) list every matching tag, no limit; `.ec-pop`
+  scrolls and its `onmousedown` preventDefault keeps it open when the scrollbar is pressed.
 - **Unjournaled trades** (`position_id` starts with `UNJ-`, `_isUnjournaled`): real
   broker trades the owner never journaled and already typed into the account's
   Current Balance. They are in `ALL_TRADES` (Calendar, Dashboard, account card) but

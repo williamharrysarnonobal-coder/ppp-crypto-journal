@@ -19858,7 +19858,7 @@ function _tpEntryConfluenceHtml(row){
       <input type="text" class="ec-input" placeholder="${escapeHtml(f.placeholder || '')}" autocomplete="off"
         aria-label="${escapeHtml(f.label)}" oninput="ecSuggest(this)" onfocus="ecSuggest(this)"
         onkeydown="ecKey(event, this)" onblur="setTimeout(() => ecHide(this), 150)">
-      <div class="ec-pop" hidden></div>
+      <div class="ec-pop" onmousedown="event.preventDefault()" hidden></div>
     </div></div>`;
 }
 function ecSuggest(input){
@@ -19872,11 +19872,12 @@ function ecSuggest(input){
     : (document.querySelector('#drawerBody [data-field="pattern_type"]') || {}).value || '';
   const st = _ecTagStats(pattern);
   const fit = t => !have.has(t.tag.toLowerCase()) && (!ql || t.tag.toLowerCase().includes(ql));
-  let items = st.list.filter(fit).slice(0, 8).map(t => ({ tag: t.tag, n: t.n }));
-  // Kulang sa Pattern Type na ito? Dagdagan ng galing sa iba, nakamarka.
-  if(st.scoped && items.length < 8){
+  let items = st.list.filter(fit).map(t => ({ tag: t.tag, n: t.n }));
+  // Kasunod ang galing sa ibang Pattern Type, nakamarka. Lahat, walang limit:
+  // ang listahan ang nag-i-scroll.
+  if(st.scoped){
     const seen = new Set(items.map(i => i.tag.toLowerCase()));
-    st.all.filter(t => fit(t) && !seen.has(t.tag.toLowerCase())).slice(0, 8 - items.length)
+    st.all.filter(t => fit(t) && !seen.has(t.tag.toLowerCase()))
       .forEach(t => items.push({ tag: t.tag, n: t.n, other: true }));
   }
   const known = st.list.concat(st.all || []).some(t => t.tag.toLowerCase() === ql);
@@ -20003,7 +20004,7 @@ function _renderDrawerFieldRow(f, mode, row){
         <input type="text" class="ec-input" placeholder="${escapeHtml(f.placeholder || '')}" autocomplete="off"
           aria-label="${escapeHtml(f.label)}" oninput="ecSuggest(this)" onfocus="ecSuggest(this)"
           onkeydown="ecKey(event, this)" onblur="setTimeout(() => ecHide(this), 150)">
-        <div class="ec-pop" hidden></div>
+        <div class="ec-pop" onmousedown="event.preventDefault()" hidden></div>
       </div></div>`;
   }
 
