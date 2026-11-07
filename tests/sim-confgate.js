@@ -45,9 +45,10 @@ const gate = fnBody('journalSelectedSetups');
 // Ready = may confluence AT Closed (_setupJournalBlock ang sumasagot sa dalawa).
 ok('gate ng bulk: ready', /const ready = picked\.filter\(s => !_setupJournalBlock\(s\)\)/.test(gate));
 const block = fnBody('_setupJournalBlock');
-ok('Journal block: confluence muna', /!_setupHasConfluence\(s\)/.test(block));
+// Inalis niya ang lock: hindi na kailangan ang Confluence bago mag-Journal.
+ok('Journal block: HINDI na hinihingi ang confluence', !/_setupHasConfluence/.test(block));
 ok('Journal block: Closed muna', /!== 'Closed'/.test(block));
-ok('gate ng bulk: missing', /const missing = picked\.filter\(s => !_setupHasConfluence\(s\)\)/.test(gate));
+ok('gate ng bulk: walang laktaw dahil sa confluence', !/_setupHasConfluence/.test(gate));
 ok('label ng pindutan', /_setupHasConfluence\(s\) \? 'Edit Confluence' : 'Confluence'/.test(js));
 ok('naka-disable ang Journal', /const why = _setupJournalBlock\(s\)/.test(js) && /why \? `disabled/.test(js));
 

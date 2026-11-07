@@ -28517,31 +28517,17 @@ async function journalSelectedSetups(){
   const picked = pending.filter(s => SELECTED_SETUP_IDS.has(s.id));
   if(!picked.length) return;
 
-  // Same gate as the per-row Journal button, which sits disabled until a
-  // confluence exists — enforced again here so ticking a row can't route
-  // around it.
-  const notClosed = picked.filter(s => _setupHasConfluence(s) && (s.status || 'Pending') !== 'Closed');
+  // Same gate as the per-row Journal button: Closed only. Confluence is no
+  // longer required.
+  const notClosed = picked.filter(s => (s.status || 'Pending') !== 'Closed');
   const ready = picked.filter(s => !_setupJournalBlock(s));
-  const missing = picked.filter(s => !_setupHasConfluence(s));
   if(!ready.length){
-    await customAlert(notClosed.length && !missing.length
-      ? 'Set the Status to Closed first. Only closed trades can be journaled.'
-      : 'Fill in Confluence first — none of the selected setups have one yet.');
+    await customAlert('Set the Status to Closed first. Only closed trades can be journaled.');
     return;
   }
   if(notClosed.length){
     const names = notClosed.map(s => `${s.account_name || 'unnamed'} (${s.status || 'Pending'})`).join(', ');
     const ok = await customConfirm(`${notClosed.length} selected setup${notClosed.length===1?' is':'s are'} not Closed yet (${names}) and will be skipped. Journal the other ${ready.length}?`, `Journal ${ready.length}`);
-    if(!ok) return;
-  }
-  if(missing.length){
-    const names = missing.map(s => s.account_name || 'unnamed').join(', ');
-    // customConfirm writes with textContent and defaults its OK button to
-    // "Delete", so: one flowing line, and an explicit label.
-    const ok = await customConfirm(
-      `${missing.length} selected setup${missing.length===1?' has':'s have'} no Confluence yet (${names}) and will be skipped. Journal the other ${ready.length}?`,
-      `Journal ${ready.length}`
-    );
     if(!ok) return;
   }
 
@@ -29041,8 +29027,9 @@ function _setupStatusSelect(s, status, cls){
   return `<select class="pill ${cls} ps-status-sel" aria-label="Status" onchange="setSetupStatus(${Number(s.id)}, this.value)">${
     opts.map(o => `<option value="${escapeHtml(o)}"${o === status ? ' selected' : ''}>${escapeHtml(o)}</option>`).join('')}</select>`;
 }
+// Hindi na kailangan ang Confluence bago mag-Journal (inalis niya ang lock);
+// ang Closed na Status na lang ang hinihingi.
 function _setupJournalBlock(s){
-  if(!_setupHasConfluence(s)) return 'Fill in Confluence first';
   if((s.status || 'Pending') !== 'Closed') return 'Set the Status to Closed first';
   return '';
 }

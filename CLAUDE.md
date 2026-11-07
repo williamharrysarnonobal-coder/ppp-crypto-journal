@@ -316,7 +316,8 @@ find/replace, try the LF form, then the CRLF form.
 - **Setup Status** (Pending Setups): the pill is a dropdown (Pending / Order Placed
   (Upscale only) / In Position / Closed / Cancelled), set by the owner; Upscale-linked
   setups still move on their own (incl. a Pending one linked late). **Journal only
-  when Closed** (`_setupJournalBlock`: Confluence, then Closed), single and bulk.
+  when Closed** (`_setupJournalBlock`), single and bulk. Confluence is NOT required
+  (owner removed that lock 2026-11-07).
   The "N closed trades to journal" reminder counts setups with Status Closed.
   The bulk bar has **Set Status…** (`bulkSetSetupStatus`, one PATCH, keeps the ticks).
 - Upscale auto-journal needs the setup's `upscale_order_id`. Orders placed from
