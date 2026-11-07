@@ -182,7 +182,7 @@ find/replace, try the LF form, then the CRLF form.
   Same anti-repeat rules as BTC: per coin+setup cooldown (15M 1h, 30M 1.5h)
   saved to `crypto_last_sent_v2.json`, and no alerts 12-7 AM UAE (a setup
   that formed overnight is not sent at 7). The old "ALTS Bot" task stays
-  disabled. **Since 2026-11-07 it scans only HYPE, ZEC, PENGU and TIA**
+  disabled. **Since 2026-11-07 it scans only HYPE, ZEC, PENGU and VET**
   (`ACTIVE_ALTS`; the full list is kept in `ALL_COINS`, set
   `ACTIVE_ALTS = None` to bring all coins back).
 - If the log shows `TELEGRAM ERROR ... group chat was upgraded to a supergroup
