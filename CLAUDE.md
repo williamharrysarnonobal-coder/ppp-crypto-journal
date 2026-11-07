@@ -240,6 +240,10 @@ find/replace, try the LF form, then the CRLF form.
   Long gets Trendline BO, Conso BO, Trendline Bounce; Short gets Trendline BD,
   Conso BD, Trendline Rejection, Support BD, Resistance BD (`_withSharedPatterns(list, key)` in
   `applyPlaybooks`; the other side is removed even from a saved list).
+- `Long|15M LH Creation` and `Short|15M HL Creation` are copied in code from the
+  same pattern's other direction (owner's choice: checklist and chart patterns follow
+  the PATTERN, like Invalidation); only the Reaction text follows the direction
+  (bounce/reject). Shared patterns still follow the key's direction.
 - Auto-rules (`_autoUnfollowedRules`) match questions by **exact text**:
   rewording a question can switch an auto-rule off. The editor flags those
   questions and asks before saving a rewording; the list is

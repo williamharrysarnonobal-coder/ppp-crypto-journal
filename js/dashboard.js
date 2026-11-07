@@ -27691,6 +27691,20 @@ const CONFLUENCE_SETUPS = {
                'Fib .382', 'Fib .5', 'Fib .618', 'SnR Flip']
   },
 };
+/* Ang 15M Creation sa kabilang direksyon (Long sa LH, Short sa HL). Ang
+   checklist at ang chart patterns ay sa PATTERN sumusunod, hindi sa direksyon
+   (pinili niya) — gaya ng Invalidation. Ang Reaction lang ang sumusunod sa
+   direksyon: bounce sa Long, reject sa Short. Kinokopya, hindi isinusulat
+   ulit, para hindi maghiwalay. */
+[['Long|15M LH Creation', 'Short|15M LH Creation', 'Where did it bounce?'],
+ ['Short|15M HL Creation', 'Long|15M HL Creation', 'Where did it reject?']].forEach(([key, from, reaction]) => {
+  const src = CONFLUENCE_SETUPS[from];
+  CONFLUENCE_SETUPS[key] = {
+    minConfluencePct: src.minConfluencePct,
+    items: src.items.map(it => it.tag === 'Reaction' ? { ...it, select: it.select.slice(), text: reaction } : { ...it }),
+    patterns: src.patterns.slice()
+  };
+});
 /* PLAYBOOKS: ang mga checklist sa itaas ang mga panimulang playbook. Kapag
    in-edit mo ang isa (Playbooks page), ang bersyon mo sa database ang
    pumapalit dito — tingnan ang applyPlaybooks. Itinatabi ang orihinal. */
