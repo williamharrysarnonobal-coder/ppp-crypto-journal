@@ -27694,18 +27694,18 @@ const CONFLUENCE_SETUPS = {
                'Fib .382', 'Fib .5', 'Fib .618', 'SnR Flip']
   },
 };
-/* Ang 15M Creation sa kabilang direksyon (Long sa LH, Short sa HL). Ang
-   checklist at ang chart patterns ay sa PATTERN sumusunod, hindi sa direksyon
-   (pinili niya) — gaya ng Invalidation. Ang Reaction lang ang sumusunod sa
-   direksyon: bounce sa Long, reject sa Short. Kinokopya, hindi isinusulat
-   ulit, para hindi maghiwalay. */
-[['Long|15M LH Creation', 'Short|15M LH Creation', 'Where did it bounce?'],
- ['Short|15M HL Creation', 'Long|15M HL Creation', 'Where did it reject?']].forEach(([key, from, reaction]) => {
-  const src = CONFLUENCE_SETUPS[from];
+/* Ang 15M Creation sa kabilang direksyon (Long sa LH, Short sa HL). Ang mga
+   TANONG ay sa DIREKSYON sumusunod (Long = Bear Territory, Pre-Breakdown,
+   1M HL, bounce), pero ang chart patterns ay sa PATTERN (gaya ng
+   Invalidation) — parehong pinili niya. Kinokopya, hindi isinusulat ulit,
+   para hindi maghiwalay. */
+[['Long|15M LH Creation',  'Long|15M HL Creation',  'Short|15M LH Creation'],
+ ['Short|15M HL Creation', 'Short|15M LH Creation', 'Long|15M HL Creation']].forEach(([key, itemsFrom, patternsFrom]) => {
+  const src = CONFLUENCE_SETUPS[itemsFrom];
   CONFLUENCE_SETUPS[key] = {
     minConfluencePct: src.minConfluencePct,
-    items: src.items.map(it => it.tag === 'Reaction' ? { ...it, select: it.select.slice(), text: reaction } : { ...it }),
-    patterns: src.patterns.slice()
+    items: src.items.map(it => ({ ...it, ...(it.select ? { select: it.select.slice() } : {}) })),
+    patterns: CONFLUENCE_SETUPS[patternsFrom].patterns.slice()
   };
 });
 /* PLAYBOOKS: ang mga checklist sa itaas ang mga panimulang playbook. Kapag

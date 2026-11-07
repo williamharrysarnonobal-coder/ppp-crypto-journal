@@ -240,10 +240,11 @@ find/replace, try the LF form, then the CRLF form.
   Long gets Trendline BO, Conso BO, Trendline Bounce; Short gets Trendline BD,
   Conso BD, Trendline Rejection, Support BD, Resistance BD (`_withSharedPatterns(list, key)` in
   `applyPlaybooks`; the other side is removed even from a saved list).
-- `Long|15M LH Creation` and `Short|15M HL Creation` are copied in code from the
-  same pattern's other direction (owner's choice: checklist and chart patterns follow
-  the PATTERN, like Invalidation); only the Reaction text follows the direction
-  (bounce/reject). Shared patterns still follow the key's direction. The Pattern Type
+- `Long|15M LH Creation` and `Short|15M HL Creation` are copied in code: the
+  QUESTIONS from the same direction's 15M Creation (Long = Bear Territory,
+  Pre-Breakdown, 1M HL, bounce), the chart patterns from the same PATTERN (tops for
+  Long LH, bottoms for Short HL, like Invalidation). Owner's choice, both. Shared
+  patterns still follow the key's direction. The Pattern Type
   dropdowns (`_patternTypesForTradeType`, Creation Play in `syncPatternTypeFromSetup`)
   show HL/LH by direction PLUS any pattern with a non-archived checklist for that direction.
 - Auto-rules (`_autoUnfollowedRules`) match questions by **exact text**:
