@@ -25078,8 +25078,11 @@ function syncPatternTypeFromSetup(setupValue){
      inaalis ang tatlong imposible; kung hindi pa, nananatiling anim. */
   if(setupValue === 'Creation Play'){
     const tt = document.querySelector('#drawerBody [data-field="trade_type"]')?.value;
-    if(tt === 'Long')  allowed = allowed.filter(p => p.includes('HL'));
-    if(tt === 'Short') allowed = allowed.filter(p => p.includes('LH'));
+    // Pati ang kabilang pattern kapag may checklist ito sa direksyong ito
+    // (Long 15M LH Creation, Short 15M HL Creation).
+    const has = p => { const c = CONFLUENCE_SETUPS[`${tt}|${p}`]; return !!(c && !c.archived); };
+    if(tt === 'Long')  allowed = allowed.filter(p => p.includes('HL') || has(p));
+    if(tt === 'Short') allowed = allowed.filter(p => p.includes('LH') || has(p));
   }
   const current = sel.value;
 
@@ -28112,8 +28115,9 @@ let confluenceChartPattern = null;
 // LH ones (plus the same shared one) — filtering the dropdown down makes
 // the right option faster to find instead of scrolling all 9.
 function _patternTypesForTradeType(tt){
-  // Kasama ang sarili mong playbook para sa direksyong ito, anuman ang pangalan.
-  const own = p => { const c = CONFLUENCE_SETUPS[`${tt}|${p}`]; return !!(c && c.custom && !c.archived); };
+  // Kasama ang bawat checklist para sa direksyong ito, anuman ang pangalan:
+  // sariling playbook, o ang Long 15M LH / Short 15M HL Creation.
+  const own = p => { const c = CONFLUENCE_SETUPS[`${tt}|${p}`]; return !!(c && !c.archived); };
   if(tt === 'Long') return FIELD_OPTIONS.pattern_type.filter(p => p.includes('HL') || p === '30 mins Invalidation Play' || own(p));
   if(tt === 'Short') return FIELD_OPTIONS.pattern_type.filter(p => p.includes('LH') || p === '30 mins Invalidation Play' || own(p));
   return FIELD_OPTIONS.pattern_type;

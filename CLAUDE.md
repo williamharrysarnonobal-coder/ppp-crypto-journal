@@ -243,7 +243,9 @@ find/replace, try the LF form, then the CRLF form.
 - `Long|15M LH Creation` and `Short|15M HL Creation` are copied in code from the
   same pattern's other direction (owner's choice: checklist and chart patterns follow
   the PATTERN, like Invalidation); only the Reaction text follows the direction
-  (bounce/reject). Shared patterns still follow the key's direction.
+  (bounce/reject). Shared patterns still follow the key's direction. The Pattern Type
+  dropdowns (`_patternTypesForTradeType`, Creation Play in `syncPatternTypeFromSetup`)
+  show HL/LH by direction PLUS any pattern with a non-archived checklist for that direction.
 - Auto-rules (`_autoUnfollowedRules`) match questions by **exact text**:
   rewording a question can switch an auto-rule off. The editor flags those
   questions and asks before saving a rewording; the list is

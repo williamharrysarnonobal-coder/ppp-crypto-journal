@@ -104,7 +104,7 @@ ok('at dumadaan ito sa CREATION_PATTERNS',
   ok('walang Creation sa "' + k + '"',
      !(mapAtRuntime[k] || []).some(p => NEW.includes(p))));
 ok('may direksyong pagsala ang Creation Play sa drawer',
-   /setupValue === 'Creation Play'[\s\S]{0,300}?p\.includes\('HL'\)/.test(js));
+   /setupValue === 'Creation Play'[\s\S]{0,500}?p\.includes\('HL'\)/.test(js));
 
 console.log('\n3. ANG DALAWANG LUMANG PATTERN NA WALANG CHECKLIST\n');
 /* Hindi ito bagong sira — matagal nang naroon ang "4 Hour HL" at "4 Hour LH"
