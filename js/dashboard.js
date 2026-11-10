@@ -35423,11 +35423,11 @@ async function playbookCodeAction(){
 let _econShare = null;   // { kind, id? }
 // Time zone of the share image (2026-11-10): UAE or PH. Times, day headers and
 // day grouping follow it; which news are included still follows the app's day/week/month.
-// 'both': UAE is the main time, PH is shown under it (+1 when PH is already the next day).
+// 'both': "9:30 PM UAE" and under it, same size, "1:30 AM PH +1" (+1 = PH is already the next day).
 const ECON_SHARE_TZ = {
   uae: { zone: 'Asia/Dubai', label: 'UAE time', short: 'UAE' },
   ph: { zone: 'Asia/Manila', label: 'PH time', short: 'PH' },
-  both: { zone: 'Asia/Dubai', label: 'UAE time · PH time below', short: 'UAE', also: { zone: 'Asia/Manila', short: 'PH' } }
+  both: { zone: 'Asia/Dubai', label: 'UAE + PH time', short: 'UAE', also: { zone: 'Asia/Manila', short: 'PH' } }
 };
 function _econShareTz(){
   let k = 'uae';
@@ -35562,7 +35562,7 @@ function drawEconShare(){
   });
   // A single day can spill into the next one in PH time: show day headers then.
   const grouped = kind === 'week' || kind === 'month' || groups.length > 1;
-  const ROW = compact ? (TZ.also ? 84 : 60) : 92, DAYH = 76;
+  const ROW = compact ? (TZ.also ? 96 : 60) : (TZ.also ? 104 : 92), DAYH = 76;
   const listH = shown.length ? groups.length * DAYH + shown.length * ROW : 120;
   cv.width = W; cv.height = Math.max(900, 300 + listH + (events.length > MAX ? 60 : 0) + 140);
   const H = cv.height;
@@ -35595,14 +35595,17 @@ function drawEconShare(){
       ctx.fillStyle = C.rule; ctx.fillRect(L, y, W - L * 2, 1);
       const base = y + (compact ? 40 : 48);
       ctx.fillStyle = col; ctx.beginPath(); ctx.arc(L + 8, base - 9, 7, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = C.ink; ctx.font = font(700, 28); ctx.fillText(time(e.event_date), L + 28, base);
-      if(TZ.also){ ctx.fillStyle = C.muted; ctx.font = font(600, 22); ctx.fillText(alsoTime(e.event_date), L + 28, base + 32); }
+      ctx.fillStyle = C.ink; ctx.font = font(700, 28);
+      // UAE + PH: both times the same size, each labelled, PH on the second line.
+      ctx.fillText(time(e.event_date) + (TZ.also ? ' ' + TZ.short : ''), L + 28, base);
+      if(TZ.also) ctx.fillText(alsoTime(e.event_date), L + 28, base + 38);
+      const TX = TZ.also ? 270 : 200;
       const pw = _econPill(ctx, W - L, base, (e.impact || '—'), col, font(700, 20));
       ctx.fillStyle = C.ink; ctx.font = font(600, 28);
       const title = `${e.country ? e.country + ' · ' : ''}${e.title}`;
-      ctx.fillText(_econFit(ctx, title, W - L - 200 - pw - L - 16), L + 200, base);
+      ctx.fillText(_econFit(ctx, title, W - L - TX - pw - L - 16), L + TX, base);
       const vs = values(e);
-      if(vs.length && !compact){ ctx.fillStyle = C.muted; ctx.font = font(500, 22); ctx.fillText(_econFit(ctx, vs.map(([k, v]) => `${k} ${v}`).join('   ·   '), W - L - 200 - L), L + 200, base + 32); }
+      if(vs.length && !compact){ ctx.fillStyle = C.muted; ctx.font = font(500, 22); ctx.fillText(_econFit(ctx, vs.map(([k, v]) => `${k} ${v}`).join('   ·   '), W - L - TX - L), L + TX, base + 34); }
       y += ROW;
     });
   });
