@@ -12935,6 +12935,20 @@ function parseFinTxEasyAddText(raw){
   };
 }
 
+// Matches a card refund alert like:
+// "Purchase amount of AED 12.00 at CARS TAXI on your Credit Card ending 8491
+//  has been refunded to your card account. Avl Limit is AED 15,663.00."
+// Saved as Income on that card (Income on a credit card lowers Owed).
+function parseFinTxEasyAddRefundText(raw){
+  const m = raw.match(/purchase amount of\s+[a-z]{2,4}\s*([\d,]+\.?\d*)\s+at\s+(.+?)\s+on\s+your\s+credit\s+card\s+ending\s+(\d{3,6})\s+has\s+been\s+refunded/i);
+  if(!m) return null;
+  return {
+    amount: parseFloat(m[1].replace(/,/g,'')),
+    merchant: m[2].trim(),
+    cardLast: m[3].slice(-4)
+  };
+}
+
 // Matches a salary-credit alert like:
 // "Salary of AED 8,192.00 has been credited into your account 021XXX82XXX01.
 //  The available balance is AED 8,192.00."
@@ -13102,6 +13116,25 @@ function parseFinTxEasyAdd(){
     return;
   }
 
+  const refund = parseFinTxEasyAddRefundText(raw);
+  if(refund){
+    const account = FIN_ACCOUNTS.find(a => a.card_number === refund.cardLast);
+    if(!account){
+      errEl.textContent = `No account found with card ending ${refund.cardLast} — add that number under Edit on the right account first, or add it manually.`;
+      return;
+    }
+    closeFinTxEasyAddModal();
+    const refundCat = FINANCE_OPTIONS.income_categories.find(c => /refund/i.test(c)) || null;
+    openFinTxModal({
+      amount: refund.amount,
+      tx_type: 'Income',
+      accountId: account.id,
+      description: `${refund.merchant} (refund)`,
+      category: refundCat
+    });
+    return;
+  }
+
   const salary = parseFinTxEasyAddSalaryText(raw);
   if(salary){
     closeFinTxEasyAddModal();
@@ -13114,7 +13147,7 @@ function parseFinTxEasyAdd(){
     return;
   }
 
-  errEl.textContent = "Couldn't recognize that text — make sure you copied the full purchase alert or salary credit notice.";
+  errEl.textContent = "Couldn't recognize that text — make sure you copied the full purchase alert, refund alert or salary credit notice.";
 }
 
 // Statement mode is a two-click flow on the same Proceed button: first

@@ -273,6 +273,12 @@ find/replace, try the LF form, then the CRLF form.
   the card, newest first); it is not in the bill details. Recurring amounts use the paying
   account's currency (`_finRecCur`), not a hard-coded PHP.
 - `tests/sim-finance-bill.js` runs Paid/Undo end-to-end on the owner's real numbers.
+- Transactions **Easy Add (text)** knows three bank SMS formats: purchase
+  (`parseFinTxEasyAddText`, Expense), card refund ("Purchase amount of AED x at
+  MERCHANT on your Credit Card ending NNNN has been refunded…",
+  `parseFinTxEasyAddRefundText`, 2026-11-10: Income on that card, category
+  "Refund / Reimbursement", description "MERCHANT (refund)") and salary.
+  The card is matched by `card_number` (last 4). `tests/sim-finrefund.js`.
 
 ## TradeLocker (e.g. Goat Funded Trader)
 
