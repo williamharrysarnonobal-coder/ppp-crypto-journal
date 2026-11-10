@@ -22648,7 +22648,7 @@ function econReaction(e){
     return { lines: [{ dir: 'mid', text: `Mostly moves the ${e.country || 'local'} currency. Usually a small effect on BTC & Gold.` }], verdict: null, vol: '' };
   }
   const r = ECON_REACTION.find(x => x.keys.some(k => t.includes(k)));
-  if(!r) return vol ? { lines: [], verdict: null, vol } : null;
+  if(!r) return null;   // unknown news: no empty "How the market may react" with only the ⚡ line
   const eff = b => b ? 'Often bullish for BTC & Gold (weaker USD).' : 'Often bearish for BTC & Gold (stronger USD).';
   if(r.talk) return {
     lines: [
