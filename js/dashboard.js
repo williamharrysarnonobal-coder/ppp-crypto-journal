@@ -35593,9 +35593,9 @@ function drawEconShare(){
     // Measure the reaction block first so the canvas is tall enough.
     ctx.font = font(500, 26);
     const reactRows = react ? [react.verdict, ...react.lines].filter(Boolean)
-      .map(l => { const bold = l === react.verdict; ctx.font = font(bold ? 800 : 500, 26); return { dir: l.dir, bold, wrap: _wrapCanvasText(ctx, l.text, W - L * 2 - 44, 3) }; }) : [];
-    const volWrap = react && react.vol ? (ctx.font = font(500, 22), _wrapCanvasText(ctx, '⚡ ' + react.vol, W - L * 2, 3)) : [];
-    const reactH = react ? 84 + reactRows.reduce((s, r) => s + r.wrap.length * 36 + 16, 0) + volWrap.length * 32 + 64 : 0;
+      .map(l => { const bold = l === react.verdict; ctx.font = font(bold ? 700 : 500, 21); return { dir: l.dir, bold, wrap: _wrapCanvasText(ctx, l.text, W - L * 2 - 32, 3) }; }) : [];
+    const volWrap = react && react.vol ? (ctx.font = font(500, 19), _wrapCanvasText(ctx, '⚡ ' + react.vol, W - L * 2, 3)) : [];
+    const reactH = react ? 84 + reactRows.reduce((s, r) => s + r.wrap.length * 30 + 8, 0) + volWrap.length * 28 + 56 : 0;
     cv.width = W; cv.height = (g ? 1100 : 900) + Math.max(0, reactH - 120);
     const H = cv.height, col = ECON_SHARE_COLOR[imp(e)] || C.muted;
     ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
@@ -35626,18 +35626,18 @@ function drawEconShare(){
       y += 14;
       const dirCol = { up: '#2ECC71', down: '#FF5C5C', mid: C.muted }, icon = { up: '▲', down: '▼', mid: '●' };
       reactRows.forEach(r => {
-        y += 36;
-        ctx.fillStyle = dirCol[r.dir]; ctx.font = font(700, 22); ctx.fillText(icon[r.dir], L, y - 2);
-        ctx.fillStyle = C.ink; ctx.font = font(r.bold ? 800 : 500, 26);
-        r.wrap.forEach((line, i) => ctx.fillText(line, L + 44, y + i * 36));
-        y += (r.wrap.length - 1) * 36 + 16;
+        y += 30;
+        ctx.fillStyle = dirCol[r.dir]; ctx.font = font(700, 15); ctx.fillText(icon[r.dir], L, y - 3);
+        ctx.fillStyle = r.bold ? C.ink : C.muted; ctx.font = font(r.bold ? 700 : 500, 21);
+        r.wrap.forEach((line, i) => ctx.fillText(line, L + 32, y + i * 30));
+        y += (r.wrap.length - 1) * 30 + 8;
       });
       if(volWrap.length){
-        y += 44; ctx.fillStyle = C.muted; ctx.font = font(500, 22);
-        volWrap.forEach((line, i) => ctx.fillText(line, L, y + i * 32));
-        y += (volWrap.length - 1) * 32;
+        y += 34; ctx.fillStyle = C.muted; ctx.font = font(500, 19);
+        volWrap.forEach((line, i) => ctx.fillText(line, L, y + i * 28));
+        y += (volWrap.length - 1) * 28;
       }
-      y += 40; ctx.fillStyle = C.muted; ctx.font = font(500, 20); ctx.fillText('Typical reaction, not a guarantee.', L, y);
+      y += 32; ctx.fillStyle = C.muted; ctx.font = font(500, 17); ctx.fillText('Typical reaction, not a guarantee.', L, y);
     }
     if(g){
       y += 70;

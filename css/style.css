@@ -5872,11 +5872,11 @@ body.mobile-mode #calGrid .cal-cell.past-loss::after{color:var(--loss);}
 .up-api-tl .up-api-row input{flex:1;}
 
 /* Economic news: "How the market may react" (2026-11-10) */
-.econ-react{margin-bottom:18px;}
-.econ-react-row{display:flex;gap:8px;align-items:flex-start;font-size:13px;line-height:1.55;color:var(--ink);padding:4px 0;}
-.econ-react-ic{flex-shrink:0;width:14px;font-size:11px;line-height:20px;text-align:center;color:var(--muted);}
+.econ-react{margin-bottom:16px;}
+.econ-react-row{display:flex;gap:6px;align-items:flex-start;font-size:12px;line-height:1.5;color:var(--muted);padding:2px 0;}
+.econ-react-ic{flex-shrink:0;width:12px;font-size:9px;line-height:18px;text-align:center;color:var(--muted);}
 .econ-react-row.is-up .econ-react-ic{color:var(--win);}
 .econ-react-row.is-down .econ-react-ic{color:var(--loss);}
-.econ-react-verdict{font-weight:700;padding:8px 10px;margin-bottom:6px;border:1px solid var(--rule);border-radius:8px;}
-.econ-react-vol{font-size:12px;color:var(--muted);line-height:1.55;margin-top:8px;}
-.econ-react-note{font-size:11px;color:var(--muted);margin-top:6px;font-style:italic;}
+.econ-react-verdict{color:var(--ink);font-weight:600;margin-bottom:2px;}
+.econ-react-vol{font-size:11px;color:var(--muted);line-height:1.5;margin-top:6px;}
+.econ-react-note{font-size:10.5px;color:var(--muted);margin-top:4px;font-style:italic;opacity:.8;}
