@@ -11892,6 +11892,7 @@ function onFinAccHistoryFilterChange(accountId){
   renderFinAccountHistory(accountId);
 }
 
+let _finHistoryShownAccId = null;   // so saving an edit can refresh the open history list
 function renderFinAccountHistory(accountId){
   const body = document.getElementById('finAccHistoryBody');
   if(!body) return;
@@ -11904,7 +11905,15 @@ function renderFinAccountHistory(accountId){
   const rows = allRows.filter(_finAccHistoryPassesFilter);
   if(!rows.length){ body.innerHTML = '<div class="empty-state">No transactions in this period.</div>'; return; }
 
+  _finHistoryShownAccId = accountId;
   const checked = _finCheckedIds();
+  const kindOf = id => (FIN_TXNS.find(t => t.id === id) || {}).tx_type;
+  // Edit per row (2026-11-10): same Edit as the Transactions tab. Not for a
+  // Correction (no edit there either) or a card's bill-payment Transfer
+  // (Undo on the card reverses it properly).
+  const editBtn = r => (kindOf(r.id) && kindOf(r.id) !== 'Correction' && !_finBillPaymentOwner(r.id))
+    ? `<button class="fin-hist-edit" title="Edit this transaction" aria-label="Edit" onclick="openFinTxModal({editId:${r.id}})">${editIconSVG()}</button>`
+    : '<span class="fin-hist-edit-gap"></span>';
   body.innerHTML = `<div style="max-height:280px;overflow-y:auto;">${rows.map(r => `
     <div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--rule);font-size:12px;">
       <input type="checkbox" ${checked.has(r.id) ? 'checked' : ''} onchange="toggleFinHistoryCheck(${r.id}, this.checked, ${accountId})" style="flex-shrink:0;cursor:pointer;">
@@ -11916,6 +11925,7 @@ function renderFinAccountHistory(accountId){
         <div style="color:${r.amt>=0?'var(--win)':'var(--loss)'};font-weight:600;">${r.amt>=0?'+':'−'}${finMoney(Math.abs(r.amt), acc.currency)}</div>
         ${r.showRunning ? `<div style="font-size:10px;color:var(--muted);margin-top:2px;">Bal ${finMoney(r.balanceAfter, acc.currency)}</div>` : ''}
       </div>
+      ${editBtn(r)}
     </div>
   `).join('')}</div>`;
   _updateFinCheckedCount(accountId);
@@ -13350,6 +13360,12 @@ async function saveFinTx(){
     closeFinTxModal();
     await loadFinanceTransactions();
     renderFinanceAccounts();
+    // Edited from an account's Full History: refresh that list in place
+    // (keeps the period filter and ticks).
+    if(_finHistoryShownAccId != null && document.getElementById('finAccHistoryBody')
+       && document.getElementById('finAccountDetailsModal')?.classList.contains('open')){
+      renderFinAccountHistory(_finHistoryShownAccId);
+    }
     showToast('Transaction saved');
   }catch(e){
     console.error("Couldn't save transaction:", e);

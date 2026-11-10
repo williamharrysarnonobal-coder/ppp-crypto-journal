@@ -3749,6 +3749,15 @@ table.breakdown tbody tr{cursor:pointer;}
     padding:2px 4px;flex-shrink:0;
   }
   .fin-subacct-edit:hover{color:var(--ink);}
+  /* Edit per row in an account's Full History */
+  .fin-hist-edit{
+    background:none;border:1px solid var(--rule);border-radius:6px;color:var(--muted);
+    cursor:pointer;width:30px;height:30px;padding:0;flex-shrink:0;
+    display:inline-flex;align-items:center;justify-content:center;
+  }
+  .fin-hist-edit svg{margin-right:0 !important;}
+  .fin-hist-edit:hover,.fin-hist-edit:focus-visible{color:var(--ink);border-color:var(--accent);}
+  .fin-hist-edit-gap{width:30px;flex-shrink:0;}
   .fin-subacct-add{
     background:none;border:none;color:var(--accent);font-size:11.5px;font-weight:600;
     cursor:pointer;padding:4px 0;

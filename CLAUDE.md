@@ -273,6 +273,10 @@ find/replace, try the LF form, then the CRLF form.
   the card, newest first); it is not in the bill details. Recurring amounts use the paying
   account's currency (`_finRecCur`), not a hard-coded PHP.
 - `tests/sim-finance-bill.js` runs Paid/Undo end-to-end on the owner's real numbers.
+- An account's **Full History** list (details popup) has an **Edit** button per row
+  (2026-11-10): opens the same Edit Transaction form as the Transactions tab and,
+  on save, re-renders the open history (`_finHistoryShownAccId`) keeping filter
+  and ticks. No Edit on Corrections or on a card's bill-payment Transfer.
 - Transactions **Easy Add (text)** knows these bank SMS formats: purchase
   ("Purchase of AED x with Credit Card ending NNNN at MERCHANT. Avl Cr. Limit…")
   and card payment ("Payment of AED x to MERCHANT with Credit Card ending NNNN.
