@@ -22567,7 +22567,7 @@ const ECON_GLOSSARY = [
   { keywords: ['non farm payrolls', 'nonfarm payrolls', 'non-farm payrolls', 'non-farm employment', 'nonfarm employment', 'nfp'],
     en: "The number of new jobs added in the US economy (excluding farm workers). One of the most-watched US reports — a strong number often strengthens the US dollar, a weak number often weakens it.",
     tl: "Bilang ng bagong trabahong naidagdag sa ekonomiya ng US (hindi kasama ang agrikultura). Isa sa pinaka-binabantayang report — kapag malakas ang resulta, karaniwang lumalakas ang US dollar; kapag mahina, humihina." },
-  { keywords: ['core cpi', 'cpi'],
+  { keywords: ['core cpi', 'cpi', 'inflation rate', 'core inflation'],
     en: "Measures the average change in prices consumers pay for goods and services — the main gauge of inflation. Higher-than-expected CPI often pushes central banks toward raising interest rates.",
     tl: "Sinusukat ang pagbabago sa presyo ng mga bilihin at serbisyo — pangunahing panukat ng inflation. Kapag mas mataas sa inaasahan, karaniwang tumataas ang posibilidad na itaas ng central bank ang interest rate." },
   { keywords: ['gdp'],
@@ -22621,7 +22621,7 @@ function findEconGlossaryEntry(title){
 const ECON_REACTION = [
   { keys: ['unemployment rate', 'jobless claims', 'unemployment claims', 'initial claims', 'continuing claims'],
     up: { word: 'weaker', why: 'Weaker labor market', bull: true }, down: { word: 'stronger', why: 'Stronger labor market', bull: false } },
-  { keys: ['pce', 'cpi', 'ppi', 'producer price', 'average hourly earnings', 'wage', 'inflation expectations', 'employment cost', 'prices paid'],
+  { keys: ['inflation rate', 'core inflation', 'pce', 'cpi', 'ppi', 'producer price', 'average hourly earnings', 'wage', 'inflation expectations', 'employment cost', 'prices paid'],
     up: { word: 'hotter', why: 'Hotter inflation', bull: false }, down: { word: 'cooler', why: 'Cooler inflation', bull: true } },
   { keys: ['non farm', 'nonfarm', 'non-farm', 'payrolls', 'employment change', 'adp', 'jolts', 'job openings'],
     up: { word: 'stronger', why: 'Stronger jobs', bull: false }, down: { word: 'weaker', why: 'Weaker jobs', bull: true } },
@@ -22672,6 +22672,28 @@ function econReaction(e){
     }
   }
   return { lines, verdict, vol };
+}
+// One-line version for the day/week share list: { parts:[{dir,text,strong}], tail }.
+// Only US news with a rule (the BTC & Gold reading); null otherwise.
+function econReactionShort(e){
+  if(!e || !_econIsUS(e)) return null;
+  const t = ' ' + String(e.title || '').toLowerCase();
+  const r = ECON_REACTION.find(x => x.keys.some(k => t.includes(k)));
+  if(!r) return null;
+  const bb = b => b ? 'bullish' : 'bearish';
+  if(r.talk) return { parts: [{ dir: 'down', text: 'Hawkish: bearish' }, { dir: 'up', text: 'Dovish: bullish' }], tail: 'for BTC & Gold' };
+  const full = econReaction(e);
+  if(full && full.verdict){
+    const v = full.verdict;
+    if(v.dir === 'mid') return { parts: [{ dir: 'mid', text: `Actual ${e.actual}: in line, usually a small move`, strong: true }], tail: '' };
+    const side = _econNum(e.actual) > _econNum(e.forecast) ? r.up : r.down;
+    return { parts: [{ dir: v.dir, text: `Actual ${e.actual}, ${side.word} than expected: often ${bb(side.bull)}`, strong: true }], tail: 'for BTC & Gold' };
+  }
+  const f = e.forecast, has = _econNum(f) != null;
+  return { parts: [
+    { dir: r.up.bull ? 'up' : 'down', text: `${has ? 'Above ' + f : 'Higher'}: ${bb(r.up.bull)}` },
+    { dir: r.down.bull ? 'up' : 'down', text: `${has ? 'Below ' + f : 'Lower'}: ${bb(r.down.bull)}` }
+  ], tail: 'for BTC & Gold' };
 }
 function renderEconReactionHtml(e){
   const r = econReaction(e);
@@ -35666,8 +35688,13 @@ function drawEconShare(){
   // A single day can spill into the next one in PH time: show day headers then.
   const grouped = kind === 'week' || kind === 'month' || groups.length > 1;
   const ROW = compact ? (TZ.also ? 96 : 60) : (TZ.also ? 104 : 92), DAYH = 76;
-  const listH = shown.length ? groups.length * DAYH + shown.length * ROW : 120;
-  cv.width = W; cv.height = Math.max(900, 300 + listH + (events.length > MAX ? 60 : 0) + 140);
+  // Day and week: a small "market reaction" note under each news (not the month: too many).
+  const notesOf = e => compact ? null : econReactionShort(e);
+  const rowH = e => ROW + (notesOf(e) ? 36 : 0);
+  const anyNotes = shown.some(e => notesOf(e));
+  const anyHigh = anyNotes && shown.some(e => imp(e) === 'high' && notesOf(e));
+  const listH = shown.length ? groups.length * DAYH + shown.reduce((s, e) => s + rowH(e), 0) : 120;
+  cv.width = W; cv.height = Math.max(900, 300 + listH + (events.length > MAX ? 60 : 0) + (anyNotes ? 70 : 0) + 140);
   const H = cv.height;
   ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
   ctx.fillStyle = C.accent; ctx.fillRect(0, 0, 12, H);
@@ -35709,10 +35736,25 @@ function drawEconShare(){
       ctx.fillText(_econFit(ctx, title, W - L - TX - pw - L - 16), L + TX, base);
       const vs = values(e);
       if(vs.length && !compact){ ctx.fillStyle = C.muted; ctx.font = font(500, 22); ctx.fillText(_econFit(ctx, vs.map(([k, v]) => `${k} ${v}`).join('   ·   '), W - L - TX - L), L + TX, base + 34); }
-      y += ROW;
+      const notes = notesOf(e);
+      if(notes){
+        // "▼ Above 0.2: bearish   ▲ Below 0.2: bullish   for BTC & Gold", small like a note.
+        let nx = L + TX; const ny = base + (vs.length ? 70 : 36);
+        const dirCol = { up: '#2ECC71', down: '#FF5C5C', mid: C.muted }, icon = { up: '▲', down: '▼', mid: '●' };
+        notes.parts.forEach(p => {
+          ctx.fillStyle = dirCol[p.dir]; ctx.font = font(700, 14); ctx.fillText(icon[p.dir], nx, ny - 2); nx += 20;
+          ctx.fillStyle = p.strong ? C.ink : C.muted; ctx.font = font(p.strong ? 700 : 500, 20); ctx.fillText(p.text, nx, ny); nx += ctx.measureText(p.text).width + 26;
+        });
+        if(notes.tail){ ctx.fillStyle = C.muted; ctx.font = font(500, 20); ctx.fillText(notes.tail, nx - (notes.parts.length === 1 ? 20 : 8), ny); }
+      }
+      y += rowH(e);
     });
   });
   if(events.length > MAX){ y += 50; ctx.fillStyle = C.muted; ctx.font = font(600, 24); ctx.fillText(`+ ${events.length - MAX} more in the app`, L, y); }
+  if(anyNotes){
+    y += 56; ctx.fillStyle = C.muted; ctx.font = font(500, 19);
+    ctx.fillText(_econFit(ctx, (anyHigh ? '⚡ High impact: expect fast spikes in the first 5–15 minutes. ' : '') + 'Typical reaction, not a guarantee.', W - L * 2), L, y);
+  }
   ctx.fillStyle = C.muted; ctx.font = font(500, 22); ctx.fillText('Economic Calendar', L, H - 56);
   ctx.textAlign = 'right'; ctx.fillStyle = C.accent; ctx.font = font(800, 24); ctx.fillText('TANAYDANA', W - L, H - 56); ctx.textAlign = 'left';
 }
