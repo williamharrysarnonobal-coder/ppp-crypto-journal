@@ -22308,7 +22308,8 @@ function closeLightbox(){
 let ECON_EVENTS = [];
 let selectedEconDate = null;
 let econCalMonth = new Date();
-let activeEconImpactFilters = new Set(['High','Medium','Low','Holiday']);
+// Default view (owner, 2026-11-10): High impact + US Only. "All" clears both.
+let activeEconImpactFilters = new Set(['High']);
 const ECON_IMPACT_LEVELS = ['High','Medium','Low','Holiday'];
 const ECON_IMPACT_RANK = {high:0, medium:1, low:2, holiday:3};
 
@@ -22402,7 +22403,7 @@ function renderEconSyncLabel(){
 // AND only American ones, so it toggles independently rather than joining the
 // impact chips. Matched loosely because feeds label the same country as "US",
 // "USA", "United States" or the currency "USD" depending on the source.
-let econUSOnly = false;
+let econUSOnly = true;   // on by default (see activeEconImpactFilters)
 function _econIsUS(e){
   return /^(us|usa|u\.?s\.?a?\.?|united states|usd)$/i.test((e.country || '').trim());
 }

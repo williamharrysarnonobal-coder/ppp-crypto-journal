@@ -328,6 +328,9 @@ find/replace, try the LF form, then the CRLF form.
   PH is already the next day; grouped by UAE day) (`ECON_SHARE_TZ`, remembered in localStorage `econShareTz`); times, day
   headers and day grouping follow it, so a UAE-evening news can land on the
   next PH day. Which news are included still follows the app's day/week/month.
+- Economic Calendar default filter (2026-11-10): **High + US Only**
+  (`activeEconImpactFilters`, `econUSOnly`); "All" clears both. Not remembered
+  between visits; every page load starts on the default.
 - Economic news **"How the market may react"** (2026-11-10, `ECON_REACTION`,
   `econReaction`, `renderEconReactionHtml`): in the news popup and the single-news
   share image. Rules only, no live sentiment: for US news, Above/Below/At the
