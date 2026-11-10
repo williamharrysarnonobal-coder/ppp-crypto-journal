@@ -37,6 +37,12 @@ const P = 'Purchase of AED 14.73 with Credit Card ending 8491 at GRAND EMIRATES 
 ok('ang purchase alert ay hindi refund', refund(P) === null);
 ok('gumagana pa rin ang purchase', !!purchase(P));
 
+const t1 = purchase('Payment of AED 69.60 to TABBY with Credit Card ending 8491. Avl Cr. Limit is AED 15,685.32.');
+ok('Payment alert: TABBY', t1 && t1.amount === 69.6 && t1.merchant === 'TABBY' && t1.cardLast === '8491', JSON.stringify(t1));
+const t2 = purchase('Payment of AED 74.00 to ANTHROPIC* CLAUDE SUB with Credit Card ending 8491. Avl Cr. Limit is AED 15,754.92. Pls refer stmt for exact amt');
+ok('Payment alert: ANTHROPIC* CLAUDE SUB', t2 && t2.amount === 74 && t2.merchant === 'ANTHROPIC* CLAUDE SUB' && t2.cardLast === '8491', JSON.stringify(t2));
+ok('Payment alert ay hindi refund', refund('Payment of AED 69.60 to TABBY with Credit Card ending 8491. Avl Cr. Limit is AED 15,685.32.') === null);
+
 const flow = fnBody('parseFinTxEasyAdd');
 ok('Income ang refund sa Easy Add', /parseFinTxEasyAddRefundText\(raw\)[\s\S]{0,700}tx_type: 'Income'/.test(flow));
 

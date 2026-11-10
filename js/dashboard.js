@@ -12925,7 +12925,15 @@ function onFinTxEasyAddFormatChange(){
 // Only the amount, card's last digits, and merchant are actually needed —
 // the "Avl Cr. Limit" tail is parsed too but currently unused (Owed is
 // computed live, not set from a bank-reported snapshot).
+// Also the card "Payment" alert (online/merchant payments, same Expense):
+// "Payment of AED 69.60 to TABBY with Credit Card ending 8491. Avl Cr. Limit is AED 15,685.32."
 function parseFinTxEasyAddText(raw){
+  const p = raw.match(/payment of\s+[a-z]{2,4}\s*([\d,]+\.?\d*)\s+to\s+(.+?)\s+with\s+credit\s+card\s+ending\s+(\d{3,6})\s*\.?\s*avl\.?\s*cr\.?\s*limit/i);
+  if(p) return {
+    amount: parseFloat(p[1].replace(/,/g,'')),
+    cardLast: p[3].slice(-4),
+    merchant: p[2].trim()
+  };
   const m = raw.match(/purchase of\s+[a-z]{2,4}\s*([\d,]+\.?\d*)\s+with\s+credit\s+card\s+ending\s+(\d{3,6})\s+at\s+(.+?)\.\s*avl\.?\s*cr\.?\s*limit/i);
   if(!m) return null;
   return {
