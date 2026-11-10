@@ -340,9 +340,10 @@ find/replace, try the LF form, then the CRLF form.
   adds a 5–15 min volatility warning; always "Typical reaction, not a guarantee."
   First keyword match wins, so unemployment/claims come before jobs.
   The day/week share list has a one-line version under each US news
-  (`econReactionShort`: "● Above 0.2: bearish ● Below 0.2: bullish" with red /
-  green / grey dots, no arrows and no "for BTC & Gold" (owner, 2026-11-10), or
-  the Actual verdict) plus one footer note; the month list has none
+  (`econReactionShort`: "[Bear] Above 0.2  [Bull] Below 0.2", or the Actual
+  verdict). Direction is a **Bull / Bear / Neutral pill** like the High impact
+  pill (`ECON_REACT_PILL`, canvas `_econNotePill`, HTML `.pill pill-green/red/muted`);
+  owner asked for words in a box, not arrows or dots, and no "for BTC & Gold". plus one footer note; the month list has none
   (too many rows). TradingView names CPI "Inflation Rate MoM/YoY" and "Core
   Inflation Rate", so those keywords are in both ECON_REACTION and the glossary.
 - Notification on/off is **per device** (owner's choice): the 🔔 ⚙ categories

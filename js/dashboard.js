@@ -22649,16 +22649,17 @@ function econReaction(e){
   }
   const r = ECON_REACTION.find(x => x.keys.some(k => t.includes(k)));
   if(!r) return null;   // unknown news: no empty "How the market may react" with only the ⚡ line
-  const eff = b => b ? 'Often bullish (weaker USD).' : 'Often bearish (stronger USD).';
+  // The Bull / Bear / Neutral pill carries the direction, so the text only says why.
+  const usd = b => b ? 'weaker USD' : 'stronger USD';
   if(r.talk) return {
     lines: [
-      { dir: 'down', text: 'Hawkish tone (rates higher for longer): often bearish.' },
-      { dir: 'up', text: 'Dovish tone (cuts ahead): often bullish.' }
+      { dir: 'down', text: 'Hawkish tone (rates higher for longer).' },
+      { dir: 'up', text: 'Dovish tone (rate cuts ahead).' }
     ], verdict: null, vol };
   const f = e.forecast, fn = _econNum(f);
   const lines = [
-    { dir: r.up.bull ? 'up' : 'down', text: `${fn != null ? 'Above ' + f : 'Higher than expected'}: ${r.up.why}. ${eff(r.up.bull)}` },
-    { dir: r.down.bull ? 'up' : 'down', text: `${fn != null ? 'Below ' + f : 'Lower than expected'}: ${r.down.why}. ${eff(r.down.bull)}` },
+    { dir: r.up.bull ? 'up' : 'down', text: `${fn != null ? 'Above ' + f : 'Higher than expected'}: ${r.up.why.toLowerCase()}, ${usd(r.up.bull)}.` },
+    { dir: r.down.bull ? 'up' : 'down', text: `${fn != null ? 'Below ' + f : 'Lower than expected'}: ${r.down.why.toLowerCase()}, ${usd(r.down.bull)}.` },
     { dir: 'mid', text: fn != null ? `At ${f}: ${r.rate ? 'focus moves to the statement and press conference.' : 'usually a small move; price follows the bigger trend.'}` : '' }
   ].filter(l => l.text);
   let verdict = null;
@@ -22668,10 +22669,23 @@ function econReaction(e){
     if(Math.abs(d) < 1e-9) verdict = { dir: 'mid', text: `Actual ${e.actual}: in line with the forecast. Usually a small move.` };
     else {
       const s = d > 0 ? r.up : r.down;
-      verdict = { dir: s.bull ? 'up' : 'down', text: `Actual ${e.actual}: ${s.word} than expected. ${eff(s.bull)}` };
+      verdict = { dir: s.bull ? 'up' : 'down', text: `Actual ${e.actual}: ${s.word} than expected, ${usd(s.bull)}.` };
     }
   }
   return { lines, verdict, vol };
+}
+const ECON_REACT_PILL = { up: 'Bull', down: 'Bear', mid: 'Neutral' };
+// Small rounded label on a canvas, like the impact pill but left-anchored and
+// sized for note text. Returns its width.
+function _econNotePill(ctx, x, y, dir, size){
+  const col = { up: '#2ECC71', down: '#FF5C5C', mid: '#93989F' }[dir];
+  const label = ECON_REACT_PILL[dir];
+  ctx.font = `700 ${size}px "Public Sans", system-ui, sans-serif`;
+  const padX = Math.round(size * 0.6), h = Math.round(size * 1.5), w = ctx.measureText(label).width + padX * 2;
+  ctx.globalAlpha = 0.16; ctx.fillStyle = col;
+  ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x, y - h + Math.round(size * 0.4), w, h, h / 2) : ctx.rect(x, y - h + Math.round(size * 0.4), w, h); ctx.fill();
+  ctx.globalAlpha = 1; ctx.fillStyle = col; ctx.fillText(label, x + padX, y);
+  return w;
 }
 // One-line version for the day/week share list: { parts:[{dir,text,strong}], tail }.
 // Only US news with a rule (the BTC & Gold reading); null otherwise.
@@ -22680,26 +22694,25 @@ function econReactionShort(e){
   const t = ' ' + String(e.title || '').toLowerCase();
   const r = ECON_REACTION.find(x => x.keys.some(k => t.includes(k)));
   if(!r) return null;
-  const bb = b => b ? 'bullish' : 'bearish';
-  if(r.talk) return { parts: [{ dir: 'down', text: 'Hawkish: bearish' }, { dir: 'up', text: 'Dovish: bullish' }], tail: '' };
+  if(r.talk) return { parts: [{ dir: 'down', text: 'Hawkish' }, { dir: 'up', text: 'Dovish' }], tail: '' };
   const full = econReaction(e);
   if(full && full.verdict){
     const v = full.verdict;
-    if(v.dir === 'mid') return { parts: [{ dir: 'mid', text: `Actual ${e.actual}: in line, usually a small move`, strong: true }], tail: '' };
+    if(v.dir === 'mid') return { parts: [{ dir: 'mid', text: `Actual ${e.actual}, in line`, strong: true }], tail: '' };
     const side = _econNum(e.actual) > _econNum(e.forecast) ? r.up : r.down;
-    return { parts: [{ dir: v.dir, text: `Actual ${e.actual}, ${side.word} than expected: often ${bb(side.bull)}`, strong: true }], tail: '' };
+    return { parts: [{ dir: v.dir, text: `Actual ${e.actual}, ${side.word} than expected`, strong: true }], tail: '' };
   }
   const f = e.forecast, has = _econNum(f) != null;
   return { parts: [
-    { dir: r.up.bull ? 'up' : 'down', text: `${has ? 'Above ' + f : 'Higher'}: ${bb(r.up.bull)}` },
-    { dir: r.down.bull ? 'up' : 'down', text: `${has ? 'Below ' + f : 'Lower'}: ${bb(r.down.bull)}` }
+    { dir: r.up.bull ? 'up' : 'down', text: has ? 'Above ' + f : 'Higher' },
+    { dir: r.down.bull ? 'up' : 'down', text: has ? 'Below ' + f : 'Lower' }
   ], tail: '' };
 }
 function renderEconReactionHtml(e){
   const r = econReaction(e);
   if(!r) return '';
-  const icon = { up: '●', down: '●', mid: '●' };
-  const row = (l, cls) => `<div class="econ-react-row ${cls || ''} is-${l.dir}"><span class="econ-react-ic" aria-hidden="true">${icon[l.dir]}</span><span>${escapeHtml(l.text)}</span></div>`;
+  const pillCls = { up: 'pill-green', down: 'pill-red', mid: 'pill-muted' };
+  const row = (l, cls) => `<div class="econ-react-row ${cls || ''} is-${l.dir}"><span class="pill econ-react-pill ${pillCls[l.dir]}">${ECON_REACT_PILL[l.dir]}</span><span>${escapeHtml(l.text)}</span></div>`;
   return `<div class="discipline-score-label" style="margin-bottom:8px;">How the market may react</div>
     ${r.verdict ? row(r.verdict, 'econ-react-verdict') : ''}
     ${r.lines.map(l => row(l)).join('')}
@@ -35616,9 +35629,9 @@ function drawEconShare(){
     // Measure the reaction block first so the canvas is tall enough.
     ctx.font = font(500, 26);
     const reactRows = react ? [react.verdict, ...react.lines].filter(Boolean)
-      .map(l => { const bold = l === react.verdict; ctx.font = font(bold ? 700 : 500, 21); return { dir: l.dir, bold, wrap: _wrapCanvasText(ctx, l.text, W - L * 2 - 32, 3) }; }) : [];
+      .map(l => { const bold = l === react.verdict; ctx.font = font(bold ? 700 : 500, 21); return { dir: l.dir, bold, wrap: _wrapCanvasText(ctx, l.text, W - L * 2 - 100, 3) }; }) : [];
     const volWrap = react && react.vol ? (ctx.font = font(500, 19), _wrapCanvasText(ctx, '⚡ ' + react.vol, W - L * 2, 3)) : [];
-    const reactH = react ? 84 + reactRows.reduce((s, r) => s + r.wrap.length * 30 + 8, 0) + volWrap.length * 28 + 56 : 0;
+    const reactH = react ? 84 + reactRows.reduce((s, r) => s + r.wrap.length * 30 + 12, 0) + volWrap.length * 28 + 56 : 0;
     cv.width = W; cv.height = (g ? 1100 : 900) + Math.max(0, reactH - 120);
     const H = cv.height, col = ECON_SHARE_COLOR[imp(e)] || C.muted;
     ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
@@ -35647,12 +35660,11 @@ function drawEconShare(){
       y += 70;
       ctx.fillStyle = C.muted; ctx.font = font(700, 20); ctx.fillText('HOW THE MARKET MAY REACT', L, y);
       y += 14;
-      const dirCol = { up: '#2ECC71', down: '#FF5C5C', mid: C.muted }, icon = { up: '●', down: '●', mid: '●' };
       reactRows.forEach(r => {
-        y += 30;
-        ctx.fillStyle = dirCol[r.dir]; ctx.font = font(700, 22); ctx.fillText(icon[r.dir], L, y - 1);
+        y += 34;
+        _econNotePill(ctx, L, y, r.dir, 17);   // Bull / Bear / Neutral, like the High pill
         ctx.fillStyle = r.bold ? C.ink : C.muted; ctx.font = font(r.bold ? 700 : 500, 21);
-        r.wrap.forEach((line, i) => ctx.fillText(line, L + 32, y + i * 30));
+        r.wrap.forEach((line, i) => ctx.fillText(line, L + 100, y + i * 30));
         y += (r.wrap.length - 1) * 30 + 8;
       });
       if(volWrap.length){
@@ -35738,12 +35750,11 @@ function drawEconShare(){
       if(vs.length && !compact){ ctx.fillStyle = C.muted; ctx.font = font(500, 22); ctx.fillText(_econFit(ctx, vs.map(([k, v]) => `${k} ${v}`).join('   ·   '), W - L - TX - L), L + TX, base + 34); }
       const notes = notesOf(e);
       if(notes){
-        // "● Above 0.2: bearish   ● Below 0.2: bullish" (red / green dots), small like a note.
-        let nx = L + TX; const ny = base + (vs.length ? 70 : 36);
-        const dirCol = { up: '#2ECC71', down: '#FF5C5C', mid: C.muted }, icon = { up: '●', down: '●', mid: '●' };
+        // "[Bear] Above 0.2   [Bull] Below 0.2" (pills like the High one), small like a note.
+        let nx = L + TX; const ny = base + (vs.length ? 72 : 38);
         notes.parts.forEach(p => {
-          ctx.fillStyle = dirCol[p.dir]; ctx.font = font(700, 20); ctx.fillText(icon[p.dir], nx, ny - 1); nx += 22;
-          ctx.fillStyle = p.strong ? C.ink : C.muted; ctx.font = font(p.strong ? 700 : 500, 20); ctx.fillText(p.text, nx, ny); nx += ctx.measureText(p.text).width + 26;
+          nx += _econNotePill(ctx, nx, ny, p.dir, 16) + 10;
+          ctx.fillStyle = p.strong ? C.ink : C.muted; ctx.font = font(p.strong ? 700 : 500, 20); ctx.fillText(p.text, nx, ny); nx += ctx.measureText(p.text).width + 30;
         });
         if(notes.tail){ ctx.fillStyle = C.muted; ctx.font = font(500, 20); ctx.fillText(notes.tail, nx - (notes.parts.length === 1 ? 20 : 8), ny); }
       }
