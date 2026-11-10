@@ -323,8 +323,9 @@ find/replace, try the LF form, then the CRLF form.
   Copy image / Share… / Download PNG; see `drawMarketHoursShare`,
   `drawEconShare`) instead of inventing new ones.
 - Times shown to the owner are UAE time (Asia/Dubai). Exception (2026-11-10):
-  the Economic Calendar share image has a **Time zone** pick, UAE or PH
-  (`ECON_SHARE_TZ`, remembered in localStorage `econShareTz`); times, day
+  the Economic Calendar share image has a **Time zone** pick: UAE, PH, or
+  UAE + PH (UAE main time, PH in small text under it, "+1" when PH is already
+  the next day; grouped by UAE day) (`ECON_SHARE_TZ`, remembered in localStorage `econShareTz`); times, day
   headers and day grouping follow it, so a UAE-evening news can land on the
   next PH day. Which news are included still follows the app's day/week/month.
 - Notification on/off is **per device** (owner's choice): the 🔔 ⚙ categories

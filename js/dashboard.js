@@ -35423,7 +35423,12 @@ async function playbookCodeAction(){
 let _econShare = null;   // { kind, id? }
 // Time zone of the share image (2026-11-10): UAE or PH. Times, day headers and
 // day grouping follow it; which news are included still follows the app's day/week/month.
-const ECON_SHARE_TZ = { uae: { zone: 'Asia/Dubai', label: 'UAE time', short: 'UAE' }, ph: { zone: 'Asia/Manila', label: 'PH time', short: 'PH' } };
+// 'both': UAE is the main time, PH is shown under it (+1 when PH is already the next day).
+const ECON_SHARE_TZ = {
+  uae: { zone: 'Asia/Dubai', label: 'UAE time', short: 'UAE' },
+  ph: { zone: 'Asia/Manila', label: 'PH time', short: 'PH' },
+  both: { zone: 'Asia/Dubai', label: 'UAE time · PH time below', short: 'UAE', also: { zone: 'Asia/Manila', short: 'PH' } }
+};
 function _econShareTz(){
   let k = 'uae';
   try { k = localStorage.getItem('econShareTz') || 'uae'; } catch(e){}
@@ -35492,7 +35497,14 @@ function drawEconShare(){
   const TZ = ECON_SHARE_TZ[_econShareTz()];
   const time = d => new Date(d).toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit', timeZone: TZ.zone });
   const tzDate = (d, o) => new Date(d).toLocaleDateString('en-US', Object.assign({ timeZone: TZ.zone }, o));
-  const imp = e => String(e.impact || '').toLowerCase();
+  // Second time (UAE + PH): "1:30 AM PH", with "+1" when PH is already the next day.
+  const alsoTime = d => {
+    if(!TZ.also) return '';
+    const o = { year:'numeric', month:'2-digit', day:'2-digit' };
+    const next = new Date(d).toLocaleDateString('en-CA', Object.assign({ timeZone: TZ.also.zone }, o)) !== new Date(d).toLocaleDateString('en-CA', Object.assign({ timeZone: TZ.zone }, o));
+    return `${new Date(d).toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit', timeZone: TZ.also.zone })} ${TZ.also.short}${next ? ' +1' : ''}`;
+  };
+  const imp = e =>String(e.impact || '').toLowerCase();
   const values = e => [['Forecast', e.forecast], ['Previous', e.previous], ['Actual', e.actual]].filter(v => v[1]);
   const events = _econShareEvents();
   const ctx = cv.getContext('2d');
@@ -35507,7 +35519,7 @@ function drawEconShare(){
     ctx.fillStyle = col; ctx.fillRect(0, 0, 12, H);
     ctx.fillStyle = col; ctx.font = font(800, 26); ctx.fillText(`${(e.impact || 'News').toUpperCase()} IMPACT NEWS`, L, 100);
     ctx.fillStyle = C.muted; ctx.font = font(600, 28);
-    ctx.fillText(`${tzDate(e.event_date, { weekday:'long', month:'long', day:'numeric' })} · ${time(e.event_date)} ${TZ.short}`, L, 146);
+    ctx.fillText(`${tzDate(e.event_date, { weekday:'long', month:'long', day:'numeric' })} · ${time(e.event_date)} ${TZ.short}${TZ.also ? ' · ' + alsoTime(e.event_date) : ''}`, L, 146);
     ctx.fillStyle = C.ink; ctx.font = font(800, 62);
     const tl = _wrapCanvasText(ctx, e.title, W - L * 2, 3);
     tl.forEach((line, i) => ctx.fillText(line, L, 250 + i * 74));
@@ -35550,7 +35562,7 @@ function drawEconShare(){
   });
   // A single day can spill into the next one in PH time: show day headers then.
   const grouped = kind === 'week' || kind === 'month' || groups.length > 1;
-  const ROW = compact ? 60 : 92, DAYH = 76;
+  const ROW = compact ? (TZ.also ? 84 : 60) : 92, DAYH = 76;
   const listH = shown.length ? groups.length * DAYH + shown.length * ROW : 120;
   cv.width = W; cv.height = Math.max(900, 300 + listH + (events.length > MAX ? 60 : 0) + 140);
   const H = cv.height;
@@ -35584,6 +35596,7 @@ function drawEconShare(){
       const base = y + (compact ? 40 : 48);
       ctx.fillStyle = col; ctx.beginPath(); ctx.arc(L + 8, base - 9, 7, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = C.ink; ctx.font = font(700, 28); ctx.fillText(time(e.event_date), L + 28, base);
+      if(TZ.also){ ctx.fillStyle = C.muted; ctx.font = font(600, 22); ctx.fillText(alsoTime(e.event_date), L + 28, base + 32); }
       const pw = _econPill(ctx, W - L, base, (e.impact || '—'), col, font(700, 20));
       ctx.fillStyle = C.ink; ctx.font = font(600, 28);
       const title = `${e.country ? e.country + ' · ' : ''}${e.title}`;
