@@ -328,6 +328,14 @@ find/replace, try the LF form, then the CRLF form.
   PH is already the next day; grouped by UAE day) (`ECON_SHARE_TZ`, remembered in localStorage `econShareTz`); times, day
   headers and day grouping follow it, so a UAE-evening news can land on the
   next PH day. Which news are included still follows the app's day/week/month.
+- Economic news **"How the market may react"** (2026-11-10, `ECON_REACTION`,
+  `econReaction`, `renderEconReactionHtml`): in the news popup and the single-news
+  share image. Rules only, no live sentiment: for US news, Above/Below/At the
+  Forecast → often bullish/bearish for BTC & Gold; after release a bold verdict
+  (hotter/cooler/stronger/weaker/in line, via `_econNum` which reads K/M/B/%);
+  speeches → hawkish/dovish; non-US → "mostly moves that currency"; High impact
+  adds a 5–15 min volatility warning; always "Typical reaction, not a guarantee."
+  First keyword match wins, so unemployment/claims come before jobs.
 - Notification on/off is **per device** (owner's choice): the 🔔 ⚙ categories
   and the Phone notifications list are one switch (`setNfCategory` writes both the
   in-app mute and that device's `push_subscriptions.prefs`). They are NOT in

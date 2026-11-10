@@ -22563,7 +22563,7 @@ const ECON_GLOSSARY = [
   { keywords: ['unemployment rate'],
     en: "The percentage of the labor force that is jobless and actively looking for work. A rising rate usually signals a weakening economy; a falling rate signals a strengthening one.",
     tl: "Ang porsyento ng mga tao sa labor force na walang trabaho pero aktibong naghahanap. Kapag tumataas ito, senyales ng humihinang ekonomiya; kapag bumababa, senyales ng lumalakas na ekonomiya." },
-  { keywords: ['non farm payrolls', 'nonfarm payrolls', 'nfp'],
+  { keywords: ['non farm payrolls', 'nonfarm payrolls', 'non-farm payrolls', 'non-farm employment', 'nonfarm employment', 'nfp'],
     en: "The number of new jobs added in the US economy (excluding farm workers). One of the most-watched US reports — a strong number often strengthens the US dollar, a weak number often weakens it.",
     tl: "Bilang ng bagong trabahong naidagdag sa ekonomiya ng US (hindi kasama ang agrikultura). Isa sa pinaka-binabantayang report — kapag malakas ang resulta, karaniwang lumalakas ang US dollar; kapag mahina, humihina." },
   { keywords: ['core cpi', 'cpi'],
@@ -22612,6 +22612,78 @@ function findEconGlossaryEntry(title){
   return ECON_GLOSSARY.find(g => g.keywords.some(k => t.includes(k))) || null;
 }
 
+/* "How the market may react" (2026-11-10). A typical-reaction guide for BTC &
+   Gold under a US news: what Actual above / below the Forecast usually means,
+   and after the release which way it came in. Rules only (no live sentiment),
+   so it never goes stale. `up` = what a higher number means. Order matters:
+   the first match wins, so specific names come before general ones. */
+const ECON_REACTION = [
+  { keys: ['unemployment rate', 'jobless claims', 'unemployment claims', 'initial claims', 'continuing claims'],
+    up: { word: 'weaker', why: 'Weaker labor market', bull: true }, down: { word: 'stronger', why: 'Stronger labor market', bull: false } },
+  { keys: ['pce', 'cpi', 'ppi', 'producer price', 'average hourly earnings', 'wage', 'inflation expectations', 'employment cost', 'prices paid'],
+    up: { word: 'hotter', why: 'Hotter inflation', bull: false }, down: { word: 'cooler', why: 'Cooler inflation', bull: true } },
+  { keys: ['non farm', 'nonfarm', 'non-farm', 'payrolls', 'employment change', 'adp', 'jolts', 'job openings'],
+    up: { word: 'stronger', why: 'Stronger jobs', bull: false }, down: { word: 'weaker', why: 'Weaker jobs', bull: true } },
+  { keys: ['interest rate decision', 'rate decision', 'fed funds'], rate: true,
+    up: { word: 'higher', why: 'Higher rate than expected', bull: false }, down: { word: 'lower', why: 'Lower rate than expected', bull: true } },
+  { keys: ['fomc', 'press conference', ' speaks', 'speech', 'testifies', 'testimony'], talk: true },
+  { keys: ['gdp', 'retail sales', 'pmi', 'ism', 'consumer confidence', 'consumer sentiment', 'durable goods', 'housing starts', 'building permits', 'home sales', 'industrial production'],
+    up: { word: 'stronger', why: 'Stronger economy', bull: false }, down: { word: 'weaker', why: 'Weaker economy', bull: true } }
+];
+function _econNum(v){
+  const m = String(v == null ? '' : v).replace(/,/g, '').match(/(-?\d+(?:\.\d+)?)\s*([KMBT])?/i);
+  if(!m) return null;
+  return parseFloat(m[1]) * ({ K: 1e3, M: 1e6, B: 1e9, T: 1e12 }[(m[2] || '').toUpperCase()] || 1);
+}
+// Returns null when there is nothing useful to say (unknown news, holiday).
+function econReaction(e){
+  if(!e || String(e.impact || '').toLowerCase() === 'holiday') return null;
+  const t = ' ' + String(e.title || '').toLowerCase();
+  const high = String(e.impact || '').toLowerCase() === 'high';
+  const vol = high ? 'High impact: expect fast spikes in the first 5–15 minutes. Wait for the candle to close before entering.' : '';
+  if(!_econIsUS(e)){
+    const r = ECON_REACTION.find(x => x.keys.some(k => t.includes(k)));
+    if(!r) return null;
+    return { lines: [{ dir: 'mid', text: `Mostly moves the ${e.country || 'local'} currency. Usually a small effect on BTC & Gold.` }], verdict: null, vol: '' };
+  }
+  const r = ECON_REACTION.find(x => x.keys.some(k => t.includes(k)));
+  if(!r) return vol ? { lines: [], verdict: null, vol } : null;
+  const eff = b => b ? 'Often bullish for BTC & Gold (weaker USD).' : 'Often bearish for BTC & Gold (stronger USD).';
+  if(r.talk) return {
+    lines: [
+      { dir: 'down', text: 'Hawkish tone (rates higher for longer): often bearish for BTC & Gold.' },
+      { dir: 'up', text: 'Dovish tone (cuts ahead): often bullish for BTC & Gold.' }
+    ], verdict: null, vol };
+  const f = e.forecast, fn = _econNum(f);
+  const lines = [
+    { dir: r.up.bull ? 'up' : 'down', text: `${fn != null ? 'Above ' + f : 'Higher than expected'}: ${r.up.why}. ${eff(r.up.bull)}` },
+    { dir: r.down.bull ? 'up' : 'down', text: `${fn != null ? 'Below ' + f : 'Lower than expected'}: ${r.down.why}. ${eff(r.down.bull)}` },
+    { dir: 'mid', text: fn != null ? `At ${f}: ${r.rate ? 'focus moves to the statement and press conference.' : 'usually a small move; price follows the bigger trend.'}` : '' }
+  ].filter(l => l.text);
+  let verdict = null;
+  const an = _econNum(e.actual);
+  if(an != null && fn != null){
+    const d = an - fn;
+    if(Math.abs(d) < 1e-9) verdict = { dir: 'mid', text: `Actual ${e.actual}: in line with the forecast. Usually a small move.` };
+    else {
+      const s = d > 0 ? r.up : r.down;
+      verdict = { dir: s.bull ? 'up' : 'down', text: `Actual ${e.actual}: ${s.word} than expected. ${eff(s.bull)}` };
+    }
+  }
+  return { lines, verdict, vol };
+}
+function renderEconReactionHtml(e){
+  const r = econReaction(e);
+  if(!r) return '';
+  const icon = { up: '▲', down: '▼', mid: '●' };
+  const row = (l, cls) => `<div class="econ-react-row ${cls || ''} is-${l.dir}"><span class="econ-react-ic" aria-hidden="true">${icon[l.dir]}</span><span>${escapeHtml(l.text)}</span></div>`;
+  return `<div class="discipline-score-label" style="margin-bottom:8px;">How the market may react</div>
+    ${r.verdict ? row(r.verdict, 'econ-react-verdict') : ''}
+    ${r.lines.map(l => row(l)).join('')}
+    ${r.vol ? `<div class="econ-react-vol">⚡ ${escapeHtml(r.vol)}</div>` : ''}
+    <div class="econ-react-note">Typical reaction, not a guarantee.</div>`;
+}
+
 let econEventLangIsTagalog = false;
 
 function openEconEventModal(id){
@@ -22652,6 +22724,10 @@ function openEconEventModal(id){
       <div class="acc-stat-value">${escapeHtml(String(v.value))}</div>
     </div>
   `).join('') || '';
+  const reactHtml = renderEconReactionHtml(e);
+  const reactWrap = document.getElementById('econEventReactWrap');
+  reactWrap.innerHTML = reactHtml;
+  reactWrap.style.display = reactHtml ? 'block' : 'none';
 
   econEventLangIsTagalog = false;
   window._econEventGlossary = findEconGlossaryEntry(e.title);
@@ -35513,7 +35589,14 @@ function drawEconShare(){
     const e = events[0];
     if(!e) return;
     const g = typeof findEconGlossaryEntry === 'function' ? findEconGlossaryEntry(e.title) : null;
-    cv.width = W; cv.height = g ? 1100 : 900;
+    const react = econReaction(e);
+    // Measure the reaction block first so the canvas is tall enough.
+    ctx.font = font(500, 26);
+    const reactRows = react ? [react.verdict, ...react.lines].filter(Boolean)
+      .map(l => { const bold = l === react.verdict; ctx.font = font(bold ? 800 : 500, 26); return { dir: l.dir, bold, wrap: _wrapCanvasText(ctx, l.text, W - L * 2 - 44, 3) }; }) : [];
+    const volWrap = react && react.vol ? (ctx.font = font(500, 22), _wrapCanvasText(ctx, '⚡ ' + react.vol, W - L * 2, 3)) : [];
+    const reactH = react ? 84 + reactRows.reduce((s, r) => s + r.wrap.length * 36 + 16, 0) + volWrap.length * 32 + 64 : 0;
+    cv.width = W; cv.height = (g ? 1100 : 900) + Math.max(0, reactH - 120);
     const H = cv.height, col = ECON_SHARE_COLOR[imp(e)] || C.muted;
     ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
     ctx.fillStyle = col; ctx.fillRect(0, 0, 12, H);
@@ -35536,6 +35619,25 @@ function drawEconShare(){
         ctx.fillStyle = k === 'Actual' ? C.accent : C.ink; ctx.font = font(800, 42); ctx.fillText(_econFit(ctx, v, bw - 48), x + 24, y + 100);
       });
       y += 130;
+    }
+    if(react){
+      y += 70;
+      ctx.fillStyle = C.muted; ctx.font = font(700, 20); ctx.fillText('HOW THE MARKET MAY REACT', L, y);
+      y += 14;
+      const dirCol = { up: '#2ECC71', down: '#FF5C5C', mid: C.muted }, icon = { up: '▲', down: '▼', mid: '●' };
+      reactRows.forEach(r => {
+        y += 36;
+        ctx.fillStyle = dirCol[r.dir]; ctx.font = font(700, 22); ctx.fillText(icon[r.dir], L, y - 2);
+        ctx.fillStyle = C.ink; ctx.font = font(r.bold ? 800 : 500, 26);
+        r.wrap.forEach((line, i) => ctx.fillText(line, L + 44, y + i * 36));
+        y += (r.wrap.length - 1) * 36 + 16;
+      });
+      if(volWrap.length){
+        y += 44; ctx.fillStyle = C.muted; ctx.font = font(500, 22);
+        volWrap.forEach((line, i) => ctx.fillText(line, L, y + i * 32));
+        y += (volWrap.length - 1) * 32;
+      }
+      y += 40; ctx.fillStyle = C.muted; ctx.font = font(500, 20); ctx.fillText('Typical reaction, not a guarantee.', L, y);
     }
     if(g){
       y += 70;
