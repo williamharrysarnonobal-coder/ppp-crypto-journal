@@ -22649,11 +22649,11 @@ function econReaction(e){
   }
   const r = ECON_REACTION.find(x => x.keys.some(k => t.includes(k)));
   if(!r) return null;   // unknown news: no empty "How the market may react" with only the ⚡ line
-  const eff = b => b ? 'Often bullish for BTC & Gold (weaker USD).' : 'Often bearish for BTC & Gold (stronger USD).';
+  const eff = b => b ? 'Often bullish (weaker USD).' : 'Often bearish (stronger USD).';
   if(r.talk) return {
     lines: [
-      { dir: 'down', text: 'Hawkish tone (rates higher for longer): often bearish for BTC & Gold.' },
-      { dir: 'up', text: 'Dovish tone (cuts ahead): often bullish for BTC & Gold.' }
+      { dir: 'down', text: 'Hawkish tone (rates higher for longer): often bearish.' },
+      { dir: 'up', text: 'Dovish tone (cuts ahead): often bullish.' }
     ], verdict: null, vol };
   const f = e.forecast, fn = _econNum(f);
   const lines = [
@@ -22681,24 +22681,24 @@ function econReactionShort(e){
   const r = ECON_REACTION.find(x => x.keys.some(k => t.includes(k)));
   if(!r) return null;
   const bb = b => b ? 'bullish' : 'bearish';
-  if(r.talk) return { parts: [{ dir: 'down', text: 'Hawkish: bearish' }, { dir: 'up', text: 'Dovish: bullish' }], tail: 'for BTC & Gold' };
+  if(r.talk) return { parts: [{ dir: 'down', text: 'Hawkish: bearish' }, { dir: 'up', text: 'Dovish: bullish' }], tail: '' };
   const full = econReaction(e);
   if(full && full.verdict){
     const v = full.verdict;
     if(v.dir === 'mid') return { parts: [{ dir: 'mid', text: `Actual ${e.actual}: in line, usually a small move`, strong: true }], tail: '' };
     const side = _econNum(e.actual) > _econNum(e.forecast) ? r.up : r.down;
-    return { parts: [{ dir: v.dir, text: `Actual ${e.actual}, ${side.word} than expected: often ${bb(side.bull)}`, strong: true }], tail: 'for BTC & Gold' };
+    return { parts: [{ dir: v.dir, text: `Actual ${e.actual}, ${side.word} than expected: often ${bb(side.bull)}`, strong: true }], tail: '' };
   }
   const f = e.forecast, has = _econNum(f) != null;
   return { parts: [
     { dir: r.up.bull ? 'up' : 'down', text: `${has ? 'Above ' + f : 'Higher'}: ${bb(r.up.bull)}` },
     { dir: r.down.bull ? 'up' : 'down', text: `${has ? 'Below ' + f : 'Lower'}: ${bb(r.down.bull)}` }
-  ], tail: 'for BTC & Gold' };
+  ], tail: '' };
 }
 function renderEconReactionHtml(e){
   const r = econReaction(e);
   if(!r) return '';
-  const icon = { up: '▲', down: '▼', mid: '●' };
+  const icon = { up: '●', down: '●', mid: '●' };
   const row = (l, cls) => `<div class="econ-react-row ${cls || ''} is-${l.dir}"><span class="econ-react-ic" aria-hidden="true">${icon[l.dir]}</span><span>${escapeHtml(l.text)}</span></div>`;
   return `<div class="discipline-score-label" style="margin-bottom:8px;">How the market may react</div>
     ${r.verdict ? row(r.verdict, 'econ-react-verdict') : ''}
@@ -35647,10 +35647,10 @@ function drawEconShare(){
       y += 70;
       ctx.fillStyle = C.muted; ctx.font = font(700, 20); ctx.fillText('HOW THE MARKET MAY REACT', L, y);
       y += 14;
-      const dirCol = { up: '#2ECC71', down: '#FF5C5C', mid: C.muted }, icon = { up: '▲', down: '▼', mid: '●' };
+      const dirCol = { up: '#2ECC71', down: '#FF5C5C', mid: C.muted }, icon = { up: '●', down: '●', mid: '●' };
       reactRows.forEach(r => {
         y += 30;
-        ctx.fillStyle = dirCol[r.dir]; ctx.font = font(700, 15); ctx.fillText(icon[r.dir], L, y - 3);
+        ctx.fillStyle = dirCol[r.dir]; ctx.font = font(700, 22); ctx.fillText(icon[r.dir], L, y - 1);
         ctx.fillStyle = r.bold ? C.ink : C.muted; ctx.font = font(r.bold ? 700 : 500, 21);
         r.wrap.forEach((line, i) => ctx.fillText(line, L + 32, y + i * 30));
         y += (r.wrap.length - 1) * 30 + 8;
@@ -35738,11 +35738,11 @@ function drawEconShare(){
       if(vs.length && !compact){ ctx.fillStyle = C.muted; ctx.font = font(500, 22); ctx.fillText(_econFit(ctx, vs.map(([k, v]) => `${k} ${v}`).join('   ·   '), W - L - TX - L), L + TX, base + 34); }
       const notes = notesOf(e);
       if(notes){
-        // "▼ Above 0.2: bearish   ▲ Below 0.2: bullish   for BTC & Gold", small like a note.
+        // "● Above 0.2: bearish   ● Below 0.2: bullish" (red / green dots), small like a note.
         let nx = L + TX; const ny = base + (vs.length ? 70 : 36);
-        const dirCol = { up: '#2ECC71', down: '#FF5C5C', mid: C.muted }, icon = { up: '▲', down: '▼', mid: '●' };
+        const dirCol = { up: '#2ECC71', down: '#FF5C5C', mid: C.muted }, icon = { up: '●', down: '●', mid: '●' };
         notes.parts.forEach(p => {
-          ctx.fillStyle = dirCol[p.dir]; ctx.font = font(700, 14); ctx.fillText(icon[p.dir], nx, ny - 2); nx += 20;
+          ctx.fillStyle = dirCol[p.dir]; ctx.font = font(700, 20); ctx.fillText(icon[p.dir], nx, ny - 1); nx += 22;
           ctx.fillStyle = p.strong ? C.ink : C.muted; ctx.font = font(p.strong ? 700 : 500, 20); ctx.fillText(p.text, nx, ny); nx += ctx.measureText(p.text).width + 26;
         });
         if(notes.tail){ ctx.fillStyle = C.muted; ctx.font = font(500, 20); ctx.fillText(notes.tail, nx - (notes.parts.length === 1 ? 20 : 8), ny); }

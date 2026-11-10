@@ -5874,7 +5874,7 @@ body.mobile-mode #calGrid .cal-cell.past-loss::after{color:var(--loss);}
 /* Economic news: "How the market may react" (2026-11-10) */
 .econ-react{margin-bottom:16px;}
 .econ-react-row{display:flex;gap:6px;align-items:flex-start;font-size:12px;line-height:1.5;color:var(--muted);padding:2px 0;}
-.econ-react-ic{flex-shrink:0;width:12px;font-size:9px;line-height:18px;text-align:center;color:var(--muted);}
+.econ-react-ic{flex-shrink:0;width:12px;font-size:12px;line-height:18px;text-align:center;color:var(--muted);}
 .econ-react-row.is-up .econ-react-ic{color:var(--win);}
 .econ-react-row.is-down .econ-react-ic{color:var(--loss);}
 .econ-react-verdict{color:var(--ink);font-weight:600;margin-bottom:2px;}
