@@ -322,7 +322,11 @@ find/replace, try the LF form, then the CRLF form.
 - Reuse the shared modal overlays and share-image pattern (canvas +
   Copy image / Share… / Download PNG; see `drawMarketHoursShare`,
   `drawEconShare`) instead of inventing new ones.
-- Times shown to the owner are UAE time (Asia/Dubai).
+- Times shown to the owner are UAE time (Asia/Dubai). Exception (2026-11-10):
+  the Economic Calendar share image has a **Time zone** pick, UAE or PH
+  (`ECON_SHARE_TZ`, remembered in localStorage `econShareTz`); times, day
+  headers and day grouping follow it, so a UAE-evening news can land on the
+  next PH day. Which news are included still follows the app's day/week/month.
 - Notification on/off is **per device** (owner's choice): the 🔔 ⚙ categories
   and the Phone notifications list are one switch (`setNfCategory` writes both the
   in-app mute and that device's `push_subscriptions.prefs`). They are NOT in

@@ -35421,6 +35421,19 @@ async function playbookCodeAction(){
    Linggo), at isang news. Sumusunod sa impact filter at US Only ng Calendar —
    kung ano ang nakikita mo, iyon ang nasa larawan. */
 let _econShare = null;   // { kind, id? }
+// Time zone of the share image (2026-11-10): UAE or PH. Times, day headers and
+// day grouping follow it; which news are included still follows the app's day/week/month.
+const ECON_SHARE_TZ = { uae: { zone: 'Asia/Dubai', label: 'UAE time', short: 'UAE' }, ph: { zone: 'Asia/Manila', label: 'PH time', short: 'PH' } };
+function _econShareTz(){
+  let k = 'uae';
+  try { k = localStorage.getItem('econShareTz') || 'uae'; } catch(e){}
+  return ECON_SHARE_TZ[k] ? k : 'uae';
+}
+function onEconShareTz(){
+  const v = document.getElementById('econShareTz').value;
+  try { localStorage.setItem('econShareTz', v); } catch(e){}
+  drawEconShare();
+}
 const ECON_SHARE_COLOR = { high:'#FF5C5C', medium:'#FFA53B', low:'#93989F', holiday:'#3B9EFF' };
 function _econShareFilterLabel(){
   const all = ECON_IMPACT_LEVELS.every(l => activeEconImpactFilters.has(l));
@@ -35476,7 +35489,9 @@ function drawEconShare(){
   const C = { bg:'#12141C', surf:'#1B1F2B', rule:'#2E3446', ink:'#F1EEE6', muted:'#93989F', accent:'#F0B429' };
   const font = (w, s) => `${w} ${s}px "Public Sans", system-ui, sans-serif`;
   const W = 1200, L = 72;
-  const time = d => new Date(d).toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit' });
+  const TZ = ECON_SHARE_TZ[_econShareTz()];
+  const time = d => new Date(d).toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit', timeZone: TZ.zone });
+  const tzDate = (d, o) => new Date(d).toLocaleDateString('en-US', Object.assign({ timeZone: TZ.zone }, o));
   const imp = e => String(e.impact || '').toLowerCase();
   const values = e => [['Forecast', e.forecast], ['Previous', e.previous], ['Actual', e.actual]].filter(v => v[1]);
   const events = _econShareEvents();
@@ -35492,7 +35507,7 @@ function drawEconShare(){
     ctx.fillStyle = col; ctx.fillRect(0, 0, 12, H);
     ctx.fillStyle = col; ctx.font = font(800, 26); ctx.fillText(`${(e.impact || 'News').toUpperCase()} IMPACT NEWS`, L, 100);
     ctx.fillStyle = C.muted; ctx.font = font(600, 28);
-    ctx.fillText(`${new Date(e.event_date).toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric' })} · ${time(e.event_date)} UAE`, L, 146);
+    ctx.fillText(`${tzDate(e.event_date, { weekday:'long', month:'long', day:'numeric' })} · ${time(e.event_date)} ${TZ.short}`, L, 146);
     ctx.fillStyle = C.ink; ctx.font = font(800, 62);
     const tl = _wrapCanvasText(ctx, e.title, W - L * 2, 3);
     tl.forEach((line, i) => ctx.fillText(line, L, 250 + i * 74));
@@ -35516,23 +35531,25 @@ function drawEconShare(){
       ctx.fillStyle = C.ink; ctx.font = font(500, 28);
       _wrapCanvasText(ctx, g.en, W - L * 2, 4).forEach((line, i) => ctx.fillText(line, L, y + 48 + i * 40));
     }
-    ctx.fillStyle = C.muted; ctx.font = font(500, 22); ctx.fillText('Economic Calendar · UAE time', L, H - 56);
+    ctx.fillStyle = C.muted; ctx.font = font(500, 22); ctx.fillText(`Economic Calendar · ${TZ.label}`, L, H - 56);
     ctx.textAlign = 'right'; ctx.fillStyle = C.accent; ctx.font = font(800, 24); ctx.fillText('TANAYDANA', W - L, H - 56); ctx.textAlign = 'left';
     return;
   }
 
   // Araw, linggo o buwan: listahan, nakapangkat kada araw. Ang buwan ay
   // siksik (walang forecast/previous) dahil marami.
-  const kind = _econShare.kind, grouped = kind === 'week' || kind === 'month', compact = kind === 'month';
+  const kind = _econShare.kind, compact = kind === 'month';
   const MAX = kind === 'month' ? 80 : kind === 'week' ? 36 : 24;
   const shown = events.slice(0, MAX);
   const groups = [];
   shown.forEach(e => {
-    const k = new Date(e.event_date).toDateString();
+    const k = tzDate(e.event_date, { year:'numeric', month:'2-digit', day:'2-digit' });
     let gp = groups.find(x => x.k === k);
     if(!gp){ gp = { k, list: [] }; groups.push(gp); }
     gp.list.push(e);
   });
+  // A single day can spill into the next one in PH time: show day headers then.
+  const grouped = kind === 'week' || kind === 'month' || groups.length > 1;
   const ROW = compact ? 60 : 92, DAYH = 76;
   const listH = shown.length ? groups.length * DAYH + shown.length * ROW : 120;
   cv.width = W; cv.height = Math.max(900, 300 + listH + (events.length > MAX ? 60 : 0) + 140);
@@ -35551,14 +35568,14 @@ function drawEconShare(){
     const f = d => d.toLocaleDateString('en-US', { month:'short', day:'numeric' });
     sub = `${f(start)} – ${f(last)}`;
   }else sub = new Date(selectedEconDate).toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric' });
-  ctx.fillText(`${sub} · UAE time · ${_econShareFilterLabel()}`, L, 180);
+  ctx.fillText(`${sub} · ${TZ.label} · ${_econShareFilterLabel()}`, L, 180);
   let y = 250;
   if(!shown.length){ ctx.fillStyle = C.muted; ctx.font = font(500, 30); ctx.fillText('No news with this filter.', L, y + 40); }
   groups.forEach(gp => {
     if(grouped){
       y += 56;
       ctx.fillStyle = C.accent; ctx.font = font(800, 24);
-      ctx.fillText(new Date(gp.k).toLocaleDateString('en-US', { weekday:'long', month:'short', day:'numeric' }).toUpperCase(), L, y);
+      ctx.fillText(tzDate(gp.list[0].event_date, { weekday:'long', month:'short', day:'numeric' }).toUpperCase(), L, y);
       y += 20;
     }else y += 10;
     gp.list.forEach(e => {
@@ -35585,6 +35602,7 @@ function openEconShare(kind, id){
   _econShare = { kind, id };
   const title = kind === 'event' ? 'Share this news' : kind === 'month' ? 'Share this month’s news' : kind === 'week' ? 'Share this week’s news' : 'Share this day’s news';
   document.getElementById('econShareTitle').textContent = title;
+  document.getElementById('econShareTz').value = _econShareTz();
   document.getElementById('econShareNativeBtn').style.display = (navigator.canShare && navigator.share) ? '' : 'none';
   document.getElementById('econShareModal').classList.add('open');
   drawEconShare();
