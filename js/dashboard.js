@@ -11033,9 +11033,11 @@ function renderFinDashEquityChart(chartTx, primary){
 // a category in neither is silently invisible to the Needs vs Wants metric.
 const FIN_NEEDS_CATEGORIES = [
   '🏠 Housing', '💡 Utilities', '🍽️ Food & Groceries', '🚗 Transportation', '🏥 Healthcare',
-  '📚 Education', '🧴 Personal Care', '🛡️ Insurance', '🛂 Government & Visa', '🏦 Bank & Remittance Fees'
+  '📚 Education', '🧴 Personal Care', '🛡️ Insurance', '🛂 Government & Visa', '🏦 Bank & Remittance Fees',
+  // Owner, 2026-11-11: church giving and gifts for family are needs for him, not wants.
+  '🎁 Gifts & Donations'
 ];
-const FIN_WANTS_CATEGORIES = ['🎉 Entertainment', '🚬 Vices', '🛍️ Shopping', '🎁 Gifts & Donations', '✈️ Travel', '📦 Subscriptions'];
+const FIN_WANTS_CATEGORIES = ['🎉 Entertainment', '🚬 Vices', '🛍️ Shopping', '✈️ Travel', '📦 Subscriptions'];
 
 // Trailing N FULL calendar months of transactions (excluding the current,
 // still-incomplete one), in the primary currency and honouring the account
@@ -11319,7 +11321,7 @@ function renderFinDashDisciplineRadar(chartTx, primary, accFilterId){
                   ? (m.liquidTotal > 0 ? 'No spending in the last 3 complete months to measure a burn rate against.' : 'No cash balance recorded on any non-credit account.')
                   : `${finMoney(m.liquidTotal, primary)} in cash ÷ ${finMoney(m.monthlyBurn, primary)} average monthly spend = ${m.runwayMonths.toFixed(1)} month${m.runwayMonths===1?'':'s'} of runway. ${m.runwayTarget} months scores 100.`,
                 'Needs vs Wants': m.classifiableTotal
-                  ? `${m.needsPct}% of your needs-vs-wants-classified spending went to needs (Housing, Utilities, Food, Transport, Healthcare, Education, Personal Care, Insurance, Government & Visa, Bank & Remittance Fees) rather than wants (Entertainment, Vices, Shopping, Gifts, Travel, Subscriptions).`
+                  ? `${m.needsPct}% of your needs-vs-wants-classified spending went to needs (Housing, Utilities, Food, Transport, Healthcare, Education, Personal Care, Insurance, Government & Visa, Bank & Remittance Fees, Gifts & Donations) rather than wants (Entertainment, Vices, Shopping, Travel, Subscriptions).`
                   : 'No spending yet in a category classified as a need or a want.',
                 'On-Time Payments': m.onTimeTracked
                   ? `${m.onTimeTracked - m.onTimeBehind} of ${m.onTimeTracked} account${m.onTimeTracked!==1?'s carrying commitments had':' carrying commitments had'} last month's bill settled. Counted per account, not per item — one "Paid" press clears that card's whole statement. A payment logged as a transaction counts too, so settling outside the app still registers.`
@@ -16832,7 +16834,7 @@ function computeFinanceChallenges(){
   const c7 = {
     icon: 'target', title: 'Needs-Focused Living', points: 70,
     desc: 'Consecutive months where 70%+ of classified spending went to needs, not wants.',
-    howTo: 'Needs = Housing, Utilities, Food & Groceries, Transportation, Healthcare, Education, Personal Care, Insurance, Government & Visa, Bank & Remittance Fees. Wants = Entertainment, Vices, Shopping, Gifts & Donations, Travel, Subscriptions. Debt & Loans and Savings & Investments are deliberately in neither bucket. A month with no spending in either bucket, or below 70% needs, ends the streak.',
+    howTo: 'Needs = Housing, Utilities, Food & Groceries, Transportation, Healthcare, Education, Personal Care, Insurance, Government & Visa, Bank & Remittance Fees, Gifts & Donations. Wants = Entertainment, Vices, Shopping, Travel, Subscriptions. Debt & Loans and Savings & Investments are deliberately in neither bucket. A month with no spending in either bucket, or below 70% needs, ends the streak.',
     current: needsStreak, tiers: [1,3,6,12], target: 12, done: needsStreak >= 12
   };
 

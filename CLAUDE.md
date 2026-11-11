@@ -273,6 +273,10 @@ find/replace, try the LF form, then the CRLF form.
   the card, newest first); it is not in the bill details. Recurring amounts use the paying
   account's currency (`_finRecCur`), not a hard-coded PHP.
 - `tests/sim-finance-bill.js` runs Paid/Undo end-to-end on the owner's real numbers.
+- Discipline radar **Needs vs Wants**: `FIN_NEEDS_CATEGORIES` / `FIN_WANTS_CATEGORIES`.
+  **Gifts & Donations is a NEED** (owner, 2026-11-11: church giving and family
+  gifts are needs for him). Family Support, Debt & Loans, Savings, Work &
+  Business and Miscellaneous are in neither list.
 - Finance **Dashboard period = Year + Month** dropdowns (2026-11-11, owner's
   request; replaced This Month / Previous Month / All time / Custom Range):
   `finDashYearFilter` / `finDashMonthFilter`, `_finDashYM()`,
