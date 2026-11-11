@@ -273,6 +273,14 @@ find/replace, try the LF form, then the CRLF form.
   the card, newest first); it is not in the bill details. Recurring amounts use the paying
   account's currency (`_finRecCur`), not a hard-coded PHP.
 - `tests/sim-finance-bill.js` runs Paid/Undo end-to-end on the owner's real numbers.
+- Finance **Dashboard period = Year + Month** dropdowns (2026-11-11, owner's
+  request; replaced This Month / Previous Month / All time / Custom Range):
+  `finDashYearFilter` / `finDashMonthFilter`, `_finDashYM()`,
+  `_populateFinDashPeriodFilter()`. Only years/months with a transaction are
+  listed, Month has "All months" (whole year), default = this month if it has
+  data else the latest. Picking a month moves the Calendar to it; drilling into
+  Transactions turns it into a Custom Range there. The Transactions tab keeps
+  its own old period filter.
 - An account's **Full History** list (details popup) has an **Edit** button per row
   (2026-11-10): opens the same Edit Transaction form as the Transactions tab and,
   on save, re-renders the open history (`_finHistoryShownAccId`) keeping filter

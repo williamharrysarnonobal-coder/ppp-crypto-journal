@@ -3849,10 +3849,10 @@ table.breakdown tbody tr{cursor:pointer;}
      shrinks to a size that actually fits a phone screen. */
   body.mobile-mode .fin-dash-list-panel,
   body.mobile-mode .fin-dash-detail-panel{height:360px !important;}
-  body.mobile-mode .fin-dash-filters{flex-direction:column;align-items:stretch;}
-  body.mobile-mode .fin-dash-filters select,
-  body.mobile-mode .fin-dash-filters input{width:100%;}
-  body.mobile-mode .fin-dash-filters #finDashRangeFilterRow{flex-direction:column;align-items:stretch;}
+  /* Phone: Account on its own row, Year + Month side by side under it. */
+  body.mobile-mode .fin-dash-filters{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.6fr);}
+  body.mobile-mode .fin-dash-filters select{width:100%;min-width:0;}
+  body.mobile-mode .fin-dash-filters #finDashAccountFilter{grid-column:1 / -1;}
   /* Transactions filter/search row — same "stack full-width" treatment. */
   body.mobile-mode .fin-tx-filters{flex-direction:column;align-items:stretch;}
   body.mobile-mode .fin-tx-filters select,

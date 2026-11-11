@@ -10576,6 +10576,9 @@ function renderFinDashboard(){
   if(!grid) return;
 
   _populateFinDashAccountFilter();
+  const firstPeriodFill = !document.getElementById('finDashMonthFilter')?.dataset.init;
+  _populateFinDashPeriodFilter();
+  if(firstPeriodFill && document.getElementById('finDashMonthFilter')?.dataset.init) _finDashSyncCalendarToPeriod();
   const accFilterVal = document.getElementById('finDashAccountFilter')?.value || 'all';
   const accFilterId = accFilterVal !== 'all' ? parseInt(accFilterVal, 10) : null;
 
@@ -10716,37 +10719,65 @@ function renderFinDashboard(){
 // filter, independent of the calendar's month nav above — so you can look
 // at "where does my money go" over This Month / Previous Month / All time /
 // a custom range without that also flipping which month the calendar shows.
-function _finDashChartPassesFilter(t){
-  if(!t.tx_date) return false;
-  const filterEl = document.getElementById('finDashPeriodFilter');
-  const filter = filterEl ? filterEl.value : 'this';
-  if(filter === 'all') return true;
-  const d = new Date(t.tx_date + 'T00:00:00');
-
-  if(filter === 'this'){
-    const now = new Date();
-    return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
-  }
-  if(filter === 'prev'){
-    const prev = _finPreviousMonthLabel();
-    return d.getFullYear() === prev.getFullYear() && d.getMonth() === prev.getMonth();
-  }
-  if(filter === 'range'){
-    const from = document.getElementById('finDashRangeFrom')?.value;
-    const to = document.getElementById('finDashRangeTo')?.value;
-    if(from && t.tx_date < from) return false;
-    if(to && t.tx_date > to) return false;
-    return true;
-  }
-  return true;
+/* Period = Year + Month (owner, 2026-11-11), replacing This Month / Previous
+   Month / All time / Custom Range. Only years and months that have a
+   transaction are listed; Month also has "All months" for the whole year.
+   Default: this month if it has data, otherwise the latest month that does. */
+const FIN_MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+function _finDashYM(){
+  const y = parseInt(document.getElementById('finDashYearFilter')?.value, 10);
+  const mv = document.getElementById('finDashMonthFilter')?.value;
+  return { y: isNaN(y) ? null : y, m: (mv == null || mv === '' || mv === 'all') ? null : parseInt(mv, 10) };
+}
+function _finDashDataMonths(){
+  const set = new Set();
+  FIN_TXNS.forEach(t => { if(t.tx_date) set.add(t.tx_date.slice(0, 7)); });
+  return [...set].sort();   // 'YYYY-MM'
+}
+function _populateFinDashPeriodFilter(){
+  const ySel = document.getElementById('finDashYearFilter');
+  const mSel = document.getElementById('finDashMonthFilter');
+  if(!ySel || !mSel) return;
+  const ym = _finDashDataMonths();
+  const now = new Date();
+  const nowKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const def = ym.includes(nowKey) ? nowKey : (ym[ym.length - 1] || nowKey);
+  const years = [...new Set(ym.map(k => k.slice(0, 4)))].sort().reverse();
+  if(!years.length) years.push(String(now.getFullYear()));
+  const prevY = ySel.value;
+  ySel.innerHTML = years.map(y => `<option value="${y}">${y}</option>`).join('');
+  ySel.value = years.includes(prevY) ? prevY : def.slice(0, 4);
+  const months = ym.filter(k => k.startsWith(ySel.value)).map(k => parseInt(k.slice(5), 10) - 1);
+  const prevM = mSel.dataset.init ? mSel.value : String(parseInt(def.slice(5), 10) - 1);
+  mSel.innerHTML = `<option value="all">All months</option>` + months.map(m => `<option value="${m}">${FIN_MONTH_NAMES[m]}</option>`).join('');
+  mSel.value = [...mSel.options].some(o => o.value === prevM) ? prevM : (months.length ? String(months[months.length - 1]) : 'all');
+  // Remember the pick only once there is data; before the first load the default still has to apply.
+  if(ym.length) mSel.dataset.init = '1';
+}
+// The calendar below follows a picked month, so both show the same month.
+function _finDashSyncCalendarToPeriod(){
+  const { y, m } = _finDashYM();
+  if(y != null && m != null) finDashMonth = new Date(y, m, 1);
+}
+function onFinDashYearChange(){
+  const mSel = document.getElementById('finDashMonthFilter');
+  // A new year: start on its latest month with data.
+  if(mSel) mSel.value = '__reset__';
+  _populateFinDashPeriodFilter();
+  _finDashSyncCalendarToPeriod();
+  renderFinDashboard();
+}
+function onFinDashMonthChange(){
+  _finDashSyncCalendarToPeriod();
+  renderFinDashboard();
 }
 
-function onFinDashPeriodFilterChange(){
-  const isRange = document.getElementById('finDashPeriodFilter').value === 'range';
-  document.getElementById('finDashRangeFilterRow').style.display = isRange ? 'flex' : 'none';
-  // Full re-render, not just the charts — the Period filter now drives the
-  // KPI row too.
-  renderFinDashboard();
+function _finDashChartPassesFilter(t){
+  if(!t.tx_date) return false;
+  const { y, m } = _finDashYM();
+  if(y == null) return true;
+  if(t.tx_date.slice(0, 4) !== String(y)) return false;
+  return m == null || parseInt(t.tx_date.slice(5, 7), 10) - 1 === m;
 }
 
 function renderFinDashCharts(accFilterIdParam){
@@ -11188,26 +11219,16 @@ function _finDisciplineMetrics(chartTx, primary, accFilterId){
 // calendar span — needed for No-Spend Days, which has to know the total
 // number of days in view (not just which days happen to have a transaction).
 function _finPeriodRange(){
-  const filterEl = document.getElementById('finDashPeriodFilter');
-  const filter = filterEl ? filterEl.value : 'all';
   const now = new Date();
   now.setHours(0,0,0,0);
-
-  if(filter === 'this'){
-    return { start: new Date(now.getFullYear(), now.getMonth(), 1), end: now };
+  const { y, m } = _finDashYM();
+  if(y != null){
+    // A month or a whole year, never past today (days not lived yet aren't no-spend days).
+    const start = m != null ? new Date(y, m, 1) : new Date(y, 0, 1);
+    const last = m != null ? new Date(y, m + 1, 0) : new Date(y, 11, 31);
+    return { start, end: last > now ? now : last };
   }
-  if(filter === 'prev'){
-    const prev = _finPreviousMonthLabel();
-    return { start: new Date(prev.getFullYear(), prev.getMonth(), 1), end: new Date(prev.getFullYear(), prev.getMonth()+1, 0) };
-  }
-  if(filter === 'range'){
-    const fromVal = document.getElementById('finDashRangeFrom')?.value;
-    const toVal = document.getElementById('finDashRangeTo')?.value;
-    const start = fromVal ? new Date(fromVal + 'T00:00:00') : now;
-    const end = toVal ? new Date(toVal + 'T00:00:00') : now;
-    return { start, end };
-  }
-  // 'all' — from the earliest transaction on record to today.
+  // No data yet — from the earliest transaction on record to today.
   const dates = FIN_TXNS.map(t => t.tx_date).filter(Boolean).sort();
   const start = dates.length ? new Date(dates[0] + 'T00:00:00') : now;
   return { start, end: now };
@@ -12536,18 +12557,18 @@ function finDrillToTransactions(kind, label, values){
 
   // Carry the Dashboard's period and account over, so the list adds up to the
   // number that was just clicked instead of quietly showing all time.
-  const period = document.getElementById('finDashPeriodFilter')?.value;
+  // The Dashboard's Year + Month becomes a Custom Range on the Transactions tab.
+  const { y: dy, m: dm } = _finDashYM();
   const txPeriod = document.getElementById('finTxPeriodFilter');
-  if(period && txPeriod && [...txPeriod.options].some(o => o.value === period)){
-    txPeriod.value = period;
-    if(period === 'range'){
-      const from = document.getElementById('finTxRangeFrom');
-      const to = document.getElementById('finTxRangeTo');
-      if(from) from.value = document.getElementById('finDashRangeFrom')?.value || '';
-      if(to) to.value = document.getElementById('finDashRangeTo')?.value || '';
-    }
+  if(dy != null && txPeriod){
+    txPeriod.value = 'range';
+    const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const from = document.getElementById('finTxRangeFrom');
+    const to = document.getElementById('finTxRangeTo');
+    if(from) from.value = iso(dm != null ? new Date(dy, dm, 1) : new Date(dy, 0, 1));
+    if(to) to.value = iso(dm != null ? new Date(dy, dm + 1, 0) : new Date(dy, 11, 31));
     const rangeRow = document.getElementById('finTxRangeFilterRow');
-    if(rangeRow) rangeRow.style.display = period === 'range' ? 'flex' : 'none';
+    if(rangeRow) rangeRow.style.display = 'flex';
   }
 
   const dashAcc = document.getElementById('finDashAccountFilter')?.value || 'all';
