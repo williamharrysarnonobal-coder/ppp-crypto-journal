@@ -129,6 +129,9 @@ find/replace, try the LF form, then the CRLF form.
 - Pattern Types "15 mins LH - 3ger" (Short, Rejection Play) and its mirror
   "15 mins HL - 3ger" (Long, Bounce Play), exec 5 min: the 15 mins LH/HL checklist without the BB50 execution item; the MACD-cross item is
   replaced by "Where did you put your Trigger Entry?" (0.382–0.618, allGood).
+  Same treatment (2026-11-13) for **"1 hour HL - 3ger"** (Long, Bounce) and
+  **"1 hour LH - 3ger"** (Short, Rejection), exec 15 min: the 1 hour checklist
+  minus BB50 execution, MACD-cross replaced by the Trigger Entry question.
 - Position Size calculator (`_psComputeRow`): forex pairs whose quote is not
   USD (GBPCHF, EURJPY…) lose in the quote currency, so the SL distance is
   converted to USD first (`_psQuoteUsd`; USDxxx uses the price itself, crosses
