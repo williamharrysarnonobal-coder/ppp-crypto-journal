@@ -9321,7 +9321,8 @@ const DB_CHECKS = [
   { file:'supabase_playbooks.sql', what:'Playbooks (your own confluence checklists)', table:'playbooks', col:'key,items' },
   { file:'supabase_trading_journal_add_post_stop_profit.sql', what:'Post-Stop Profit on trades', table:'trading_journal', col:'post_stop_profit_result' },
   { file:'supabase_position_setups_upscale_order.sql', what:'Upscale order on a setup (Order Placed, Cancel)', table:'position_setups', col:'upscale_order_id' },
-  { file:'supabase_trading_accounts_upscale_api.sql', what:'Upscale API key on My Accounts', table:'trading_accounts', col:'upscale_account_id,upscale_account_label' }
+  { file:'supabase_trading_accounts_upscale_api.sql', what:'Upscale API key on My Accounts', table:'trading_accounts', col:'upscale_account_id,upscale_account_label' },
+  { file:'supabase_news_results_sent.sql', what:'News result to Telegram (US High impact)', table:'news_results_sent', col:'key' }
 ];
 async function _dbHasColumns(table, cols){
   try{
@@ -22640,18 +22641,20 @@ function findEconGlossaryEntry(title){
    Gold under a US news: what Actual above / below the Forecast usually means,
    and after the release which way it came in. Rules only (no live sentiment),
    so it never goes stale. `up` = what a higher number means. Order matters:
-   the first match wins, so specific names come before general ones. */
+   the first match wins, so specific names come before general ones.
+   worker.js NEWS_REACTION (news result to Telegram) uses the same rules:
+   change both together. */
 const ECON_REACTION = [
   { keys: ['unemployment rate', 'jobless claims', 'unemployment claims', 'initial claims', 'continuing claims'],
     up: { word: 'weaker', why: 'Weaker labor market', bull: true }, down: { word: 'stronger', why: 'Stronger labor market', bull: false } },
-  { keys: ['inflation rate', 'core inflation', 'pce', 'cpi', 'ppi', 'producer price', 'average hourly earnings', 'wage', 'inflation expectations', 'employment cost', 'prices paid'],
+  { keys: ['inflation rate', 'core inflation', 'pce', 'cpi', 'ppi', 'producer price', 'average hourly earnings', 'wage', 'inflation expectations', 'employment cost', 'prices paid', 'gdp price index', 'deflator'],
     up: { word: 'hotter', why: 'Hotter inflation', bull: false }, down: { word: 'cooler', why: 'Cooler inflation', bull: true } },
   { keys: ['non farm', 'nonfarm', 'non-farm', 'payrolls', 'employment change', 'adp', 'jolts', 'job openings'],
     up: { word: 'stronger', why: 'Stronger jobs', bull: false }, down: { word: 'weaker', why: 'Weaker jobs', bull: true } },
   { keys: ['interest rate decision', 'rate decision', 'fed funds'], rate: true,
     up: { word: 'higher', why: 'Higher rate than expected', bull: false }, down: { word: 'lower', why: 'Lower rate than expected', bull: true } },
   { keys: ['fomc', 'press conference', ' speaks', 'speech', 'testifies', 'testimony'], talk: true },
-  { keys: ['gdp', 'retail sales', 'pmi', 'ism', 'consumer confidence', 'consumer sentiment', 'durable goods', 'housing starts', 'building permits', 'home sales', 'industrial production'],
+  { keys: ['gdp', 'retail sales', 'pmi', 'ism', 'consumer confidence', 'consumer sentiment', 'durable goods', 'housing starts', 'building permits', 'home sales', 'industrial production', 'personal spending', 'personal income'],
     up: { word: 'stronger', why: 'Stronger economy', bull: false }, down: { word: 'weaker', why: 'Weaker economy', bull: true } }
 ];
 function _econNum(v){

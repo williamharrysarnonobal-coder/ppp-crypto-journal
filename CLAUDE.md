@@ -72,7 +72,8 @@ find/replace, try the LF form, then the CRLF form.
   `.gitignore`d, must never be committed, and their secrets must never be
   printed or pasted anywhere. They exist only on the office laptop.
 - Cloudflare secrets (set in the dashboard, never in code):
-  `SUPABASE_SERVICE_ROLE_KEY`, `VAPID_PRIVATE_KEY`, `UPSCALE_ENC_KEY`.
+  `SUPABASE_SERVICE_ROLE_KEY`, `VAPID_PRIVATE_KEY`, `UPSCALE_ENC_KEY`,
+  `TELEGRAM_BOT_TOKEN`, `TELEGRAM_NEWS_CHAT_ID`.
 - Upscale API keys are stored **encrypted** (`upscale_api_key_enc`) and never
   returned to the browser; the Worker decrypts and calls Upscale. The data
   backup strips that column. Shared/reused secrets still get real encryption
@@ -354,6 +355,17 @@ find/replace, try the LF form, then the CRLF form.
   speeches → hawkish/dovish; non-US → "mostly moves that currency"; High impact
   adds a 5–15 min volatility warning; always "Typical reaction, not a guarantee."
   First keyword match wins, so unemployment/claims come before jobs.
+  **News result to Telegram** (2026-11-25, `runNewsResultCron` in worker.js,
+  every cron minute): when a **US High impact** release gets its Actual, one
+  English message to the BTC Signal Alert group (Actual/Forecast/Previous, Bull/
+  Bear/Neutral per news, Overall BULLISH/BEARISH/NEUTRAL/MIXED, why). Same-time
+  releases share one message; sent once all Actuals are in, or 5 min after
+  release with "Not out yet"; gives up after 30 min. Key releases (Core PCE/CPI,
+  NFP, rate decision) count double, marked ⭐. Rules = `NEWS_REACTION` in
+  worker.js, a copy of `ECON_REACTION`: change both together. Dedupe table
+  `news_results_sent` (supabase_news_results_sent.sql). Needs Cloudflare secrets
+  `TELEGRAM_BOT_TOKEN` (= BTC_BOT_TOKEN) and `TELEGRAM_NEWS_CHAT_ID`
+  (= BTC_CHAT_ID); without them it sends nothing.
   The day/week share list has a one-line version under each US news
   (`econReactionShort`: "[Bear] Above 0.2  [Bull] Below 0.2", or the Actual
   verdict). Direction is a **Bull / Bear / Neutral pill** like the High impact

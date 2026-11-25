@@ -29,6 +29,7 @@ export default {
   async scheduled(event, env, ctx) {
     ctx.waitUntil(runPushCron(env, event.scheduledTime).catch(e => console.error('push cron', e)));
     ctx.waitUntil(expireTradeAlerts(env).catch(e => console.error('alert expiry', e)));
+    ctx.waitUntil(runNewsResultCron(env, event.scheduledTime).catch(e => console.error('news result', e)));
   }
 };
 
@@ -1052,6 +1053,132 @@ function _pzLocalClock(minute, tz) {
     timeZone: tz, hour12: false, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'
   }).formatToParts(new Date(minute)).map(x => [x.type, x.value]));
   return { hm: `${String(+p.hour % 24).padStart(2, '0')}:${p.minute}`, date: `${p.year}-${p.month}-${p.day}` };
+}
+
+/* ANG RESULTA NG NEWS SA TELEGRAM (2026-11-25). Pagkalabas ng Actual ng isang
+   US High impact news, isang message sa BTC Signal Alert group: Actual /
+   Forecast / Previous, Bull / Bear / Neutral bawat isa, ang overall, at kung
+   bakit. Parehong rules ng "How the market may react" (ECON_REACTION sa
+   dashboard.js): kapag binago ang isa, baguhin din ang isa. Ang sabay na news
+   (hal. Core PCE + GDP sa 8:30 ET) ay iisang message, ipinapadala kapag
+   kumpleto na ang lahat ng Actual, o 5 minuto matapos ang release kahit kulang
+   pa. Hindi na inuulit: ang news_results_sent (supabase_news_results_sent.sql)
+   ang tanda. Cloudflare secrets: TELEGRAM_BOT_TOKEN at TELEGRAM_NEWS_CHAT_ID;
+   kapag wala, walang ipinapadala. */
+const NEWS_REACTION = [
+  { keys: ['unemployment rate', 'jobless claims', 'unemployment claims', 'initial claims', 'continuing claims'],
+    up: { why: 'Weaker labor market', fx: 'gives the Fed room to ease', bull: true }, down: { why: 'Stronger labor market', fx: 'keeps the Fed hawkish', bull: false } },
+  { keys: ['inflation rate', 'core inflation', 'pce', 'cpi', 'ppi', 'producer price', 'average hourly earnings', 'wage', 'inflation expectations', 'employment cost', 'prices paid', 'gdp price index', 'deflator'],
+    up: { why: 'Hotter inflation', fx: 'Fed more likely to hike or keep rates high', bull: false }, down: { why: 'Cooler inflation', fx: 'less pressure on the Fed to hike', bull: true } },
+  { keys: ['non farm', 'nonfarm', 'non-farm', 'payrolls', 'employment change', 'adp', 'jolts', 'job openings'],
+    up: { why: 'Stronger jobs', fx: 'keeps the Fed hawkish', bull: false }, down: { why: 'Weaker jobs', fx: 'gives the Fed room to ease', bull: true } },
+  { keys: ['interest rate decision', 'rate decision', 'fed funds'],
+    up: { why: 'Higher rate', fx: 'tighter policy', bull: false }, down: { why: 'Lower rate', fx: 'looser policy', bull: true } },
+  { keys: ['fomc', 'press conference', ' speaks', 'speech', 'testifies', 'testimony'], talk: true },
+  { keys: ['gdp', 'retail sales', 'pmi', 'ism', 'consumer confidence', 'consumer sentiment', 'durable goods', 'housing starts', 'building permits', 'home sales', 'industrial production', 'personal spending', 'personal income'],
+    up: { why: 'Stronger economy', fx: 'keeps the Fed hawkish', bull: false }, down: { why: 'Weaker economy', fx: 'gives the Fed room to ease', bull: true } }
+];
+// Ang mga pinakamabigat sa Fed: doble ang bilang nila sa overall.
+const NEWS_KEY_EVENTS = ['core pce', 'core inflation', 'core cpi', 'non farm', 'nonfarm', 'non-farm', 'payrolls', 'interest rate decision', 'fed funds'];
+const NEWS_FULL_WAIT_MIN = 5, NEWS_GIVE_UP_MIN = 30;
+
+const _newsTitle = e => ' ' + String(e.title || '').toLowerCase();
+const _newsRule = e => NEWS_REACTION.find(x => x.keys.some(k => _newsTitle(e).includes(k))) || null;
+function _newsNum(v) {
+  const m = String(v == null ? '' : v).replace(/,/g, '').match(/(-?\d+(?:\.\d+)?)\s*([KMBT])?/i);
+  if (!m) return null;
+  return parseFloat(m[1]) * ({ K: 1e3, M: 1e6, B: 1e9, T: 1e12 }[(m[2] || '').toUpperCase()] || 1);
+}
+const _hasVal = v => v != null && v !== '';
+const _esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+// Ang Bull / Bear / Neutral ng isang news na may Actual na. null kapag wala.
+function newsVerdict(e) {
+  const r = _newsRule(e);
+  const an = _newsNum(e.actual), fn = _newsNum(e.forecast);
+  if (!r || r.talk || an == null || fn == null) return null;
+  const weight = NEWS_KEY_EVENTS.some(k => _newsTitle(e).includes(k)) ? 2 : 1;
+  const d = an - fn;
+  if (Math.abs(d) < 1e-9) return { dir: 'mid', weight, text: 'In line with the forecast. Usually a small move.' };
+  const s = d > 0 ? r.up : r.down;
+  return { dir: s.bull ? 'up' : 'down', weight, text: `${s.why} than expected: ${s.bull ? 'weaker' : 'stronger'} USD, ${s.fx}.` };
+}
+
+function newsResultMessage(group, t) {
+  const fmt = (e, v) => _hasVal(v) ? `${v}${e.scale || ''}${e.unit || ''}` : '—';
+  const icon = { up: '🟢 Bull', down: '🔴 Bear', mid: '⚪ Neutral' };
+  let score = 0, allMid = true;
+  const blocks = [], missing = [];
+  for (const e of group) {
+    const v = newsVerdict(e);
+    const star = NEWS_KEY_EVENTS.some(k => _newsTitle(e).includes(k)) ? ' ⭐' : '';
+    if (!_hasVal(e.actual)) { if (_newsRule(e) && !_newsRule(e).talk) missing.push(e.title); continue; }
+    blocks.push(`<b>${_esc(e.title)}</b>${star}\nActual <b>${_esc(fmt(e, e.actual))}</b> · Forecast ${_esc(fmt(e, e.forecast))} · Previous ${_esc(fmt(e, e.previous))}`
+      + (v ? `\n${icon[v.dir]}: ${_esc(v.text)}` : ''));
+    if (v) { score += v.dir === 'up' ? v.weight : v.dir === 'down' ? -v.weight : 0; if (v.dir !== 'mid') allMid = false; }
+  }
+  const overall = score > 0 ? '🟢 <b>BULLISH</b>' : score < 0 ? '🔴 <b>BEARISH</b>' : allMid ? '⚪ <b>NEUTRAL</b> (in line)' : '⚪ <b>MIXED</b>';
+  const lines = [`📰 <b>US News Result</b> · ${_pzTime(t, 'Asia/Dubai')} UAE`, `Overall: ${overall}`, '', blocks.join('\n\n')];
+  if (missing.length) lines.push('', `Not out yet: ${_esc(missing.join(', '))}`);
+  if (group.some(e => NEWS_KEY_EVENTS.some(k => _newsTitle(e).includes(k)))) lines.push('', '⭐ Key release for the Fed: it counts double in the overall.');
+  lines.push('⚡ Expect fast spikes in the first 5–15 minutes. Wait for the candle to close before entering.', '<i>Typical reaction, not a guarantee.</i>');
+  return lines.join('\n');
+}
+
+// Diretso sa TradingView, walang cache: ang Actual ay lumalabas ilang segundo
+// matapos ang release, at ang /api/economic-events ay naka-cache nang isang oras.
+async function fetchCalendarFresh(from, to) {
+  const res = await fetch(`${CALENDAR_URL}?from=${encodeURIComponent(from.toISOString())}&to=${encodeURIComponent(to.toISOString())}&countries=US`, {
+    headers: { Origin: 'https://www.tradingview.com', 'User-Agent': 'Mozilla/5.0' }
+  });
+  if (!res.ok) return null;
+  return ((await res.json()).result || []).map(e => ({
+    title: (e.title || '').trim(), country: e.country || null, event_date: e.date, impact: CALENDAR_IMPACT[String(e.importance)] || null,
+    actual: e.actual ?? null, forecast: e.forecast ?? null, previous: e.previous ?? null, unit: e.unit || '', scale: e.scale || ''
+  }));
+}
+
+async function runNewsResultCron(env, scheduledTime) {
+  if (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_NEWS_CHAT_ID || !env.SUPABASE_SERVICE_ROLE_KEY) return;
+  const minute = Math.floor((scheduledTime || Date.now()) / 60000) * 60000;
+  const isUsHigh = e => e.country === 'US' && e.impact === 'High';
+  let events = [];
+  try { const r = await handleEconomicEvents(new Request('https://local/api/economic-events')); events = r.ok ? ((await r.json()).events || []) : []; }
+  catch { return; }
+  // Ang mga release na kalalabas lang (hanggang 30 minuto ang nakalipas).
+  const due = [...new Set(events.filter(isUsHigh).map(e => Date.parse(e.event_date)))]
+    .filter(t => t <= minute && minute - t <= NEWS_GIVE_UP_MIN * 60000);
+  if (!due.length) return;
+  const fresh = await fetchCalendarFresh(new Date(Math.min(...due) - 60000), new Date(Math.max(...due) + 60000));
+  if (!fresh) return;
+
+  const sb = (path, init = {}) => fetch(`${SB_URL}/rest/v1/${path}`, {
+    ...init, headers: { apikey: env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`, 'Content-Type': 'application/json', ...(init.headers || {}) }
+  });
+  for (const t of due) {
+    const group = fresh.filter(e => isUsHigh(e) && Date.parse(e.event_date) === t);
+    const expected = group.filter(e => _newsRule(e) && !_newsRule(e).talk);
+    if (!expected.length || !expected.some(e => _hasVal(e.actual))) continue;
+    if (!expected.every(e => _hasVal(e.actual)) && minute - t < NEWS_FULL_WAIT_MIN * 60000) continue;
+
+    // Angkinin muna ang release bago magpadala: kung may nauna nang cron, walang
+    // maibabalik na row at hindi na uulitin.
+    const key = `US|${new Date(t).toISOString()}`;
+    const claim = await sb('news_results_sent?on_conflict=key', {
+      method: 'POST', headers: { Prefer: 'resolution=ignore-duplicates,return=representation' }, body: JSON.stringify([{ key }])
+    });
+    if (!claim.ok || !(await claim.json()).length) continue;
+
+    const tg = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: env.TELEGRAM_NEWS_CHAT_ID, text: newsResultMessage(group, t), parse_mode: 'HTML', disable_web_page_preview: true })
+    });
+    if (!tg.ok) {
+      console.error('news result telegram', tg.status, await tg.text());
+      // Bitawan para subukan ulit sa susunod na minuto.
+      await sb(`news_results_sent?key=eq.${encodeURIComponent(key)}`, { method: 'DELETE' });
+    }
+  }
 }
 
 async function runPushCron(env, scheduledTime) {
