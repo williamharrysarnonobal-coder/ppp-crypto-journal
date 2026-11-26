@@ -10607,6 +10607,7 @@ function renderFinDashboard(){
   const kpiPrimary = kpiCurrencies[0] || (FIN_ACCOUNTS[0]?.currency || 'PHP');
   const kp = kpiByCurrency[kpiPrimary] || { income: 0, expense: 0, count: 0 };
   const kpiNet = kp.income - kp.expense;
+  renderFinNetWorth();
   document.getElementById('finDashKpis').innerHTML = `
     <div class="kpi"><div class="label">Income (${escapeHtml(kpiPrimary)})</div><div class="value" style="color:var(--win);">${finMoney(kp.income, kpiPrimary)}</div></div>
     <div class="kpi"><div class="label">Expense (${escapeHtml(kpiPrimary)})</div><div class="value" style="color:var(--loss);">${finMoney(kp.expense, kpiPrimary)}</div></div>
@@ -10771,6 +10772,94 @@ function onFinDashYearChange(){
 function onFinDashMonthChange(){
   _finDashSyncCalendarToPeriod();
   renderFinDashboard();
+}
+
+/* NET WORTH (2026-11-26, owner's request): everything you have minus what you
+   owe, right now — not tied to the Year/Month or account filter. Cash = every
+   non-Credit account's own balance (sub-accounts carry their own, so each
+   account counts once); debt = finOwedFor() per card, which already includes
+   unpaid installments. Other currencies are converted into the main one with
+   the open.er-api rate (same cache as the Position Size calculator, 6h), so
+   the total moves with the exchange rate while the accounts themselves don't.
+   No rate at all → per-currency totals only, never a made-up number. */
+let _finFxState = 'idle';   // idle | loading | ok | failed
+let _finFxRates = null, _finFxAt = 0;
+function _finLoadFxRates(){
+  if(_finFxState === 'loading' || _finFxState === 'ok') return;
+  let cached = null;
+  try{ cached = JSON.parse(localStorage.getItem(PS_FX_LS_KEY) || 'null'); }catch(_){}
+  if(cached && cached.rates && Date.now() - cached.t < 6 * 3600 * 1000){
+    _finFxRates = cached.rates; _finFxAt = cached.t; _finFxState = 'ok'; return;
+  }
+  _finFxState = 'loading';
+  fetch(FX_API_URL).then(r => { if(!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }).then(d => {
+    const rates = d && d.rates;
+    if(!rates || !(Number(rates.AED) > 0)) throw new Error('Rates missing from response');
+    _finFxRates = rates; _finFxAt = Date.now(); _finFxState = 'ok';
+    try{ localStorage.setItem(PS_FX_LS_KEY, JSON.stringify({ t: _finFxAt, rates })); }catch(_){}
+  }).catch(e => {
+    console.error("Couldn't fetch FX rates for net worth:", e);
+    // An old rate beats no rate.
+    if(cached && cached.rates){ _finFxRates = cached.rates; _finFxAt = cached.t; _finFxState = 'ok'; }
+    else _finFxState = 'failed';
+  }).finally(() => renderFinNetWorth());
+}
+// Amount in `from` → `to`, or null without a rate. Rates are units per 1 USD.
+function _finConvert(amount, from, to){
+  if(from === to) return amount;
+  const a = _finFxRates && Number(_finFxRates[from]), b = _finFxRates && Number(_finFxRates[to]);
+  return a > 0 && b > 0 ? amount / a * b : null;
+}
+function _finNetWorthData(){
+  const cash = {}, debt = {};
+  FIN_ACCOUNTS.forEach(a => {
+    const cur = a.currency || 'PHP';
+    if(a.account_class === 'Credit') debt[cur] = (debt[cur] || 0) + finOwedFor(a);
+    else cash[cur] = (cash[cur] || 0) + (Number(a.current_balance) || 0);
+  });
+  // Main currency = the one holding the most accounts (AED for the owner).
+  const count = {};
+  FIN_ACCOUNTS.forEach(a => { const c = a.currency || 'PHP'; count[c] = (count[c] || 0) + 1; });
+  const main = Object.keys(count).sort((x, y) => count[y] - count[x])[0] || 'PHP';
+  const curs = [...new Set([...Object.keys(cash), ...Object.keys(debt)])];
+  let total = 0, converted = true;
+  curs.forEach(c => {
+    const v = _finConvert((cash[c] || 0) - (debt[c] || 0), c, main);
+    if(v == null) converted = false; else total += v;
+  });
+  return { cash, debt, main, curs, total, converted, multi: curs.length > 1 };
+}
+function renderFinNetWorth(){
+  const el = document.getElementById('finDashNetWorth');
+  if(!el) return;
+  if(!FIN_ACCOUNTS.length){ el.innerHTML = ''; return; }
+  const d0 = _finNetWorthData();
+  if(d0.multi && _finFxState === 'idle') _finLoadFxRates();
+  const d = _finNetWorthData();
+  const list = (obj, sign = '') => Object.entries(obj).filter(([, v]) => Math.abs(v) > 0.004).map(([c, v]) => sign + finMoney(v, c)).join(' · ') || finMoney(0, d.main);
+  let head, rateLine = '';
+  if(!d.multi){
+    head = `<span class="fin-balance">${finMoney(d.total, d.main)}</span>`;
+  }else if(d.converted){
+    head = `<span class="fin-networth-approx">≈</span> <span class="fin-balance">${finMoney(d.total, d.main)}</span>`;
+    const others = d.curs.filter(c => c !== d.main);
+    const rates = others.map(c => { const r = _finConvert(1, d.main, c); return r ? `1 ${d.main} = ${finMoney(r, c)}` : ''; }).filter(Boolean).join(' · ');
+    const ago = _finFxAt ? (typeof timeAgo === 'function' ? timeAgo(new Date(_finFxAt)) : '') : '';
+    rateLine = `<div class="fin-networth-rate">${rates}${ago ? ` · rate updated ${ago}` : ''}</div>`;
+  }else{
+    // No rate: one net per currency instead of a guessed total.
+    head = d.curs.map(c => `<span class="fin-balance">${finMoney((d.cash[c] || 0) - (d.debt[c] || 0), c)}</span>`).join(' <span class="fin-networth-approx">+</span> ');
+    rateLine = `<div class="fin-networth-rate">${_finFxState === 'loading' ? 'Loading exchange rate…' : 'No exchange rate right now, so each currency is shown on its own.'}</div>`;
+  }
+  const negative = d.converted && d.total < 0;
+  el.innerHTML = `
+    <div class="fin-networth-label" title="All accounts, right now — not affected by the Year / Month or account filter">Net worth today</div>
+    <div class="fin-networth-value${negative ? ' is-neg' : ''}">${head}</div>
+    <div class="fin-networth-parts">
+      <span>Cash <span class="fin-balance">${list(d.cash)}</span></span>
+      ${Object.keys(d.debt).length ? `<span>Card debt <span class="fin-networth-debt">${list(d.debt, '−')}</span></span>` : ''}
+    </div>
+    ${rateLine}`;
 }
 
 function _finDashChartPassesFilter(t){

@@ -277,6 +277,13 @@ find/replace, try the LF form, then the CRLF form.
   the card, newest first); it is not in the bill details. Recurring amounts use the paying
   account's currency (`_finRecCur`), not a hard-coded PHP.
 - `tests/sim-finance-bill.js` runs Paid/Undo end-to-end on the owner's real numbers.
+- **Net worth today** box on the Finance Dashboard (2026-11-26, `renderFinNetWorth`,
+  `_finNetWorthData`): cash (every non-Credit account's own balance, sub-accounts
+  once each) minus card debt (`finOwedFor`, includes unpaid installments). Not
+  filtered by Year/Month/account. Other currencies converted to the main one
+  (currency with the most accounts) via open.er-api, sharing the Position Size
+  cache `ps_fx_rates_v1` (6h); shown with "≈" and the rate. No rate → one net per
+  currency, never a guessed total. Blurs with Hide Balances (`.fin-balance`).
 - Money lent out (2026-11-26, owner's pick over a Receivables account): Expense
   **Debt & Loans › "Lent to someone"**; when paid back, Income **"Loan repayment"**.
   Added via `FINANCE_TAXONOMY_VERSION = 3`, which merges them into existing

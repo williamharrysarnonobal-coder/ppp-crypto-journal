@@ -3813,6 +3813,17 @@ table.breakdown tbody tr{cursor:pointer;}
   /* Finance: Dashboard tab — Income/Expense/Net KPI trio + calendar/detail
      two-panel layout, same visual language as the Trading Journal calendar
      (.cal-grid/.cal-cell are shared, defined once, further up this file). */
+  /* Net worth: everything you have minus card debt, above the period KPIs. */
+  .fin-networth{background:var(--surface);border:1px solid var(--rule);border-radius:8px;padding:16px 18px 14px;margin-bottom:10px;}
+  .fin-networth:empty{display:none;}
+  .fin-networth-label{font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:6px;}
+  .fin-networth-value{font-family:'IBM Plex Mono',monospace;font-size:28px;font-weight:600;color:var(--win);font-variant-numeric:tabular-nums;overflow-wrap:anywhere;}
+  .fin-networth-value.is-neg{color:var(--loss);}
+  .fin-networth-approx{color:var(--muted);font-weight:500;}
+  .fin-networth-parts{display:flex;flex-wrap:wrap;gap:4px 18px;margin-top:8px;font-size:12px;color:var(--muted);}
+  .fin-networth-parts .fin-balance{color:var(--ink);font-weight:600;}
+  .fin-networth-debt{color:var(--loss);font-weight:600;}
+  .fin-networth-rate{margin-top:6px;font-size:11px;color:var(--muted);}
   .fin-dash-kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--rule);border:1px solid var(--rule);border-radius:8px;overflow:hidden;margin-bottom:10px;}
   @media(max-width:640px){.fin-dash-kpis{grid-template-columns:1fr;}}
   .fin-dash-layout{display:grid;grid-template-columns:1.3fr 1fr;gap:20px;align-items:stretch;}
