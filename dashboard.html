@@ -1575,8 +1575,7 @@
                 <option value="Transfer">Transfer</option>
                 <option value="Correction">Correction</option>
               </select>
-              <button class="drawer-danger-btn" style="margin-left:auto;" onclick="deleteAllFilteredFinTx()">Delete All</button>
-            </div>
+              <button class="drawer-secondary-btn" id="finTxClearBtn" style="display:none;" onclick="clearFinTxFilters()" title="Back to This Month, all accounts, all types">Clear</button>            </div>
             <div id="finTxDrillChip" style="display:none;align-items:center;gap:8px;margin-bottom:12px;"></div>
             <div id="finTxBulkBar" style="display:none;align-items:center;gap:10px;margin-bottom:12px;font-size:12.5px;">
               <span id="finTxBulkCount"></span>
@@ -3041,7 +3040,7 @@
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=2"></script>
-<script src="js/dashboard.js?v=733"></script>
+<script src="js/dashboard.js?v=734"></script>
 <button type="button" class="notif-fab" id="notifFab" onclick="toggleNotifFab()" aria-label="Notifications" aria-expanded="false">
   <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
   <span class="notif-fab-badge" id="notifFabBadge" hidden>0</span>

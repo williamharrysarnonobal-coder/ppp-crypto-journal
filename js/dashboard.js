@@ -12630,6 +12630,28 @@ function clearFinTxDrill(){
   renderFinanceTransactions();
 }
 
+/* Clear (2026-11-26): every Transactions filter back to its default — This
+   Month, All accounts, All types, empty search, no chart drill-down. The
+   button only shows while something differs from that default. */
+const FIN_TX_DEFAULT_PERIOD = 'this';
+function _finTxFiltersAreDefault(){
+  const v = id => document.getElementById(id)?.value || '';
+  return v('finTxPeriodFilter') === FIN_TX_DEFAULT_PERIOD && (v('finTxAccountFilter') || 'all') === 'all'
+    && (v('finTxTypeFilter') || 'all') === 'all' && !v('finTxSearchFilter').trim() && !FIN_TX_DRILL;
+}
+function clearFinTxFilters(){
+  const set = (id, val) => { const el = document.getElementById(id); if(el) el.value = val; };
+  set('finTxPeriodFilter', FIN_TX_DEFAULT_PERIOD);
+  set('finTxAccountFilter', 'all');
+  set('finTxTypeFilter', 'all');
+  set('finTxSearchFilter', '');
+  set('finTxRangeFrom', '');
+  set('finTxRangeTo', '');
+  FIN_TX_DRILL = null;
+  _finTxPendingAccountFilter = 'all';
+  onFinTxPeriodFilterChange();   // hides the date range row and re-renders
+}
+
 function _renderFinTxDrillChip(){
   const el = document.getElementById('finTxDrillChip');
   if(!el) return;
@@ -12680,7 +12702,7 @@ function finDrillToTransactions(kind, label, values){
 }
 
 // Combines the period filter with the Account and Type filters — a
-// transaction must pass all three to show up (or be included in Delete All).
+// transaction must pass all three to show up.
 function _finTxPassesFilters(t){
   if(!_finTxPassesPeriodFilter(t)) return false;
   if(!_finTxPassesDrill(t)) return false;
@@ -12745,6 +12767,8 @@ function renderFinanceTransactions(){
 
   _populateFinTxAccountFilter();
   _renderFinTxDrillChip();
+  const clearBtn = document.getElementById('finTxClearBtn');
+  if(clearBtn) clearBtn.style.display = _finTxFiltersAreDefault() ? 'none' : '';
   const rows = FIN_TXNS.filter(_finTxPassesFilters);
 
   // Selection is kept by id (not by visible row), so it survives filter
@@ -13543,66 +13567,7 @@ async function deleteFinTx(id){
   }
 }
 
-// Deletes every transaction currently matching ALL active filters (period +
-// account + type — "All"/"all time" counts as "everything") in one click,
-// instead of one-by-one — for when you've filtered down to a batch (e.g. a
-// bad bulk import) and want it gone.
-async function deleteAllFilteredFinTx(){
-  // Ang mga bill payment ay hindi kasama (Undo sa card ang daan para doon).
-  const kept = FIN_TXNS.filter(_finTxPassesFilters).filter(t => _finBillPaymentOwner(t.id));
-  const rows = FIN_TXNS.filter(_finTxPassesFilters).filter(t => !_finBillPaymentOwner(t.id));
-  if(!rows.length && kept.length){ await customAlert('Only card bill payments match. Reverse those with Undo on the card.'); return; }
-  if(!rows.length){ await customAlert('No transactions match the current filters.'); return; }
-
-  const periodEl = document.getElementById('finTxPeriodFilter');
-  const accEl = document.getElementById('finTxAccountFilter');
-  const typeEl = document.getElementById('finTxTypeFilter');
-  const scoped = (periodEl && periodEl.value !== 'all') || (accEl && accEl.value !== 'all') || (typeEl && typeEl.value !== 'all');
-  if(!(await customConfirm(`Delete all ${rows.length} transaction${rows.length===1?'':'s'}${scoped ? ' matching the current filters' : ''}? Account balances will be adjusted back.${kept.length ? ` ${kept.length} card bill payment${kept.length === 1 ? ' is' : 's are'} skipped (use Undo on the card).` : ''} This can't be undone.`, 'Delete All'))) return;
-
-  try{
-    const ids = rows.map(r => r.id);
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/finance_transactions?id=in.(${ids.join(',')})`, {
-      method: 'DELETE',
-      headers: {
-        "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}`,
-        "Prefer": "return=representation"
-      }
-    });
-    if(!res.ok) throw new Error(await res.text());
-    // Only reverse balances / drop locally for rows Postgrest actually
-    // deleted — RLS can silently match zero rows on a DELETE (still 200/204),
-    // which would otherwise adjust balances and hide rows that are still in
-    // the database.
-    const deletedRows = await res.json().catch(() => []);
-    const deletedIdSet = new Set(deletedRows.map(r => r.id));
-    if(!deletedIdSet.size) throw new Error("Nothing was deleted — the transactions may already be gone or you don't have permission.");
-
-    for(const t of rows){
-      if(!deletedIdSet.has(t.id)) continue;
-      const amount = Number(t.amount) || 0;
-      if(t.tx_type === 'Income') await _adjustFinAccountBalance(t.account_id, -amount);
-      if(t.tx_type === 'Expense') await _adjustFinAccountBalance(t.account_id, amount);
-      if(t.tx_type === 'Transfer'){
-        await _adjustFinAccountBalance(t.account_id, amount);
-        await _adjustFinAccountBalance(t.to_account_id, -amount);
-      }
-    }
-
-    FIN_TXNS = FIN_TXNS.filter(x => !deletedIdSet.has(x.id));
-    ids.forEach(id => FIN_TX_SELECTED.delete(id));
-    renderFinanceTransactions();
-    renderFinanceAccounts();
-    if(deletedIdSet.size < ids.length){
-      await customAlert(`Deleted ${deletedIdSet.size} of ${ids.length} — the rest could not be removed.`);
-    }else{
-      showToast(`${deletedIdSet.size} transaction${deletedIdSet.size===1?'':'s'} deleted`);
-    }
-  }catch(e){
-    console.error("Couldn't bulk-delete transactions:", e);
-    await customAlert("Couldn't delete these transactions — please try again.");
-  }
-}
+// (Delete All was removed 2026-11-26 at the owner's request.)
 
 /* ---- Finance > Configuration ---- */
 function renderFinanceConfig(){

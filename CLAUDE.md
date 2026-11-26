@@ -292,6 +292,10 @@ find/replace, try the LF form, then the CRLF form.
   **Gifts & Donations is a NEED** (owner, 2026-11-11: church giving and family
   gifts are needs for him). Family Support, Debt & Loans, Savings, Work &
   Business and Miscellaneous are in neither list.
+- Finance **Transactions**: a **Clear** button next to the type filter
+  (`clearFinTxFilters`, shown only when something differs from the default:
+  This Month, All accounts, All types, empty search, no chart drill-down).
+  **Delete All was removed** (2026-11-26, owner's request) — don't re-add it.
 - Finance **Dashboard period = Year + Month** dropdowns (2026-11-11, owner's
   request; replaced This Month / Previous Month / All time / Custom Range):
   `finDashYearFilter` / `finDashMonthFilter`, `_finDashYM()`,
