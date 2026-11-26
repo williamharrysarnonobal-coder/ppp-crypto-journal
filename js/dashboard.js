@@ -10380,8 +10380,29 @@ function _salaryCurrentStreak(doneNewestFirst, bar){
 
 // One-page answer to "can trading pay for my life without the job?" — the
 // same four things the page shows, nothing more.
+/* jsPDF is fetched only when a PDF is actually made (2026-11-26). It used to be
+   a blocking <script> in <head>: ~360 KB parsed on every page load for two
+   rarely-used buttons. Same pinned file as before. */
+let _jsPdfPromise = null;
+function _loadJsPdf(){
+  if(window.jspdf) return Promise.resolve();
+  if(!_jsPdfPromise){
+    _jsPdfPromise = new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+      s.onload = () => window.jspdf ? resolve() : reject(new Error('jsPDF missing'));
+      s.onerror = () => { _jsPdfPromise = null; reject(new Error('jsPDF failed to load')); };
+      document.head.appendChild(s);
+    });
+  }
+  return _jsPdfPromise;
+}
+function _withJsPdf(fn){
+  _loadJsPdf().then(fn).catch(() => showToast("PDF library didn't load — check your connection and try again."));
+}
+
 function downloadSalaryPDF(){
-  if(!window.jspdf){ showToast("PDF library didn't load — check your connection and try again."); return; }
+  if(!window.jspdf){ _withJsPdf(downloadSalaryPDF); return; }
 
   const v = _salaryInputValues();
   const aed = Number(v.aed_per_usd) > 0 ? Number(v.aed_per_usd) : SALARY_DEFAULTS.aed_per_usd;
@@ -32514,7 +32535,7 @@ function renderReportPreview(){
 
 // ---- PDF export ----
 function downloadReportPDF(){
-  if(!window.jspdf){ showToast("PDF library didn't load — check your connection and try again."); return; }
+  if(!window.jspdf){ _withJsPdf(downloadReportPDF); return; }
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ unit: 'pt', format: 'a4' });
   const pageWidth = doc.internal.pageSize.getWidth();

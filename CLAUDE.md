@@ -369,6 +369,13 @@ find/replace, try the LF form, then the CRLF form.
 - Reuse the shared modal overlays and share-image pattern (canvas +
   Copy image / Share… / Download PNG; see `drawMarketHoursShare`,
   `drawEconShare`) instead of inventing new ones.
+- **Page speed** (2026-11-26): jsPDF is no longer a blocking `<script>` in
+  `<head>`; `_loadJsPdf()` / `_withJsPdf()` fetch it when a PDF is made
+  (`downloadSalaryPDF`, `downloadReportPDF`). Measured domInteractive at 4×
+  CPU, warm cache: median ~450 ms → ~180 ms. supabase-js is pinned to
+  **2.119.2** on every page (was the floating `@2`). Chart.js and supabase-js
+  must stay synchronous in `<head>`: dashboard.js uses them at load. Assets are
+  already Brotli + 1-year cache with `?v=`; HTML is `must-revalidate`.
 - **Form controls base style** (2026-11-26, owner: "luma ang itsura"), top of
   style.css after `select{}`: every text/date/number input, textarea, select,
   checkbox and radio gets one modern look via `:where()` (zero specificity, so
