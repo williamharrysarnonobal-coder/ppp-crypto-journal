@@ -102,6 +102,16 @@ find/replace, try the LF form, then the CRLF form.
   SQL Editor. Settings › Database status (`DB_CHECKS` in dashboard.js) shows
   which ones are still missing. Add every new SQL file to `DB_CHECKS`, and
   every new per-user table to `BACKUP_TABLES`.
+- `weekly_backup.py` (2026-11-26): the office laptop's scheduled task
+  "Tanaydana Weekly Backup" (Sundays 9 AM, pyw.exe, catches up if missed)
+  saves the owner's rows of the same tables, same JSON shape as the app's
+  Backup button (so Restore accepts it), to
+  `G:\My Drive\Tanaydana Backups\tanaydana-backup-YYYY-MM-DD.json` (Google
+  Drive for desktop uploads it). Keeps the newest 12; drops
+  `upscale_api_key_enc`; stamps `ui_prefs.last_backup` (synced to
+  `tanaydana-last-backup`) so the backup reminder stays quiet. Keep its
+  `TABLES` list in step with `BACKUP_TABLES`. Log:
+  `Documents\BTC_BOT\backup.log`. Service key from `bot_secrets.py`.
 
 ## Data conventions
 

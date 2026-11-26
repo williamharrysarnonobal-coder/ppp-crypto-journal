@@ -443,7 +443,11 @@ const UI_PREF_LS_KEYS = {
   // PIN lock (2026-11-26): one PIN for every device. Holds only a salted
   // PBKDF2 hash, never the PIN; 'off' (not a missing key) so turning it off
   // on one device turns it off everywhere.
-  pin_lock: 'tanaydana-pin'
+  pin_lock: 'tanaydana-pin',
+  // When the last backup was made (the app's Backup button, or the laptop's
+  // weekly_backup.py → Google Drive, 2026-11-26), so the "never backed up"
+  // reminder is right on every device.
+  last_backup: 'tanaydana-last-backup'
   /* Ang on/off ng bawat klase ng notification (⚙ sa 🔔, kasama ang High impact
      news) ay PER DEVICE na, hindi sinasabay sa account (pinili niya): naka-off
      ang Trade Alerts sa telepono pero naka-on sa laptop, halimbawa. Dati ay
