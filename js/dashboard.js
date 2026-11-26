@@ -26592,14 +26592,17 @@ function accountCardHTML(a){
        pala iyon ng IIFE ng remainHTML, kaya bumagsak ang buong listahan ng
        account sa isang ReferenceError. Nakita ito ng browser probe at hindi ng
        mga sim: walang sim na nagpapatakbo ng renderAccountsList. */
+    /* One line on the card (2026-11-26, smaller cards); the full sentence is
+       the hover title. */
     const gapHTML = (cardStats && cardStats.balanceGap != null)
-      ? `<div class="acct-gap" title="The balance shown is the one you typed in Edit account. This is what your journalled trades add up to instead.">
-           Your journal adds up to
-           $${cardStats.journalBalance.toLocaleString(undefined,{maximumFractionDigits:2})}
-           — $${Math.abs(cardStats.balanceGap).toLocaleString(undefined,{maximumFractionDigits:2})}
-           ${cardStats.balanceGap > 0 ? 'less than' : 'more than'}
-           your balance. Usually fees or a trade that never got logged.
-         </div>`
+      ? (() => {
+          const jb = '$' + cardStats.journalBalance.toLocaleString(undefined,{maximumFractionDigits:2});
+          const gap = '$' + Math.abs(cardStats.balanceGap).toLocaleString(undefined,{maximumFractionDigits:2});
+          const dir = cardStats.balanceGap > 0 ? 'less than' : 'more than';
+          return `<div class="acct-gap" title="Your journal adds up to ${jb}, ${gap} ${dir} your balance (the one you typed in Edit account). Usually fees or a trade that never got logged.">
+           Journal: ${jb} · ${gap} ${cardStats.balanceGap > 0 ? 'less' : 'more'}
+         </div>`;
+        })()
       : '';
 
     const breachHTML = (!isExchange && a._breach)

@@ -391,6 +391,10 @@ find/replace, try the LF form, then the CRLF form.
 - Reuse the shared modal overlays and share-image pattern (canvas +
   Copy image / Share… / Download PNG; see `drawMarketHoursShare`,
   `drawEconShare`) instead of inventing new ones.
+- ARBAB is the first nav item, above the Trading section (2026-11-26).
+- My Accounts cards are compact, 3 across on desktop (`.account-grid`
+  minmax 300px); the journal-vs-balance note (`.acct-gap`) is one line with
+  the full explanation in its hover title (2026-11-26).
 - **Command Center** (2026-11-26, `js/cmdcenter.js`, `#cmdCenter` above the
   Dashboard header): tiles for Bots (BTC / Gold / Alts from
   `trading_signals.heartbeat_at`; alive < 15 min, Alts = newest `altcoin` row),
