@@ -434,7 +434,11 @@ const UI_PREF_LS_KEYS = {
   // Kung Rule o Note ang bawat Trade Tag — siya ang nagpapasya, sa Options.
   tag_kinds: 'ledger-tag-kinds',
   // Aling market sa Market Hours ang may 🔔 — sumusunod sa account.
-  market_hours_notify: 'tanaydana-mh-notify'
+  market_hours_notify: 'tanaydana-mh-notify',
+  // PIN lock (2026-11-26): one PIN for every device. Holds only a salted
+  // PBKDF2 hash, never the PIN; 'off' (not a missing key) so turning it off
+  // on one device turns it off everywhere.
+  pin_lock: 'tanaydana-pin'
   /* Ang on/off ng bawat klase ng notification (⚙ sa 🔔, kasama ang High impact
      news) ay PER DEVICE na, hindi sinasabay sa account (pinili niya): naka-off
      ang Trade Alerts sa telepono pero naka-on sa laptop, halimbawa. Dati ay
@@ -480,6 +484,9 @@ function syncUIPrefsToProfile(){
 // Called after the profile loads — pulls the account's saved prefs down into
 // localStorage and re-applies whatever actually differs.
 function applyUIPrefsFromProfile(){
+  // "Forgot PIN?" signed you out; logging back in with the password is the
+  // proof, so the old PIN is cleared before the account copy can restore it.
+  if(typeof _pinAfterLogin === 'function') _pinAfterLogin();
   const prefs = PROFILE_DATA?.ui_prefs;
   if(!prefs || typeof prefs !== 'object') return;
 
@@ -551,6 +558,7 @@ async function changeAccountPassword(){
 }
 
 function renderSettingsPage(){
+  if(typeof renderPinLockSettings === 'function') renderPinLockSettings();
   const currentThemeMode = document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
   const themeGrid = document.getElementById('themeOptionGrid');
   if(themeGrid){

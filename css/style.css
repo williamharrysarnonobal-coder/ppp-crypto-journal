@@ -6067,3 +6067,43 @@ body.mobile-mode #calGrid .cal-cell.past-loss::after{color:var(--loss);}
 .econ-react-verdict{color:var(--ink);font-weight:600;margin-bottom:2px;}
 .econ-react-vol{font-size:11px;color:var(--muted);line-height:1.5;margin-top:6px;}
 .econ-react-note{font-size:10.5px;color:var(--muted);margin-top:4px;font-style:italic;opacity:.8;}
+
+/* ---------- PIN lock (2026-11-26) — js/pinlock.js ----------
+   The IT Console's lock screen, in Tanaydana's gold-on-dark: a ring with a
+   padlock, the PIN dots, a 3×4 keypad. Covers everything while open. */
+.pinlock{position:fixed;inset:0;z-index:10000;display:none;align-items:center;justify-content:center;padding:24px 16px;
+  background:
+    radial-gradient(ellipse at 50% 30%, color-mix(in srgb, var(--accent) 14%, transparent), transparent 60%),
+    linear-gradient(color-mix(in srgb, var(--accent) 6%, transparent) 1px, transparent 1px) 0 0 / 100% 42px,
+    var(--bg);
+  overflow-y:auto;}
+.pinlock.open{display:flex;}
+.pinlock:focus{outline:none;}
+body.pinlock-active{overflow:hidden;}
+.pinlock-box{display:flex;flex-direction:column;align-items:center;width:100%;max-width:320px;}
+.pinlock-box.shake{animation:pinlock-shake .42s ease;}
+@keyframes pinlock-shake{20%{transform:translateX(-10px);}40%{transform:translateX(9px);}60%{transform:translateX(-6px);}80%{transform:translateX(4px);}}
+.pinlock-ring{position:relative;width:132px;height:132px;margin-bottom:26px;display:flex;align-items:center;justify-content:center;}
+.pinlock-ring-a,.pinlock-ring-b{position:absolute;inset:0;border-radius:50%;}
+.pinlock-ring-a{border:2px solid transparent;border-top-color:var(--accent);border-right-color:var(--accent);opacity:.85;animation:pinlock-spin 9s linear infinite;}
+.pinlock-ring-b{inset:14px;border:1.5px dashed color-mix(in srgb, var(--accent) 45%, transparent);animation:pinlock-spin 14s linear infinite reverse;}
+@keyframes pinlock-spin{to{transform:rotate(360deg);}}
+.pinlock-icon{width:68px;height:68px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:var(--accent);
+  background:radial-gradient(circle, color-mix(in srgb, var(--accent) 22%, transparent), transparent 72%);}
+.pinlock-title{font-size:15px;font-weight:700;letter-spacing:.28em;text-transform:uppercase;color:var(--ink);text-align:center;}
+.pinlock-hint{margin-top:10px;font-size:13px;color:var(--muted);min-height:18px;text-align:center;}
+.pinlock-dots{display:flex;gap:12px;margin:18px 0 26px;min-height:14px;}
+.pinlock-dots span{width:12px;height:12px;border-radius:50%;border:1.5px solid var(--accent);transition:background .12s ease, transform .12s ease;}
+.pinlock-dots span.on{background:var(--accent);transform:scale(1.08);}
+.pinlock-pad{display:grid;grid-template-columns:repeat(3, 1fr);gap:12px;width:100%;}
+.pinlock-key{height:60px;border-radius:12px;border:1px solid var(--rule);background:color-mix(in srgb, var(--surface) 85%, transparent);
+  color:var(--ink);font:600 22px var(--font-ui);cursor:pointer;transition:border-color .12s ease, background .12s ease, transform .06s ease;}
+.pinlock-key:hover{border-color:var(--accent);}
+.pinlock-key:active{transform:scale(.97);background:color-mix(in srgb, var(--accent) 14%, var(--surface));}
+.pinlock-key:focus-visible{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 28%, transparent);}
+.pinlock-key-sm{font-size:13px;font-weight:700;letter-spacing:.06em;color:var(--muted);}
+.pinlock-foot{margin-top:22px;text-align:center;}
+.pinlock-link{background:none;border:0;color:var(--muted);font:500 12.5px var(--font-ui);cursor:pointer;text-decoration:underline;text-underline-offset:3px;}
+.pinlock-link:hover{color:var(--accent);}
+.pinlock-status{display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--muted);}
+@media (prefers-reduced-motion: reduce){.pinlock-ring-a,.pinlock-ring-b{animation:none;}.pinlock-box.shake{animation:none;}}

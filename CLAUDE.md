@@ -381,6 +381,18 @@ find/replace, try the LF form, then the CRLF form.
 - Reuse the shared modal overlays and share-image pattern (canvas +
   Copy image / Share… / Download PNG; see `drawMarketHoursShare`,
   `drawEconShare`) instead of inventing new ones.
+- **PIN lock** (2026-11-26, `js/pinlock.js`, loaded after dashboard.js; styles
+  `.pinlock*` at the end of style.css): the IT Console's lock screen in
+  Tanaydana gold. Off until the user sets a 4–6 digit PIN in Settings → PIN
+  lock (Set / Change / Turn off / Lock now; change and off need the current
+  PIN). Locks after **15 min idle** and on opening/returning when the last
+  activity (`tanaydana-last-active`, shared by tabs) is older than that.
+  Stored as a salted PBKDF2-SHA256 hash (150k iterations) in
+  `tanaydana-pin`, synced via `UI_PREF_LS_KEYS.pin_lock`; `'off'` (not a
+  removed key) so turning it off syncs too. "Forgot PIN?" and 5 wrong tries
+  set `tanaydana-pin-reset` and sign out; `_pinAfterLogin()` (called from
+  `applyUIPrefsFromProfile`) clears the PIN after the password login. It is a
+  screen lock, not a security boundary — the account password guards the data.
 - **Page speed** (2026-11-26): jsPDF is no longer a blocking `<script>` in
   `<head>`; `_loadJsPdf()` / `_withJsPdf()` fetch it when a PDF is made
   (`downloadSalaryPDF`, `downloadReportPDF`). Measured domInteractive at 4×
