@@ -3942,6 +3942,8 @@ table.breakdown tbody tr{cursor:pointer;}
   .fin-networth-parts .fin-balance{color:var(--ink);font-weight:600;}
   .fin-networth-debt{color:var(--loss);font-weight:600;}
   .fin-networth-rate{margin-top:6px;font-size:11px;color:var(--muted);}
+  .fin-nw-hist-note{font-size:12px;font-weight:500;color:var(--muted);font-family:var(--font-ui);}
+  .fin-nw-hist-note .fin-balance{font-weight:700;font-family:'IBM Plex Mono',monospace;}
   .fin-dash-kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--rule);border:1px solid var(--rule);border-radius:8px;overflow:hidden;margin-bottom:10px;}
   /* Phone (2026-11-26): Income / Expense / Net stay side by side, smaller,
      instead of three tall boxes stacked. */

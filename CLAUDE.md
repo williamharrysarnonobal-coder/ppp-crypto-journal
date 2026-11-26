@@ -293,6 +293,13 @@ find/replace, try the LF form, then the CRLF form.
   currency, never a guessed total. Blurs with Hide Balances (`.fin-balance`).
   The Accounts tab's totals (`#finAccountsTotals`) show the same box
   (`_finNetWorthHtml`) instead of the old Cash / Card debt line.
+- **Net worth over time** chart on the Finance Dashboard (2026-11-26,
+  `_finNetWorthHistory`, `renderFinNetWorthHistory`): one point per month-end,
+  rebuilt BACKWARDS from today by undoing later transactions (cash: Income/
+  Correction −, Expense/Transfer-out +, Transfer-in −; card owed: later
+  Expense −, Income/payment +, installments that started later removed). Last
+  point always equals "Net worth today"; other currencies at today's rate.
+  Blurred by Hide Balances. Tested in `tests/` probe with hand-worked numbers.
 - Money lent out (2026-11-26, owner's pick over a Receivables account): Expense
   **Debt & Loans › "Lent to someone"**; when paid back, Income **"Loan repayment"**.
   Added via `FINANCE_TAXONOMY_VERSION = 3`, which merges them into existing

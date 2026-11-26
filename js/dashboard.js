@@ -10829,7 +10829,107 @@ function _finNetWorthData(){
   });
   return { cash, debt, main, curs, total, converted, multi: curs.length > 1 };
 }
+/* NET WORTH OVER TIME (2026-11-26). Balances aren't stored per month, so each
+   month-end is worked out BACKWARDS from today: undo every transaction dated
+   after that day. Cash accounts: Income +, Expense −, Transfer out −, in +,
+   Correction ±. Cards (what you owe): later Expenses are taken back off the
+   debt, later payments / refunds put back on, and an installment that started
+   after that day didn't exist yet. Other currencies use today's rate, so the
+   line shows your money, not FX moves. Same inputs as "Net worth today", so
+   the last point always equals that box. */
+function _finNetWorthHistory(){
+  const dates = FIN_TXNS.map(t => t.tx_date).filter(Boolean).sort();
+  if(!dates.length) return null;
+  const d = _finNetWorthData();
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const iso = x => `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`;
+  const first = new Date(dates[0] + 'T00:00:00');
+  const points = [];
+  for(let m = new Date(first.getFullYear(), first.getMonth(), 1); m <= today; m = new Date(m.getFullYear(), m.getMonth() + 1, 1)){
+    const end = new Date(m.getFullYear(), m.getMonth() + 1, 0);
+    const endIso = iso(end > today ? today : end);
+    const later = FIN_TXNS.filter(t => t.tx_date && t.tx_date > endIso);
+    const byCur = {};
+    FIN_ACCOUNTS.forEach(a => {
+      const cur = a.currency || 'PHP';
+      let v;
+      if(a.account_class === 'Credit'){
+        let owed = finOwedFor(a);
+        later.forEach(t => {
+          const amt = Number(t.amount) || 0;
+          if(t.account_id === a.id && t.tx_type === 'Expense') owed -= amt;
+          if(t.account_id === a.id && t.tx_type === 'Income') owed += amt;
+          if(t.tx_type === 'Transfer' && t.to_account_id === a.id) owed += amt;   // a payment
+          if(t.tx_type === 'Transfer' && t.account_id === a.id) owed -= amt;      // cash taken from the card
+        });
+        FIN_RECURRING.filter(r => r.kind === 'Installment' && r.account_id === a.id && r.start_date && r.start_date > endIso)
+          .forEach(r => { owed -= Number(r.total_amount) || 0; });
+        v = -Math.max(0, owed);
+      }else{
+        let bal = Number(a.current_balance) || 0;
+        later.forEach(t => {
+          const amt = Number(t.amount) || 0;
+          if(t.account_id === a.id){
+            if(t.tx_type === 'Income' || t.tx_type === 'Correction') bal -= amt;
+            else if(t.tx_type === 'Expense' || t.tx_type === 'Transfer') bal += amt;
+          }
+          if(t.tx_type === 'Transfer' && t.to_account_id === a.id) bal -= amt;
+        });
+        v = bal;
+      }
+      byCur[cur] = (byCur[cur] || 0) + v;
+    });
+    let total = 0, ok = true;
+    Object.entries(byCur).forEach(([c, v]) => { const x = _finConvert(v, c, d.main); if(x == null) ok = false; else total += x; });
+    if(!ok) return { main: d.main, points: [], noRate: true };
+    points.push({ label: m.toLocaleDateString('en-US', { month:'short', year:'2-digit' }), full: m.toLocaleDateString('en-US', { month:'long', year:'numeric' }), current: end >= today, value: Math.round(total * 100) / 100 });
+  }
+  return { main: d.main, points, multi: d.multi };
+}
+let finNwHistChartRef = null;
+function renderFinNetWorthHistory(){
+  const canvas = document.getElementById('finNwHistChart');
+  const empty = document.getElementById('finNwHistEmpty');
+  const note = document.getElementById('finNwHistNote');
+  if(!canvas || typeof Chart === 'undefined') return;
+  if(finNwHistChartRef){ finNwHistChartRef.destroy(); finNwHistChartRef = null; }
+  const h = _finNetWorthHistory();
+  const pts = h ? h.points : [];
+  const wrap = canvas.parentElement;
+  if(pts.length < 2){
+    wrap.style.display = 'none'; empty.style.display = 'block';
+    empty.textContent = h && h.noRate ? 'Waiting for the exchange rate…' : 'Needs at least two months of transactions.';
+    if(note) note.textContent = '';
+    return;
+  }
+  wrap.style.display = ''; empty.style.display = 'none';
+  const first = pts[0].value, last = pts[pts.length - 1].value, diff = last - first;
+  if(note) note.innerHTML = `<span class="fin-balance ${diff >= 0 ? 'pos' : 'neg'}">${diff >= 0 ? '+' : '−'}${finMoney(Math.abs(diff), h.main)}</span> since ${escapeHtml(pts[0].full)}${h.multi ? ' · today’s rate' : ''}`;
+  const accent = cssVar('--accent');
+  finNwHistChartRef = new Chart(canvas.getContext('2d'), {
+    type: 'line',
+    data: { labels: pts.map(p => p.label), datasets: [{
+      data: pts.map(p => p.value), borderColor: accent, backgroundColor: accent + '1a', fill: true,
+      cubicInterpolationMode: 'monotone',   // smooth, but never bulges past a real month-end value
+      borderWidth: 2, pointRadius: pts.map((p, i) => i === pts.length - 1 ? 4 : 0), pointBackgroundColor: accent,
+      pointBorderColor: cssVar('--surface'), pointBorderWidth: 2, pointHitRadius: 14, pointHoverRadius: 5
+    }] },
+    options: {
+      responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { display: false }, tooltip: { callbacks: {
+        title: items => pts[items[0].dataIndex].full + (pts[items[0].dataIndex].current ? ' (so far)' : ''),
+        label: c => `Net worth: ${finMoney(c.parsed.y, h.main)}`
+      } } },
+      scales: {
+        x: { ticks: { color: cssVar('--muted'), font: { size: 10 }, maxRotation: 0, autoSkip: true }, grid: { display: false } },
+        y: { ticks: { color: cssVar('--muted'), font: { size: 10 }, callback: v => finMoney(v, h.main) }, grid: { color: cssVar('--rule') } }
+      }
+    }
+  });
+}
+
 function renderFinNetWorth(){
+  renderFinNetWorthHistory();
   const html = _finNetWorthHtml();
   const el = document.getElementById('finDashNetWorth');
   if(el) el.innerHTML = html;
