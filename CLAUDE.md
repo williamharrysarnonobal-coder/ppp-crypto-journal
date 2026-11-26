@@ -349,6 +349,15 @@ find/replace, try the LF form, then the CRLF form.
 - Reuse the shared modal overlays and share-image pattern (canvas +
   Copy image / Share… / Download PNG; see `drawMarketHoursShare`,
   `drawEconShare`) instead of inventing new ones.
+- **Form controls base style** (2026-11-26, owner: "luma ang itsura"), top of
+  style.css after `select{}`: every text/date/number input, textarea, select,
+  checkbox and radio gets one modern look via `:where()` (zero specificity, so
+  any existing class/id rule still wins). `color-scheme` follows the theme so
+  native pickers are dark/light. Two parts are pinned with `!important` because
+  many controls set a `background:` shorthand that would wipe them: the select
+  chevron (+ padding-right 28px) and the 🔍 on any `input[placeholder^="Search"]`.
+  Checkboxes/radios are `appearance:none`, gold when checked with a dark ✓.
+  An inline `style="padding:…"` on a select must leave ~26px on the right.
 - Page top spacing: desktop `.content` padding-top is **20px** (2026-11-26; was
   76px for top-right buttons that now float bottom-right, leaving an empty band
   on every page). `body.mobile-mode .content` keeps 76px for the fixed 🔔 / ☰.

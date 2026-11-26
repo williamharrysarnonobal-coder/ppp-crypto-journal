@@ -420,6 +420,74 @@
     background:var(--surface-2);border:1px solid var(--rule);color:var(--ink);
     padding:7px 10px;border-radius:6px;font-size:12px;font-family:var(--font-ui);
   }
+  /* Base look for every text-like input that has no style of its own
+     (2026-11-26: search and date boxes were still browser-default white).
+     :where() keeps this at zero specificity, so any existing class or id
+     rule still wins — this only fills in what was unstyled. Same height and
+     radius as the selects next to them. */
+  :root{color-scheme:dark;}
+  :root[data-theme="light"]{color-scheme:light;}
+  :where(input:not([type]), input[type="text"], input[type="search"], input[type="email"],
+         input[type="number"], input[type="password"], input[type="url"], input[type="tel"],
+         input[type="date"], input[type="month"], input[type="time"], input[type="datetime-local"], textarea){
+    background-color:var(--surface-2);border:1px solid var(--rule);color:var(--ink);
+    padding:7px 10px;border-radius:6px;font-size:12px;font-family:var(--font-ui);
+    transition:border-color .15s ease, box-shadow .15s ease;
+  }
+  :where(input, textarea)::placeholder{color:var(--muted);opacity:1;}
+  :where(input:not([type]), input[type="text"], input[type="search"], input[type="email"],
+         input[type="number"], input[type="password"], input[type="date"], input[type="month"],
+         input[type="time"], textarea):hover{border-color:var(--muted);}
+  :where(input:not([type]), input[type="text"], input[type="search"], input[type="email"],
+         input[type="number"], input[type="password"], input[type="date"], input[type="month"],
+         input[type="time"], textarea, select):focus-visible{
+    outline:none;border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+  }
+  /* Search boxes get a magnifier (any box whose placeholder starts "Search"). */
+  /* Pinned like the select chevron: some search boxes set their own
+     `background:` shorthand, which would otherwise wipe the icon. */
+  input[type="search"], input[placeholder^="Search"]{
+    padding-left:30px !important;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2393989F' stroke-width='2.2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cline x1='16.5' y1='16.5' x2='21' y2='21'/%3E%3C/svg%3E") !important;
+    background-repeat:no-repeat !important;background-position:10px center !important;background-size:14px 14px !important;
+  }
+  /* Dropdowns: own chevron instead of the browser arrow, same hover/focus as
+     the inputs. Zero specificity like the inputs above. */
+  /* Many selects set their own `background:` shorthand, which wipes a
+     background-image — so the chevron and its room are pinned with a heavier
+     selector and !important on the image parts only (colour stays theirs). */
+  select:not([multiple]):not([size]){
+    -webkit-appearance:none;appearance:none;cursor:pointer;padding-right:28px;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2393989F' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E") !important;
+    background-repeat:no-repeat !important;background-position:right 10px center !important;background-size:12px 12px !important;
+    transition:border-color .15s ease, box-shadow .15s ease;
+  }
+  :where(select):hover{border-color:var(--muted);}
+  :where(select) option{background-color:var(--surface);color:var(--ink);}
+  /* Checkboxes and radios: drawn by us, so they match the dark/light theme
+     instead of the white OS box. Sizes set elsewhere (13px, 15px) still win. */
+  :where(input[type="checkbox"], input[type="radio"]){
+    -webkit-appearance:none;appearance:none;flex:none;
+    width:16px;height:16px;margin:0;vertical-align:middle;cursor:pointer;
+    border:1.5px solid var(--muted);border-radius:4px;background:var(--surface-2) center / 75% no-repeat;
+    transition:background-color .12s ease, border-color .12s ease, box-shadow .12s ease;
+  }
+  :where(input[type="radio"]){border-radius:50%;}
+  :where(input[type="checkbox"], input[type="radio"]):hover{border-color:var(--ink);}
+  :where(input[type="checkbox"], input[type="radio"]):checked{background-color:var(--accent);border-color:var(--accent);}
+  :where(input[type="checkbox"]):checked{
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2312141C' stroke-width='3.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='5 12.5 10 17.5 19 7'/%3E%3C/svg%3E");
+  }
+  :where(input[type="checkbox"]):indeterminate{
+    background-color:var(--accent);border-color:var(--accent);
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' stroke='%2312141C' stroke-width='3.4' stroke-linecap='round'%3E%3Cline x1='6' y1='12' x2='18' y2='12'/%3E%3C/svg%3E");
+  }
+  :where(input[type="radio"]):checked{box-shadow:inset 0 0 0 3px var(--surface-2);}
+  :where(input[type="checkbox"], input[type="radio"]):focus-visible{outline:none;box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent);}
+  :where(input[type="radio"]):checked:focus-visible{box-shadow:inset 0 0 0 3px var(--surface-2), 0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent);}
+  :where(input[type="checkbox"], input[type="radio"]):disabled{opacity:.45;cursor:not-allowed;}
+  :where(input[type="date"], input[type="month"], input[type="time"])::-webkit-calendar-picker-indicator{cursor:pointer;opacity:.75;}
+  :where(input[type="date"], input[type="month"], input[type="time"])::-webkit-calendar-picker-indicator:hover{opacity:1;}
 
   /* ---------- KPI strip ---------- */
   .kpi-grid{display:grid;grid-template-columns:repeat(8,1fr);gap:1px;background:var(--rule);border:1px solid var(--rule);border-radius:8px;overflow:hidden;margin-bottom:28px;}
