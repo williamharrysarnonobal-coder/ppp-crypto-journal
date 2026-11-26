@@ -11793,7 +11793,7 @@ function _finDashCategorizedHtml(txns){
           : `${escapeHtml(t.description || t.tx_type)}${t.subcategory ? ` <span style="color:var(--muted);">· ${escapeHtml(t.subcategory)}</span>` : ''}`;
         return `
           <div style="display:flex;justify-content:space-between;gap:8px;padding:4px 0;font-size:11.5px;">
-            <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${label}</span>
+            <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;">${label}</span>
             <span style="color:${amtColor};flex-shrink:0;">${sign}${finMoney(t.amount, acc?.currency || '')}</span>
           </div>
         `;

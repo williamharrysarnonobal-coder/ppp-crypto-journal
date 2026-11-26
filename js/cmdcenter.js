@@ -1,14 +1,15 @@
 /* ===================== COMMAND CENTER (2026-11-26) =====================
    Like the IT Console's Central Hub: one row at the top of the Dashboard with
    what matters at a glance — are the bots alive, the last alert, the next
-   High impact news (countdown), today's P&L and net worth. Plus the HUD
+   High impact news (countdown), today's P&L and this week's P&L (net worth tile swapped out
+   2026-11-26: money totals don't belong on a screen anyone can see). Plus the HUD
    header reactor on every page, whose colour follows the bots.
 
    Bots: every v2 bot writes trading_signals.heartbeat_at each cycle (~5 min).
    BTC = symbol BTC, Gold = XAU, Alts = newest heartbeat of category altcoin.
    Alive = heartbeat younger than BOT_STALE_MIN. */
 const BOT_STALE_MIN = 15;
-const CMD = { bots: null, lastAlert: null, nextNews: null, fetchedAt: 0, timer: null, finTried: false };
+const CMD = { bots: null, lastAlert: null, nextNews: null, fetchedAt: 0, timer: null };
 
 function _cmdAgo(ts){
   const m = Math.max(0, Math.round((Date.now() - new Date(ts).getTime()) / 60000));
@@ -54,19 +55,17 @@ function _cmdTodayPnl(){
     .filter(t => !t.is_paper && t.close_date && new Date(t.close_date).toDateString() === today);
   return { n: rows.length, pnl: rows.reduce((s, t) => s + (Number(t.profit_loss) || 0), 0) };
 }
-function _cmdEnsureFinance(){
-  if(CMD.finTried || typeof FIN_ACCOUNTS === 'undefined' || FIN_ACCOUNTS.length) return;
-  CMD.finTried = true;
-  Promise.resolve()
-    .then(() => typeof loadFinanceAccounts === 'function' && loadFinanceAccounts())
-    .then(() => typeof loadFinanceTransactions === 'function' && loadFinanceTransactions())
-    .then(() => typeof loadFinanceRecurring === 'function' && loadFinanceRecurring())
-    .then(() => renderCommandCenter()).catch(() => {});
+// This week = Monday 00:00 local → now. W/L counts, not just money.
+function _cmdWeekPnl(){
+  const now = new Date(), start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - ((now.getDay() + 6) % 7));
+  const rows = (typeof ALL_TRADES !== 'undefined' ? ALL_TRADES : [])
+    .filter(t => !t.is_paper && t.close_date && new Date(t.close_date) >= start);
+  const pl = t => Number(t.profit_loss) || 0;
+  return { n: rows.length, w: rows.filter(t => pl(t) > 0).length, l: rows.filter(t => pl(t) < 0).length, pnl: rows.reduce((s, t) => s + pl(t), 0) };
 }
 function renderCommandCenter(){
   const el = document.getElementById('cmdCenter');
   if(!el) return;
-  _cmdEnsureFinance();
   const tile = (cls, onclick, label, value, sub, title) =>
     `<button type="button" class="cmd-tile ${cls}" onclick="${onclick}" title="${escapeHtml(title || '')}"><span class="cmd-k">${label}</span><span class="cmd-v">${value}</span><span class="cmd-s">${sub}</span></button>`;
   // Bots
@@ -86,19 +85,16 @@ function renderCommandCenter(){
   // Today's P&L
   const t = _cmdTodayPnl();
   const pnlV = `<span class="${t.pnl > 0 ? 'pos' : t.pnl < 0 ? 'neg' : ''}">${t.pnl >= 0 ? '+' : '−'}$${Math.abs(t.pnl).toFixed(2)}</span>`;
-  // Net worth
-  let nwV = '<span class="cmd-dim">Loading…</span>', nwS = 'All accounts';
-  if(typeof FIN_ACCOUNTS !== 'undefined' && FIN_ACCOUNTS.length && typeof _finNetWorthData === 'function'){
-    const d = _finNetWorthData();
-    if(d.converted || !d.multi){ nwV = `<span class="fin-balance">${d.multi ? '≈ ' : ''}${finMoney(d.total, d.main)}</span>`; }
-    else nwV = '<span class="cmd-dim">Waiting for the rate…</span>';
-  }else if(CMD.finTried && typeof FIN_ACCOUNTS !== 'undefined' && !FIN_ACCOUNTS.length) nwV = '<span class="cmd-dim">No accounts yet</span>';
+  // This week's P&L
+  const w = _cmdWeekPnl();
+  const wkV = `<span class="${w.pnl > 0 ? 'pos' : w.pnl < 0 ? 'neg' : ''}">${w.pnl >= 0 ? '+' : '−'}$${Math.abs(w.pnl).toFixed(2)}</span>`;
+  const wkS = w.n ? `${w.w}W · ${w.l}L · ${w.n} trade${w.n === 1 ? '' : 's'}` : 'No trades closed yet';
   el.innerHTML =
     tile('cmd-bots ' + (bots ? (allOk ? 'is-ok' : 'is-down') : ''), "switchView('alerts')", 'Bots', `<span class="cmd-bots-row">${botsV}</span>`, botsS, 'BTC, Gold and Alts alert bots on the office laptop') +
     tile('', "switchView('alerts')", 'Last alert', alertV, a ? _cmdAgo(a.alert_at) : 'Trade Alerts', 'Open Trade Alerts') +
     tile('', "switchView('news')", 'Next news', newsV, newsS, 'Open the Economic Calendar') +
     tile('', "switchView('journal')", "Today's P&L", pnlV, `${t.n} trade${t.n === 1 ? '' : 's'} closed today`, 'Open Trade Journals') +
-    tile('', "switchView('finance')", 'Net worth', nwV, nwS, 'Open Finance');
+    tile('', "switchView('journal')", "This week's P&L", wkV, wkS, 'Trades closed since Monday · open Trade Journals');
 }
 function startCommandCenter(){
   clearInterval(CMD.timer);

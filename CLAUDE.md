@@ -399,7 +399,8 @@ find/replace, try the LF form, then the CRLF form.
   Dashboard header): tiles for Bots (BTC / Gold / Alts from
   `trading_signals.heartbeat_at`; alive < 15 min, Alts = newest `altcoin` row),
   Last alert, Next news (US High impact, countdown), Today's P&L (real trades
-  closed today) and Net worth (loads Finance quietly if not loaded). Data every
+  closed today) and This week's P&L (Monday → now, W/L counts; replaced the
+  Net worth tile 2026-11-26, owner didn't want money totals on the Dashboard). Data every
   60 s, countdowns every 30 s. Same file: the **HUD header reactor** inside every
   page `<h1>` (shown only in HUD), accent when all bots run, red pulse when one
   is down or the browser is offline. Inside the h1 on purpose: header.top's

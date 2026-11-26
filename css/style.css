@@ -3958,8 +3958,12 @@ table.breakdown tbody tr{cursor:pointer;}
     .fin-dash-kpis .kpi .label{font-size:9.5px;letter-spacing:.05em;margin-bottom:5px;}
     .fin-dash-kpis .kpi .value{font-size:13.5px;overflow-wrap:anywhere;line-height:1.25;}
   }
-  .fin-dash-layout{display:grid;grid-template-columns:1.3fr 1fr;gap:20px;align-items:stretch;}
-  @container (max-width:900px){.fin-dash-layout{grid-template-columns:1fr;}}
+  /* minmax(0,…) + min-width:0 (2026-11-26): a long transaction line in the
+     "by category" list used to widen the whole grid track on iPhone, so the
+     Calendar and list panels ran off the screen and Safari zoomed out. */
+  .fin-dash-layout{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:20px;align-items:stretch;}
+  .fin-dash-layout > *{min-width:0;}
+  @container (max-width:900px){.fin-dash-layout{grid-template-columns:minmax(0,1fr);}}
   /* Both panels pinned to the SAME fixed height so the two columns line up
      evenly — each scrolls its own content internally (the calendar grid
      rarely needs it; the "whole month, by category" list often does)
@@ -3988,7 +3992,7 @@ table.breakdown tbody tr{cursor:pointer;}
   #finDashGrid .cal-cell.loss:hover{outline:1.5px solid var(--loss);}
   .fin-dash-detail-panel{display:flex;flex-direction:column;height:520px;}
   .fin-dash-detail-panel #finDashDetailBody{overflow-y:auto;flex:1;min-height:0;}
-  body.mobile-mode .fin-dash-layout{grid-template-columns:1fr !important;}
+  body.mobile-mode .fin-dash-layout{grid-template-columns:minmax(0,1fr) !important;}
   body.mobile-mode .fin-dash-kpis{grid-template-columns:repeat(3,minmax(0,1fr)) !important;}
   body.mobile-mode .fin-dash-kpis .kpi{padding:11px 10px 10px;min-width:0;}
   body.mobile-mode .fin-dash-kpis .kpi .label{font-size:9.5px;letter-spacing:.05em;margin-bottom:5px;}
