@@ -10851,7 +10851,16 @@ function _finLoadFxRates(){
     // An old rate beats no rate.
     if(cached && cached.rates){ _finFxRates = cached.rates; _finFxAt = cached.t; _finFxState = 'ok'; }
     else _finFxState = 'failed';
-  }).finally(() => renderFinNetWorth());
+  }).finally(() => { renderFinNetWorth(); if(_finFxState === 'ok'){ try{ renderFinanceAccounts(); }catch(_){} } });
+}
+/* PHP line under a non-PHP balance (2026-11-26, owner's request): "≈ ₱X ·
+   1 AED = ₱Y". The ₱ amount blurs with Hide Balances when `hide` is set. */
+function _finPhpLine(amount, cur, hide){
+  if(!cur || cur === 'PHP') return '';
+  const php = _finConvert(Number(amount) || 0, cur, 'PHP');
+  const rate = _finConvert(1, cur, 'PHP');
+  if(php == null || rate == null) return '';
+  return `<div class="fin-php-eq">≈ <span class="${hide ? 'fin-balance' : ''}">${finMoney(php, 'PHP')}</span> · 1 ${escapeHtml(cur)} = ${finMoney(rate, 'PHP')}</div>`;
 }
 // Amount in `from` → `to`, or null without a rate. Rates are units per 1 USD.
 function _finConvert(amount, from, to){
@@ -12159,9 +12168,10 @@ function finAccountCardHTML(a){
   // Sub-accounts share the parent's currency (enforced on save), so a
   // straight sum is always safe — no cross-currency math to worry about.
   const combinedBalance = (Number(a.current_balance)||0) + subAccounts.reduce((s,sub) => s + (Number(sub.current_balance)||0), 0);
-  const mainBalance = isCredit
-    ? finMoney((Number(a.credit_limit)||0) - owedNow, a.currency)
-    : finMoney(subAccounts.length ? combinedBalance : a.current_balance, a.currency);
+  const mainAmount = isCredit
+    ? (Number(a.credit_limit)||0) - owedNow
+    : (subAccounts.length ? combinedBalance : a.current_balance);
+  const mainBalance = finMoney(mainAmount, a.currency);
 
   // The card face stays a quick-glance summary only — Running Bill, the
   // Paid/Undo action, AND the sub-account list itself all live in the
@@ -12195,6 +12205,7 @@ function finAccountCardHTML(a){
       </div>
       <div class="account-card-balance${isCredit ? '' : ' fin-balance'}">${mainBalance}</div>
       ${isCredit ? `<div style="font-size:10.5px;color:var(--muted);margin-top:2px;text-transform:uppercase;letter-spacing:.05em;">Available credit</div>` : ''}
+      ${_finPhpLine(mainAmount, a.currency, !isCredit)}
       ${creditLines}
       ${subAccountsHint}
       ${!isCredit ? `<div class="fin-view-bill-hint">View details →</div>` : ''}
@@ -12446,7 +12457,7 @@ function openFinAccountDetailsModal(accountId, backToId){
     ` : '';
 
     document.getElementById('finAccDetailsBody').innerHTML = `
-      <div class="fin-acc-details-summary">Balance <strong class="fin-balance">${finMoney(subAccounts.length ? combinedBalance : a.current_balance, a.currency)}</strong></div>
+      <div class="fin-acc-details-summary">Balance <strong class="fin-balance">${finMoney(subAccounts.length ? combinedBalance : a.current_balance, a.currency)}</strong>${_finPhpLine(subAccounts.length ? combinedBalance : a.current_balance, a.currency, true)}</div>
       ${subAccountsSectionHtml}
       <div class="fin-acc-details-section">
         <div class="fin-acc-details-heading">FULL HISTORY</div>
@@ -12575,6 +12586,7 @@ function renderFinanceAccounts(){
     return;
   }
   empty.style.display = 'none';
+  _finLoadFxRates();
 
   // One section per class, only when it has accounts — clean, not mixed.
   const classSections = [

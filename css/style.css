@@ -3905,6 +3905,8 @@ table.breakdown tbody tr{cursor:pointer;}
   .fin-acc-details-summary{
     font-size:13.5px;color:var(--muted);padding-bottom:12px;border-bottom:1px solid var(--rule);
   }
+  .fin-php-eq{font-size:11px;color:var(--muted);margin-top:3px;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .fin-acc-details-summary .fin-php-eq{font-size:12px;}
   .fin-acc-details-section{margin-top:16px;padding-top:2px;}
   .fin-acc-details-heading{
     font-size:11px;font-weight:700;letter-spacing:.04em;color:var(--accent);margin-bottom:8px;
