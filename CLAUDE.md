@@ -312,12 +312,22 @@ find/replace, try the LF form, then the CRLF form.
   currency, never a guessed total. Blurs with Hide Balances (`.fin-balance`).
   The Accounts tab's totals (`#finAccountsTotals`) show the same box
   (`_finNetWorthHtml`) instead of the old Cash / Card debt line.
-- **PHP line on non-PHP accounts** (2026-11-26, `_finPhpLine`): each account
-  card (Debit balance / Credit available credit) and the account details popup
-  show "≈ ₱X" under the balance (amount only, no rate — owner's call), also on every row of the popup's Sub-accounts table; skipped for 0. Same FX cache. The ₱ amount blurs
-  with Hide Balances on Debit (not on Credit, matching its big number). FX
-  arriving later re-renders the Accounts cards (only when the fetch succeeded,
-  so a failed fetch can't loop).
+- **Small "≈ ₱X" under every non-PHP Finance amount** (2026-11-26, owner's
+  request; amount only, never the rate; skipped for 0). Two kinds, by design:
+  - Balances and plans follow **today's rate** (`_finPhpLine`, same FX cache
+    as Net worth): account cards, sub-account rows, details popup balance,
+    card Owed, bill Recurring/Transactions/Total, recurring items, budget
+    "left". The ₱ blurs with Hide Balances where the AED does.
+  - Transactions are **locked to their date** (`_finTxPhp`, `_finTxRate`,
+    `_finTxPhpSum`): ECB USD→PHP fix of the last business day *before*
+    tx_date (always already published → never shifts), from
+    `api.frankfurter.dev` (CORS ok); AED pegged 3.6725/USD (`FIN_USD_PEG`).
+    Used on Transactions rows/cards, account Full History, card Payment
+    history, dashboard KPIs, category legend, day/week breakdown — totals are
+    sums of each tx's locked ₱. Daily fixes cached forever in localStorage
+    `tanaydana-fx-hist-v1` ({from, fetchedOn, rates}); `_finLoadHistFx`
+    fetches only missing days, then `_finRerenderPhp`. A failed fetch isn't
+    retried that session (no loop). Not shown: calendar cells, charts, Reports.
 - **Net worth over time** chart on the Finance Dashboard (2026-11-26,
   `_finNetWorthHistory`, `renderFinNetWorthHistory`): one point per month-end,
   rebuilt BACKWARDS from today by undoing later transactions (cash: Income/

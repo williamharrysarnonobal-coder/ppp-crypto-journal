@@ -10655,10 +10655,16 @@ function renderFinDashboard(){
   const kp = kpiByCurrency[kpiPrimary] || { income: 0, expense: 0, count: 0 };
   const kpiNet = kp.income - kp.expense;
   renderFinNetWorth();
+  _finLoadHistFx();
+  // ₱ of the KPIs = sum of each transaction's locked ₱ (never moves).
+  const kpiPrimTx = kpiTx.filter(t => _finTxCurrency(t) === kpiPrimary);
+  const phpInc = _finTxPhpSum(kpiPrimTx.filter(t => t.tx_type === 'Income'), t => t.amount);
+  const phpExp = _finTxPhpSum(kpiPrimTx.filter(t => t.tx_type === 'Expense'), t => t.amount);
+  const phpNet = phpInc == null || phpExp == null ? null : phpInc - phpExp;
   document.getElementById('finDashKpis').innerHTML = `
-    <div class="kpi"><div class="label">Income (${escapeHtml(kpiPrimary)})</div><div class="value" style="color:var(--win);">${finMoney(kp.income, kpiPrimary)}</div></div>
-    <div class="kpi"><div class="label">Expense (${escapeHtml(kpiPrimary)})</div><div class="value" style="color:var(--loss);">${finMoney(kp.expense, kpiPrimary)}</div></div>
-    <div class="kpi"><div class="label">Net (${escapeHtml(kpiPrimary)})</div><div class="value" style="color:${kpiNet >= 0 ? 'var(--win)' : 'var(--loss)'};">${finMoney(kpiNet, kpiPrimary)}</div></div>
+    <div class="kpi"><div class="label">Income (${escapeHtml(kpiPrimary)})</div><div class="value" style="color:var(--win);">${finMoney(kp.income, kpiPrimary)}</div>${_finPhpSpan(phpInc)}</div>
+    <div class="kpi"><div class="label">Expense (${escapeHtml(kpiPrimary)})</div><div class="value" style="color:var(--loss);">${finMoney(kp.expense, kpiPrimary)}</div>${_finPhpSpan(phpExp)}</div>
+    <div class="kpi"><div class="label">Net (${escapeHtml(kpiPrimary)})</div><div class="value" style="color:${kpiNet >= 0 ? 'var(--win)' : 'var(--loss)'};">${finMoney(kpiNet, kpiPrimary)}</div>${phpNet != null && Math.abs(phpNet) >= 0.005 ? `<span class="fin-php-eq">≈ ${phpNet < 0 ? '−' : ''}${finMoney(Math.abs(phpNet), 'PHP')}</span>` : ''}</div>
   `;
   const kpiOthers = kpiCurrencies.filter(c => c !== kpiPrimary);
   document.getElementById('finDashOtherCurrencies').textContent = kpiOthers.length
@@ -10851,15 +10857,97 @@ function _finLoadFxRates(){
     // An old rate beats no rate.
     if(cached && cached.rates){ _finFxRates = cached.rates; _finFxAt = cached.t; _finFxState = 'ok'; }
     else _finFxState = 'failed';
-  }).finally(() => { renderFinNetWorth(); if(_finFxState === 'ok'){ try{ renderFinanceAccounts(); }catch(_){} } });
+  }).finally(() => { renderFinNetWorth(); if(_finFxState === 'ok') _finRerenderPhp(); });
 }
-/* PHP line under a non-PHP balance (2026-11-26, owner's request): "≈ ₱X ·
-   1 AED = ₱Y". The ₱ amount blurs with Hide Balances when `hide` is set. */
+/* ₱ UNDER EVERY NON-PHP AMOUNT (2026-11-26, owner's request): a small "≈ ₱X"
+   line, no rate shown. Two kinds:
+   - Balances / owed / bills / recurring / budgets → today's rate
+     (_finPhpLine), so they follow the rate like Net worth does.
+   - Transactions (and totals built from them) → LOCKED to the tx date
+     (_finTxPhp): the ECB USD→PHP fix of the last business day BEFORE
+     tx_date, from frankfurter. That fix is always already published, so a
+     transaction's ₱ never shifts later. AED is pegged at 3.6725 per USD.
+     Past fixes never change, so they're cached in localStorage for good;
+     only newer days (or an older tx date) trigger a fetch. */
+function _finPhpSpan(php, hide){
+  if(php == null || Math.abs(php) < 0.005) return '';
+  return `<span class="fin-php-eq">≈ <span class="${hide ? 'fin-balance' : ''}">${finMoney(Math.abs(php), 'PHP')}</span></span>`;
+}
 function _finPhpLine(amount, cur, hide){
-  if(!cur || cur === 'PHP' || Math.abs(Number(amount) || 0) < 0.005) return '';
-  const php = _finConvert(Number(amount) || 0, cur, 'PHP');
-  if(php == null) return '';
-  return `<div class="fin-php-eq">≈ <span class="${hide ? 'fin-balance' : ''}">${finMoney(php, 'PHP')}</span></div>`;
+  if(!cur || cur === 'PHP') return '';
+  return _finPhpSpan(_finConvert(Number(amount) || 0, cur, 'PHP'), hide);
+}
+const FIN_HIST_FX_LS = 'tanaydana-fx-hist-v1';
+const FIN_USD_PEG = { USD: 1, AED: 3.6725 };   // units per 1 USD
+let _finHistFx = null, _finHistFxKeys = null, _finHistFxState = 'idle';
+function _finHistFxData(){
+  if(!_finHistFx){
+    try{ _finHistFx = JSON.parse(localStorage.getItem(FIN_HIST_FX_LS) || 'null'); }catch(_){}
+    if(!_finHistFx || !_finHistFx.rates) _finHistFx = { from: null, fetchedOn: null, rates: {} };
+    _finHistFxKeys = Object.keys(_finHistFx.rates).sort();
+  }
+  return _finHistFx;
+}
+function _finIsoDay(d){ return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
+function _finLoadHistFx(){
+  if(_finHistFxState === 'loading' || _finHistFxState === 'failed') return;
+  const dates = FIN_TXNS.map(t => t.tx_date).filter(Boolean).sort();
+  if(!dates.length) return;
+  const h = _finHistFxData();
+  const today = _finIsoDay(new Date());
+  const start = new Date(dates[0] + 'T00:00:00'); start.setDate(start.getDate() - 10);
+  const need = _finIsoDay(start);
+  const covered = h.from && h.from <= need && h.fetchedOn && h.fetchedOn >= dates[dates.length - 1];
+  if(covered) return;
+  // Only fetch what's missing: older start, or the days since the last fetch.
+  const from = (!h.from || need < h.from) ? need : (_finHistFxKeys[_finHistFxKeys.length - 1] || need);
+  _finHistFxState = 'loading';
+  fetch(`https://api.frankfurter.dev/v1/${from}..${today}?base=USD&symbols=PHP`)
+    .then(r => { if(!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(d => {
+      Object.entries((d && d.rates) || {}).forEach(([day, v]) => { if(Number(v && v.PHP) > 0) h.rates[day] = Number(v.PHP); });
+      if(!h.from || need < h.from) h.from = need;
+      h.fetchedOn = today;
+      _finHistFxKeys = Object.keys(h.rates).sort();
+      try{ localStorage.setItem(FIN_HIST_FX_LS, JSON.stringify(h)); }catch(_){}
+      _finHistFxState = 'idle';
+      _finRerenderPhp();
+    })
+    .catch(e => { console.error("Couldn't fetch daily PHP rates:", e); _finHistFxState = 'failed'; });
+}
+function _finRerenderPhp(){
+  [renderFinDashboard, renderFinanceTransactions, renderFinanceAccounts, renderFinanceBudgets, renderFinanceRecurring].forEach(f => { try{ f(); }catch(_){} });
+  try{
+    if(_finHistoryShownAccId != null && document.getElementById('finAccountDetailsModal')?.classList.contains('open')) renderFinAccountHistory(_finHistoryShownAccId);
+  }catch(_){}
+}
+// PHP per 1 `cur`, locked to a transaction date (null = no rate yet).
+function _finTxRate(cur, day){
+  if(cur === 'PHP') return 1;
+  const peg = FIN_USD_PEG[cur];
+  if(!peg || !day) return null;
+  _finHistFxData();
+  const keys = _finHistFxKeys;
+  let lo = 0, hi = keys.length - 1, hit = -1;
+  while(lo <= hi){ const mid = (lo + hi) >> 1; if(keys[mid] < day){ hit = mid; lo = mid + 1; } else hi = mid - 1; }
+  if(hit < 0) return null;
+  // A fix more than 10 days before the date means the cache doesn't reach it.
+  if((new Date(day + 'T00:00:00') - new Date(keys[hit] + 'T00:00:00')) > 10 * 86400000) return null;
+  return _finHistFx.rates[keys[hit]] / peg;
+}
+// ₱ value of `amount` (in the tx's currency) at the tx's locked rate; null for PHP or no rate.
+function _finTxPhpVal(t, amount){
+  const cur = _finTxCurrency(t);
+  if(!cur || cur === 'PHP') return null;
+  const r = _finTxRate(cur, t.tx_date);
+  return r == null ? null : (Number(amount) || 0) * r;
+}
+function _finTxPhp(t, amount, hide){ return _finPhpSpan(_finTxPhpVal(t, amount), hide); }
+// Sum helper: adds each tx's locked ₱; null if any tx has no rate.
+function _finTxPhpSum(list, amountOf){
+  let s = 0;
+  for(const t of list){ const v = _finTxPhpVal(t, amountOf(t)); if(v == null) return null; s += v; }
+  return s;
 }
 // Amount in `from` → `to`, or null without a rate. Rates are units per 1 USD.
 function _finConvert(amount, from, to){
@@ -11219,10 +11307,11 @@ function renderFinDashCategoryChart(monthTx, primary){
     return;
   }
 
-  const byCat = {};
+  const byCat = {}, catTx = {};
   expenses.forEach(t => {
     const cat = t.category || 'Uncategorized';
     byCat[cat] = (byCat[cat] || 0) + (Number(t.amount) || 0);
+    (catTx[cat] = catTx[cat] || []).push(t);
   });
   const labels = Object.keys(byCat).sort((a,b) => byCat[b] - byCat[a]);
   const dataVals = labels.map(l => byCat[l]);
@@ -11251,7 +11340,7 @@ function renderFinDashCategoryChart(monthTx, primary){
   legendEl.innerHTML = labels.map((label, i) => `
     <div class="fin-legend-row" onclick="finDrillToTransactions('category', ${_jsStr(label)}, [${_jsStr(label)}])" title="See these transactions">
       <span><span style="color:${colors[i]};">●</span> ${escapeHtml(label)}</span>
-      <span class="num">${finMoney(dataVals[i], primary)} (${fmtNum(dataVals[i]/total*100,1)}%)</span>
+      <span class="num">${finMoney(dataVals[i], primary)} (${fmtNum(dataVals[i]/total*100,1)}%)${_finPhpSpan(_finTxPhpSum(catTx[label], t => t.amount))}</span>
     </div>
   `).join('');
 }
@@ -11884,10 +11973,11 @@ function _finDashCategorizedHtml(txns){
   const byCat = {};
   txns.forEach(t => {
     const cat = t.category || 'Uncategorized';
-    if(!byCat[cat]) byCat[cat] = { items: [], total: 0 };
+    if(!byCat[cat]) byCat[cat] = { items: [], total: 0, counted: [] };
     byCat[cat].items.push(t);
     if(t.tx_type !== 'Transfer' && _finTxCurrency(t) === primary){
       byCat[cat].total += t.tx_type === 'Expense' ? -(Number(t.amount) || 0) : (Number(t.amount) || 0);
+      byCat[cat].counted.push(t);
     }
   });
 
@@ -11908,7 +11998,7 @@ function _finDashCategorizedHtml(txns){
         return `
           <div style="display:flex;justify-content:space-between;gap:8px;padding:4px 0;font-size:11.5px;">
             <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;">${label}</span>
-            <span style="color:${amtColor};flex-shrink:0;">${sign}${finMoney(t.amount, acc?.currency || '')}</span>
+            <span style="color:${amtColor};flex-shrink:0;text-align:right;">${sign}${finMoney(t.amount, acc?.currency || '')}${_finTxPhp(t, t.amount)}</span>
           </div>
         `;
       }).join('');
@@ -11916,7 +12006,7 @@ function _finDashCategorizedHtml(txns){
       <div style="margin-bottom:14px;">
         <div style="display:flex;justify-content:space-between;font-size:12px;font-weight:700;padding-bottom:4px;margin-bottom:3px;border-bottom:1px solid var(--rule);">
           <span>${escapeHtml(cat)}</span>
-          <span style="color:${group.total>=0?'var(--win)':'var(--loss)'};">${group.total>=0?'+':'−'}${finMoney(Math.abs(group.total), primary)}</span>
+          <span style="color:${group.total>=0?'var(--win)':'var(--loss)'};text-align:right;">${group.total>=0?'+':'−'}${finMoney(Math.abs(group.total), primary)}${_finPhpSpan(_finTxPhpSum(group.counted, t => t.tx_type === 'Expense' ? -(Number(t.amount) || 0) : (Number(t.amount) || 0)))}</span>
         </div>
         ${itemsHtml}
       </div>
@@ -12185,7 +12275,7 @@ function finAccountCardHTML(a){
     paymentLineHtml = `<div class="fin-payment-row" style="margin-top:8px;"><span>Payment for ${next.toLocaleDateString('en-US',{month:'long'})}</span><button class="poscalc-accent-btn" style="padding:3px 9px;font-size:10.5px;flex-shrink:0;" onclick="payAllDueForAccount(${a.id})">Paid</button></div>`;
   }
   const creditLines = isCredit ? `
-    <div style="font-size:12px;margin-top:6px;">Owed <span style="color:var(--loss);font-weight:600;">${finMoney(owedNow, a.currency)}</span> <span style="color:var(--muted);">/ Limit ${finMoney(a.credit_limit, a.currency)}</span></div>
+    <div style="font-size:12px;margin-top:6px;">Owed <span style="color:var(--loss);font-weight:600;">${finMoney(owedNow, a.currency)}</span>${_finPhpLine(owedNow, a.currency)} <span style="color:var(--muted);">/ Limit ${finMoney(a.credit_limit, a.currency)}</span></div>
     ${a.billing_day || a.due_day ? `<div style="font-size:11px;color:var(--muted);margin-top:3px;">${a.billing_day ? `Bill day ${a.billing_day}` : ''}${a.billing_day && a.due_day ? ' · ' : ''}${a.due_day ? `Due day ${a.due_day}` : ''}</div>` : ''}
     <div class="fin-view-bill-hint">View bill details →</div>
   ` : '';
@@ -12334,6 +12424,7 @@ function renderFinAccountHistory(accountId){
   if(!rows.length){ body.innerHTML = '<div class="empty-state">No transactions in this period.</div>'; return; }
 
   _finHistoryShownAccId = accountId;
+  _finLoadHistFx();
   const checked = _finCheckedIds();
   const kindOf = id => (FIN_TXNS.find(t => t.id === id) || {}).tx_type;
   // Edit per row (2026-11-10): same Edit as the Transactions tab. Not for a
@@ -12351,6 +12442,7 @@ function renderFinAccountHistory(accountId){
       </div>
       <div style="text-align:right;flex-shrink:0;">
         <div style="color:${r.amt>=0?'var(--win)':'var(--loss)'};font-weight:600;">${r.amt>=0?'+':'−'}${finMoney(Math.abs(r.amt), acc.currency)}</div>
+        ${_finPhpSpan(_finTxRate(acc.currency, r.tx_date) != null && acc.currency !== 'PHP' ? Math.abs(r.amt) * _finTxRate(acc.currency, r.tx_date) : null)}
         ${r.showRunning ? `<div style="font-size:10px;color:var(--muted);margin-top:2px;">Bal ${finMoney(r.balanceAfter, acc.currency)}</div>` : ''}
       </div>
       ${editBtn(r)}
@@ -12490,7 +12582,7 @@ function openFinAccountDetailsModal(accountId, backToId){
       <span>Recurring
         ${recurringItems.length ? `<span class="fin-rec-caret" id="finRecCaret-${slug}">▸</span><span style="color:var(--muted);font-size:11px;margin-left:4px;">${recurringItems.length} item${recurringItems.length===1?'':'s'}</span>` : ''}
       </span>
-      <span>${finMoney(recurring, a.currency)}</span>
+      <span style="text-align:right;">${finMoney(recurring, a.currency)}${_finPhpLine(recurring, a.currency)}</span>
     </div>
     <div id="finRecList-${slug}" style="display:none;">
       ${recurringItems.length ? recurringItems.map(x => `
@@ -12500,8 +12592,8 @@ function openFinAccountDetailsModal(accountId, backToId){
         </div>
       `).join('') : `<div class="fin-acc-details-row fin-rec-item"><span style="color:var(--muted);">No recurring items on this account.</span><span></span></div>`}
     </div>
-    <div class="fin-acc-details-row"><span>Transactions</span><span>${finMoney(tx, a.currency)}</span></div>
-    <div class="fin-acc-details-row fin-acc-details-total"><span>Total</span><span>${finMoney(recurring + tx, a.currency)}</span></div>
+    <div class="fin-acc-details-row"><span>Transactions</span><span style="text-align:right;">${finMoney(tx, a.currency)}${_finPhpLine(tx, a.currency)}</span></div>
+    <div class="fin-acc-details-row fin-acc-details-total"><span>Total</span><span style="text-align:right;">${finMoney(recurring + tx, a.currency)}${_finPhpLine(recurring + tx, a.currency)}</span></div>
   `;
   };
 
@@ -12517,7 +12609,7 @@ function openFinAccountDetailsModal(accountId, backToId){
   }
 
   document.getElementById('finAccDetailsBody').innerHTML = `
-    <div class="fin-acc-details-summary">Owed <strong style="color:var(--loss);">${finMoney(finOwedFor(a), a.currency)}</strong> · Limit ${finMoney(a.credit_limit, a.currency)}</div>
+    <div class="fin-acc-details-summary">Owed <strong style="color:var(--loss);">${finMoney(finOwedFor(a), a.currency)}</strong> · Limit ${finMoney(a.credit_limit, a.currency)}${_finPhpLine(finOwedFor(a), a.currency).replace('≈', 'Owed ≈')}</div>
     <div class="fin-acc-details-section">${billSection('RUNNING BILL FOR ' + now.toLocaleDateString('en-US',{month:'long'}).toUpperCase(), now, curTx, 'cur')}</div>
     <div class="fin-acc-details-section">
       ${billSection('BILL FOR ' + prevMonth.toLocaleDateString('en-US',{month:'long'}).toUpperCase(), prevMonth, prevTx, 'prev')}
@@ -12548,11 +12640,11 @@ function _finCardPaymentHistoryHtml(a){
       <div class="fin-acc-details-row fin-pay-hist-row">
         <span><b>${escapeHtml(monthOf(t))}</b>
           <span class="fin-pay-hist-meta">Paid ${new Date(t.tx_date + 'T00:00:00').toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' })} · from ${escapeHtml(_finAccountName(t.account_id))}</span></span>
-        <span>${finMoney(t.amount, a.currency)}</span>
+        <span style="text-align:right;">${finMoney(t.amount, a.currency)}${_finTxPhp(t, t.amount)}</span>
       </div>`).join('');
   return `
     <div class="fin-acc-details-section">
-      ${pays.length ? rows + `<div class="fin-acc-details-row fin-acc-details-total"><span>${pays.length} payment${pays.length === 1 ? '' : 's'}</span><span>${finMoney(total, a.currency)}</span></div>`
+      ${pays.length ? rows + `<div class="fin-acc-details-row fin-acc-details-total"><span>${pays.length} payment${pays.length === 1 ? '' : 's'}</span><span style="text-align:right;">${finMoney(total, a.currency)}${_finPhpSpan(_finTxPhpSum(pays, t => t.amount))}</span></div>`
         : '<div class="fin-acc-details-row"><span style="color:var(--muted);">No payments yet. Press Paid on a bill and it shows here.</span><span></span></div>'}
     </div>`;
 }
@@ -13084,6 +13176,7 @@ function renderFinanceTransactions(){
 
   _populateFinTxAccountFilter();
   _renderFinTxDrillChip();
+  _finLoadHistFx();
   const clearBtn = document.getElementById('finTxClearBtn');
   if(clearBtn) clearBtn.style.display = _finTxFiltersAreDefault() ? 'none' : '';
   const rows = FIN_TXNS.filter(_finTxPassesFilters);
@@ -13109,17 +13202,17 @@ function renderFinanceTransactions(){
     const cur = acc?.currency || '';
     let amountHtml, accountHtml;
     if(t.tx_type === 'Income'){
-      amountHtml = `<span style="color:var(--win);font-weight:600;">+${finMoney(t.amount, cur)}</span>`;
+      amountHtml = `<span style="color:var(--win);font-weight:600;">+${finMoney(t.amount, cur)}</span>${_finTxPhp(t, t.amount)}`;
       accountHtml = escapeHtml(_finAccountName(t.account_id));
     }else if(t.tx_type === 'Expense'){
-      amountHtml = `<span style="color:var(--loss);font-weight:600;">−${finMoney(t.amount, cur)}</span>`;
+      amountHtml = `<span style="color:var(--loss);font-weight:600;">−${finMoney(t.amount, cur)}</span>${_finTxPhp(t, t.amount)}`;
       accountHtml = escapeHtml(_finAccountName(t.account_id));
     }else if(t.tx_type === 'Correction'){
       const amt = Number(t.amount) || 0;
-      amountHtml = `<span style="color:var(--muted);font-weight:600;">${amt >= 0 ? '+' : '−'}${finMoney(Math.abs(amt), cur)}</span>`;
+      amountHtml = `<span style="color:var(--muted);font-weight:600;">${amt >= 0 ? '+' : '−'}${finMoney(Math.abs(amt), cur)}</span>${_finTxPhp(t, Math.abs(amt))}`;
       accountHtml = escapeHtml(_finAccountName(t.account_id));
     }else{
-      amountHtml = `<span style="font-weight:600;">${finMoney(t.amount, cur)}</span>`;
+      amountHtml = `<span style="font-weight:600;">${finMoney(t.amount, cur)}</span>${_finTxPhp(t, t.amount)}`;
       accountHtml = `${escapeHtml(_finAccountName(t.account_id))} → ${escapeHtml(_finAccountName(t.to_account_id))}`;
     }
     const typePill = t.tx_type === 'Income' ? 'pill-green' : (t.tx_type === 'Expense' ? 'pill-red' : (t.tx_type === 'Correction' ? 'pill-muted' : 'pill-blue'));
@@ -14030,6 +14123,7 @@ function renderFinanceBudgets(){
   empty.style.display = 'none';
 
   const primaryCurrency = FIN_ACCOUNTS[0]?.currency || 'PHP';
+  _finLoadFxRates();
   const sorted = [...FIN_BUDGETS].sort((a,b) => a.category.localeCompare(b.category));
   list.innerHTML = sorted.map(b => {
     const spent = _finMonthCategorySpend(b.category);
@@ -14044,7 +14138,7 @@ function renderFinanceBudgets(){
         </div>
         <div class="fin-budget-bar"><div class="fin-budget-bar-fill" style="width:${pct}%;background:${barColor};"></div></div>
         <div class="fin-budget-row-foot">
-          <span>${remaining >= 0 ? `${finMoney(remaining, primaryCurrency)} left` : `${finMoney(Math.abs(remaining), primaryCurrency)} over budget`}</span>
+          <span>${remaining >= 0 ? `${finMoney(remaining, primaryCurrency)} left` : `${finMoney(Math.abs(remaining), primaryCurrency)} over budget`}${_finPhpLine(remaining, primaryCurrency)}</span>
           <span class="fin-budget-row-actions">
             <button class="fin-subacct-edit" title="Edit" onclick='editFinanceBudget(${JSON.stringify(b.category)}, ${b.monthly_amount})'>✎</button>
             <button class="fin-subacct-edit" title="Delete" onclick="deleteFinanceBudget(${b.id})">✕</button>
@@ -14705,6 +14799,7 @@ function _finRecDueCellHtml(r, { fullyPaid = false, alreadyPaid = false } = {}){
 function renderFinanceRecurring(){
   const instBody = document.getElementById('finInstBody');
   if(!instBody) return;
+  _finLoadFxRates();
 
   const fmtPeriod = d => d ? d.toLocaleDateString('en-US',{month:'short',year:'numeric'}) : '—';
   /* Ang tapos na (lahat ng hulog bayad na) ay nasa sariling "Completed" na
@@ -14737,8 +14832,8 @@ function renderFinanceRecurring(){
       <tr>
         <td>${escapeHtml(r.name)}<div style="font-size:10.5px;color:var(--muted);">${escapeHtml(_finAccountName(r.account_id))}</div></td>
         <td>${escapeHtml(r.category || '—')}</td>
-        <td>${finMoney(r.total_amount, _finRecCur(r))}</td>
-        <td>${finMoney(monthly, _finRecCur(r))}</td>
+        <td>${finMoney(r.total_amount, _finRecCur(r))}${_finPhpLine(r.total_amount, _finRecCur(r))}</td>
+        <td>${finMoney(monthly, _finRecCur(r))}${_finPhpLine(monthly, _finRecCur(r))}</td>
         <td><span class="pill ${done ? 'pill-green' : 'pill-orange'}">${paid} / ${total} paid</span><div style="font-size:10.5px;color:var(--muted);margin-top:3px;">${done ? '' : `${finMoney(remaining, _finRecCur(r))} remaining`}</div></td>
         <td style="white-space:nowrap;">${dueCell}</td>
         <td>${escapeHtml(r.notes || '—')}</td>
@@ -14771,7 +14866,7 @@ function renderFinanceRecurring(){
           </div>
           ${r.category ? `<span class="pill pill-muted fin-acc-card-currency">${escapeHtml(r.category)}</span>` : ''}
         </div>
-        <div class="account-card-balance">${finMoney(monthly, _finRecCur(r))}<span style="font-size:12px;color:var(--muted);font-weight:400;"> /mo</span></div>
+        <div class="account-card-balance">${finMoney(monthly, _finRecCur(r))}<span style="font-size:12px;color:var(--muted);font-weight:400;"> /mo</span></div>${_finPhpLine(monthly, _finRecCur(r))}
         <div style="font-size:10.5px;color:var(--muted);margin-top:2px;text-transform:uppercase;letter-spacing:.05em;">Monthly payment</div>
         <div style="font-size:12px;margin-top:10px;">
           <span class="pill ${done ? 'pill-green' : 'pill-orange'}">${paid} / ${total} paid</span>
@@ -14800,7 +14895,7 @@ function renderFinanceRecurring(){
     return `
       <tr>
         <td>${escapeHtml(r.name)}<div style="font-size:10.5px;color:var(--muted);">${escapeHtml(_finAccountName(r.account_id))}</div></td>
-        <td>${finMoney(r.price, _finRecCur(r))}</td>
+        <td>${finMoney(r.price, _finRecCur(r))}${_finPhpLine(r.price, _finRecCur(r))}</td>
         <td>${escapeHtml(r.cycle || 'Monthly')}</td>
         <td style="white-space:nowrap;">${dueCell}</td>
         <td>${escapeHtml(r.notes || '—')}</td>
@@ -14824,7 +14919,7 @@ function renderFinanceRecurring(){
           </div>
           <span class="pill pill-muted fin-acc-card-currency">${escapeHtml(r.cycle || 'Monthly')}</span>
         </div>
-        <div class="account-card-balance">${finMoney(r.price, _finRecCur(r))}</div>
+        <div class="account-card-balance">${finMoney(r.price, _finRecCur(r))}</div>${_finPhpLine(r.price, _finRecCur(r))}
         <div style="font-size:12px;margin-top:8px;">Due: ${dueCell}</div>
         ${r.notes ? `<div style="font-size:12px;color:var(--muted);margin-top:8px;font-style:italic;">${escapeHtml(r.notes)}</div>` : ''}
         <div class="fin-acc-card-actions">
@@ -14859,7 +14954,7 @@ function _renderFinDoneInstallments(done){
     return `
       <tr>
         <td>${escapeHtml(r.name)}<div style="font-size:10.5px;color:var(--muted);">${escapeHtml(_finAccountName(r.account_id))}</div></td>
-        <td>${finMoney(r.total_amount, _finRecCur(r))}</td>
+        <td>${finMoney(r.total_amount, _finRecCur(r))}${_finPhpLine(r.total_amount, _finRecCur(r))}</td>
         <td>${finMoney(monthly, _finRecCur(r))} × ${Number(r.total_payments) || 0}</td>
         <td><span class="pill pill-green">${fin ? 'Done ' + fin.toLocaleDateString('en-US', { month:'short', year:'numeric' }) : 'Done'}</span></td>
         <td style="text-align:right;white-space:nowrap;">
