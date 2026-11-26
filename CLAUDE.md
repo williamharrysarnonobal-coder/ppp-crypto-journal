@@ -381,6 +381,22 @@ find/replace, try the LF form, then the CRLF form.
 - Reuse the shared modal overlays and share-image pattern (canvas +
   Copy image / Share… / Download PNG; see `drawMarketHoursShare`,
   `drawEconShare`) instead of inventing new ones.
+- **ARBAB** (2026-11-26, owner: "same sa ANGE"): the assistant page (sidebar →
+  System → ARBAB, admin only; `js/arbab.js`, styles `.arbab*` in style.css).
+  Like the MPD IT Console's ANGE, **no paid API**: a message is a row in
+  `arbab_messages` (supabase_arbab.sql, run by the owner); the laptop watcher
+  `arbab/wait-msg.cjs` (run by the Claude Code session) picks it up, Claude
+  answers with `arbab/reply.cjs <file> [--progress]`; `arbab/beat.cjs` keeps
+  the status alive. `arbab_state` = beat_at / listen_at / seen_id → OFFLINE,
+  ONLINE · STANDING BY, PROCESSING… (your message not answered), WORKING…
+  (Claude busy). Tools read the service key from gitignored `bot_secrets.py`;
+  `arbab/` is in `.assetsignore`, `arbab/uploads/` (attached images) is
+  gitignored. Images go to `profile-images/{uid}/arbab/`. Enter sends,
+  Shift+Enter = new line, paste/attach image, voice (speechSynthesis) and mic
+  (SpeechRecognition), EN/TL, sidebar badge for unread answers. The SessionStart
+  hook in the IT Console folder (`ange\tools\session-start.ps1`) also reminds a
+  new session to start the two ARBAB watchers. Tests use fake-supabase, which
+  answers `[]` for any table — stub a 404 to test the "NOT SET UP" state.
 - **HUD theme** (2026-11-26): Settings → Theme → Dark / Light / **HUD** — the
   MPD IT Console's HUD look in the user's accent (orange/gold) instead of cyan.
   `applyTheme('hud')` keeps `data-theme` dark (or absent) and adds `data-hud` on

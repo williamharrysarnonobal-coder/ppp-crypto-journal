@@ -26,3 +26,6 @@ tests/*.png
 tests/probe-dbg.js
 tests/mid-dbg.txt
 tests/*.json
+
+# ARBAB: images William attaches, downloaded for the Claude session
+arbab/uploads/

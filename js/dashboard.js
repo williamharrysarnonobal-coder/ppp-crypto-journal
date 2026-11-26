@@ -857,6 +857,7 @@ function switchView(view){
     if(typeof _dpLoaded !== 'undefined' && !_dpLoaded) loadDailyPlans().then(() => { if(currentView === 'challenges') renderChallenges(); });
   }
   if(view === 'leaderboard') renderLeaderboard();
+  if(typeof arbabOnView === 'function') arbabOnView(view === 'arbab');
   if(view === 'hours') openMarketHours();
   if(view === 'dashboard' && typeof addPanelShareButtons === 'function') setTimeout(() => addPanelShareButtons(document.getElementById('view-dashboard')), 300);
   if(view === 'finance') renderFinance();
@@ -1048,7 +1049,7 @@ async function initApp(){
     return;
   }
 
-  document.querySelectorAll('[data-view="admin"]').forEach(el => el.style.display = isAdminUser() ? '' : 'none');
+  document.querySelectorAll('[data-view="admin"], [data-view="arbab"]').forEach(el => el.style.display = isAdminUser() ? '' : 'none');
   applyFeatureLocks();
 
   // Notification system paused (see NOTIFICATIONS_ENABLED) — hide the bell
@@ -9267,7 +9268,7 @@ setTimeout(recordAppVisit, 3000);
    na API key ay inaalis — hindi ito kailangan sa isang backup at hindi dapat
    nakakalat sa isang file. */
 const BACKUP_TABLES = [TABLE_NAME, 'position_setups', 'trading_accounts', 'daily_plans', 'mood_entries',
-  'notebook_entries', 'finance_accounts', 'finance_transactions', 'finance_budgets', 'finance_recurring', 'achievements', 'user_profile', 'app_visits', 'playbooks'];
+  'notebook_entries', 'finance_accounts', 'finance_transactions', 'finance_budgets', 'finance_recurring', 'achievements', 'user_profile', 'app_visits', 'playbooks', 'arbab_messages'];
 async function _fetchAllRows(table){
   const rows = [];
   const page = 1000;
@@ -9338,6 +9339,7 @@ const DB_CHECKS = [
   { file:'supabase_app_visits.sql', what:'Daily Check-in Streak (days you opened the app)', table:'app_visits', col:'visit_date' },
   { file:'supabase_push_subscriptions.sql', what:'Phone notifications (push)', table:'push_subscriptions', col:'endpoint,prefs' },
   { file:'supabase_playbooks.sql', what:'Playbooks (your own confluence checklists)', table:'playbooks', col:'key,items' },
+  { file:'supabase_arbab.sql', what:'ARBAB assistant (chat with the Claude session on the laptop)', table:'arbab_messages', col:'role,text,image_path', also:{ table:'arbab_state', col:'seen_id,beat_at' } },
   { file:'supabase_trading_journal_add_post_stop_profit.sql', what:'Post-Stop Profit on trades', table:'trading_journal', col:'post_stop_profit_result' },
   { file:'supabase_position_setups_upscale_order.sql', what:'Upscale order on a setup (Order Placed, Cancel)', table:'position_setups', col:'upscale_order_id' },
   { file:'supabase_trading_accounts_upscale_api.sql', what:'Upscale API key on My Accounts', table:'trading_accounts', col:'upscale_account_id,upscale_account_label' },

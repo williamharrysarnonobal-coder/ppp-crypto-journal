@@ -16,7 +16,7 @@
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Public+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.2"></script>
-<link rel="stylesheet" href="css/style.css?v=426">
+<link rel="stylesheet" href="css/style.css?v=427">
 </head>
 <body>
 
@@ -80,6 +80,7 @@
     <div class="nav-item" data-view="finance" onclick="switchView('finance')"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 12h.01M18 12h.01"/></svg> <span class="nav-label">Finance</span><span class="nav-tooltip">Finance</span></div>
     <div class="nav-item" data-view="salary" onclick="switchView('salary')"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20"/><path d="M17 6.5c0-1.9-2.2-3-5-3s-5 1.1-5 3 2.2 2.7 5 3.2 5 1.3 5 3.3-2.2 3-5 3-5-1.1-5-3"/></svg> <span class="nav-label">Payslip vs P&amp;L</span><span class="nav-tooltip">Payslip vs P&amp;L</span></div>
     <div class="nav-section-label">System</div>
+    <div class="nav-item" data-view="arbab" onclick="switchView('arbab')" style="display:none;"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2"/></svg> <span class="nav-label">ARBAB</span><span class="nav-badge" id="navBadge-arbab" style="display:none;"></span><span class="nav-tooltip">ARBAB</span></div>
     <div class="nav-item" data-view="reports" onclick="switchView('reports')"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="15" y2="17"/></svg> <span class="nav-label">Reports</span><span class="nav-tooltip">Reports</span></div>
     <div class="nav-item" data-view="admin" onclick="switchView('admin')" style="display:none;"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 3 6v6c0 5 4 8.5 9 10 5-1.5 9-5 9-10V6l-9-4Z"/><path d="m9 12 2 2 4-4"/></svg> <span class="nav-label">Admin Console</span><span class="nav-badge" id="navBadge-admin" style="display:none;"></span><span class="nav-tooltip">Admin Console</span></div>
     <div class="nav-item" data-view="config" onclick="switchView('config')"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg> <span class="nav-label">Configuration</span><span class="nav-tooltip">Configuration</span></div>
@@ -1262,6 +1263,50 @@
       <h2>Layout</h2>
       <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:14px;">Mobile Mode swaps the sidebar for a corner menu and centers everything in one column — made for phones.</div>
       <div class="settings-option-grid" id="mobileModeOptionGrid"></div>
+    </div>
+  </div>
+
+  <!-- ARBAB (2026-11-26): the assistant, like the IT Console's ANGE. js/arbab.js -->
+  <div class="view" id="view-arbab">
+    <header class="top">
+      <div>
+        <h1>ARBAB</h1>
+        <div class="sub">Your assistant. Messages go to the Claude session on the office laptop.</div>
+      </div>
+    </header>
+    <div class="arbab" id="arbab">
+      <div class="arbab-core">
+        <svg class="arbab-reactor" viewBox="0 0 200 200" aria-hidden="true">
+          <g id="arbabTicks" class="arbab-ticks"></g>
+          <circle class="arbab-ring-a" cx="100" cy="100" r="74"/>
+          <circle class="arbab-ring-b" cx="100" cy="100" r="62"/>
+          <circle class="arbab-orb" cx="100" cy="100" r="40"/>
+          <text class="arbab-mono" x="100" y="106" text-anchor="middle">ARBAB</text>
+        </svg>
+        <div class="arbab-wave" id="arbabWave" aria-hidden="true"></div>
+        <div class="arbab-state" id="arbabState">CONNECTING…</div>
+        <div class="arbab-link" id="arbabLink"></div>
+        <div class="arbab-tools">
+          <button type="button" class="arbab-chip" id="arbabVoice" onclick="arbabToggleVoice()" title="Read answers out loud">🔊 Voice</button>
+          <button type="button" class="arbab-chip" id="arbabLang" onclick="arbabToggleLang()" title="Language for the microphone and the voice">EN</button>
+          <button type="button" class="arbab-chip" onclick="arbabClear()" title="Delete this conversation">Clear chat</button>
+        </div>
+      </div>
+      <div class="arbab-chat">
+        <div class="arbab-log" id="arbabLog" aria-live="polite"></div>
+        <div class="arbab-attach" id="arbabAttach" hidden></div>
+        <div class="arbab-input">
+          <button type="button" class="arbab-icon-btn" onclick="document.getElementById('arbabFile').click()" title="Attach an image" aria-label="Attach an image">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05 12.25 20.24a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+          </button>
+          <input type="file" id="arbabFile" accept="image/png,image/jpeg,image/gif,image/webp" hidden onchange="arbabPickImage(this.files[0]); this.value='';">
+          <textarea id="arbabText" rows="1" placeholder="Message ARBAB…  (Enter to send, Shift+Enter for a new line)"></textarea>
+          <button type="button" class="arbab-icon-btn" id="arbabMic" onclick="arbabMic()" title="Speak" aria-label="Speak">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="22"/></svg>
+          </button>
+          <button type="button" class="arbab-send" onclick="arbabSend()" aria-label="Send">Send</button>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -3051,8 +3096,9 @@
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=2"></script>
-<script src="js/dashboard.js?v=743"></script>
+<script src="js/dashboard.js?v=744"></script>
 <script src="js/pinlock.js?v=2"></script>
+<script src="js/arbab.js?v=1"></script>
 <button type="button" class="notif-fab" id="notifFab" onclick="toggleNotifFab()" aria-label="Notifications" aria-expanded="false">
   <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
   <span class="notif-fab-badge" id="notifFabBadge" hidden>0</span>

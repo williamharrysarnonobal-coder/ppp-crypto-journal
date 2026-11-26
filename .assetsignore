@@ -12,3 +12,5 @@ supabase_*.sql
 tests
 # Bot scripts (Python): run on the office laptop, not part of the site.
 *.py
+# ARBAB laptop watcher (reads the service key from bot_secrets.py): local tooling only.
+arbab
