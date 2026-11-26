@@ -1753,7 +1753,10 @@ table.breakdown tbody tr{cursor:pointer;}
      table scrolls internally (sticky headers stay visible) instead of the
      whole page scrolling. */
   #view-journal .journal-wrap{max-height:calc(100vh - 215px);}
-  table.journal{border-collapse:collapse;width:100%;font-size:12px;white-space:nowrap;}
+  /* separate, not collapse: with collapsed borders a sticky cell leaves its
+     row line behind, so the pinned checkbox column showed doubled/offset
+     lines while scrolling (2026-11-26). Each cell owns its border this way. */
+  table.journal{border-collapse:separate;border-spacing:0;width:100%;font-size:12px;white-space:nowrap;}
   table.journal th{
     position:sticky;top:0;z-index:4;background:var(--surface-2);color:var(--muted);text-transform:uppercase;
     letter-spacing:.04em;font-size:9.5px;padding:9px 12px;text-align:left;border-bottom:1px solid var(--rule);
