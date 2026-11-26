@@ -102,7 +102,25 @@ logging.getLogger().addHandler(console)
 
 logging.info("Bot script started.")
 
-client = Client()
+# Client() pings Binance right away. When the laptop has just woken up and the
+# Wi-Fi is not back yet, that ping fails and used to kill the whole bot (task
+# result 1, no alerts until someone restarted it — 2026-11-11). Retry instead.
+def _connect_binance():
+    attempt = 0
+    while True:
+        attempt += 1
+        try:
+            c = Client()
+            if attempt > 1:
+                logging.info(f"Connected to Binance on attempt {attempt}.")
+            return c
+        except Exception as e:
+            if attempt == 1 or attempt % 10 == 0:
+                logging.warning(f"No connection to Binance yet (attempt {attempt}): {e}. Retrying every 30s.")
+            time.sleep(30)
+
+
+client = _connect_binance()
 
 
 # ==========================

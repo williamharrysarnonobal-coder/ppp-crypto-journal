@@ -201,6 +201,13 @@ find/replace, try the LF form, then the CRLF form.
   the System log); right after waking, Wi-Fi isn't up yet and a Telegram send
   fails with an SSL EOF. v2 `send()` retries after 5s, 15s, 30s and 60s (not on
   a 400) and masks the bot token in the log.
+- BTC and XAU v2 start with `_connect_binance()` (2026-11-26): python-binance's
+  `Client()` pings Binance on creation, and with no Wi-Fi yet that killed the
+  bot (task result 1 on 2026-11-11). Now it retries every 30s until connected.
+- The 2026-11-11 2:29→8:20 AM gap was a **Windows Update auto-restart**
+  (User32 1074, MoUsoCoreWorker), not sleep: AC sleep is already "never". The
+  tasks only run after the owner logs in, so nothing ran until 8:18. Not
+  changed: it's an office laptop, Windows Update policy is the owner's call.
 - Both v2 tasks also have a **every-10-minutes trigger** with MultipleInstances
   = IgnoreNew: if the bot was killed (e.g. a cancelled Restart from the Start
   menu closed it on 2026-10-22), the task starts it again within 10 minutes.
@@ -380,6 +387,11 @@ find/replace, try the LF form, then the CRLF form.
     the owner's request (its row lines looked off) — don't re-add. Table uses
     `border-collapse:separate`. The checkbox cell (`.jsel`) looks exactly like
     the Finance Transactions one: normal 12px padding, box on the left, no divider.
+  - **Trade Journals on a phone = cards** (`_journalCardCell`, one extra
+    `td.jcard` per row, hidden on desktop): symbol · direction + Win/Loss,
+    date · pattern + P/L. In `body.mobile-mode` every other column is hidden
+    (scoped to `#journalTable`; the Finance table also uses `.journal`).
+    Checkbox, ⚠ and tap-to-open still work; the header row becomes "Select all".
   - **Loading skeletons** are written straight into dashboard.html (`#kpiGrid`,
     `#journalTable` `.skel-rows`) and get replaced by the first real render.
   - Phone fixes found on the way: the Dashboard Calendar header wraps

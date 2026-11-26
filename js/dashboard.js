@@ -16251,6 +16251,7 @@ function renderJournalTable(){
         }
         return `<td title="${String(r[c.key]||'').replace(/"/g,'&quot;')}">${val}</td>`;
       }).join('')}
+      ${_journalCardCell(r)}
     </tr>
   `).join('')}</tbody>`;
 
@@ -16269,6 +16270,24 @@ function renderJournalTable(){
    Rules Followed?: kapag binago mo ang tags pero hindi mo itinakda ang Rules
    Followed?, kinukuwenta ito ulit kada trade — gaya ng sa drawer, kung saan
    ang pag-tick ng tag ang nagpapasya nito. */
+/* PHONE CARD (2026-11-26): on a phone the wide table becomes one card per
+   trade — symbol · direction + Win/Loss on top, date · pattern + P/L below.
+   It is one extra cell per row, hidden on desktop; on a phone (body.mobile-mode)
+   every other column is hidden instead, so the checkbox (Bulk Edit), the ⚠
+   and tapping the row to open the trade all keep working. Fixed fields, not
+   the configurable columns, so a card always says which trade it is. */
+function _journalCardCell(r){
+  const d = r.close_date || r.open_date;
+  const when = d ? new Date(d).toLocaleDateString('en-US', { month:'short', day:'numeric' }) : '';
+  const wl = r.win_loss ? (_journalColoredCell('win_loss', r, _journalCellValue(r, 'win_loss')) || escapeHtml(String(r.win_loss))) : '';
+  const num = parseFloat(r.profit_loss);
+  const pl = r.profit_loss != null && r.profit_loss !== '' ? _journalCellValue(r, 'profit_loss') : '—';
+  const top = [r.symbol, r.trade_type].filter(Boolean).map(x => escapeHtml(String(x))).join(' · ');
+  const sub = [when, r.pattern_type].filter(Boolean).map(x => escapeHtml(String(x))).join(' · ');
+  return `<td class="jcard"><div class="jcard-row"><span class="jcard-title">${top || '—'}</span><span class="jcard-wl">${wl}</span></div>
+    <div class="jcard-row"><span class="jcard-sub">${sub}</span><span class="jcard-pl ${isNaN(num) ? '' : (num >= 0 ? 'pos' : 'neg')}">${pl}</span></div></td>`;
+}
+
 let JOURNAL_SELECTED = new Set();
 let _journalVisibleIds = [];
 
