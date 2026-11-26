@@ -7,7 +7,10 @@
    i.e. Claude is free), seen_id (last message picked up).
    Admin-only (the owner). Table missing → a note to run supabase_arbab.sql. */
 const ARBAB = { last: 0, shown: new Set(), timer: null, slowTimer: null, open: false, st: null, msgs: [],
-  voice: true, lang: 'en-US', rec: null, img: null, missing: false, loaded: false };
+  voice: true, lang: 'en-US', rec: null, img: null, missing: false, loaded: false,
+  pendingVoice: new Set(), recorder: null };
+// Voice messages are stored next to the images, named voice-<time>-<en|tl>.<ext>.
+const _arbabIsVoice = p => /\/voice-[^/]+\.(m4a|mp4|webm|ogg|wav|aac)$/i.test(p || '');
 try{ ARBAB.voice = localStorage.getItem('arbabVoice') !== 'off'; ARBAB.lang = localStorage.getItem('arbabLang') || 'en-US'; }catch(e){}
 
 const _arbabEl = id => document.getElementById(id);
@@ -71,16 +74,49 @@ function _arbabMode(m){
 }
 function _arbabStatus(){
   if(ARBAB.missing){ _arbabMode('setup'); _arbabEl('arbabLink').textContent = 'Run supabase_arbab.sql in the Supabase SQL Editor first.'; return; }
-  if(ARBAB.mode === 'speaking' || ARBAB.mode === 'listening') return;
   const s = ARBAB.st || {}, now = Date.now();
   const online = s.beat_at && now - Date.parse(s.beat_at) < 20000;
   const listening = s.listen_at && now - Date.parse(s.listen_at) < 12000;
   let lastUser = 0, lastAnswer = 0;
   ARBAB.msgs.forEach(m => { if(m.role === 'user') lastUser = m.id; else if(!m.progress) lastAnswer = m.id; });
   const waiting = lastUser > lastAnswer;
+  // The working bubble updates even while ARBAB speaks or you record.
+  _arbabWorkingRow(waiting, online, lastUser);
+  if(ARBAB.mode === 'speaking' || ARBAB.mode === 'listening') return;
   _arbabMode(!online ? 'offline' : waiting ? 'thinking' : listening ? 'idle' : 'working');
   const link = _arbabEl('arbabLink');
   if(link) link.textContent = online ? 'LINKED' : 'NOT LINKED · open VS Code and say "start ARBAB"';
+}
+
+/* Live "working" bubble at the end of the chat (owner, 2026-11-26: always
+   show that ARBAB is still on it, so you never have to guess). Shown while
+   your last message has no final answer yet; counts up from that message;
+   says so when the laptop is offline, and when it's taking unusually long.
+   The latest progress line (🎧 / 📝 / "working on it") stays above it. */
+function _arbabWorkingRow(waiting, online, lastUserId){
+  const log = _arbabEl('arbabLog'); if(!log) return;
+  let row = _arbabEl('arbabWorking');
+  if(!waiting || !ARBAB.open){ if(row) row.remove(); clearInterval(ARBAB.workTick); ARBAB.workTick = null; return; }
+  if(!row){
+    row = document.createElement('div'); row.id = 'arbabWorking'; row.className = 'arbab-msg ai arbab-working';
+    row.innerHTML = '<div class="arbab-who">ARBAB</div><div class="arbab-text"><span class="arbab-dots"><i></i><i></i><i></i></span> <span class="arbab-working-txt"></span></div>';
+  }
+  if(row !== log.lastElementChild){ const stick = _arbabAtBottom(); log.appendChild(row); _arbabStick(stick); }
+  const um = ARBAB.msgs.find(m => m.id === lastUserId);
+  const since = um ? Date.parse(um.created_at) : Date.now();
+  const paint = () => {
+    const s = Math.max(0, Math.round((Date.now() - since) / 1000));
+    const t = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+    const voice = um && /transcribing…$/.test(um.text || '');
+    const txt = !online ? `Waiting for the laptop (offline) · ${t}. ARBAB answers as soon as it’s back.`
+      : voice ? `Turning your voice message into text… ${t}`
+      : s > 180 ? `Still working… ${t} (taking longer than usual)`
+      : `ARBAB is working… ${t}`;
+    const el = row.querySelector('.arbab-working-txt'); if(el) el.textContent = txt;
+    row.classList.toggle('offline', !online);
+  };
+  paint();
+  clearInterval(ARBAB.workTick); ARBAB.workTick = setInterval(paint, 1000);
 }
 
 /* ---------- messages ---------- */
@@ -108,8 +144,14 @@ function _arbabAdd(m, fast){
   const who = document.createElement('div'); who.className = 'arbab-who';
   who.textContent = (m.role === 'user' ? 'YOU' : 'ARBAB') + ' · ' + new Date(m.created_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
   const body = document.createElement('div'); body.className = 'arbab-text';
+  body.dataset.mid = m.id;
   row.append(who, body);
-  if(m.image_path){
+  if(m.image_path && _arbabIsVoice(m.image_path)){
+    const au = document.createElement('audio'); au.className = 'arbab-audio'; au.controls = true; au.preload = 'none';
+    _arbabImgUrl(m.image_path).then(u => { if(u) au.src = u; });
+    row.appendChild(au);
+    if(/transcribing…$/.test(m.text || '')) ARBAB.pendingVoice.add(m.id);
+  }else if(m.image_path){
     const img = document.createElement('img'); img.className = 'arbab-img'; img.alt = 'Attached image';
     _arbabImgUrl(m.image_path).then(u => { if(u){ img.src = u; img.onclick = () => window.open(u, '_blank'); } });
     row.appendChild(img);
@@ -133,6 +175,17 @@ async function _arbabFetch(){
     ARBAB.st = sr.ok ? ((await sr.json())[0] || null) : ARBAB.st;
     const first = !ARBAB.loaded;
     rows.forEach(m => { ARBAB.msgs.push(m); ARBAB.last = Math.max(ARBAB.last, m.id); if(ARBAB.open) _arbabAdd(m, first); });
+    // Voice messages: the laptop writes the transcript into the same row.
+    if(ARBAB.pendingVoice.size){
+      const ids = [...ARBAB.pendingVoice].join(',');
+      const vr = await fetch(`${SUPABASE_URL}/rest/v1/arbab_messages?select=id,text&id=in.(${ids})`, { headers: _arbabHeaders() });
+      if(vr.ok) (await vr.json()).forEach(v => {
+        if(/transcribing…$/.test(v.text || '')) return;
+        ARBAB.pendingVoice.delete(v.id);
+        const m = ARBAB.msgs.find(x => x.id === v.id); if(m) m.text = v.text;
+        const node = document.querySelector(`#arbabLog .arbab-text[data-mid="${v.id}"]`); if(node) node.textContent = v.text;
+      });
+    }
     ARBAB.loaded = true;
     if(ARBAB.open) _arbabMarkRead();
     _arbabBadge();
@@ -272,6 +325,9 @@ function _arbabSpeak(text){
         speechSynthesis.speak(u);
       });
       if(speechSynthesis.paused) speechSynthesis.resume();
+      // Safety: some phones never fire onend, which left the status stuck on SPEAKING.
+      clearTimeout(ARBAB.speakSafety);
+      ARBAB.speakSafety = setTimeout(() => { if(ARBAB.mode === 'speaking'){ ARBAB.mode = null; _arbabStatus(); } }, Math.min(120000, text.length * 90 + 6000));
     };
     if(speechSynthesis.speaking || speechSynthesis.pending){ speechSynthesis.cancel(); setTimeout(go, 120); }
     else go();
@@ -286,7 +342,77 @@ function _arbabDictateHint(why){
   if(t){ t.focus(); }
   showToast((why ? why + ' ' : '') + 'Tap the 🎤 on your keyboard to dictate instead.');
 }
+/* Voice MESSAGE (2026-11-26): iPhone has no Tagalog speech-to-text at all
+   (not the keyboard, not Siri, not the web). So on iPhone, or wherever the
+   browser has no live speech input, the mic RECORDS: tap to start, tap again
+   to send (stops by itself at 2 min). The clip goes to storage
+   ({uid}/arbab/voice-<time>-<en|tl>.<ext>, bucket allows audio/* since
+   2026-11-26) with a "transcribing…" message; the laptop watcher turns it into
+   text with Whisper (arbab/transcribe.py), writes the text into the same
+   message, and ARBAB answers it. Laptop Chrome keeps the live mic (Google's
+   speech input knows Tagalog). */
+const ARBAB_REC_MAX_MS = 120000;
+function _arbabUseRecorder(){
+  const ios = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  return ios || !(window.SpeechRecognition || window.webkitSpeechRecognition);
+}
+async function _arbabRecordToggle(){
+  const R = ARBAB.recorder;
+  if(R){ R.stop(); return; }
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || typeof MediaRecorder === 'undefined'){
+    _arbabDictateHint('Voice recording isn’t available here.'); return;
+  }
+  if(ARBAB.missing){ showToast('Run supabase_arbab.sql in Supabase first.'); return; }
+  let stream;
+  try{ stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
+  catch(e){ _arbabDictateHint(e && e.name === 'NotAllowedError' ? 'Microphone permission is off for this site.' : 'Couldn’t open the microphone.'); return; }
+  const type = ['audio/mp4', 'audio/webm;codecs=opus', 'audio/webm', 'audio/ogg'].find(t => MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t)) || '';
+  let rec;
+  try{ rec = new MediaRecorder(stream, type ? { mimeType: type } : undefined); }
+  catch(e){ stream.getTracks().forEach(t => t.stop()); _arbabDictateHint('Voice recording isn’t available here.'); return; }
+  const chunks = [], started = Date.now();
+  ARBAB.recorder = rec;
+  const mic = _arbabEl('arbabMic');
+  rec.ondataavailable = e => { if(e.data && e.data.size) chunks.push(e.data); };
+  rec.onstop = async () => {
+    clearTimeout(rec._cap); clearInterval(rec._tick);
+    stream.getTracks().forEach(t => t.stop());
+    ARBAB.recorder = null; ARBAB.mode = null; if(mic) mic.classList.remove('on'); _arbabStatus();
+    const ms = Date.now() - started;
+    const blob = new Blob(chunks, { type: (rec.mimeType || type || 'audio/webm').split(';')[0] });
+    if(ms < 700 || !blob.size){ showToast('Too short. Tap the mic, speak, then tap it again to send.'); return; }
+    await _arbabSendVoice(blob, ms);
+  };
+  rec.start(1000);
+  ARBAB.mode = 'listening'; _arbabMode('listening'); if(mic) mic.classList.add('on');
+  const st = _arbabEl('arbabState');
+  rec._tick = setInterval(() => { const s = Math.round((Date.now() - started) / 1000); if(st) st.textContent = `RECORDING · ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')} · TAP 🎤 TO SEND`; }, 500);
+  rec._cap = setTimeout(() => { if(ARBAB.recorder === rec) rec.stop(); }, ARBAB_REC_MAX_MS);
+}
+async function _arbabSendVoice(blob, ms){
+  const ext = /mp4|m4a|aac/.test(blob.type) ? 'm4a' : /ogg/.test(blob.type) ? 'ogg' : 'webm';
+  const lang = ARBAB.lang.startsWith('fil') ? 'tl' : 'en';
+  const path = `${CURRENT_USER_ID}/arbab/voice-${Date.now()}-${lang}.${ext}`;
+  try{
+    const up = await sb.storage.from('profile-images').upload(path, blob, { contentType: blob.type || 'audio/webm', upsert: false });
+    if(up.error) throw up.error;
+    const secs = Math.max(1, Math.round(ms / 1000));
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/arbab_messages`, {
+      method: 'POST', headers: { ..._arbabHeaders(true), Prefer: 'return=representation' },
+      body: JSON.stringify([{ role: 'user', text: `🎤 Voice message (${secs}s) · transcribing…`, image_path: path }])
+    });
+    if(!res.ok) throw new Error(await res.text());
+    const [row] = await res.json();
+    ARBAB.msgs.push(row); ARBAB.last = Math.max(ARBAB.last, row.id);
+    _arbabAdd(row, true);
+    _arbabStatus();
+  }catch(e){
+    console.error('ARBAB voice', e);
+    showToast("Couldn't send the voice message. " + (e.message || ''));
+  }
+}
 function arbabMic(){
+  if(ARBAB.recorder || _arbabUseRecorder()){ _arbabRecordToggle(); return; }
   const R = window.SpeechRecognition || window.webkitSpeechRecognition;
   if(!R){ _arbabDictateHint('Voice input isn’t available here.'); return; }
   if(ARBAB.rec){ ARBAB.rec.stop(); return; }

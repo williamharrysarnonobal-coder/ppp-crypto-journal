@@ -409,6 +409,25 @@ find/replace, try the LF form, then the CRLF form.
   Voice on → says "Voice is on." Mic: no SpeechRecognition / any error →
   toast with the reason + focus the text box so the iPhone keyboard's 🎤
   dictation can be used (the Home Screen app usually has no web speech input).
+- ARBAB **voice messages** (2026-11-26; iPhone has NO Tagalog speech-to-text
+  anywhere): on iPhone (or no SpeechRecognition) the 🎤 records (MediaRecorder,
+  tap to start / tap to send, max 2 min, status shows RECORDING · m:ss) and
+  uploads `{uid}/arbab/voice-<ms>-<en|tl>.<m4a|webm|ogg>` to the
+  profile-images bucket (allowed MIME types now `image/*` + `audio/*`, still
+  private, 5 MB) with a user row "🎤 Voice message (Ns) · transcribing…".
+  `arbab/wait-msg.cjs` posts progress "🎧 Got your voice message…", runs
+  `arbab/transcribe.py` (faster-whisper "small", CPU int8, ~5 s; decodes
+  audio itself because PyAV 19 broke faster-whisper's decode_audio; TL uses
+  language=tl + a Taglish prompt), PATCHes the user row to "🎤 <text>",
+  posts "📝 Heard: …  Working on it…", then prints the message for Claude.
+  The app polls pending voice rows (`ARBAB.pendingVoice`) and shows an
+  audio player under your bubble. Laptop Chrome keeps the live mic.
+- ARBAB **working bubble** (`_arbabWorkingRow`): while your last message has
+  no final answer, the chat ends with "ARBAB is working… m:ss" (voice:
+  "Turning your voice message into text…", offline: "Waiting for the laptop",
+  > 3 min: "taking longer than usual"). Owner wants to always see progress:
+  when answering anything that takes more than a few seconds, send a
+  `reply.cjs --progress` line first saying what you're doing.
 - Phone top bar: 🔔 · Refresh · ☰ (2026-11-26, `#appRefreshBtn`,
   `hardRefreshApp`): the iPhone home-screen app has no reload. Clears Cache
   Storage, `reg.update()` (service worker stays registered: push lives on it),
