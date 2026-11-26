@@ -530,6 +530,9 @@
     .cal-total-summary{flex-wrap:wrap;}
 
     .cal-sum-cell{flex:1 1 33%;border-bottom:1px solid var(--rule);}
+    /* The month's P&L gets its own full row on narrow screens: as "flex:1.5"
+       (basis 0) it shrank to 61px and the amount ran off its left edge. */
+    .cal-sum-cell.lead{flex:1 1 100%;border-right:none;}
   }
 
 /* ---------- Salary goal, in the Calendar heading ----------
@@ -1257,6 +1260,11 @@
    nakahanay. Ang 190px ay nakapirmi nang may dahilan; ang teksto sa kanan ang
    inaayos, at iyon ay nasa nowrap na sa itaas. */
   .cal-head-actions > .poscalc-accent-btn{padding:5px 12px;font-size:11.5px;white-space:nowrap;}
+  /* Phone (2026-11-26): "Calendar" + Review trades + Share + ‹ month › were
+     9px wider than a 390px screen. Let the actions drop under the title. */
+  body.mobile-mode .panel h2.cal-h2{flex-wrap:wrap;row-gap:8px;}
+  body.mobile-mode .cal-h2 > .cal-head-actions{flex-wrap:wrap;justify-content:flex-end;gap:6px;min-width:0;max-width:100%;}
+  body.mobile-mode .cal-head-actions > .poscalc-accent-btn{padding:5px 9px;font-size:11px;}
 
   /* ---------- Settings page ---------- */
   .settings-option-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;}
@@ -1747,7 +1755,7 @@ table.breakdown tbody tr{cursor:pointer;}
   #view-journal .journal-wrap{max-height:calc(100vh - 215px);}
   table.journal{border-collapse:collapse;width:100%;font-size:12px;white-space:nowrap;}
   table.journal th{
-    position:sticky;top:0;background:var(--surface-2);color:var(--muted);text-transform:uppercase;
+    position:sticky;top:0;z-index:4;background:var(--surface-2);color:var(--muted);text-transform:uppercase;
     letter-spacing:.04em;font-size:9.5px;padding:9px 12px;text-align:left;border-bottom:1px solid var(--rule);
   }
   table.journal td{
@@ -1756,6 +1764,22 @@ table.breakdown tbody tr{cursor:pointer;}
   }
   table.journal tbody tr:hover td{background:var(--surface-2);}
   table.journal tbody tr:last-child td{border-bottom:none;}
+  /* Wide table (2026-11-26): a soft shadow on the edge that still has
+     columns past it (pure CSS scroll shadows: the "local" covers ride with
+     the content and hide the "scroll" shadows at each end), and the
+     checkbox column stays put while scrolling sideways. */
+  .journal-wrap{
+    background:
+      linear-gradient(to right, var(--surface) 40%, transparent) left center / 36px 100% no-repeat local,
+      linear-gradient(to left, var(--surface) 40%, transparent) right center / 36px 100% no-repeat local,
+      radial-gradient(farthest-side at 0 50%, rgba(0,0,0,.45), transparent) left center / 14px 100% no-repeat scroll,
+      radial-gradient(farthest-side at 100% 50%, rgba(0,0,0,.45), transparent) right center / 14px 100% no-repeat scroll,
+      var(--surface);
+  }
+  table.journal th.jsel, table.journal td.jsel{position:sticky;left:0;z-index:3;background:var(--surface);box-shadow:inset -1px 0 0 var(--rule);}
+  table.journal th.jsel{z-index:5;background:var(--surface-2);}
+  table.journal tbody tr:hover td.jsel{background:var(--surface-2);}
+  table.journal tr.jsel-on td.jsel{background:color-mix(in srgb, var(--accent) 9%, var(--surface));}
   .link-btn{
     display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;
     border-radius:5px;background:var(--surface-2);border:1px solid var(--rule);text-decoration:none;font-size:12px;
@@ -2316,6 +2340,10 @@ table.breakdown tbody tr{cursor:pointer;}
     border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;
   }
   .poscalc-accent-btn:hover{background:color-mix(in srgb, var(--accent) 12%, transparent);}
+  /* One filled main action per area (2026-11-26) so it stands out from the
+     outlined ones next to it: + Quick Add, + Add Transaction, Save… */
+  .poscalc-accent-btn.btn-primary{background:var(--accent);border-color:var(--accent);color:#12151B;}
+  .poscalc-accent-btn.btn-primary:hover{background:var(--accent);filter:brightness(1.08);}
   .poscalc-accent-btn:disabled{border-color:var(--rule);color:var(--muted);cursor:not-allowed;opacity:.6;}
   .poscalc-accent-btn:disabled:hover{background:none;}
   .ps-input-row{display:flex;gap:8px;}
@@ -3569,6 +3597,20 @@ table.breakdown tbody tr{cursor:pointer;}
     border-radius:6px;font-size:13px;cursor:pointer;
   }
   .drawer-secondary-btn:hover{color:var(--ink);}
+  /* Loading skeletons (2026-11-26): grey shimmering bars in the Dashboard
+     KPIs and the Trade Journals table until the data arrives and replaces
+     them, so a page never sits blank and looking broken. */
+  .skel-bar{display:block;height:10px;border-radius:4px;max-width:100%;
+    background:linear-gradient(90deg, var(--surface-2) 25%, color-mix(in srgb, var(--surface-2) 55%, var(--muted)) 50%, var(--surface-2) 75%);
+    background-size:200% 100%;animation:skel-shimmer 1.3s ease-in-out infinite;}
+  .skel-bar + .skel-bar{margin-top:10px;}
+  .skel-bar.skel-lg{height:18px;}
+  @keyframes skel-shimmer{from{background-position:200% 0;}to{background-position:-200% 0;}}
+  @media (prefers-reduced-motion: reduce){.skel-bar{animation:none;}}
+  .skel-rows td{padding:13px 12px !important;}
+  /* "Clear filters" link inside an empty list ("No … match these filters"). */
+  .empty-clear-link{background:none;border:0;padding:0;margin-left:6px;color:var(--accent);font:inherit;font-weight:600;cursor:pointer;text-decoration:underline;text-underline-offset:3px;}
+  .empty-clear-link:hover{filter:brightness(1.15);}
   .drawer-secondary-btn:disabled{opacity:.4;cursor:default;pointer-events:none;}
   .drawer-secondary-btn.active-translate{background:var(--accent);border-color:var(--accent);color:#fff;}
   .drawer-danger-btn{
@@ -3893,7 +3935,13 @@ table.breakdown tbody tr{cursor:pointer;}
   .fin-networth-debt{color:var(--loss);font-weight:600;}
   .fin-networth-rate{margin-top:6px;font-size:11px;color:var(--muted);}
   .fin-dash-kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--rule);border:1px solid var(--rule);border-radius:8px;overflow:hidden;margin-bottom:10px;}
-  @media(max-width:640px){.fin-dash-kpis{grid-template-columns:1fr;}}
+  /* Phone (2026-11-26): Income / Expense / Net stay side by side, smaller,
+     instead of three tall boxes stacked. */
+  @media(max-width:640px){
+    .fin-dash-kpis .kpi{padding:11px 10px 10px;min-width:0;}
+    .fin-dash-kpis .kpi .label{font-size:9.5px;letter-spacing:.05em;margin-bottom:5px;}
+    .fin-dash-kpis .kpi .value{font-size:13.5px;overflow-wrap:anywhere;line-height:1.25;}
+  }
   .fin-dash-layout{display:grid;grid-template-columns:1.3fr 1fr;gap:20px;align-items:stretch;}
   @container (max-width:900px){.fin-dash-layout{grid-template-columns:1fr;}}
   /* Both panels pinned to the SAME fixed height so the two columns line up
@@ -3925,7 +3973,11 @@ table.breakdown tbody tr{cursor:pointer;}
   .fin-dash-detail-panel{display:flex;flex-direction:column;height:520px;}
   .fin-dash-detail-panel #finDashDetailBody{overflow-y:auto;flex:1;min-height:0;}
   body.mobile-mode .fin-dash-layout{grid-template-columns:1fr !important;}
-  body.mobile-mode .fin-dash-kpis{grid-template-columns:1fr !important;}
+  body.mobile-mode .fin-dash-kpis{grid-template-columns:repeat(3,minmax(0,1fr)) !important;}
+  body.mobile-mode .fin-dash-kpis .kpi{padding:11px 10px 10px;min-width:0;}
+  body.mobile-mode .fin-dash-kpis .kpi .label{font-size:9.5px;letter-spacing:.05em;margin-bottom:5px;}
+  body.mobile-mode .fin-dash-kpis .kpi .value{font-size:13.5px;overflow-wrap:anywhere;line-height:1.25;}
+  body.mobile-mode .fin-networth-value{font-size:22px;}
   /* Stacked instead of side-by-side on mobile — two fixed-520px panels
      stacked would be 1000px+ of scrolling just for the calendar, so each
      shrinks to a size that actually fits a phone screen. */
@@ -4016,6 +4068,15 @@ table.breakdown tbody tr{cursor:pointer;}
      on Configuration (and anywhere else using .subnav-shell). */
   body.mobile-mode .subnav-list{flex-direction:row !important;flex-wrap:wrap;gap:6px;width:100% !important;position:static !important;top:auto !important;}
   body.mobile-mode .subnav-item{flex:0 0 auto;padding:8px 12px;font-size:12.5px;}
+  /* Phone (2026-11-26): the 7 Finance tabs and the Alerts tabs sit on ONE
+     row that scrolls sideways instead of wrapping into two rows. */
+  body.mobile-mode .fin-tab-nav, body.mobile-mode .alerts-tab-nav{
+    flex-wrap:nowrap !important;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch;
+    margin-right:-14px;padding-right:14px;
+    -webkit-mask-image:linear-gradient(90deg,#000 85%,transparent);mask-image:linear-gradient(90deg,#000 85%,transparent);
+  }
+  body.mobile-mode .fin-tab-nav::-webkit-scrollbar, body.mobile-mode .alerts-tab-nav::-webkit-scrollbar{display:none;}
+  body.mobile-mode .fin-tab-nav .subnav-item, body.mobile-mode .alerts-tab-nav .subnav-item{white-space:nowrap;}
   body.mobile-mode .setup-notes-shots{grid-template-columns:1fr !important;}
   /* Position Size Calculator: input + Paste + Copy on one line is too tight
      on a phone width — put the input on its own row, buttons split evenly
@@ -5430,6 +5491,13 @@ select.ps-status-sel:focus-visible{outline:2px solid var(--accent);outline-offse
 .up-banner-go{background:none;border:1px solid var(--accent);color:var(--ink);border-radius:6px;padding:5px 10px;font-size:12px;font-weight:600;cursor:pointer;}
 .up-banner-x{background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;padding:4px;}
 .up-banner-x:hover{color:var(--ink);}
+/* Stacked: only the newest banner shows, the "+N more" chip opens the rest. */
+.up-banner-wrap.is-stacked .up-banner:not(:last-child){display:none;}
+.up-banner-wrap.is-expanded{max-height:calc(100vh - 140px);overflow-y:auto;}
+.up-banner-more{display:flex;justify-content:flex-end;gap:6px;}
+.up-banner-more button{background:var(--surface);border:1px solid var(--rule);color:var(--ink);border-radius:999px;
+  padding:4px 12px;font-size:11.5px;font-weight:600;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.22);font-family:var(--font-ui);}
+.up-banner-more button:hover{border-color:var(--accent);}
 
 /* ---------- Upscale: babala sa balita ---------- */
 .up-news-warn{

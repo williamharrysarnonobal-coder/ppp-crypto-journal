@@ -12780,7 +12780,8 @@ function renderFinanceTransactions(){
   if(!rows.length){
     wrap.style.display = 'none';
     empty.style.display = 'block';
-    empty.textContent = FIN_TXNS.length ? 'No transactions match these filters.' : 'No transactions yet — click "+ Add Transaction" to log your first one.';
+    if(FIN_TXNS.length) empty.innerHTML = 'No transactions match these filters. <button type="button" class="empty-clear-link" onclick="clearFinTxFilters()">Clear filters</button>';
+    else empty.textContent = 'No transactions yet — click "+ Add Transaction" to log your first one.';
     return;
   }
   wrap.style.display = 'block';
@@ -16174,7 +16175,12 @@ function renderJournalTable(){
     })();
 
   if(rows.length === 0){
-    table.innerHTML = `<tr><td colspan="99" style="padding:24px;color:var(--muted);">No trades found.</td></tr>`;
+    // With trades on record, "none" can only mean a filter hid them — say so
+    // and offer the way back, instead of a bare "No trades found".
+    const filtered = typeof ALL_TRADES !== 'undefined' && ALL_TRADES.length > 0;
+    table.innerHTML = filtered
+      ? `<tr><td colspan="99" style="padding:24px;color:var(--muted);">No trades match these filters. <button type="button" class="empty-clear-link" onclick="clearJournalFilters()">Clear filters</button></td></tr>`
+      : `<tr><td colspan="99" style="padding:24px;color:var(--muted);">No trades found.</td></tr>`;
     return;
   }
 
@@ -27304,6 +27310,9 @@ function _upBanner(title, body, tone, journalOrderId){
     wrap.setAttribute('role', 'status');
     wrap.setAttribute('aria-live', 'polite');
     document.body.appendChild(wrap);
+    // Banners come and go from many places (Open, ✕, remove() calls), so the
+    // stack state is recomputed whenever the list changes.
+    new MutationObserver(() => _upBannerStackSync()).observe(wrap, { childList: true });
   }
   const el = document.createElement('div');
   el.className = `up-banner ${tone || ''}`;
@@ -27315,6 +27324,34 @@ function _upBanner(title, body, tone, journalOrderId){
       : `<button type="button" class="up-banner-go" onclick="switchView('calculator'); this.closest('.up-banner').remove();">View</button>`}
     <button type="button" class="up-banner-x" aria-label="Dismiss" onclick="this.closest('.up-banner').remove();">✕</button>`;
   wrap.appendChild(el);
+}
+/* STACKED BANNERS (2026-11-26): three or four reminders used to pile up in
+   the corner and cover the page, worst on a phone. Now only the newest shows;
+   a "+N more" chip above it opens the rest, with "Dismiss all". */
+let _upBannerExpanded = false;
+function _upBannerStackSync(){
+  const wrap = document.getElementById('upBannerWrap');
+  if(!wrap) return;
+  const banners = wrap.querySelectorAll('.up-banner');
+  let bar = wrap.querySelector('.up-banner-more');
+  if(banners.length < 2){
+    _upBannerExpanded = false;
+    wrap.classList.remove('is-stacked', 'is-expanded');
+    if(bar) bar.remove();
+    return;
+  }
+  if(!bar){
+    bar = document.createElement('div');
+    bar.className = 'up-banner-more';
+    wrap.insertBefore(bar, wrap.firstChild);   // the observer re-runs; harmless
+  }
+  const hidden = banners.length - 1;
+  const html = _upBannerExpanded
+    ? `<button type="button" onclick="_upBannerExpanded=false;_upBannerStackSync();">Show less</button><button type="button" onclick="document.querySelectorAll('#upBannerWrap .up-banner').forEach(b => b.remove());">Dismiss all</button>`
+    : `<button type="button" onclick="_upBannerExpanded=true;_upBannerStackSync();">+${hidden} more</button>`;
+  if(bar.innerHTML !== html) bar.innerHTML = html;
+  wrap.classList.toggle('is-stacked', !_upBannerExpanded);
+  wrap.classList.toggle('is-expanded', _upBannerExpanded);
 }
 // Hinihingi ang pahintulot sa system notification sa unang Place Order —
 // sa isang pindot ng tao, gaya ng hinihingi ng browser.

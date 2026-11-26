@@ -362,6 +362,27 @@ find/replace, try the LF form, then the CRLF form.
   chevron (+ padding-right 28px) and the 🔍 on any `input[placeholder^="Search"]`.
   Checkboxes/radios are `appearance:none`, gold when checked with a dark ✓.
   An inline `style="padding:…"` on a select must leave ~26px on the right.
+- UI polish pass (2026-11-26):
+  - **Reminder banners stack** (`_upBannerStackSync`, MutationObserver on
+    `#upBannerWrap`): only the newest shows, "+N more" chip opens the rest with
+    "Dismiss all".
+  - **One filled main button per area**: `.poscalc-accent-btn.btn-primary`
+    (+ Quick Add, + Add Account/Transaction/Installment/Subscription, Update
+    Password, mood Save). "Clear filters" buttons are `.drawer-secondary-btn`.
+  - **Filtered-empty lists** say "No … match these filters" + a
+    `.empty-clear-link` (Finance Transactions, Trade Journals).
+  - **Phone**: Finance and Alerts tabs are one sideways-scrolling row; Finance
+    Income/Expense/Net KPIs stay 3 across (smaller).
+  - **Trade Journals table**: CSS scroll shadows on `.journal-wrap` show there
+    are more columns; the checkbox column (`.jsel`) is sticky-left. z-index:
+    td.jsel 3 < th 4 < th.jsel 5.
+  - **Loading skeletons** are written straight into dashboard.html (`#kpiGrid`,
+    `#journalTable` `.skel-rows`) and get replaced by the first real render.
+  - Phone fixes found on the way: the Dashboard Calendar header wraps
+    (`body.mobile-mode .panel h2.cal-h2` — was 9px too wide, the 4 old
+    probe-mobile failures), and the month P&L tile (`.cal-sum-cell.lead`) takes
+    a full row under 900px (it shrank to 61px and clipped "+$2,491.82").
+    `tests/probe-mobile.js` passes fully again.
 - Page top spacing: desktop `.content` padding-top is **20px** (2026-11-26; was
   76px for top-right buttons that now float bottom-right, leaving an empty band
   on every page). `body.mobile-mode .content` keeps 76px for the fixed 🔔 / ☰.
