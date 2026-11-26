@@ -360,7 +360,10 @@
   .cfl-score-box{cursor:default;}
 
 
-  .content{flex:1;min-width:0;padding:76px 22px 20px;container-type:inline-size;}
+  /* 20px top on desktop (2026-11-26): the 76px was room for top-right buttons
+     that now float bottom-right, so every page started with an empty band.
+     Phone (body.mobile-mode) keeps 76px for its fixed 🔔 / ☰ buttons. */
+  .content{flex:1;min-width:0;padding:20px 22px 20px;container-type:inline-size;}
   @media(max-width:800px){
     .shell{flex-direction:column;}
     .sidebar{width:100%;height:auto;position:relative;display:flex;overflow-x:auto;padding:10px;gap:4px;}

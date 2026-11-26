@@ -342,6 +342,9 @@ find/replace, try the LF form, then the CRLF form.
 - Reuse the shared modal overlays and share-image pattern (canvas +
   Copy image / Share… / Download PNG; see `drawMarketHoursShare`,
   `drawEconShare`) instead of inventing new ones.
+- Page top spacing: desktop `.content` padding-top is **20px** (2026-11-26; was
+  76px for top-right buttons that now float bottom-right, leaving an empty band
+  on every page). `body.mobile-mode .content` keeps 76px for the fixed 🔔 / ☰.
 - Times shown to the owner are UAE time (Asia/Dubai). Exception (2026-11-10):
   the Economic Calendar share image has a **Time zone** pick: UAE, PH, or
   UAE + PH ("9:30 PM UAE" with "1:30 AM PH +1" under it, same size; "+1" when
