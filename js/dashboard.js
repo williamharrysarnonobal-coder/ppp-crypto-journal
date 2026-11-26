@@ -285,9 +285,14 @@ function toggleSidebar(){
   });
 })();
 
+/* 'hud' (2026-11-26) = the dark theme plus the IT Console-style layer
+   (:root[data-hud] in style.css). data-theme stays "dark" for it, so every
+   light/dark check in the app keeps working unchanged. */
 function applyTheme(mode){
   const root = document.documentElement;
-  root.setAttribute('data-theme', mode);
+  if(mode !== 'light' && mode !== 'hud') mode = 'dark';
+  root.setAttribute('data-theme', mode === 'light' ? 'light' : 'dark');
+  if(mode === 'hud') root.setAttribute('data-hud', ''); else root.removeAttribute('data-hud');
   try{ localStorage.setItem('ledger-theme', mode); }catch(e){}
   syncUIPrefsToProfile();
 
@@ -504,7 +509,7 @@ function applyUIPrefsFromProfile(){
 
   _applyingUIPrefs = true;
   try{
-    if(changedKeys.includes('theme')) applyTheme(prefs.theme === 'light' ? 'light' : 'dark');
+    if(changedKeys.includes('theme')) applyTheme(prefs.theme);   // light / dark / hud
     if(changedKeys.includes('font')) applyFont(prefs.font);
     if(changedKeys.includes('accent')) applyAccent(prefs.accent);
     if(changedKeys.includes('field_options') || changedKeys.includes('unfollowed_rules_options')) loadOptionsConfig();
@@ -559,17 +564,22 @@ async function changeAccountPassword(){
 
 function renderSettingsPage(){
   if(typeof renderPinLockSettings === 'function') renderPinLockSettings();
-  const currentThemeMode = document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
+  const currentThemeMode = document.documentElement.getAttribute('data-theme') === 'light' ? 'light'
+    : (document.documentElement.hasAttribute('data-hud') ? 'hud' : 'dark');
   const themeGrid = document.getElementById('themeOptionGrid');
   if(themeGrid){
     themeGrid.innerHTML = `
-      <div class="settings-option ${currentThemeMode==='dark'?'active':''}" onclick="applyTheme('dark')">
+      <div class="settings-option ${currentThemeMode==='dark'?'active':''}" onclick="applyTheme('dark'); renderSettingsPage();">
         <div class="settings-option-name">Dark</div>
         <div class="settings-option-sub">Default — easier on the eyes at night.</div>
       </div>
-      <div class="settings-option ${currentThemeMode==='light'?'active':''}" onclick="applyTheme('light')">
+      <div class="settings-option ${currentThemeMode==='light'?'active':''}" onclick="applyTheme('light'); renderSettingsPage();">
         <div class="settings-option-name">Light</div>
         <div class="settings-option-sub">Bright background, dark text.</div>
+      </div>
+      <div class="settings-option ${currentThemeMode==='hud'?'active':''}" onclick="applyTheme('hud'); renderSettingsPage();">
+        <div class="settings-option-name">HUD</div>
+        <div class="settings-option-sub">Dark, glowing grid in your accent color.</div>
       </div>
     `;
   }
@@ -626,6 +636,7 @@ function renderSettingsPage(){
 (function initTheme(){
   let saved = null;
   try{ saved = localStorage.getItem('ledger-theme'); }catch(e){}
+  if(saved === 'hud') document.documentElement.setAttribute('data-hud', '');
   if(saved === 'light'){
     document.documentElement.setAttribute('data-theme','light');
     const btn = document.getElementById('themeToggleBtn');

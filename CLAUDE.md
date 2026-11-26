@@ -381,6 +381,15 @@ find/replace, try the LF form, then the CRLF form.
 - Reuse the shared modal overlays and share-image pattern (canvas +
   Copy image / Share… / Download PNG; see `drawMarketHoursShare`,
   `drawEconShare`) instead of inventing new ones.
+- **HUD theme** (2026-11-26): Settings → Theme → Dark / Light / **HUD** — the
+  MPD IT Console's HUD look in the user's accent (orange/gold) instead of cyan.
+  `applyTheme('hud')` keeps `data-theme` dark (or absent) and adds `data-hud` on
+  `<html>`; `ledger-theme` = 'hud' (synced like any theme; `applyUIPrefsFromProfile`
+  passes it through). All styles are `:root[data-hud] …` at the end of
+  style.css: moving grid + scanlines (body::before/::after), glowing uppercase
+  page titles, lit sidebar item, corner brackets on `.panel` / `.fin-networth`
+  via background gradients. Deliberately no clip-path / transforms on
+  containers (they break dropdowns and position:fixed popups inside).
 - **PIN lock** (2026-11-26, `js/pinlock.js`, loaded after dashboard.js; styles
   `.pinlock*` at the end of style.css): the IT Console's lock screen in
   Tanaydana gold. Off until the user sets a **6-digit** PIN (exactly 6, owner 2026-11-26) in Settings → PIN
