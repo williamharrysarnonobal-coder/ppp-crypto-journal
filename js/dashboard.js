@@ -14112,6 +14112,27 @@ async function deleteFinanceBudget(id){
    by default. Revert the default back to false once the temporary share
    with vinch is over (a device that already saved a preference is
    unaffected either way). */
+/* Refresh button in the phone top bar (2026-11-26): the iPhone home-screen
+   app has no pull-to-refresh or reload, so this is the Ctrl+Shift+R. Clears
+   any Cache Storage, asks the service worker to update (kept registered, the
+   push subscription lives on it), then reloads with a one-off ?_r= so the
+   page itself isn't served from the HTTP cache; the scripts' ?v= does the
+   rest. The ?_r= is taken back out of the address on load. */
+async function hardRefreshApp(){
+  const b = document.getElementById('appRefreshBtn');
+  if(b) b.classList.add('spinning');
+  const quick = p => Promise.race([p, new Promise(r => setTimeout(r, 2000))]);
+  try{ if('caches' in window){ const ks = await caches.keys(); await quick(Promise.all(ks.map(k => caches.delete(k)))); } }catch(e){}
+  try{ const reg = navigator.serviceWorker && await quick(navigator.serviceWorker.getRegistration()); if(reg) await quick(reg.update()); }catch(e){}
+  const u = new URL(location.href);
+  u.searchParams.set('_r', Date.now());
+  location.replace(u.toString());
+}
+try{
+  const u = new URL(location.href);
+  if(u.searchParams.has('_r')){ u.searchParams.delete('_r'); history.replaceState(history.state, '', u.pathname + u.search + u.hash); }
+}catch(e){}
+
 /* 2026-11-26: showing balances needs Face ID (phone) or the PIN (laptop),
    finRevealVerify in pinlock.js. So "shown" is never remembered: every
    app load starts hidden, and PIN lock hides them again. Hiding never asks. */

@@ -5806,6 +5806,10 @@ button.nf-sec:hover{color:var(--ink);}
    bumubukas mula sa itaas. Sa computer, floating pa rin sa kanang ibaba. */
 .notif-top-btn{display:none;}
 .notif-top-btn .notif-fab-badge{top:-6px;right:-6px;min-width:18px;height:18px;font-size:10px;}
+/* Refresh button (phone top bar, 2026-11-26): spins while reloading. */
+.app-refresh-btn.spinning svg{animation:appRefreshSpin .7s linear infinite;}
+@keyframes appRefreshSpin{to{transform:rotate(360deg);}}
+@media (prefers-reduced-motion: reduce){.app-refresh-btn.spinning svg{animation:none;}}
 body.mobile-mode .notif-top-btn{display:flex;}
 body.mobile-mode .notif-fab{display:none;}
 body.mobile-mode .notif-fab-panel{top:calc(62px + env(safe-area-inset-top, 0px));bottom:auto;right:12px;width:calc(100vw - 24px);max-height:calc(100vh - 90px);}

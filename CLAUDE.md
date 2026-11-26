@@ -401,6 +401,11 @@ find/replace, try the LF form, then the CRLF form.
   Copy image / Share… / Download PNG; see `drawMarketHoursShare`,
   `drawEconShare`) instead of inventing new ones.
 - ARBAB is the first nav item, above the Trading section (2026-11-26).
+- Phone top bar: 🔔 · Refresh · ☰ (2026-11-26, `#appRefreshBtn`,
+  `hardRefreshApp`): the iPhone home-screen app has no reload. Clears Cache
+  Storage, `reg.update()` (service worker stays registered: push lives on it),
+  reloads with `?_r=<time>` which is stripped from the address on load.
+  Phone only (`.notif-top-btn` rules).
 - Phone cards instead of wide tables: Trade Journals (`_journalCardCell`) and
   Finance › Transactions (`_finTxCardCell`, `#finTxTable`; tap card = Edit,
   Duplicate/Delete stay, Edit button hidden on phone). Same `.jcard*` CSS.
