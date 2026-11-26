@@ -10935,12 +10935,13 @@ function renderFinNetWorthHistory(){
   // Labels on the points (owner, 2026-11-26): the total in the main currency
   // and in the other one (AED ↔ PHP), short form so they fit on a phone.
   const alt = h.main === 'PHP' ? 'AED' : 'PHP';
+  // Full amounts, whole units (owner: "magkano pera ko in PHP"), not 54.4K.
   const short = (v, cur) => {
-    const a = Math.abs(v), s = v < 0 ? '−' : '';
-    const n = a >= 1e6 ? (a / 1e6).toFixed(a >= 1e7 ? 0 : 1) + 'M' : a >= 1e3 ? (a / 1e3).toFixed(a >= 1e5 ? 0 : 1) + 'K' : a.toFixed(0);
+    const s = v < 0 ? '−' : '';
+    const n = Math.round(Math.abs(v)).toLocaleString('en-US');
     return cur === 'PHP' ? `${s}₱${n}` : `${s}${n} ${cur}`;
   };
-  const every = Math.max(1, Math.ceil(pts.length / (canvas.parentElement.clientWidth < 500 ? 4 : 8)));
+  const every = Math.max(1, Math.ceil(pts.length / (canvas.parentElement.clientWidth < 500 ? 3 : 8)));
   const labelPlugin = {
     id: 'nwLabels',
     afterDatasetsDraw(chart){
@@ -10951,12 +10952,13 @@ function renderFinNetWorthHistory(){
         if(!last && (pts.length - 1 - i) % every) return;   // thin out, always keep the latest
         const v = pts[i].value, conv = _finConvert(v, h.main, alt);
         let x = pt.x;
-        c.font = '600 10.5px "Public Sans", system-ui, sans-serif';
+        c.font = '700 11px "Public Sans", system-ui, sans-serif';
         const w = Math.max(c.measureText(short(v, h.main)).width, conv == null ? 0 : c.measureText(short(conv, alt)).width) / 2 + 2;
         x = Math.min(Math.max(x, chart.chartArea.left + w), chart.chartArea.right - w);
         c.fillStyle = cssVar('--ink');
-        c.fillText(short(v, h.main), x, pt.y - (conv == null ? 8 : 20));
-        if(conv != null){ c.font = '500 10px "Public Sans", system-ui, sans-serif'; c.fillStyle = cssVar('--muted'); c.fillText(short(conv, alt), x, pt.y - 8); }
+        c.fillText(short(v, h.main), x, pt.y - (conv == null ? 8 : 22));
+        // The other currency gets the same weight: it is a real amount, not a footnote.
+        if(conv != null){ c.fillStyle = cssVar('--ink'); c.globalAlpha = .78; c.fillText(short(conv, alt), x, pt.y - 8); c.globalAlpha = 1; }
       });
       c.restore();
     }
@@ -10972,7 +10974,7 @@ function renderFinNetWorthHistory(){
     }] },
     options: {
       responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
-      layout: { padding: { top: 34 } },   // room for the labels above the highest point
+      layout: { padding: { top: 38 } },   // room for the labels above the highest point
       plugins: { legend: { display: false }, tooltip: { callbacks: {
         title: items => pts[items[0].dataIndex].full + (pts[items[0].dataIndex].current ? ' (so far)' : ''),
         label: c => {
@@ -11018,6 +11020,11 @@ function _finNetWorthHtml(){
     rateLine = `<div class="fin-networth-rate">${_finFxState === 'loading' ? 'Loading exchange rate…' : 'No exchange rate right now, so each currency is shown on its own.'}</div>`;
   }
   const negative = d.converted && d.total < 0;
+  // The same total in the other currency (AED ↔ PHP), like the chart labels.
+  const alt = d.main === 'PHP' ? 'AED' : 'PHP';
+  if(_finFxState === 'idle') _finLoadFxRates();
+  const altVal = d.converted ? _finConvert(d.total, d.main, alt) : null;
+  if(altVal != null) head += `<div class="fin-networth-alt"><span class="fin-networth-approx">≈</span> <span class="fin-balance">${finMoney(altVal, alt)}</span></div>`;
   return `
     <div class="fin-networth-label" title="All accounts, right now — not affected by the Year / Month or account filter">Net worth today<button type="button" class="panel-share" title="Share as an image" aria-label="Share Net worth today" onclick="event.stopPropagation(); sharePanel(this.closest('.fin-networth'), this.parentElement)">${PANEL_SHARE_ICON}</button></div>
     <div class="fin-networth-value${negative ? ' is-neg' : ''}">${head}</div>
@@ -34799,6 +34806,13 @@ async function sharePanel(panel, h){
   modal.classList.add('open');
   try{
     await _loadHtmlToImage();
+    // A wide, short box (e.g. Net worth today) came out as a thin strip lost in
+    // a big empty image. Without a chart inside, it is laid out narrower just
+    // for the picture so it fills the frame; charts keep their real width.
+    const r0 = panel.getBoundingClientRect();
+    const narrowed = !panel.querySelector('canvas') && r0.width / Math.max(1, r0.height) > 2.4;
+    const oldWidth = panel.style.width, oldMax = panel.style.maxWidth;
+    if(narrowed){ panel.style.width = Math.max(460, Math.round(r0.height * 1.9)) + 'px'; panel.style.maxWidth = 'none'; }
     const css = getComputedStyle(panel);
     const pageBg = getComputedStyle(document.body).backgroundColor || '#12141C';
     const shot = await window.htmlToImage.toCanvas(panel, {
@@ -34806,12 +34820,12 @@ async function sharePanel(panel, h){
       pixelRatio: Math.max(2, Math.min(4, 1200 / Math.max(1, panel.getBoundingClientRect().width))), cacheBust: true,
       backgroundColor: css.backgroundColor && css.backgroundColor !== 'rgba(0, 0, 0, 0)' ? css.backgroundColor : pageBg,
       filter: n => !(n.classList && (n.classList.contains('panel-share') || n.classList.contains('dash-gear')))
-    });
+    }).finally(() => { if(narrowed){ panel.style.width = oldWidth; panel.style.maxWidth = oldMax; } });
     const pad = 48, foot = 84;
     // Ang mababang box (hal. Discipline) ay hindi nagiging manipis na guhit:
     // hindi bababa sa ~2:1 ang larawan, nasa gitna ang box.
     cv.width = shot.width + pad * 2;
-    cv.height = Math.max(shot.height + pad + foot, Math.round(cv.width * 0.5));
+    cv.height = Math.max(shot.height + pad + foot, Math.round(cv.width * 0.42));
     const ctx = cv.getContext('2d');
     ctx.fillStyle = pageBg; ctx.fillRect(0, 0, cv.width, cv.height);
     ctx.drawImage(shot, pad, Math.max(pad, Math.round((cv.height - foot - shot.height) / 2)));

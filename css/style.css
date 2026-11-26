@@ -3939,6 +3939,8 @@ table.breakdown tbody tr{cursor:pointer;}
   .fin-networth .panel-share:hover, .fin-networth .panel-share:focus-visible{opacity:1;color:var(--accent);border-color:var(--rule);background:var(--surface-2);outline:none;}
   .fin-networth-value{font-family:'IBM Plex Mono',monospace;font-size:28px;font-weight:600;color:var(--win);font-variant-numeric:tabular-nums;overflow-wrap:anywhere;}
   .fin-networth-value.is-neg{color:var(--loss);}
+  .fin-networth-alt{font-size:17px;font-weight:600;color:var(--ink);opacity:.8;margin-top:2px;}
+  body.mobile-mode .fin-networth-alt{font-size:15px;}
   .fin-networth-approx{color:var(--muted);font-weight:500;}
   .fin-networth-parts{display:flex;flex-wrap:wrap;gap:4px 18px;margin-top:8px;font-size:12px;color:var(--muted);}
   .fin-networth-parts .fin-balance{color:var(--ink);font-weight:600;}

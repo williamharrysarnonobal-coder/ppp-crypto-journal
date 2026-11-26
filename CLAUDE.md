@@ -301,8 +301,13 @@ find/replace, try the LF form, then the CRLF form.
   point always equals "Net worth today"; other currencies at today's rate.
   Blurred by Hide Balances. Tested in `tests/` probe with hand-worked numbers.
   Each point is labelled (owner, 2026-11-26) with the total in the main
-  currency and the other one (AED ↔ PHP), short form ("55.2K AED / ₱884K"),
-  thinned to ~4 labels on a phone / ~8 on desktop, latest always shown.
+  currency and the other one (AED ↔ PHP), as FULL whole amounts ("55,195 AED /
+  ₱883,720" — owner wants to see the real PHP amount, not "K"), thinned to ~3
+  labels on a phone / ~8 on desktop, latest always shown. "Net worth today"
+  also shows the total in the other currency under the main one.
+- `sharePanel`: a wide, short box with no `<canvas>` (aspect > 2.4) is laid out
+  narrower just for the picture, then restored, so it fills the image instead
+  of sitting as a strip in empty space. Minimum image aspect is 0.42.
 - **Share on every Finance Dashboard box** (2026-11-26): `addPanelShareButtons`
   runs at the end of `renderFinDashboard`; "Net worth today" has its own share
   button. Box names come from `_panelTitleText(h)` (skips dropdowns / month nav),
