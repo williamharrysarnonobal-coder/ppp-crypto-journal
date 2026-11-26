@@ -11020,7 +11020,8 @@ function renderFinNetWorthHistory(){
    account (Paid on a bill, or a manual payment), summed per month, every month
    from the first payment to now (a month without a payment shows 0, so the
    drops are visible). Values on the points in full. Cards in another currency
-   are converted with the same FX rate as Net worth. Blurs with Hide Balances. */
+   are converted with the same FX rate as Net worth. Always visible, even with
+   Hide Balances on (payments, not balances — owner). */
 let finCardPayChartRef = null;
 function _finCardPayMonthly(){
   const cards = FIN_ACCOUNTS.filter(a => a.account_class === 'Credit');
@@ -11064,7 +11065,8 @@ function renderFinCardPayments(){
   wrap.style.display = ''; empty.style.display = 'none';
   const paid = pts.filter(p => p.value > 0);
   const avg = paid.length ? paid.reduce((s, p) => s + p.value, 0) / paid.length : 0;
-  if(note) note.innerHTML = `<span class="fin-balance">avg ${finMoney(avg, h.main)}</span> a month${h.multi ? ' · today’s rate' : ''}`;
+  // Not blurred by Hide Balances: payments aren't balances (owner, 2026-11-26).
+  if(note) note.innerHTML = `avg ${finMoney(avg, h.main)} a month${h.multi ? ' · today’s rate' : ''}`;
   const accent = cssVar('--accent');
   // Phone: every month still gets its value, just without the currency
   // (the y-axis says it) and smaller; a month that went DOWN gets its label

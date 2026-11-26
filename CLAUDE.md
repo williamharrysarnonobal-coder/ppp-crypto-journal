@@ -301,7 +301,8 @@ find/replace, try the LF form, then the CRLF form.
   months, other currencies via `_finConvert`. Values on every point (phone:
   no currency, label under the point when it went down); tooltip has ▲/▼ vs
   the month before; header note = average of months with a payment. Hidden
-  when there is no credit card; blurs with Hide Balances.
+  when there is no credit card. NOT blurred by Hide Balances (owner: payments
+  aren't balances).
 - **Net worth today** box on the Finance Dashboard (2026-11-26, `renderFinNetWorth`,
   `_finNetWorthData`): cash (every non-Credit account's own balance, sub-accounts
   once each) minus card debt (`finOwedFor`, includes unpaid installments). Not
