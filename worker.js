@@ -1072,14 +1072,15 @@ const NEWS_REACTION = [
     up: { why: 'Hotter inflation', fx: 'Fed more likely to hike or keep rates high', bull: false }, down: { why: 'Cooler inflation', fx: 'less pressure on the Fed to hike', bull: true } },
   { keys: ['non farm', 'nonfarm', 'non-farm', 'payrolls', 'employment change', 'adp', 'jolts', 'job openings'],
     up: { why: 'Stronger jobs', fx: 'keeps the Fed hawkish', bull: false }, down: { why: 'Weaker jobs', fx: 'gives the Fed room to ease', bull: true } },
-  { keys: ['interest rate decision', 'rate decision', 'fed funds'],
+  { keys: ['interest rate decision', 'rate decision', 'fed funds', 'interest rate'],
     up: { why: 'Higher rate', fx: 'tighter policy', bull: false }, down: { why: 'Lower rate', fx: 'looser policy', bull: true } },
   { keys: ['fomc', 'press conference', ' speaks', 'speech', 'testifies', 'testimony'], talk: true },
   { keys: ['gdp', 'retail sales', 'pmi', 'ism', 'consumer confidence', 'consumer sentiment', 'durable goods', 'housing starts', 'building permits', 'home sales', 'industrial production', 'personal spending', 'personal income'],
     up: { why: 'Stronger economy', fx: 'keeps the Fed hawkish', bull: false }, down: { why: 'Weaker economy', fx: 'gives the Fed room to ease', bull: true } }
 ];
 // Ang mga pinakamabigat sa Fed: doble ang bilang nila sa overall.
-const NEWS_KEY_EVENTS = ['core pce', 'core inflation', 'core cpi', 'non farm', 'nonfarm', 'non-farm', 'payrolls', 'interest rate decision', 'fed funds'];
+// TradingView calls the Fed decision just "Interest Rate".
+const NEWS_KEY_EVENTS = ['core pce', 'core inflation', 'core cpi', 'non farm', 'nonfarm', 'non-farm', 'payrolls', 'interest rate', 'fed funds'];
 const NEWS_FULL_WAIT_MIN = 5, NEWS_GIVE_UP_MIN = 30;
 
 const _newsTitle = e => ' ' + String(e.title || '').toLowerCase();
