@@ -648,16 +648,8 @@ while True:
         # ======================
         bias_line = f"Bias:\n12H {bias_emoji(h12)} | 4H {bias_emoji(h4)} | 1H {bias_emoji(h1)}"
 
-        maybe_alert(
-            "5m_hl", cond_5m_hl,
-            f"🟢 XAUUSDT.P 5M Higher Low Setup\nPrice: {p5}\nTime: {now_str}\n\n{bias_line}",
-            "5M Higher Low", volume
-        )
-        maybe_alert(
-            "5m_lh", cond_5m_lh,
-            f"🔴 XAUUSDT.P 5M Lower High Setup\nPrice: {p5}\nTime: {now_str}\n\n{bias_line}",
-            "5M Lower High", volume
-        )
+        # 5M HL/LH alerts turned OFF for gold 2026-11-10 (owner: 5M plays are
+        # for BTC only). The conditions are still computed and logged below.
         maybe_alert(
             "15m_hl", cond_15m_hl,
             f"🟢 XAUUSDT.P 15M Higher Low Setup\nPrice: {p15}\nTime: {now_str}\n\n{bias_line}",
@@ -667,6 +659,17 @@ while True:
             "15m_lh", cond_15m_lh,
             f"🔴 XAUUSDT.P 15M Lower High Setup\nPrice: {p15}\nTime: {now_str}\n\n{bias_line}",
             "15M Lower High", volume
+        )
+        # 30M Invalidation alerts turned on for gold 2026-11-07 (owner's request).
+        maybe_alert(
+            "30m_long", cond_30m_long,
+            f"🟢 XAUUSDT.P Potential 30 Minute Long Invalidation Play\nPrice: {p30}\nTime: {now_str}\n\n{bias_line}",
+            "30M Long Invalidation", volume
+        )
+        maybe_alert(
+            "30m_short", cond_30m_short,
+            f"🔴 XAUUSDT.P Potential 30 Minute Short Invalidation Play\nPrice: {p30}\nTime: {now_str}\n\n{bias_line}",
+            "30M Short Invalidation", volume
         )
 
         logging.info(

@@ -74,7 +74,7 @@ LOG_PATH = os.path.join(LOG_DIR, "crypto_bot_v2.log")
 # ==========================
 # COIN LIST (Exchange, Symbol)
 # ==========================
-COINS = [
+ALL_COINS = [
     # BTC is watched by btc_live_bot.py only — listing it here too sent every
     # BTC setup twice (as "BTC" and "BTCUSDT.P"). Removed 2026-10-12.
     ("okx", "ETHUSDT.P"), ("okx", "SOLUSDT.P"),
@@ -113,6 +113,11 @@ COINS = [
     ("binance", "BSVUSDT.P"), ("okx", "WALUSDT.P"), ("okx", "BRETTUSDT.P"),
     ("binance", "XMRUSDT.P"),
 ]
+
+# 2026-11-07: owner wants alerts for these four only for now. To bring all
+# coins back, set ACTIVE_ALTS = None.
+ACTIVE_ALTS = {"HYPEUSDT.P", "ZECUSDT.P", "PENGUUSDT.P", "VETUSDT.P"}
+COINS = [c for c in ALL_COINS if ACTIVE_ALTS is None or c[1] in ACTIVE_ALTS]
 
 TIMEFRAMES = ["12h", "4h", "1h", "30m", "15m", "5m"]
 SYMBOL_EXCHANGE = dict(COINS)  # raw_symbol -> exchange_id, for TradingView links
