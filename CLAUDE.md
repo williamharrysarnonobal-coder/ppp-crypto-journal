@@ -383,7 +383,7 @@ find/replace, try the LF form, then the CRLF form.
   `drawEconShare`) instead of inventing new ones.
 - **PIN lock** (2026-11-26, `js/pinlock.js`, loaded after dashboard.js; styles
   `.pinlock*` at the end of style.css): the IT Console's lock screen in
-  Tanaydana gold. Off until the user sets a 4–6 digit PIN in Settings → PIN
+  Tanaydana gold. Off until the user sets a **6-digit** PIN (exactly 6, owner 2026-11-26) in Settings → PIN
   lock (Set / Change / Turn off / Lock now; change and off need the current
   PIN). Locks after **15 min idle** and on opening/returning when the last
   activity (`tanaydana-last-active`, shared by tabs) is older than that.

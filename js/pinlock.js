@@ -4,7 +4,8 @@
    pick up the phone or laptop out of the journal and the money pages; the
    account password still guards the data itself.
 
-   - Off until the user sets a PIN in Settings → PIN lock (4–6 digits).
+   - Off until the user sets a PIN in Settings → PIN lock. Exactly 6 digits
+     (owner, 2026-11-26).
    - One PIN for every device: synced through user_profile.ui_prefs.pin_lock
      (UI_PREF_LS_KEYS in dashboard.js). Only a salted PBKDF2-SHA256 hash is
      stored, never the PIN. 'off' means turned off (so it syncs off too).
@@ -18,6 +19,7 @@ const PIN_RESET_LS = 'tanaydana-pin-reset';
 const PIN_IDLE_MS = 15 * 60 * 1000;
 const PIN_MAX_TRIES = 5;
 const PIN_ITER = 150000;
+const PIN_DIGITS = 6;
 
 function _pinRecord(){
   try{
@@ -110,7 +112,7 @@ function _pinEnsureOverlay(){
 }
 function _pinLen(){ const r = _pinRecord(); return (r && r.len) || 6; }
 function _pinRenderDots(){
-  const want = _pinMode === 'unlock' || _pinMode === 'verify' ? _pinLen() : Math.max(4, Math.min(6, _pinEntry.length < 4 ? 4 : _pinEntry.length + (_pinEntry.length < 6 ? 1 : 0)));
+  const want = _pinMode === 'unlock' || _pinMode === 'verify' ? _pinLen() : PIN_DIGITS;
   const dots = document.getElementById('pinLockDots');
   if(dots) dots.innerHTML = Array.from({ length: want }, (_, i) => `<span class="${i < _pinEntry.length ? 'on' : ''}"></span>`).join('');
 }
@@ -130,7 +132,7 @@ function _pinOpen(mode, done){
   _pinMode = mode; _pinEntry = ''; _pinFirst = ''; _pinDone = done || null;
   if(mode === 'unlock') _pinSetText('Tanaydana locked', 'Enter your PIN', 'Forgot PIN? Log out');
   if(mode === 'verify') _pinSetText('Confirm it’s you', 'Enter your current PIN', 'Cancel');
-  if(mode === 'set') _pinSetText('Create your PIN', '4 to 6 digits, then Enter', 'Cancel');
+  if(mode === 'set') _pinSetText('Create your PIN', 'Enter 6 digits', 'Cancel');
   el.classList.add('open');
   document.body.classList.add('pinlock-active');
   _pinRenderDots();
@@ -155,9 +157,11 @@ async function _pinPress(k){
   if(k === 'back'){ _pinEntry = _pinEntry.slice(0, -1); _pinRenderDots(); return; }
   if(k === 'enter'){ await _pinSubmit(); return; }
   if(!/^\d$/.test(k)) return;
-  const max = _pinMode === 'set' || _pinMode === 'confirm' ? 6 : _pinLen();
+  const max = _pinMode === 'set' || _pinMode === 'confirm' ? PIN_DIGITS : _pinLen();
   if(_pinEntry.length >= max) return;
   _pinEntry += k; _pinRenderDots();
+  // Creating: the 6th digit moves on by itself, like unlocking.
+  if((_pinMode === 'set' || _pinMode === 'confirm') && _pinEntry.length === PIN_DIGITS){ await _pinSubmit(); return; }
   // Unlocking needs no Enter: it checks as soon as the last digit is in.
   if((_pinMode === 'unlock' || _pinMode === 'verify') && _pinEntry.length === _pinLen()) await _pinSubmit();
 }
@@ -177,13 +181,13 @@ async function _pinSubmit(){
       return;
     }
     if(_pinMode === 'set'){
-      if(_pinEntry.length < 4){ _pinShake('Use at least 4 digits'); return; }
+      if(_pinEntry.length !== PIN_DIGITS){ _pinShake('The PIN must be 6 digits'); return; }
       _pinFirst = _pinEntry; _pinEntry = ''; _pinMode = 'confirm';
       _pinSetText('Confirm your PIN', 'Enter the same PIN again', 'Cancel'); _pinRenderDots();
       return;
     }
     if(_pinMode === 'confirm'){
-      if(_pinEntry !== _pinFirst){ _pinMode = 'set'; _pinFirst = ''; _pinSetText('Create your PIN', '4 to 6 digits, then Enter', 'Cancel'); _pinShake('PINs didn’t match. Try again.'); return; }
+      if(_pinEntry !== _pinFirst){ _pinMode = 'set'; _pinFirst = ''; _pinSetText('Create your PIN', 'Enter 6 digits', 'Cancel'); _pinShake('PINs didn’t match. Try again.'); return; }
       await _pinSave(_pinEntry);
       _pinLastWrite = 0; _pinTouch();
       _pinClose(true);
