@@ -381,6 +381,17 @@ find/replace, try the LF form, then the CRLF form.
 - Reuse the shared modal overlays and share-image pattern (canvas +
   Copy image / Share… / Download PNG; see `drawMarketHoursShare`,
   `drawEconShare`) instead of inventing new ones.
+- **Command Center** (2026-11-26, `js/cmdcenter.js`, `#cmdCenter` above the
+  Dashboard header): tiles for Bots (BTC / Gold / Alts from
+  `trading_signals.heartbeat_at`; alive < 15 min, Alts = newest `altcoin` row),
+  Last alert, Next news (US High impact, countdown), Today's P&L (real trades
+  closed today) and Net worth (loads Finance quietly if not loaded). Data every
+  60 s, countdowns every 30 s. Same file: the **HUD header reactor** inside every
+  page `<h1>` (shown only in HUD), accent when all bots run, red pulse when one
+  is down or the browser is offline. Inside the h1 on purpose: header.top's
+  `> div:first-child` layout rule must keep matching.
+- **ARBAB quick questions** (`#arbabQuick`, `arbabAsk`): one-tap English
+  prompts above the chat input.
 - **ARBAB** (2026-11-26, owner: "same sa ANGE"): the assistant page (sidebar →
   System → ARBAB, admin only; `js/arbab.js`, styles `.arbab*` in style.css).
   Like the MPD IT Console's ANGE, **no paid API**: a message is a row in

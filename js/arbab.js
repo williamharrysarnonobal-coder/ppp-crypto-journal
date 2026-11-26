@@ -189,6 +189,13 @@ async function arbabSend(){
     showToast("Couldn't send to ARBAB. " + (e.message || ''));
   }
 }
+// Quick questions (2026-11-26): one tap on a phone instead of typing.
+function arbabAsk(q){
+  const t = _arbabEl('arbabText');
+  if(!t || !q) return;
+  t.value = q.trim();
+  arbabSend();
+}
 async function arbabClear(){
   if(!(await customConfirm('Delete the whole ARBAB conversation? This can\'t be undone.', 'Delete'))) return;
   const res = await fetch(`${SUPABASE_URL}/rest/v1/arbab_messages?user_id=eq.${CURRENT_USER_ID}`, { method: 'DELETE', headers: _arbabHeaders() });
