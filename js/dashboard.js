@@ -10736,6 +10736,8 @@ function renderFinDashboard(){
 
   renderFinDashCharts(accFilterId);
   renderFinDashTrendChart(accFilterId);
+  // Share icon on every Finance Dashboard box, same as the trading Dashboard.
+  if(typeof addPanelShareButtons === 'function') addPanelShareButtons(document.getElementById('financePanel-dashboard'));
 }
 
 // The breakdown charts (category + subcategory) have their OWN period
@@ -10914,6 +10916,9 @@ function renderFinNetWorthHistory(){
   const note = document.getElementById('finNwHistNote');
   if(!canvas || typeof Chart === 'undefined') return;
   if(finNwHistChartRef){ finNwHistChartRef.destroy(); finNwHistChartRef = null; }
+  // The labels also show the other currency, so get the rate even when every
+  // account is in one currency (renders again once it arrives).
+  if(_finFxState === 'idle') _finLoadFxRates();
   const h = _finNetWorthHistory();
   const pts = h ? h.points : [];
   const wrap = canvas.parentElement;
@@ -10927,7 +10932,37 @@ function renderFinNetWorthHistory(){
   const first = pts[0].value, last = pts[pts.length - 1].value, diff = last - first;
   if(note) note.innerHTML = `<span class="fin-balance ${diff >= 0 ? 'pos' : 'neg'}">${diff >= 0 ? '+' : '−'}${finMoney(Math.abs(diff), h.main)}</span> since ${escapeHtml(pts[0].full)}${h.multi ? ' · today’s rate' : ''}`;
   const accent = cssVar('--accent');
+  // Labels on the points (owner, 2026-11-26): the total in the main currency
+  // and in the other one (AED ↔ PHP), short form so they fit on a phone.
+  const alt = h.main === 'PHP' ? 'AED' : 'PHP';
+  const short = (v, cur) => {
+    const a = Math.abs(v), s = v < 0 ? '−' : '';
+    const n = a >= 1e6 ? (a / 1e6).toFixed(a >= 1e7 ? 0 : 1) + 'M' : a >= 1e3 ? (a / 1e3).toFixed(a >= 1e5 ? 0 : 1) + 'K' : a.toFixed(0);
+    return cur === 'PHP' ? `${s}₱${n}` : `${s}${n} ${cur}`;
+  };
+  const every = Math.max(1, Math.ceil(pts.length / (canvas.parentElement.clientWidth < 500 ? 4 : 8)));
+  const labelPlugin = {
+    id: 'nwLabels',
+    afterDatasetsDraw(chart){
+      const meta = chart.getDatasetMeta(0), c = chart.ctx;
+      c.save(); c.textAlign = 'center'; c.textBaseline = 'bottom';
+      meta.data.forEach((pt, i) => {
+        const last = i === pts.length - 1;
+        if(!last && (pts.length - 1 - i) % every) return;   // thin out, always keep the latest
+        const v = pts[i].value, conv = _finConvert(v, h.main, alt);
+        let x = pt.x;
+        c.font = '600 10.5px "Public Sans", system-ui, sans-serif';
+        const w = Math.max(c.measureText(short(v, h.main)).width, conv == null ? 0 : c.measureText(short(conv, alt)).width) / 2 + 2;
+        x = Math.min(Math.max(x, chart.chartArea.left + w), chart.chartArea.right - w);
+        c.fillStyle = cssVar('--ink');
+        c.fillText(short(v, h.main), x, pt.y - (conv == null ? 8 : 20));
+        if(conv != null){ c.font = '500 10px "Public Sans", system-ui, sans-serif'; c.fillStyle = cssVar('--muted'); c.fillText(short(conv, alt), x, pt.y - 8); }
+      });
+      c.restore();
+    }
+  };
   finNwHistChartRef = new Chart(canvas.getContext('2d'), {
+    plugins: [labelPlugin],
     type: 'line',
     data: { labels: pts.map(p => p.label), datasets: [{
       data: pts.map(p => p.value), borderColor: accent, backgroundColor: accent + '1a', fill: true,
@@ -10937,9 +10972,13 @@ function renderFinNetWorthHistory(){
     }] },
     options: {
       responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+      layout: { padding: { top: 34 } },   // room for the labels above the highest point
       plugins: { legend: { display: false }, tooltip: { callbacks: {
         title: items => pts[items[0].dataIndex].full + (pts[items[0].dataIndex].current ? ' (so far)' : ''),
-        label: c => `Net worth: ${finMoney(c.parsed.y, h.main)}`
+        label: c => {
+          const conv = _finConvert(c.parsed.y, h.main, alt);
+          return [`Net worth: ${finMoney(c.parsed.y, h.main)}`].concat(conv == null ? [] : [`≈ ${finMoney(conv, alt)}`]);
+        }
       } } },
       scales: {
         x: { ticks: { color: cssVar('--muted'), font: { size: 10 }, maxRotation: 0, autoSkip: true }, grid: { display: false } },
@@ -10980,7 +11019,7 @@ function _finNetWorthHtml(){
   }
   const negative = d.converted && d.total < 0;
   return `
-    <div class="fin-networth-label" title="All accounts, right now — not affected by the Year / Month or account filter">Net worth today</div>
+    <div class="fin-networth-label" title="All accounts, right now — not affected by the Year / Month or account filter">Net worth today<button type="button" class="panel-share" title="Share as an image" aria-label="Share Net worth today" onclick="event.stopPropagation(); sharePanel(this.closest('.fin-networth'), this.parentElement)">${PANEL_SHARE_ICON}</button></div>
     <div class="fin-networth-value${negative ? ' is-neg' : ''}">${head}</div>
     <div class="fin-networth-parts">
       <span>Cash <span class="fin-balance">${list(d.cash)}</span></span>
@@ -34727,6 +34766,15 @@ function _loadHtmlToImage(){
   return _h2iLoading;
 }
 const PANEL_SHARE_ICON = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>';
+// The box's own name: the first real text in its title, skipping a dropdown,
+// a month nav or a note next to it ("Income vs Expense", not its options).
+function _panelTitleText(h){
+  for(const n of h.childNodes){
+    if(n.nodeType === 3 && n.textContent.trim()) return n.textContent.trim();
+    if(n.nodeType === 1 && !n.matches('button, select, .nav, .panel-share') && !n.querySelector('select, button') && n.textContent.trim()) return n.textContent.trim();
+  }
+  return h.textContent.trim();
+}
 function addPanelShareButtons(root){
   (root || document).querySelectorAll('.panel').forEach(p => {
     if(p.closest('.panel .panel') && p.parentElement.closest('.panel')) return;   // ang panlabas na box lang
@@ -34735,14 +34783,14 @@ function addPanelShareButtons(root){
     // May sarili nang Share ang box (hal. Calendar): walang pangalawa.
     if(p.querySelector('[onclick*="openShare"]')) return;
     const b = document.createElement('button');
-    b.type = 'button'; b.className = 'panel-share'; b.title = 'Share as an image'; b.setAttribute('aria-label', 'Share ' + h.textContent.trim());
+    b.type = 'button'; b.className = 'panel-share'; b.title = 'Share as an image'; b.setAttribute('aria-label', 'Share ' + _panelTitleText(h));
     b.innerHTML = PANEL_SHARE_ICON;
     b.onclick = e => { e.preventDefault(); e.stopPropagation(); sharePanel(p, h); };
     h.appendChild(b);
   });
 }
 async function sharePanel(panel, h){
-  const title = (h.childNodes[0] && h.childNodes[0].textContent || h.textContent).trim();
+  const title = _panelTitleText(h);
   _panelShareTitle = title;
   const modal = document.getElementById('panelShareModal'), cv = document.getElementById('panelShareCanvas'), st = document.getElementById('panelShareState');
   document.getElementById('panelShareName').textContent = title;

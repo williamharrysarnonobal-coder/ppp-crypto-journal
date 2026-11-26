@@ -300,6 +300,13 @@ find/replace, try the LF form, then the CRLF form.
   Expense −, Income/payment +, installments that started later removed). Last
   point always equals "Net worth today"; other currencies at today's rate.
   Blurred by Hide Balances. Tested in `tests/` probe with hand-worked numbers.
+  Each point is labelled (owner, 2026-11-26) with the total in the main
+  currency and the other one (AED ↔ PHP), short form ("55.2K AED / ₱884K"),
+  thinned to ~4 labels on a phone / ~8 on desktop, latest always shown.
+- **Share on every Finance Dashboard box** (2026-11-26): `addPanelShareButtons`
+  runs at the end of `renderFinDashboard`; "Net worth today" has its own share
+  button. Box names come from `_panelTitleText(h)` (skips dropdowns / month nav),
+  shared with the trading Dashboard.
 - Money lent out (2026-11-26, owner's pick over a Receivables account): Expense
   **Debt & Loans › "Lent to someone"**; when paid back, Income **"Loan repayment"**.
   Added via `FINANCE_TAXONOMY_VERSION = 3`, which merges them into existing
