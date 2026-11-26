@@ -10856,7 +10856,7 @@ function _finLoadFxRates(){
 /* PHP line under a non-PHP balance (2026-11-26, owner's request): "≈ ₱X ·
    1 AED = ₱Y". The ₱ amount blurs with Hide Balances when `hide` is set. */
 function _finPhpLine(amount, cur, hide){
-  if(!cur || cur === 'PHP') return '';
+  if(!cur || cur === 'PHP' || Math.abs(Number(amount) || 0) < 0.005) return '';
   const php = _finConvert(Number(amount) || 0, cur, 'PHP');
   if(php == null) return '';
   return `<div class="fin-php-eq">≈ <span class="${hide ? 'fin-balance' : ''}">${finMoney(php, 'PHP')}</span></div>`;
@@ -12429,7 +12429,7 @@ function openFinAccountDetailsModal(accountId, backToId){
             <tbody>
               <tr>
                 <td>${escapeHtml(a.account_name)} <span style="color:var(--muted);">(own)</span></td>
-                <td class="fin-balance">${finMoney(a.current_balance, a.currency)}</td>
+                <td class="fin-balance">${finMoney(a.current_balance, a.currency)}${_finPhpLine(a.current_balance, a.currency)}</td>
                 <td style="text-align:right;white-space:nowrap;">
                   <button class="fin-subacct-edit" title="Edit" onclick="openFinAccountModal(${a.id})">✎</button>
                 </td>
@@ -12437,7 +12437,7 @@ function openFinAccountDetailsModal(accountId, backToId){
               ${subAccounts.map(s => `
                 <tr style="cursor:pointer;" title="View history" onclick="openFinAccountDetailsModal(${s.id}, ${a.id})">
                   <td>${escapeHtml(s.account_name)}</td>
-                  <td class="fin-balance">${finMoney(s.current_balance, s.currency)}</td>
+                  <td class="fin-balance">${finMoney(s.current_balance, s.currency)}${_finPhpLine(s.current_balance, s.currency)}</td>
                   <td style="text-align:right;white-space:nowrap;" onclick="event.stopPropagation();">
                     <button class="fin-subacct-edit" title="Edit" onclick="openFinAccountModal(${s.id})">✎</button>
                     <button class="fin-subacct-edit" title="Delete" onclick="deleteFinAccount(${s.id})">✕</button>
@@ -12446,7 +12446,7 @@ function openFinAccountDetailsModal(accountId, backToId){
               `).join('')}
               <tr style="font-weight:700;">
                 <td>Total Balance</td>
-                <td class="fin-balance">${finMoney(combinedBalance, a.currency)}</td>
+                <td class="fin-balance">${finMoney(combinedBalance, a.currency)}${_finPhpLine(combinedBalance, a.currency)}</td>
                 <td></td>
               </tr>
             </tbody>
