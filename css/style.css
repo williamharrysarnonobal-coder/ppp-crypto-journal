@@ -1758,7 +1758,7 @@ table.breakdown tbody tr{cursor:pointer;}
      lines while scrolling (2026-11-26). Each cell owns its border this way. */
   table.journal{border-collapse:separate;border-spacing:0;width:100%;font-size:12px;white-space:nowrap;}
   table.journal th{
-    position:sticky;top:0;z-index:4;background:var(--surface-2);color:var(--muted);text-transform:uppercase;
+    position:sticky;top:0;z-index:2;background:var(--surface-2);color:var(--muted);text-transform:uppercase;
     letter-spacing:.04em;font-size:9.5px;padding:9px 12px;text-align:left;border-bottom:1px solid var(--rule);
   }
   table.journal td{
@@ -1769,8 +1769,8 @@ table.breakdown tbody tr{cursor:pointer;}
   table.journal tbody tr:last-child td{border-bottom:none;}
   /* Wide table (2026-11-26): a soft shadow on the edge that still has
      columns past it (pure CSS scroll shadows: the "local" covers ride with
-     the content and hide the "scroll" shadows at each end), and the
-     checkbox column stays put while scrolling sideways. */
+     the content and hide the "scroll" shadows at each end). A pinned
+     checkbox column was tried and removed at the owner's request. */
   .journal-wrap{
     background:
       linear-gradient(to right, var(--surface) 40%, transparent) left center / 36px 100% no-repeat local,
@@ -1779,10 +1779,6 @@ table.breakdown tbody tr{cursor:pointer;}
       radial-gradient(farthest-side at 100% 50%, rgba(0,0,0,.45), transparent) right center / 14px 100% no-repeat scroll,
       var(--surface);
   }
-  table.journal th.jsel, table.journal td.jsel{position:sticky;left:0;z-index:3;background:var(--surface);box-shadow:inset -1px 0 0 var(--rule);}
-  table.journal th.jsel{z-index:5;background:var(--surface-2);}
-  table.journal tbody tr:hover td.jsel{background:var(--surface-2);}
-  table.journal tr.jsel-on td.jsel{background:color-mix(in srgb, var(--accent) 9%, var(--surface));}
   .link-btn{
     display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;
     border-radius:5px;background:var(--surface-2);border:1px solid var(--rule);text-decoration:none;font-size:12px;
@@ -5364,8 +5360,10 @@ select.ps-status-sel:focus-visible{outline:2px solid var(--accent);outline-offse
 @media (prefers-reduced-motion: reduce){ .more-stats > summary::before{transition:none;} }
 
 /* ---------- Bulk edit (Trade Journals) ---------- */
-.journal th.jsel, .journal td.jsel{width:30px;text-align:center;padding-left:8px;padding-right:2px;}
-.journal td.jsel input, .journal th.jsel input{width:15px;height:15px;cursor:pointer;accent-color:var(--accent);}
+/* Same as the Finance Transactions table (owner, 2026-11-26): an ordinary
+   cell with the table's normal 12px padding, box on the left, no divider. */
+.journal th.jsel, .journal td.jsel{width:1%;vertical-align:middle;}
+.journal td.jsel input, .journal th.jsel input{display:inline-block;margin:0;vertical-align:middle;cursor:pointer;}
 .journal tr.jsel-on td{background:color-mix(in srgb, var(--accent) 9%, transparent);}
 .jbulk-bar{
   display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 10px;padding:9px 12px;

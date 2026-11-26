@@ -374,8 +374,10 @@ find/replace, try the LF form, then the CRLF form.
   - **Phone**: Finance and Alerts tabs are one sideways-scrolling row; Finance
     Income/Expense/Net KPIs stay 3 across (smaller).
   - **Trade Journals table**: CSS scroll shadows on `.journal-wrap` show there
-    are more columns; the checkbox column (`.jsel`) is sticky-left. z-index:
-    td.jsel 3 < th 4 < th.jsel 5.
+    are more columns. A sticky checkbox column was tried and **removed** at
+    the owner's request (its row lines looked off) — don't re-add. Table uses
+    `border-collapse:separate`. The checkbox cell (`.jsel`) looks exactly like
+    the Finance Transactions one: normal 12px padding, box on the left, no divider.
   - **Loading skeletons** are written straight into dashboard.html (`#kpiGrid`,
     `#journalTable` `.skel-rows`) and get replaced by the first real render.
   - Phone fixes found on the way: the Dashboard Calendar header wraps
