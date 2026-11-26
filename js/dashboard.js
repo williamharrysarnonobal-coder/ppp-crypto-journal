@@ -14006,15 +14006,17 @@ async function deleteFinanceBudget(id){
    by default. Revert the default back to false once the temporary share
    with vinch is over (a device that already saved a preference is
    unaffected either way). */
-let FIN_BALANCES_HIDDEN = false;
-try{
-  const savedHideBalances = localStorage.getItem('ledger-fin-hide-balances');
-  if(savedHideBalances !== null) FIN_BALANCES_HIDDEN = savedHideBalances === '1';
-}catch(e){}
+/* 2026-11-26: showing balances needs Face ID (phone) or the PIN (laptop),
+   finRevealVerify in pinlock.js. So "shown" is never remembered: every
+   app load starts hidden, and PIN lock hides them again. Hiding never asks. */
+let FIN_BALANCES_HIDDEN = true;
 
 function toggleFinBalances(){
+  if(FIN_BALANCES_HIDDEN && typeof finRevealVerify === 'function'){
+    finRevealVerify(() => { FIN_BALANCES_HIDDEN = false; applyFinBalanceVisibility(); });
+    return;
+  }
   FIN_BALANCES_HIDDEN = !FIN_BALANCES_HIDDEN;
-  try{ localStorage.setItem('ledger-fin-hide-balances', FIN_BALANCES_HIDDEN ? '1' : '0'); }catch(e){}
   applyFinBalanceVisibility();
 }
 

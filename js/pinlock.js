@@ -150,6 +150,8 @@ function _pinClose(ok){
 function pinLockNow(){
   if(!_pinRecord() || _pinLocked) return;
   _pinLocked = true; _pinTries = 0;
+  // Locking also hides the balances again.
+  if(typeof FIN_BALANCES_HIDDEN !== 'undefined' && !FIN_BALANCES_HIDDEN){ FIN_BALANCES_HIDDEN = true; if(typeof applyFinBalanceVisibility === 'function') applyFinBalanceVisibility(); }
   _pinOpen('unlock');
 }
 async function _pinPress(k){
@@ -233,6 +235,60 @@ function pinDisable(){
     _pinTurnOff(); renderPinLockSettings();
     if(typeof showToast === 'function') showToast('PIN lock is off');
   });
+}
+
+/* ---------- Show Balances check (2026-11-26) ----------
+   Finance → Show Balances asks who you are first: Face ID on a phone (a
+   passkey made on this device, WebAuthn platform authenticator with user
+   verification), the PIN on a laptop. Face ID failing or cancelled → PIN.
+   No PIN yet → create one (that also turns PIN lock on). Hiding never asks.
+   A privacy gate like the PIN lock itself, all in the browser: the passkey's
+   id is kept per device (BIO_LS), nothing is sent to a server. */
+const BIO_LS = 'tanaydana-faceid';
+let _bioAvail = false;
+try{
+  if(window.PublicKeyCredential && PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable)
+    PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable().then(v => { _bioAvail = !!v; }).catch(() => {});
+}catch(e){}
+function _isPhoneDevice(){
+  return document.body.classList.contains('mobile-mode') || (window.matchMedia && matchMedia('(pointer:coarse)').matches);
+}
+async function _bioVerify(){
+  const challenge = crypto.getRandomValues(new Uint8Array(32));
+  let id = null;
+  try{ id = localStorage.getItem(BIO_LS); }catch(e){}
+  if(id){
+    const c = await navigator.credentials.get({ publicKey: { challenge, rpId: location.hostname,
+      allowCredentials: [{ type: 'public-key', id: _unb64(id) }], userVerification: 'required', timeout: 60000 } });
+    return !!c;
+  }
+  // First time on this phone: making the passkey is itself a Face ID check.
+  const c = await navigator.credentials.create({ publicKey: { challenge,
+    rp: { name: 'Tanaydana', id: location.hostname },
+    user: { id: crypto.getRandomValues(new Uint8Array(16)), name: 'Tanaydana balances', displayName: 'Tanaydana balances' },
+    pubKeyCredParams: [{ type: 'public-key', alg: -7 }, { type: 'public-key', alg: -257 }],
+    authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'required', residentKey: 'discouraged' },
+    timeout: 60000, attestation: 'none' } });
+  if(!c) return false;
+  try{ localStorage.setItem(BIO_LS, _b64(c.rawId)); }catch(e){}
+  return true;
+}
+function finRevealVerify(done){
+  const withPin = () => {
+    if(_pinRecord()){
+      _pinOpen('verify', ok => { if(ok) done(); });
+      _pinSetText('Show balances', 'Enter your PIN', 'Cancel');
+    }else{
+      _pinOpen('set', ok => { if(ok) done(); });
+      _pinSetText('Create a PIN', 'Balances need a PIN to show · 6 digits', 'Cancel');
+    }
+  };
+  // Called straight from the tap (no await before it), so iPhone allows Face ID.
+  if(_isPhoneDevice() && _bioAvail && navigator.credentials){
+    _bioVerify().then(ok => ok ? done() : withPin()).catch(() => withPin());
+    return;
+  }
+  withPin();
 }
 
 /* ---------- wiring ---------- */
