@@ -1569,6 +1569,12 @@
             <div id="finNwHistEmpty" class="empty-state" style="display:none;">Needs at least two months of transactions.</div>
           </div>
 
+          <div class="panel" style="margin-bottom:20px;" id="finCardPayPanel">
+            <h2>Credit card payments per month <span class="fin-nw-hist-note" id="finCardPayNote"></span></h2>
+            <div class="chart-fill fin-balance" style="height:240px;"><canvas id="finCardPayChart"></canvas></div>
+            <div id="finCardPayEmpty" class="empty-state" style="display:none;">No credit card payments yet. Press Paid on a card bill (or log a Transfer to the card) and it shows here.</div>
+          </div>
+
           <div class="panel" style="margin-bottom:20px;">
             <h2>Equity curve — cumulative net (Income − Expense)</h2>
             <div class="chart-fill" style="height:260px;"><canvas id="finDashEquityChart"></canvas></div>
@@ -3105,7 +3111,7 @@
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=2"></script>
-<script src="js/dashboard.js?v=751"></script>
+<script src="js/dashboard.js?v=752"></script>
 <script src="js/pinlock.js?v=3"></script>
 <script src="js/arbab.js?v=2"></script>
 <script src="js/cmdcenter.js?v=2"></script>

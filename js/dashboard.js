@@ -11016,8 +11016,111 @@ function renderFinNetWorthHistory(){
   });
 }
 
+/* Credit card payments per month (2026-11-26): every Transfer INTO a Credit
+   account (Paid on a bill, or a manual payment), summed per month, every month
+   from the first payment to now (a month without a payment shows 0, so the
+   drops are visible). Values on the points in full. Cards in another currency
+   are converted with the same FX rate as Net worth. Blurs with Hide Balances. */
+let finCardPayChartRef = null;
+function _finCardPayMonthly(){
+  const cards = FIN_ACCOUNTS.filter(a => a.account_class === 'Credit');
+  if(!cards.length) return null;
+  const byId = new Map(cards.map(a => [a.id, a]));
+  const pays = FIN_TXNS.filter(t => t.tx_type === 'Transfer' && byId.has(t.to_account_id) && t.tx_date);
+  if(!pays.length) return { points: [] };
+  const count = {};
+  cards.forEach(a => { const c = a.currency || 'PHP'; count[c] = (count[c] || 0) + 1; });
+  const main = Object.keys(count).sort((x, y) => count[y] - count[x])[0];
+  const sums = {}; let noRate = false;
+  pays.forEach(t => {
+    const ym = t.tx_date.slice(0, 7);
+    const cur = byId.get(t.to_account_id).currency || 'PHP';
+    const v = _finConvert(Number(t.amount) || 0, cur, main);
+    if(v == null){ noRate = true; return; }
+    sums[ym] = (sums[ym] || 0) + v;
+  });
+  const first = pays.map(t => t.tx_date.slice(0, 7)).sort()[0];
+  const now = new Date(), points = [];
+  for(let d = new Date(+first.slice(0, 4), +first.slice(5, 7) - 1, 1); d <= now; d = new Date(d.getFullYear(), d.getMonth() + 1, 1)){
+    const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    points.push({ ym, value: sums[ym] || 0,
+      label: d.toLocaleDateString('en-US', { month: 'short' }) + (d.getMonth() === 0 || !points.length ? ' ' + String(d.getFullYear()).slice(2) : ''),
+      full: d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) });
+  }
+  return { points: points.slice(-24), main, noRate, multi: Object.keys(count).length > 1 };
+}
+function renderFinCardPayments(){
+  const canvas = document.getElementById('finCardPayChart');
+  const empty = document.getElementById('finCardPayEmpty');
+  const note = document.getElementById('finCardPayNote');
+  const panel = document.getElementById('finCardPayPanel');
+  if(!canvas || typeof Chart === 'undefined') return;
+  if(finCardPayChartRef){ finCardPayChartRef.destroy(); finCardPayChartRef = null; }
+  const h = _finCardPayMonthly();
+  if(panel) panel.style.display = h ? '' : 'none';   // no credit card at all → no panel
+  if(!h) return;
+  const pts = h.points, wrap = canvas.parentElement;
+  if(!pts.length){ wrap.style.display = 'none'; empty.style.display = 'block'; if(note) note.textContent = ''; return; }
+  wrap.style.display = ''; empty.style.display = 'none';
+  const paid = pts.filter(p => p.value > 0);
+  const avg = paid.length ? paid.reduce((s, p) => s + p.value, 0) / paid.length : 0;
+  if(note) note.innerHTML = `<span class="fin-balance">avg ${finMoney(avg, h.main)}</span> a month${h.multi ? ' · today’s rate' : ''}`;
+  const accent = cssVar('--accent');
+  // Phone: every month still gets its value, just without the currency
+  // (the y-axis says it) and smaller; a month that went DOWN gets its label
+  // under the point, so zig-zags don't stack labels on each other.
+  const narrow = wrap.clientWidth < 500;
+  const num = v => Math.round(v).toLocaleString('en-US');
+  const full = v => narrow ? num(v) : h.main === 'PHP' ? `₱${num(v)}` : `${num(v)} ${h.main}`;
+  const every = Math.max(1, Math.ceil(pts.length / (narrow ? 12 : 18)));
+  const labelPlugin = {
+    id: 'cardPayLabels',
+    afterDatasetsDraw(chart){
+      const meta = chart.getDatasetMeta(0), c = chart.ctx;
+      c.save(); c.textAlign = 'center';
+      c.font = `700 ${narrow ? 10 : 11}px "Public Sans", system-ui, sans-serif`; c.fillStyle = cssVar('--ink');
+      meta.data.forEach((pt, i) => {
+        if(i !== pts.length - 1 && (pts.length - 1 - i) % every) return;   // thin out, keep the latest
+        const t = full(pts[i].value), w = c.measureText(t).width / 2 + 2;
+        const x = Math.min(Math.max(pt.x, chart.chartArea.left + w), chart.chartArea.right - w);
+        const down = i > 0 && pts[i].value < pts[i - 1].value && pts[i].value > 0;
+        c.textBaseline = down ? 'top' : 'bottom';
+        c.fillText(t, x, down ? pt.y + 8 : pt.y - 8);
+      });
+      c.restore();
+    }
+  };
+  finCardPayChartRef = new Chart(canvas.getContext('2d'), {
+    plugins: [labelPlugin],
+    type: 'line',
+    data: { labels: pts.map(p => p.label), datasets: [{
+      data: pts.map(p => p.value), borderColor: accent, backgroundColor: accent + '1a', fill: true,
+      borderWidth: 2, tension: 0, pointRadius: 3.5, pointBackgroundColor: accent,
+      pointBorderColor: cssVar('--surface'), pointBorderWidth: 2, pointHitRadius: 14, pointHoverRadius: 5
+    }] },
+    options: {
+      responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+      layout: { padding: { top: 24, left: 4, right: 4 } },
+      plugins: { legend: { display: false }, tooltip: { callbacks: {
+        title: items => pts[items[0].dataIndex].full,
+        label: c => {
+          const i = c.dataIndex, prev = i > 0 ? pts[i - 1].value : null, v = c.parsed.y;
+          const out = [`Paid: ${finMoney(v, h.main)}`];
+          if(prev != null) out.push(`${v >= prev ? '▲' : '▼'} ${finMoney(Math.abs(v - prev), h.main)} vs ${pts[i - 1].full}`);
+          return out;
+        }
+      } } },
+      scales: {
+        x: { ticks: { color: cssVar('--muted'), font: { size: 10 }, maxRotation: 0, autoSkip: true }, grid: { display: false } },
+        y: { beginAtZero: true, ticks: { color: cssVar('--muted'), font: { size: 10 }, callback: v => narrow ? num(v) + (v ? '' : ' ' + h.main) : finMoney(v, h.main) }, grid: { color: cssVar('--rule') } }
+      }
+    }
+  });
+}
+
 function renderFinNetWorth(){
   renderFinNetWorthHistory();
+  renderFinCardPayments();
   const html = _finNetWorthHtml();
   const el = document.getElementById('finDashNetWorth');
   if(el) el.innerHTML = html;

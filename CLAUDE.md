@@ -294,6 +294,14 @@ find/replace, try the LF form, then the CRLF form.
   the card, newest first); it is not in the bill details. Recurring amounts use the paying
   account's currency (`_finRecCur`), not a hard-coded PHP.
 - `tests/sim-finance-bill.js` runs Paid/Undo end-to-end on the owner's real numbers.
+- **Credit card payments per month** chart on the Finance Dashboard (2026-11-26,
+  `_finCardPayMonthly`, `renderFinCardPayments`, called from
+  `renderFinNetWorth`): sum of Transfers INTO Credit accounts per month, every
+  month from the first payment to now (0 when none, so drops show), last 24
+  months, other currencies via `_finConvert`. Values on every point (phone:
+  no currency, label under the point when it went down); tooltip has ▲/▼ vs
+  the month before; header note = average of months with a payment. Hidden
+  when there is no credit card; blurs with Hide Balances.
 - **Net worth today** box on the Finance Dashboard (2026-11-26, `renderFinNetWorth`,
   `_finNetWorthData`): cash (every non-Credit account's own balance, sub-accounts
   once each) minus card debt (`finOwedFor`, includes unpaid installments). Not
