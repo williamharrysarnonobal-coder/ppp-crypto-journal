@@ -10858,9 +10858,8 @@ function _finLoadFxRates(){
 function _finPhpLine(amount, cur, hide){
   if(!cur || cur === 'PHP') return '';
   const php = _finConvert(Number(amount) || 0, cur, 'PHP');
-  const rate = _finConvert(1, cur, 'PHP');
-  if(php == null || rate == null) return '';
-  return `<div class="fin-php-eq">≈ <span class="${hide ? 'fin-balance' : ''}">${finMoney(php, 'PHP')}</span> · 1 ${escapeHtml(cur)} = ${finMoney(rate, 'PHP')}</div>`;
+  if(php == null) return '';
+  return `<div class="fin-php-eq">≈ <span class="${hide ? 'fin-balance' : ''}">${finMoney(php, 'PHP')}</span></div>`;
 }
 // Amount in `from` → `to`, or null without a rate. Rates are units per 1 USD.
 function _finConvert(amount, from, to){

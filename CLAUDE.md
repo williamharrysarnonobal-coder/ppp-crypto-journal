@@ -314,7 +314,7 @@ find/replace, try the LF form, then the CRLF form.
   (`_finNetWorthHtml`) instead of the old Cash / Card debt line.
 - **PHP line on non-PHP accounts** (2026-11-26, `_finPhpLine`): each account
   card (Debit balance / Credit available credit) and the account details popup
-  show "≈ ₱X · 1 AED = ₱Y" under the balance, same FX cache. The ₱ amount blurs
+  show "≈ ₱X" under the balance (amount only, no rate — owner's call), same FX cache. The ₱ amount blurs
   with Hide Balances on Debit (not on Credit, matching its big number). FX
   arriving later re-renders the Accounts cards (only when the fetch succeeded,
   so a failed fetch can't loop).
