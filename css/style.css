@@ -4051,6 +4051,23 @@ table.breakdown tbody tr{cursor:pointer;}
   body.mobile-mode #journalTable td.journal-warn{display:block;padding:12px 2px;}
   body.mobile-mode #journalTable td.jcard{display:block;flex:1;min-width:0;max-width:none;padding:11px 12px 11px 8px;white-space:normal;font-family:var(--font-ui);}
   body.mobile-mode #journalTable .skel-rows td:nth-child(-n+3){display:block;flex:1;}
+  /* Finance › Transactions on a phone = the same cards (2026-11-26,
+     _finTxCardCell): checkbox | card | Edit / Duplicate / Delete. */
+  body.mobile-mode #finTxTable, body.mobile-mode #finTxTable tbody, body.mobile-mode #finTxTable thead{display:block;width:100%;}
+  body.mobile-mode #finTxTable tr{display:flex;align-items:center;border-bottom:1px solid var(--rule);}
+  body.mobile-mode #finTxTable tbody tr:last-child{border-bottom:none;}
+  body.mobile-mode #finTxTable th, body.mobile-mode #finTxTable td{display:none;border-bottom:none;}
+  body.mobile-mode #finTxTable tbody td, body.mobile-mode #finTxTable tbody tr:hover td{background:transparent !important;}
+  body.mobile-mode #finTxTable th.fin-tx-th-check{display:flex;align-items:center;gap:8px;flex:1;padding:9px 12px;}
+  body.mobile-mode #finTxTable th.fin-tx-th-check::after{content:'Select all';font-size:10px;letter-spacing:.05em;}
+  body.mobile-mode #finTxTable td.fin-tx-td-check{display:block;width:auto;padding:12px 4px 12px 12px;}
+  body.mobile-mode #finTxTable td.jcard{display:block;flex:1;min-width:0;max-width:none;padding:11px 6px 11px 8px;white-space:normal;font-family:var(--font-ui);cursor:pointer;}
+  body.mobile-mode #finTxTable td.fin-tx-td-actions{display:flex;flex-direction:column;gap:4px;padding:8px 10px 8px 4px;max-width:none;}
+  body.mobile-mode #finTxTable td.fin-tx-td-actions button{margin-left:0 !important;padding:3px 6px !important;}
+  body.mobile-mode #finTxTable td.fin-tx-td-actions button svg{width:13px;height:13px;}
+  /* Tapping the card is Edit, so the phone card drops the Edit button. */
+  body.mobile-mode #finTxTable td.fin-tx-td-actions button[title="Edit this transaction"]{display:none;}
+  body.mobile-mode #finTxTable .jcard-wl .pill{font-size:9.5px;padding:2px 7px;}
   .jcard-row{display:flex;align-items:center;justify-content:space-between;gap:10px;min-width:0;}
   .jcard-row + .jcard-row{margin-top:4px;}
   .jcard-title{font-size:13.5px;font-weight:600;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}

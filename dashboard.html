@@ -16,7 +16,7 @@
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Public+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.2"></script>
-<link rel="stylesheet" href="css/style.css?v=432">
+<link rel="stylesheet" href="css/style.css?v=433">
 </head>
 <body>
 
@@ -1649,8 +1649,8 @@
             </div>
             <div class="empty-state" id="finTxEmpty" style="display:none;">No transactions yet — click "+ Add Transaction" to log your first one.</div>
             <div class="journal-wrap" id="finTxWrap" style="display:none;">
-              <table class="journal">
-                <thead><tr><th><input type="checkbox" id="finTxSelectAll" onchange="toggleFinTxSelectAll(this.checked)"></th><th>Date</th><th>Type</th><th>Amount</th><th>Account</th><th>Category</th><th>Description</th><th>Status</th><th></th></tr></thead>
+              <table class="journal" id="finTxTable">
+                <thead><tr><th class="fin-tx-th-check"><input type="checkbox" id="finTxSelectAll" onchange="toggleFinTxSelectAll(this.checked)"></th><th>Date</th><th>Type</th><th>Amount</th><th>Account</th><th>Category</th><th>Description</th><th>Status</th><th></th></tr></thead>
                 <tbody id="finTxBody"></tbody>
               </table>
             </div>
@@ -3105,7 +3105,7 @@
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=2"></script>
-<script src="js/dashboard.js?v=748"></script>
+<script src="js/dashboard.js?v=749"></script>
 <script src="js/pinlock.js?v=2"></script>
 <script src="js/arbab.js?v=2"></script>
 <script src="js/cmdcenter.js?v=2"></script>

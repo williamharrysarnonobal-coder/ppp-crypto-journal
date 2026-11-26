@@ -392,6 +392,12 @@ find/replace, try the LF form, then the CRLF form.
   Copy image / Share… / Download PNG; see `drawMarketHoursShare`,
   `drawEconShare`) instead of inventing new ones.
 - ARBAB is the first nav item, above the Trading section (2026-11-26).
+- Phone cards instead of wide tables: Trade Journals (`_journalCardCell`) and
+  Finance › Transactions (`_finTxCardCell`, `#finTxTable`; tap card = Edit,
+  Duplicate/Delete stay, Edit button hidden on phone). Same `.jcard*` CSS.
+- Grids holding nowrap/ellipsis text need `minmax(0,1fr)` + `min-width:0`,
+  or iPhone Safari widens the track and zooms the whole page out
+  (Finance Dashboard bug, 2026-11-26).
 - My Accounts cards are compact, 3 across at 1440 / 4 at 1900 (`.account-grid`
   minmax 340px); the journal-vs-balance note (`.acct-gap`) is one line with
   the full explanation in its hover title (2026-11-26).

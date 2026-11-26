@@ -12945,6 +12945,20 @@ function _updateFinTxBulkBar(){
   }
 }
 
+/* PHONE CARD (2026-11-26), same idea as the Trade Journals' _journalCardCell:
+   on a phone each transaction is one card — description + amount on top,
+   date · account · category + Paid/Owed (or type) below. One extra cell,
+   hidden on desktop; on a phone the other cells hide instead, keeping the
+   checkbox and the Edit / Duplicate / Delete buttons. Tapping the card opens
+   Edit (not for Corrections, which have no edit form). */
+function _finTxCardCell(t, x){
+  const title = escapeHtml(t.description || t.category || t.tx_type);
+  const sub = [x.dateStr, x.accountHtml, t.category ? escapeHtml(t.category + (t.subcategory ? ' › ' + t.subcategory : '')) : ''].filter(Boolean).join(' · ');
+  const tag = x.acc && x.acc.account_class === 'Credit' ? x.statusHtml : `<span class="pill ${x.typePill}">${t.tx_type}</span>`;
+  const open = t.tx_type !== 'Correction' ? ` onclick="openFinTxModal({editId:${t.id}})"` : '';
+  return `<td class="jcard"${open}><div class="jcard-row"><span class="jcard-title">${title}${x.incompleteFlag}</span><span class="jcard-pl">${x.amountHtml}</span></div>
+    <div class="jcard-row"><span class="jcard-sub">${sub}</span><span class="jcard-wl">${tag}</span></div></td>`;
+}
 function renderFinanceTransactions(){
   const wrap = document.getElementById('finTxWrap');
   const empty = document.getElementById('finTxEmpty');
@@ -13009,6 +13023,7 @@ function renderFinanceTransactions(){
     return `
       <tr>
         <td class="fin-tx-td-check"><input type="checkbox" class="fin-tx-row-check" ${FIN_TX_SELECTED.has(t.id) ? 'checked' : ''} onchange="toggleFinTxRowSelect(${t.id}, this.checked)"></td>
+        ${_finTxCardCell(t, { dateStr, amountHtml, accountHtml, typePill, statusHtml, incompleteFlag, acc })}
         <td data-label="Date">${dateStr}${incompleteFlag}</td>
         <td data-label="Type"><span class="pill ${typePill}">${t.tx_type}</span></td>
         <td data-label="Amount">${amountHtml}</td>
