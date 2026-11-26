@@ -6128,7 +6128,7 @@ body.pinlock-active{overflow:hidden;}
 .arbab-mono{fill:#fff;font:800 15px var(--font-ui);letter-spacing:.18em;}
 @keyframes arbab-spin{to{transform:rotate(360deg);}}
 .arbab-wave{display:flex;align-items:center;gap:3px;height:26px;opacity:.35;transition:opacity .3s;}
-.arbab-wave i{display:block;width:3px;height:6px;border-radius:2px;background:var(--a);}
+.arbab-wave i{--i:0;display:block;width:3px;height:6px;border-radius:2px;background:var(--a);}  /* --i: bar index, set per bar by js/arbab.js */
 .arbab.speaking .arbab-wave, .arbab.listening .arbab-wave{opacity:1;}
 .arbab.speaking .arbab-wave i, .arbab.listening .arbab-wave i{animation:arbab-bar .9s ease-in-out infinite;animation-delay:calc(var(--i) * -.07s);}
 @keyframes arbab-bar{50%{height:24px;}}
