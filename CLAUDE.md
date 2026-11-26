@@ -401,6 +401,14 @@ find/replace, try the LF form, then the CRLF form.
   Copy image / Share… / Download PNG; see `drawMarketHoursShare`,
   `drawEconShare`) instead of inventing new ones.
 - ARBAB is the first nav item, above the Trading section (2026-11-26).
+- ARBAB voice (fixed 2026-11-26): speech is "unlocked" by a silent utterance
+  on the first real tap (touchend/click/keydown), because answers arrive
+  from polling without a tap and iPhone/Chrome block that; answers are spoken
+  in ≤180-char sentence chunks (Chrome cuts long ones); cancel only when
+  something is playing; Tagalog without a fil voice uses the default voice.
+  Voice on → says "Voice is on." Mic: no SpeechRecognition / any error →
+  toast with the reason + focus the text box so the iPhone keyboard's 🎤
+  dictation can be used (the Home Screen app usually has no web speech input).
 - Phone top bar: 🔔 · Refresh · ☰ (2026-11-26, `#appRefreshBtn`,
   `hardRefreshApp`): the iPhone home-screen app has no reload. Clears Cache
   Storage, `reg.update()` (service worker stays registered: push lives on it),

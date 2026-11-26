@@ -51,6 +51,9 @@ function arbabToggleVoice(){
   ARBAB.voice = !ARBAB.voice;
   try{ localStorage.setItem('arbabVoice', ARBAB.voice ? 'on' : 'off'); }catch(e){}
   if(!ARBAB.voice && window.speechSynthesis) speechSynthesis.cancel();
+  // Turning it on speaks a short line, so you hear right away that it works
+  // (and the tap unlocks speech on iPhone).
+  if(ARBAB.voice) _arbabSpeak(ARBAB.lang.startsWith('fil') ? 'Naka-on na ang boses.' : 'Voice is on.');
   _arbabToolLabels();
 }
 function arbabToggleLang(){
@@ -214,32 +217,98 @@ function _arbabGreet(){
 }
 
 /* ---------- voice ---------- */
+/* Fixed 2026-11-26 ("voice doesn't work"):
+   - iPhone Safari and Chrome only let a page talk after it has spoken once
+     inside a tap. The answer arrives seconds later from polling (no tap), so
+     it was silently blocked. Every tap/keypress on the page now "unlocks"
+     speech with a silent utterance, once.
+   - cancel() right before speak() drops the new utterance in Safari: only
+     cancel when something is actually playing, then wait a moment.
+   - Chrome stops a long utterance after ~15 s: speak in sentence chunks.
+   - Pick a real voice for the language; Tagalog falls back to the default
+     voice when the device has none (it was silent before). */
+let _arbabSpeechUnlocked = false;
+function _arbabUnlockSpeech(){
+  if(_arbabSpeechUnlocked || !window.speechSynthesis) return;
+  try{
+    const u = new SpeechSynthesisUtterance(' ');
+    u.volume = 0;
+    speechSynthesis.speak(u);
+    _arbabSpeechUnlocked = true;
+  }catch(e){}
+}
+// Events that count as a real tap for iPhone (touchend/click, not pointerdown).
+['touchend', 'click', 'keydown'].forEach(t => window.addEventListener(t, _arbabUnlockSpeech, { capture: true, passive: true }));
+function _arbabVoiceFor(lang){
+  const vs = (window.speechSynthesis && speechSynthesis.getVoices()) || [];
+  const base = lang.split('-')[0].toLowerCase();
+  return vs.find(v => v.lang && v.lang.toLowerCase() === lang.toLowerCase())
+    || vs.find(v => v.lang && v.lang.toLowerCase().startsWith(base))
+    || (base === 'fil' ? vs.find(v => /^tl/i.test(v.lang || '')) : null)
+    || null;
+}
+if(window.speechSynthesis){ try{ speechSynthesis.getVoices(); speechSynthesis.onvoiceschanged = () => speechSynthesis.getVoices(); }catch(e){} }
+function _arbabChunks(text){
+  const clean = text.replace(/[*_`#>|]/g, '').replace(/\s+/g, ' ').trim().slice(0, 1500);
+  const parts = clean.match(/[^.!?\n]+[.!?]*\s*/g) || [clean];
+  const out = [];
+  parts.forEach(p => {
+    const last = out.length - 1;
+    if(last >= 0 && (out[last] + p).length < 180) out[last] += p; else out.push(p);
+  });
+  return out.map(s => s.trim()).filter(Boolean);
+}
 function _arbabSpeak(text){
   if(!ARBAB.voice || !window.speechSynthesis || !text) return;
   try{
-    speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance(text.replace(/[*_`#>]/g, '').slice(0, 800));
-    u.lang = ARBAB.lang;
-    u.onstart = () => { ARBAB.mode = 'speaking'; _arbabMode('speaking'); };
-    u.onend = u.onerror = () => { ARBAB.mode = null; _arbabStatus(); };
-    speechSynthesis.speak(u);
+    const go = () => {
+      const chunks = _arbabChunks(text), voice = _arbabVoiceFor(ARBAB.lang);
+      chunks.forEach((c, i) => {
+        const u = new SpeechSynthesisUtterance(c);
+        if(voice){ try{ u.voice = voice; }catch(e){} u.lang = voice.lang; } else if(!ARBAB.lang.startsWith('fil')) u.lang = ARBAB.lang;
+        if(i === 0) u.onstart = () => { ARBAB.mode = 'speaking'; _arbabMode('speaking'); };
+        if(i === chunks.length - 1) u.onend = () => { ARBAB.mode = null; _arbabStatus(); };
+        u.onerror = () => { ARBAB.mode = null; _arbabStatus(); };
+        speechSynthesis.speak(u);
+      });
+      if(speechSynthesis.paused) speechSynthesis.resume();
+    };
+    if(speechSynthesis.speaking || speechSynthesis.pending){ speechSynthesis.cancel(); setTimeout(go, 120); }
+    else go();
   }catch(e){}
+}
+/* Mic (fixed 2026-11-26, "can't press the mic"): on the iPhone Home Screen
+   app the browser's speech input is usually missing or refused, and it used
+   to fail silently, so the button looked dead. Now: no speech input, or it
+   fails → say why and open the keyboard, whose own 🎤 dictation works there. */
+function _arbabDictateHint(why){
+  const t = _arbabEl('arbabText');
+  if(t){ t.focus(); }
+  showToast((why ? why + ' ' : '') + 'Tap the 🎤 on your keyboard to dictate instead.');
 }
 function arbabMic(){
   const R = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if(!R){ showToast('This browser has no speech input. Try Chrome.'); return; }
+  if(!R){ _arbabDictateHint('Voice input isn’t available here.'); return; }
   if(ARBAB.rec){ ARBAB.rec.stop(); return; }
-  const rec = new R(); ARBAB.rec = rec;
+  let rec;
+  try{ rec = new R(); }catch(e){ _arbabDictateHint('Voice input isn’t available here.'); return; }
+  ARBAB.rec = rec;
   rec.lang = ARBAB.lang; rec.interimResults = true; rec.continuous = false;
   const t = _arbabEl('arbabText'), before = t.value ? t.value + ' ' : '';
   rec.onstart = () => { ARBAB.mode = 'listening'; _arbabMode('listening'); _arbabEl('arbabMic').classList.add('on'); };
   rec.onresult = e => { t.value = before + [...e.results].map(r => r[0].transcript).join(''); };
-  rec.onerror = () => {};
+  rec.onerror = e => {
+    const err = e && e.error;
+    if(err === 'no-speech' || err === 'aborted') return;
+    if(err === 'not-allowed') _arbabDictateHint('Microphone permission is off for this site.');
+    else _arbabDictateHint('Voice input didn’t work' + (err ? ` (${err}).` : '.'));
+  };
   rec.onend = () => {
     ARBAB.rec = null; ARBAB.mode = null; _arbabEl('arbabMic').classList.remove('on'); _arbabStatus();
     if(t.value.trim() && t.value.trim() !== before.trim()) arbabSend();
   };
-  rec.start();
+  try{ rec.start(); }
+  catch(e){ ARBAB.rec = null; _arbabDictateHint('Voice input didn’t start.'); }
 }
 
 /* ---------- open / close ---------- */
