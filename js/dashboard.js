@@ -862,6 +862,7 @@ function switchView(view){
   }
   if(view === 'leaderboard') renderLeaderboard();
   if(typeof arbabOnView === 'function') arbabOnView(view === 'arbab');
+  if(view !== 'finance'){ try{ hideFinBalancesNow(); }catch(e){} }   // leaving Finance hides balances again
   if(view === 'hours') openMarketHours();
   if(view === 'dashboard' && typeof addPanelShareButtons === 'function') setTimeout(() => addPanelShareButtons(document.getElementById('view-dashboard')), 300);
   if(view === 'finance') renderFinance();
@@ -14011,13 +14012,30 @@ async function deleteFinanceBudget(id){
    app load starts hidden, and PIN lock hides them again. Hiding never asks. */
 let FIN_BALANCES_HIDDEN = true;
 
+/* Shown balances hide again by themselves (2026-11-26): after 5 minutes,
+   on leaving Finance (switchView), and when the app/tab goes to the
+   background (phone app switch, other tab). */
+const FIN_BALANCES_SHOW_MS = 5 * 60 * 1000;
+let _finBalHideTimer = null;
+function hideFinBalancesNow(){
+  clearTimeout(_finBalHideTimer); _finBalHideTimer = null;
+  if(FIN_BALANCES_HIDDEN) return;
+  FIN_BALANCES_HIDDEN = true;
+  applyFinBalanceVisibility();
+}
+document.addEventListener('visibilitychange', () => { if(document.hidden) hideFinBalancesNow(); });
+
 function toggleFinBalances(){
   if(FIN_BALANCES_HIDDEN && typeof finRevealVerify === 'function'){
-    finRevealVerify(() => { FIN_BALANCES_HIDDEN = false; applyFinBalanceVisibility(); });
+    finRevealVerify(() => {
+      FIN_BALANCES_HIDDEN = false; applyFinBalanceVisibility();
+      clearTimeout(_finBalHideTimer);
+      _finBalHideTimer = setTimeout(() => { hideFinBalancesNow(); if(typeof showToast === 'function') showToast('Balances hidden again'); }, FIN_BALANCES_SHOW_MS);
+    });
     return;
   }
-  FIN_BALANCES_HIDDEN = !FIN_BALANCES_HIDDEN;
-  applyFinBalanceVisibility();
+  if(FIN_BALANCES_HIDDEN){ FIN_BALANCES_HIDDEN = false; applyFinBalanceVisibility(); return; }
+  hideFinBalancesNow();
 }
 
 function applyFinBalanceVisibility(){

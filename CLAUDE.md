@@ -455,7 +455,10 @@ find/replace, try the LF form, then the CRLF form.
   made on first use, id in `tanaydana-faceid`, per device, never synced) or
   the PIN on a laptop; Face ID fail/cancel → PIN; no PIN → create one.
   Hiding never asks. Balances always start hidden (shown is not saved) and
-  `pinLockNow` hides them again. WebAuthn needs a real host name: the probe
+  `pinLockNow` hides them again. Shown balances also auto-hide
+  (`hideFinBalancesNow`): after 5 min (`FIN_BALANCES_SHOW_MS`), on leaving
+  the Finance view (switchView), and when the tab/app goes to the background.
+  WebAuthn needs a real host name: the probe
   server's 127.0.0.1 fails with "invalid domain", use `localhost`.
 - **Page speed** (2026-11-26): jsPDF is no longer a blocking `<script>` in
   `<head>`; `_loadJsPdf()` / `_withJsPdf()` fetch it when a PDF is made
