@@ -11541,7 +11541,8 @@ function showFinDashWeek(weekIdx){
 // backfill while the separate flag stayed set — leaving the list permanently
 // stale with nothing left to trigger a re-run. Riding along with the data means
 // an old copy arrives carrying an old stamp, and re-triggers the merge itself.
-const FINANCE_TAXONOMY_VERSION = 2;
+// v3 (2026-11-26): Debt & Loans › "Lent to someone" + income "Loan repayment".
+const FINANCE_TAXONOMY_VERSION = 3;
 
 const FINANCE_OPTION_DEFAULTS = {
   taxonomy_version: FINANCE_TAXONOMY_VERSION,
@@ -11549,7 +11550,7 @@ const FINANCE_OPTION_DEFAULTS = {
   currencies: ['PHP', 'USD', 'USDT'],
   income_categories: [
     'Salary', 'Bonus', 'Overtime', 'Trading Payout', 'Business', 'Freelance / Sideline',
-    'Allowance', 'Gift', 'Refund / Reimbursement', 'Cashback', 'Interest', 'Selling items', 'Other'
+    'Allowance', 'Gift', 'Refund / Reimbursement', 'Cashback', 'Interest', 'Selling items', 'Loan repayment', 'Other'
   ],
   expense_categories: [
     '🏠 Housing', '💡 Utilities', '🍽️ Food & Groceries', '🚗 Transportation', '🏥 Healthcare',
@@ -11578,7 +11579,7 @@ const FINANCE_OPTION_DEFAULTS = {
     '✈️ Travel': ['Flights', 'Hotels', 'Tours', 'Baggage & transfers'],
     '🛂 Government & Visa': ['Visa renewal', 'Emirates ID', 'Passport & NBI', 'SSS / PhilHealth / Pag-IBIG', 'Attestation & notary'],
     '🏦 Bank & Remittance Fees': ['Remittance fee', 'Bank charges', 'ATM fee', 'FX spread', 'Late payment fee'],
-    '💳 Debt & Loans': ['Credit card payments', 'Personal loans', 'Installments'],
+    '💳 Debt & Loans': ['Credit card payments', 'Personal loans', 'Installments', 'Lent to someone'],
     '💰 Savings & Investments': ['Emergency fund', 'Stocks', 'Crypto', 'Retirement savings'],
     '🐶 Pets': ['Food', 'Vet', 'Grooming'],
     '📦 Subscriptions': ['Netflix', 'Spotify', 'ChatGPT', 'Cloud storage'],

@@ -277,6 +277,10 @@ find/replace, try the LF form, then the CRLF form.
   the card, newest first); it is not in the bill details. Recurring amounts use the paying
   account's currency (`_finRecCur`), not a hard-coded PHP.
 - `tests/sim-finance-bill.js` runs Paid/Undo end-to-end on the owner's real numbers.
+- Money lent out (2026-11-26, owner's pick over a Receivables account): Expense
+  **Debt & Loans › "Lent to someone"**; when paid back, Income **"Loan repayment"**.
+  Added via `FINANCE_TAXONOMY_VERSION = 3`, which merges them into existing
+  users' saved lists (`_finApplyRecommendedTaxonomy`) without removing anything.
 - Discipline radar **Needs vs Wants**: `FIN_NEEDS_CATEGORIES` / `FIN_WANTS_CATEGORIES`.
   **Gifts & Donations is a NEED** (owner, 2026-11-11: church giving and family
   gifts are needs for him). Family Support, Debt & Loans, Savings, Work &
