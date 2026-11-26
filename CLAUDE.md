@@ -143,9 +143,9 @@ find/replace, try the LF form, then the CRLF form.
 
 - **`signal_alerts`**: what the Trade Alerts page, the bell and phone push
   read. One inserted row per fired alert. `seen` is shared across devices.
-  **Alerts expire after 6 hours**: the Worker cron (`expireTradeAlerts`)
+  **Alerts expire after 24 hours** (6 until 2026-11-26): the Worker cron (`expireTradeAlerts`)
   deletes older rows every minute (a real delete, by the owner's choice), and
-  the dashboard only fetches the last 6 hours (`ALERT_TTL_HOURS` in both
+  the dashboard only fetches the last 24 hours (`ALERT_TTL_HOURS` in both
   `worker.js` and `dashboard.js`; keep them equal). Expired alerts also drop
   out of the 🔔 list, and opening one says it expired.
 - **`trading_signals`**: older "current state per symbol" table, upserted
@@ -284,6 +284,8 @@ find/replace, try the LF form, then the CRLF form.
   (currency with the most accounts) via open.er-api, sharing the Position Size
   cache `ps_fx_rates_v1` (6h); shown with "≈" and the rate. No rate → one net per
   currency, never a guessed total. Blurs with Hide Balances (`.fin-balance`).
+  The Accounts tab's totals (`#finAccountsTotals`) show the same box
+  (`_finNetWorthHtml`) instead of the old Cash / Card debt line.
 - Money lent out (2026-11-26, owner's pick over a Receivables account): Expense
   **Debt & Loans › "Lent to someone"**; when paid back, Income **"Loan repayment"**.
   Added via `FINANCE_TAXONOMY_VERSION = 3`, which merges them into existing
@@ -394,6 +396,13 @@ find/replace, try the LF form, then the CRLF form.
   PH is already the next day; grouped by UAE day) (`ECON_SHARE_TZ`, remembered in localStorage `econShareTz`); times, day
   headers and day grouping follow it, so a UAE-evening news can land on the
   next PH day. Which news are included still follows the app's day/week/month.
+- Economic Calendar **CPI MoM + YoY = one row** (2026-11-26, `_econMergeMoMYoY`
+  right after load, `_econValueLines`): "Inflation Rate MoM/YoY" and "Core
+  Inflation Rate MoM/YoY" at the same minute become "Inflation Rate" / "Core
+  Inflation Rate" with the MoM numbers (used for Bull/Bear, texts say "MoM …")
+  and `e.yoy` shown as a second line in the day panel, popup and share images.
+  A YoY with no MoM partner stays separate. The "US Only" chip has no 🇺🇸
+  (Windows shows flag emoji as "us").
 - Economic Calendar default filter (2026-11-10): **High + US Only**
   (`activeEconImpactFilters`, `econUSOnly`); "All" clears both. Not remembered
   between visits; every page load starts on the default.

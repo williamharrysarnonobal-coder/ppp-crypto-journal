@@ -33,12 +33,12 @@ export default {
   }
 };
 
-/* ANG TRADE ALERT AY 6 NA ORAS LANG. Binubura ng cron ang bawat alert na
+/* ANG TRADE ALERT AY 24 NA ORAS LANG (dating 6). Binubura ng cron ang bawat alert na
    lampas na roon, para hindi tambak ang Trade Alerts. Totoong pagbura ito sa
    database (pinili niya), at iisa ang listahan ng lahat ng user. Ang
    accuracy tracking (signal_outcomes) ay nakatali sa symbol + setup, hindi sa
    alert, kaya hindi ito apektado. Tumutugma sa ALERT_TTL_HOURS sa dashboard.js. */
-const ALERT_TTL_HOURS = 6;
+const ALERT_TTL_HOURS = 24;   // 6 until 2026-11-26
 async function expireTradeAlerts(env){
   if (!env.SUPABASE_SERVICE_ROLE_KEY) return;
   const cutoff = new Date(Date.now() - ALERT_TTL_HOURS * 3600000).toISOString();

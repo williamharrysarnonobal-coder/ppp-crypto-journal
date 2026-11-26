@@ -10830,9 +10830,15 @@ function _finNetWorthData(){
   return { cash, debt, main, curs, total, converted, multi: curs.length > 1 };
 }
 function renderFinNetWorth(){
+  const html = _finNetWorthHtml();
   const el = document.getElementById('finDashNetWorth');
-  if(!el) return;
-  if(!FIN_ACCOUNTS.length){ el.innerHTML = ''; return; }
+  if(el) el.innerHTML = html;
+  // The Accounts tab shows the same box (replaced its old Cash / Card debt line).
+  const acc = document.getElementById('finAccountsTotals');
+  if(acc) acc.innerHTML = html ? `<div class="fin-networth" style="margin:14px 0 0;">${html}</div>` : '';
+}
+function _finNetWorthHtml(){
+  if(!FIN_ACCOUNTS.length) return '';
   const d0 = _finNetWorthData();
   if(d0.multi && _finFxState === 'idle') _finLoadFxRates();
   const d = _finNetWorthData();
@@ -10852,7 +10858,7 @@ function renderFinNetWorth(){
     rateLine = `<div class="fin-networth-rate">${_finFxState === 'loading' ? 'Loading exchange rate…' : 'No exchange rate right now, so each currency is shown on its own.'}</div>`;
   }
   const negative = d.converted && d.total < 0;
-  el.innerHTML = `
+  return `
     <div class="fin-networth-label" title="All accounts, right now — not affected by the Year / Month or account filter">Net worth today</div>
     <div class="fin-networth-value${negative ? ' is-neg' : ''}">${head}</div>
     <div class="fin-networth-parts">
@@ -12289,21 +12295,9 @@ function renderFinanceAccounts(){
   }).join('');
   _loadFinAccIcons();
 
-  // One total per currency — mixing PHP + USD into one number would lie.
-  // Debit balances are cash you HAVE; credit "owed" is debt — shown apart.
-  if(totals){
-    const cashByCur = {}, owedByCur = {};
-    FIN_ACCOUNTS.forEach(a => {
-      if(a.account_class === 'Credit'){
-        owedByCur[a.currency] = (owedByCur[a.currency] || 0) + finOwedFor(a);
-      }else{
-        cashByCur[a.currency] = (cashByCur[a.currency] || 0) + (Number(a.current_balance) || 0);
-      }
-    });
-    const cashStr = Object.entries(cashByCur).map(([cur, sum]) => finMoney(sum, cur)).join(' · ');
-    const owedStr = Object.entries(owedByCur).map(([cur, sum]) => finMoney(sum, cur)).join(' · ');
-    totals.innerHTML = `${cashStr ? `<strong>Cash:</strong> <span class="fin-balance">${cashStr}</span>` : ''}${owedStr ? `${cashStr ? ' &nbsp;·&nbsp; ' : ''}<strong>Card debt:</strong> <span style="color:var(--loss);">${owedStr}</span>` : ''}`;
-  }
+  // Totals = the same "Net worth today" box as the Finance Dashboard (2026-11-26;
+  // it used to be a separate Cash / Card debt line saying the same thing).
+  if(totals) renderFinNetWorth();
 }
 
 // Icons live in the private profile-images bucket — swap each <img>'s
@@ -21679,10 +21673,10 @@ let lastAlertsSyncAt = null;
 let hasLoadedSignalAlertsOnce = false;
 let lastKnownUnseenAlertCount = 0;
 
-/* Ang Trade Alert ay 6 na oras lang: binubura ito ng cron ng Worker
+/* Ang Trade Alert ay 24 na oras lang (dating 6): binubura ito ng cron ng Worker
    (expireTradeAlerts). Dito ay hindi na rin kinukuha ang lampas na, para hindi
    ito makita sa pagitan ng dalawang takbo ng cron. */
-const ALERT_TTL_HOURS = 6;
+const ALERT_TTL_HOURS = 24;   // 6 until 2026-11-26 (owner: keep yesterday's alerts)
 function _alertCutoffIso(){ return new Date(Date.now() - ALERT_TTL_HOURS * 3600000).toISOString(); }
 async function loadSignalAlerts(){
   try{
@@ -22446,6 +22440,7 @@ async function loadMarketNewsWidget(){
   }catch(e){
     console.warn("Live economic calendar unavailable:", e);
   }
+  ECON_EVENTS = _econMergeMoMYoY(ECON_EVENTS);
   renderEconSyncLabel();
   clearInterval(econSyncLabelTimer);
   econSyncLabelTimer = setInterval(renderEconSyncLabel, 30000);
@@ -22479,6 +22474,36 @@ async function loadMarketNewsWidget(){
   refreshAllNavBadges();
 }
 
+/* CPI MoM + YoY IN ONE ROW (2026-11-26, owner's request). TradingView lists
+   "Inflation Rate MoM" and "Inflation Rate YoY" (and the Core pair) as four
+   separate news at the same minute; ForexFactory-style, they become two rows
+   — "Inflation Rate" and "Core Inflation Rate" — carrying the MoM numbers
+   (what the market trades on, and what the Bull/Bear reading uses) plus the
+   YoY numbers in `yoy`. A YoY with no MoM partner stays as it is. */
+function _econMergeMoMYoY(events){
+  const re = /^(.*?(?:inflation rate|cpi))\s*(mom|m\/m|yoy|y\/y)\s*$/i;
+  const key = (e, base) => `${base.toLowerCase()}|${e.country || ''}|${new Date(e.event_date).getTime()}`;
+  const yoyBy = new Map();
+  events.forEach(e => { const m = re.exec(String(e.title || '').trim()); if(m && /y/i.test(m[2])) yoyBy.set(key(e, m[1].trim()), e); });
+  const drop = new Set();
+  const out = events.map(e => {
+    const m = re.exec(String(e.title || '').trim());
+    if(!m || /y/i.test(m[2])) return e;
+    const base = m[1].trim(), y = yoyBy.get(key(e, base));
+    if(!y) return e;
+    drop.add(y);
+    return Object.assign({}, e, { title: base, yoy: { forecast: y.forecast, previous: y.previous, actual: y.actual } });
+  });
+  return out.filter(e => !drop.has(e));
+}
+// The number lines for one news: one line normally, "MoM …" + "YoY …" when merged.
+function _econValueLines(e){
+  const vals = o => [['Forecast', o.forecast], ['Previous', o.previous], ['Actual', o.actual]].filter(v => v[1] != null && v[1] !== '');
+  const lines = [{ label: e.yoy ? 'MoM' : '', vals: vals(e) }];
+  if(e.yoy) lines.push({ label: 'YoY', vals: vals(e.yoy) });
+  return lines.filter(l => l.vals.length);
+}
+
 function renderEconSyncLabel(){
   const el = document.getElementById('econLastSync');
   if(el) el.textContent = lastEconSyncAt ? `Last synced: ${timeAgo(lastEconSyncAt)}` : '';
@@ -22509,7 +22534,7 @@ function renderEconImpactFilterRow(){
       `<span class="tag-filter ${activeEconImpactFilters.has(l)?'active':''}" onclick="toggleEconImpactFilter('${l}')">${l}</span>`
     ))
     // Separated visually so it doesn't read as a fifth impact level.
-    .concat([`<span class="tag-filter tag-filter-sep ${econUSOnly?'active':''}" onclick="toggleEconUSOnly()" title="${usCount} US event${usCount===1?'':'s'} loaded">🇺🇸 US Only</span>`]);
+    .concat([`<span class="tag-filter tag-filter-sep ${econUSOnly?'active':''}" onclick="toggleEconUSOnly()" title="${usCount} US event${usCount===1?'':'s'} loaded">US Only</span>`]);   // no 🇺🇸: Windows shows flag emoji as the letters "us"
   row.innerHTML = tags.join('');
 }
 
@@ -22621,11 +22646,9 @@ function renderEconCalDetail(){
     const time = new Date(e.event_date).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'});
     const impact = (e.impact||'').toLowerCase();
     const impactClass = impact==='high' ? 'pill-red' : impact==='medium' ? 'pill-orange' : impact==='holiday' ? 'pill-blue' : 'pill-muted';
-    const values = [
-      e.forecast ? `Forecast: ${escapeHtml(e.forecast)}` : '',
-      e.previous ? `Previous: ${escapeHtml(e.previous)}` : '',
-      e.actual ? `Actual: ${escapeHtml(e.actual)}` : ''
-    ].filter(Boolean).map(v => `<span>${v}</span>`).join('');
+    const lines = _econValueLines(e);
+    const values = lines.map(l => (l.label ? `<span class="econ-val-tag">${l.label}</span>` : '') +
+      l.vals.map(([k, v]) => `<span>${k}: ${escapeHtml(String(v))}</span>`).join('')).join(lines.length > 1 ? '<span class="econ-val-break"></span>' : '');
     return `
       <div class="econ-event-row" onclick="openEconEventModal(${e.id})" style="cursor:pointer;">
         <div class="econ-event-time">${time}</div>
@@ -22744,19 +22767,20 @@ function econReaction(e){
       { dir: 'up', text: 'Dovish tone (rate cuts ahead).' }
     ], verdict: null, vol };
   const f = e.forecast, fn = _econNum(f);
+  const mo = e.yoy ? 'MoM ' : '';   // merged CPI row: say which number
   const lines = [
-    { dir: r.up.bull ? 'up' : 'down', text: `${fn != null ? 'Above ' + f : 'Higher than expected'}: ${r.up.why.toLowerCase()}, ${usd(r.up.bull)}.` },
-    { dir: r.down.bull ? 'up' : 'down', text: `${fn != null ? 'Below ' + f : 'Lower than expected'}: ${r.down.why.toLowerCase()}, ${usd(r.down.bull)}.` },
-    { dir: 'mid', text: fn != null ? `At ${f}: ${r.rate ? 'focus moves to the statement and press conference.' : 'usually a small move; price follows the bigger trend.'}` : '' }
+    { dir: r.up.bull ? 'up' : 'down', text: `${fn != null ? (mo ? 'MoM above ' : 'Above ') + f : 'Higher than expected'}: ${r.up.why.toLowerCase()}, ${usd(r.up.bull)}.` },
+    { dir: r.down.bull ? 'up' : 'down', text: `${fn != null ? (mo ? 'MoM below ' : 'Below ') + f : 'Lower than expected'}: ${r.down.why.toLowerCase()}, ${usd(r.down.bull)}.` },
+    { dir: 'mid', text: fn != null ? `${mo ? 'MoM at' : 'At'} ${f}: ${r.rate ? 'focus moves to the statement and press conference.' : 'usually a small move; price follows the bigger trend.'}` : '' }
   ].filter(l => l.text);
   let verdict = null;
   const an = _econNum(e.actual);
   if(an != null && fn != null){
     const d = an - fn;
-    if(Math.abs(d) < 1e-9) verdict = { dir: 'mid', text: `Actual ${e.actual}: in line with the forecast. Usually a small move.` };
+    if(Math.abs(d) < 1e-9) verdict = { dir: 'mid', text: `${mo}Actual ${e.actual}: in line with the forecast. Usually a small move.` };
     else {
       const s = d > 0 ? r.up : r.down;
-      verdict = { dir: s.bull ? 'up' : 'down', text: `Actual ${e.actual}: ${s.word} than expected, ${usd(s.bull)}.` };
+      verdict = { dir: s.bull ? 'up' : 'down', text: `${mo}Actual ${e.actual}: ${s.word} than expected, ${usd(s.bull)}.` };
     }
   }
   return { lines, verdict, vol };
@@ -22785,14 +22809,15 @@ function econReactionShort(e){
   const full = econReaction(e);
   if(full && full.verdict){
     const v = full.verdict;
-    if(v.dir === 'mid') return { parts: [{ dir: 'mid', text: `Actual ${e.actual}, in line`, strong: true }], tail: '' };
+    const mo = e.yoy ? 'MoM ' : '';
+    if(v.dir === 'mid') return { parts: [{ dir: 'mid', text: `${mo}Actual ${e.actual}, in line`, strong: true }], tail: '' };
     const side = _econNum(e.actual) > _econNum(e.forecast) ? r.up : r.down;
-    return { parts: [{ dir: v.dir, text: `Actual ${e.actual}, ${side.word} than expected`, strong: true }], tail: '' };
+    return { parts: [{ dir: v.dir, text: `${mo}Actual ${e.actual}, ${side.word} than expected`, strong: true }], tail: '' };
   }
   const f = e.forecast, has = _econNum(f) != null;
   return { parts: [
-    { dir: r.up.bull ? 'up' : 'down', text: has ? 'Above ' + f : 'Higher' },
-    { dir: r.down.bull ? 'up' : 'down', text: has ? 'Below ' + f : 'Lower' }
+    { dir: r.up.bull ? 'up' : 'down', text: has ? (e.yoy ? 'MoM above ' : 'Above ') + f : 'Higher' },
+    { dir: r.down.bull ? 'up' : 'down', text: has ? (e.yoy ? 'MoM below ' : 'Below ') + f : 'Lower' }
   ], tail: '' };
 }
 function renderEconReactionHtml(e){
@@ -22841,12 +22866,22 @@ function openEconEventModal(id){
     { label: 'Previous', value: e.previous },
     { label: 'Actual', value: e.actual }
   ].filter(v => v.value);
+  // Merged CPI: the boxes are the MoM numbers, the YoY ones sit in a line under them.
   document.getElementById('econEventValues').innerHTML = values.map(v => `
     <div class="acc-stat-box">
-      <div class="acc-stat-label">${v.label}</div>
+      <div class="acc-stat-label">${e.yoy ? 'MoM ' : ''}${v.label}</div>
       <div class="acc-stat-value">${escapeHtml(String(v.value))}</div>
     </div>
   `).join('') || '';
+  const yoyLine = e.yoy ? _econValueLines(e).find(l => l.label === 'YoY') : null;
+  let yoyEl = document.getElementById('econEventYoy');
+  if(!yoyEl){
+    yoyEl = document.createElement('div');
+    yoyEl.id = 'econEventYoy'; yoyEl.className = 'econ-yoy-line';
+    document.getElementById('econEventValues').insertAdjacentElement('afterend', yoyEl);
+  }
+  yoyEl.innerHTML = yoyLine ? `<b>YoY</b> · ${yoyLine.vals.map(([k, v]) => `${k} ${escapeHtml(String(v))}`).join(' · ')}` : '';
+  yoyEl.style.display = yoyLine ? '' : 'none';
   const reactHtml = renderEconReactionHtml(e);
   const reactWrap = document.getElementById('econEventReactWrap');
   reactWrap.innerHTML = reactHtml;
@@ -33669,11 +33704,11 @@ setTimeout(_runEconNotifications, 12000);
    High impact na balita), may countdown. Earlier today: ang mga lumabas na.
    Ang bilang ay ang mga hindi pa nakikita. */
 const NOTIF_LOG_KEY = 'tanaydana-notif-log', NOTIF_SEEN_KEY = 'tanaydana-notif-seen';
-// Ang Trade Alert ay 6 na oras lang (ALERT_TTL_HOURS): pagkalipas noon ay
+// Ang Trade Alert ay 24 na oras lang (ALERT_TTL_HOURS): pagkalipas noon ay
 // nabura na ito sa database, kaya inaalis din sa 🔔.
 function _notifExpired(x){
   const kind = String(x && x.k || '').split(':')[0];
-  const ttl = (typeof ALERT_TTL_HOURS !== 'undefined' ? ALERT_TTL_HOURS : 6) * 3600000;
+  const ttl = (typeof ALERT_TTL_HOURS !== 'undefined' ? ALERT_TTL_HOURS : 24) * 3600000;
   return (kind === 'alerts' || kind === 'alertsbatch') && Date.now() - (x.ts || 0) >= ttl;
 }
 function _notifLog(){ try{ const v = JSON.parse(localStorage.getItem(NOTIF_LOG_KEY) || '[]'); return Array.isArray(v) ? v.filter(x => !_notifExpired(x)) : []; }catch(e){ return []; } }
@@ -35785,7 +35820,7 @@ function drawEconShare(){
       .map(l => { const bold = l === react.verdict; ctx.font = font(bold ? 700 : 500, 21); return { dir: l.dir, bold, wrap: _wrapCanvasText(ctx, l.text, W - L * 2 - 100, 3) }; }) : [];
     const volWrap = react && react.vol ? (ctx.font = font(500, 19), _wrapCanvasText(ctx, '⚡ ' + react.vol, W - L * 2, 3)) : [];
     const reactH = react ? 84 + reactRows.reduce((s, r) => s + r.wrap.length * 30 + 12, 0) + volWrap.length * 28 + 56 : 0;
-    cv.width = W; cv.height = (g ? 1100 : 900) + Math.max(0, reactH - 120);
+    cv.width = W; cv.height = (g ? 1100 : 900) + Math.max(0, reactH - 120) + (e.yoy ? 50 : 0);
     const H = cv.height, col = ECON_SHARE_COLOR[imp(e)] || C.muted;
     ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
     ctx.fillStyle = col; ctx.fillRect(0, 0, 12, H);
@@ -35804,10 +35839,16 @@ function drawEconShare(){
       vs.forEach(([k, v], i) => {
         const x = L + i * (bw + 20);
         ctx.fillStyle = C.surf; ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x, y, bw, 130, 14) : ctx.rect(x, y, bw, 130); ctx.fill();
-        ctx.fillStyle = C.muted; ctx.font = font(700, 20); ctx.fillText(k.toUpperCase(), x + 24, y + 44);
+        ctx.fillStyle = C.muted; ctx.font = font(700, 20); ctx.fillText((e.yoy ? 'MOM ' : '') + k.toUpperCase(), x + 24, y + 44);
         ctx.fillStyle = k === 'Actual' ? C.accent : C.ink; ctx.font = font(800, 42); ctx.fillText(_econFit(ctx, v, bw - 48), x + 24, y + 100);
       });
       y += 130;
+    }
+    // Merged CPI: the YoY numbers as one line under the MoM boxes.
+    const yoyL = e.yoy ? _econValueLines(e).find(l => l.label === 'YoY') : null;
+    if(yoyL){
+      y += 44; ctx.fillStyle = C.muted; ctx.font = font(600, 24);
+      ctx.fillText(_econFit(ctx, 'YoY   ' + yoyL.vals.map(([k, v]) => `${k} ${v}`).join('   ·   '), W - L * 2), L, y);
     }
     if(react){
       y += 70;
@@ -35855,7 +35896,8 @@ function drawEconShare(){
   const ROW = compact ? (TZ.also ? 96 : 60) : (TZ.also ? 104 : 92), DAYH = 76;
   // Day and week: a small "market reaction" note under each news (not the month: too many).
   const notesOf = e => compact ? null : econReactionShort(e);
-  const rowH = e => ROW + (notesOf(e) ? 36 : 0);
+  const yoyH = e => (!compact && e.yoy) ? 32 : 0;   // merged CPI: second number line
+  const rowH = e => ROW + (notesOf(e) ? 36 : 0) + yoyH(e);
   const anyNotes = shown.some(e => notesOf(e));
   const anyHigh = anyNotes && shown.some(e => imp(e) === 'high' && notesOf(e));
   const listH = shown.length ? groups.length * DAYH + shown.reduce((s, e) => s + rowH(e), 0) : 120;
@@ -35899,12 +35941,15 @@ function drawEconShare(){
       ctx.fillStyle = C.ink; ctx.font = font(600, 28);
       const title = `${e.country ? e.country + ' · ' : ''}${e.title}`;
       ctx.fillText(_econFit(ctx, title, W - L - TX - pw - L - 16), L + TX, base);
-      const vs = values(e);
-      if(vs.length && !compact){ ctx.fillStyle = C.muted; ctx.font = font(500, 22); ctx.fillText(_econFit(ctx, vs.map(([k, v]) => `${k} ${v}`).join('   ·   '), W - L - TX - L), L + TX, base + 34); }
+      const vLines = compact ? [] : _econValueLines(e);
+      vLines.forEach((l, i) => {
+        ctx.fillStyle = C.muted; ctx.font = font(500, 22);
+        ctx.fillText(_econFit(ctx, (l.label ? l.label + '   ' : '') + l.vals.map(([k, v]) => `${k} ${v}`).join('   ·   '), W - L - TX - L), L + TX, base + 34 + i * 32);
+      });
       const notes = notesOf(e);
       if(notes){
         // "[Bear] Above 0.2   [Bull] Below 0.2" (pills like the High one), small like a note.
-        let nx = L + TX; const ny = base + (vs.length ? 72 : 38);
+        let nx = L + TX; const ny = base + (vLines.length ? 72 + (vLines.length - 1) * 32 : 38);
         notes.parts.forEach(p => {
           nx += _econNotePill(ctx, nx, ny, p.dir, 16) + 10;
           ctx.fillStyle = p.strong ? C.ink : C.muted; ctx.font = font(p.strong ? 700 : 500, 20); ctx.fillText(p.text, nx, ny); nx += ctx.measureText(p.text).width + 30;

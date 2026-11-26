@@ -1926,7 +1926,12 @@ table.breakdown tbody tr{cursor:pointer;}
   .econ-event-time{font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--muted);width:64px;flex-shrink:0;padding-top:1px;}
   .econ-event-main{flex:1;min-width:0;}
   .econ-event-title{font-size:13.5px;font-weight:600;color:var(--ink);margin-bottom:4px;}
-  .econ-event-values{display:flex;flex-wrap:wrap;gap:10px;font-size:11.5px;color:var(--muted);}
+  .econ-event-values{display:flex;flex-wrap:wrap;gap:4px 10px;font-size:11.5px;color:var(--muted);align-items:center;}
+  /* CPI MoM + YoY in one row: a small tag starts each line. */
+  .econ-val-tag{font-size:9.5px;font-weight:700;letter-spacing:.05em;color:var(--ink);background:var(--surface-2);border:1px solid var(--rule);border-radius:4px;padding:1px 5px;}
+  .econ-val-break{flex-basis:100%;height:0;}
+  .econ-yoy-line{margin:-6px 0 16px;font-size:12px;color:var(--muted);}
+  .econ-yoy-line b{color:var(--ink);font-weight:600;}
 
   /* ---------- Challenges ---------- */
   .challenge-caution-banner{
@@ -2316,6 +2321,10 @@ table.breakdown tbody tr{cursor:pointer;}
     border-radius:6px;color:var(--ink);font-size:13px;font-family:'IBM Plex Mono',monospace;
   }
   .field-row textarea{font-family:var(--font-ui);resize:vertical;min-height:60px;}
+  /* Values stay mono (numbers line up); hint text and passwords read as
+     normal UI text (2026-11-26: "At least 6 characters" looked like code). */
+  .field-row input::placeholder, .field-row textarea::placeholder{font-family:var(--font-ui);}
+  .field-row input[type="password"]{font-family:var(--font-ui);}
   .field-row.needs-input label{color:var(--loss);}
   .field-row.needs-input input, .field-row.needs-input select, .field-row.needs-input textarea{border-color:var(--loss);}
   .poscalc-layout{display:grid;grid-template-columns:260px 1fr;gap:28px;align-items:start;}
