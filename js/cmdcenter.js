@@ -53,15 +53,16 @@ function _cmdTodayPnl(){
   const today = new Date().toDateString();
   const rows = (typeof ALL_TRADES !== 'undefined' ? ALL_TRADES : [])
     .filter(t => !t.is_paper && t.close_date && new Date(t.close_date).toDateString() === today);
-  return { n: rows.length, pnl: rows.reduce((s, t) => s + (Number(t.profit_loss) || 0), 0) };
+  // Net of fees, like every other P&L on the Dashboard (was gross until 2026-11-27).
+  return { n: rows.length, pnl: rows.reduce((s, t) => s + netPnl(t), 0) };
 }
 // This week = Monday 00:00 local → now. W/L counts, not just money.
 function _cmdWeekPnl(){
   const now = new Date(), start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - ((now.getDay() + 6) % 7));
   const rows = (typeof ALL_TRADES !== 'undefined' ? ALL_TRADES : [])
     .filter(t => !t.is_paper && t.close_date && new Date(t.close_date) >= start);
-  const pl = t => Number(t.profit_loss) || 0;
-  return { n: rows.length, w: rows.filter(t => pl(t) > 0).length, l: rows.filter(t => pl(t) < 0).length, pnl: rows.reduce((s, t) => s + pl(t), 0) };
+  // Net of fees, and W/L from the trade's own Win/Loss, same as the KPIs and calendar.
+  return { n: rows.length, w: rows.filter(_isWin).length, l: rows.filter(_isLoss).length, pnl: rows.reduce((s, t) => s + netPnl(t), 0) };
 }
 function renderCommandCenter(){
   const el = document.getElementById('cmdCenter');
