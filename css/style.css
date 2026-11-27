@@ -6338,6 +6338,10 @@ body.mobile-mode .arbab-chat{height:calc(100vh - 330px);min-height:400px;}
 :root[data-hud] .poscalc-accent-btn.btn-primary{color:#1a0d02;box-shadow:0 0 14px var(--hud-dim);}
 :root[data-hud] .poscalc-accent-btn.btn-primary:hover{color:#1a0d02;background:var(--accent);}
 :root[data-hud] :where(input, select, textarea){background-color:color-mix(in srgb, var(--accent) 5%, #0e1016);}
+/* The rule above outranks the :where() :checked fill, so a ticked box stayed
+   dark and its dark check mark was invisible (2026-11-27). */
+:root[data-hud] :where(input[type="checkbox"], input[type="radio"]):checked,
+:root[data-hud] :where(input[type="checkbox"]):indeterminate{background-color:var(--accent);}
 /* Popups */
 :root[data-hud] .modal-overlay{background:rgba(3,2,1,.72);backdrop-filter:blur(2px);}
 :root[data-hud] .modal-box{background:#0f1117;border-color:color-mix(in srgb, var(--accent) 38%, transparent);box-shadow:0 0 40px color-mix(in srgb, var(--accent) 14%, transparent);}
