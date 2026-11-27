@@ -4315,7 +4315,10 @@ function renderDisciplineRadar(){
   };
   const lossesByAccount = {};
   t.filter(_isLoss).forEach(x => {
-    const grossLoss = Math.max(0, Math.abs(x.profit_loss||0) - Math.abs(x.fee||0));
+    // profit_loss is already stored gross (fee kept separately), so it is the
+    // loss size as is. Subtracting the fee again shrank it, and zeroed out a
+    // small loss with a big swap (2026-11-27).
+    const grossLoss = Math.abs(Number(x.profit_loss) || 0);
     if(grossLoss <= 0) return;
     const acc = x.account || 'Unspecified';
     (lossesByAccount[acc] = lossesByAccount[acc] || []).push(grossLoss);
@@ -24905,7 +24908,11 @@ function renderProfileSnapshot(){
     trades.forEach(t => {
       const wl = String(t.win_loss || '').toLowerCase();
       if(wl !== 'win' && wl !== 'loss' && wl !== 'liquidated') return;
-      const k = t[key]; if(!k || k === 'Unspecified') return;
+      // Session the way the Dashboard reads it (worked out from the time), not
+      // the stored field. Breakevens stay out here (the Dashboard's Session
+      // card counts them), so Asia reads 44% · 36 here vs 37% · 43 there.
+      const k = key === 'session' ? (computeSession(t) || t.session) : t[key];
+      if(!k || k === 'Unspecified') return;
       (m[k] = m[k] || { w: 0, n: 0 }).n++; if(wl === 'win') m[k].w++;
     });
     let best = null;
@@ -24918,7 +24925,8 @@ function renderProfileSnapshot(){
   const tile = (k, v, sub) => `<div class="prof-tile"><span class="prof-k">${k}</span><b>${v}</b><small>${sub || '&nbsp;'}</small></div>`;
   el.innerHTML = [
     tile('Trading since', escapeHtml(since), escapeHtml(sinceSub)),
-    tile('Trades journaled', trades.length.toLocaleString(), `${days} trading day${days === 1 ? '' : 's'}`),
+    // UNJ- trades were never journaled (same as the Trade Journals count).
+    tile('Trades journaled', trades.filter(t => !_isUnjournaled(t)).length.toLocaleString(), `${days} trading day${days === 1 ? '' : 's'}`),
     tile('Check-in streak', ch ? `${ch.current} day${ch.current === 1 ? '' : 's'}` : '—', ch ? escapeHtml(ch.statOverride.split('·')[1] || '').trim() : (visits.length ? '' : 'Starts after supabase_app_visits.sql')),
     tile('Best setup', bs ? escapeHtml(bs.k) : '—', bs ? `${Math.round(bs.r * 100)}% wins · ${bs.n} trades` : 'Needs 5 trades of one setup'),
     tile('Best session', bss ? escapeHtml(bss.k) : '—', bss ? `${Math.round(bss.r * 100)}% wins · ${bss.n} trades` : 'Needs 5 trades in one session')
@@ -26721,9 +26729,11 @@ function accountCardHTML(a){
       const pl = cardStats.totalEarn;
       const plPct = (pl / a.account_size) * 100;
       const plClass = pl >= 0 ? 'account-pl-pos' : 'account-pl-neg';
-      const sign = pl >= 0 ? '+' : '';
+      // The $ part prints Math.abs(pl), so a loss needs its own "−" (it showed
+      // "($743.49 · -1.5%)" — a loss with no minus on the money).
+      const sign = pl >= 0 ? '+' : '-';
       const fromPhase = a.phase_start_balance != null && Number(a.phase_start_balance) !== Number(a.account_size);
-      balanceHTML += `<div class="account-card-balance">$${cardStats.currentBalance.toLocaleString(undefined,{maximumFractionDigits:2})} <span class="${plClass}">(${sign}$${Math.abs(pl).toLocaleString(undefined,{maximumFractionDigits:2})} · ${sign}${plPct.toFixed(1)}%)</span>${fromPhase ? `<span class="account-card-since">this phase</span>` : ''}</div>`;
+      balanceHTML += `<div class="account-card-balance">$${cardStats.currentBalance.toLocaleString(undefined,{maximumFractionDigits:2})} <span class="${plClass}">(${sign}$${Math.abs(pl).toLocaleString(undefined,{maximumFractionDigits:2})} · ${sign}${Math.abs(plPct).toFixed(1)}%)</span>${fromPhase ? `<span class="account-card-since">this phase</span>` : ''}</div>`;
 
       if(a.profit_target_pct){
         const progressFraction = Math.max(0, Math.min(1, plPct / a.profit_target_pct));
@@ -32747,7 +32757,9 @@ function _reportMoodStats(start, end){
   const counts = {};
   MOOD_OPTIONS.forEach(o => counts[o.key] = 0);
   entries.forEach(e => { if(counts[e.mood] !== undefined) counts[e.mood]++; });
-  const totalDays = Math.max(1, Math.round((end - start) / 86400000) + 1);
+  // floor, not round: `end` is the end of its day (23:59), so round() counted
+  // one day too many ("1 of 28 days" on Nov 27).
+  const totalDays = Math.max(1, Math.floor((end - start) / 86400000) + 1);
   return { entries, counts, loggedDays: entries.length, totalDays };
 }
 
