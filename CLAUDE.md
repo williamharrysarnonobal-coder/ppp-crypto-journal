@@ -711,3 +711,4 @@ find/replace, try the LF form, then the CRLF form.
   "5 of 6") next to the win rate, by the owner's choice.
 - **HUD checkbox fix** (2026-11-27): `:root[data-hud] :where(input,…)` outranked the `:where()` :checked fill, so ticked boxes looked unticked in HUD mode. HUD now re-applies `--accent` on :checked. Any new HUD rule on inputs must not override checkbox/radio state.
 - **Quick Add refuses 0 prices** (2026-11-27): a parsed row with Entry, Exit or Qty of 0 counts as unreadable (two mis-read The5ers rows were saved that way).
+- **Command Center Today's / This week's P&L** (2026-11-27): net of fees (`netPnl`) and W/L from `_isWin`/`_isLoss`, matching the KPIs and calendar. They were gross and counted W/L by P&L sign.
