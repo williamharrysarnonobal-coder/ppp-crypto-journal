@@ -709,3 +709,5 @@ find/replace, try the LF form, then the CRLF form.
 - Every share defaults to **$ as the main number** (Show $ amounts checked;
   Main number = $ amount) and always shows **Rules followed** (_rulesFollowedTxt,
   "5 of 6") next to the win rate, by the owner's choice.
+- **HUD checkbox fix** (2026-11-27): `:root[data-hud] :where(input,…)` outranked the `:where()` :checked fill, so ticked boxes looked unticked in HUD mode. HUD now re-applies `--accent` on :checked. Any new HUD rule on inputs must not override checkbox/radio state.
+- **Quick Add refuses 0 prices** (2026-11-27): a parsed row with Entry, Exit or Qty of 0 counts as unreadable (two mis-read The5ers rows were saved that way).

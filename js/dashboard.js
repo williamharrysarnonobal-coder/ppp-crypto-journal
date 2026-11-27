@@ -18449,6 +18449,9 @@ function _quickAddParse(raw){
   const broker = /^\s*P[nr]l:/im.test(raw) ? 'upscale' : 'the5ers';
   const p = broker === 'upscale' ? parseUpscaleEasyAddText(raw) : parseThe5ersEasyAddText(raw);
   if(!p.symbol || p.profit_loss == null || !p.close_date) return { broker, p, missing: true };
+  // A row with Entry/Exit/Qty of 0 is a mis-read (2026-11-27: two such rows
+  // were saved as "+$0.00 Loss" and an entry-0 "-$2,124.57"). Don't save it.
+  if(!(Number(p.entry_price) > 0) || !(Number(p.close_price) > 0) || !(Number(p.position_size) > 0)) return { broker, p, missing: true };
   return { broker, p };
 }
 
