@@ -10897,8 +10897,12 @@ function _finLoadHistFx(){
   const today = _finIsoDay(new Date());
   const start = new Date(dates[0] + 'T00:00:00'); start.setDate(start.getDate() - 10);
   const need = _finIsoDay(start);
-  const covered = h.from && h.from <= need && h.fetchedOn && h.fetchedOn >= dates[dates.length - 1];
-  if(covered) return;
+  // A future-dated tx must not count as "not covered yet" (that looped:
+  // fetch → re-render → fetch… forever). And never more than one fetch per
+  // session for the recent side.
+  const last = dates[dates.length - 1] < today ? dates[dates.length - 1] : today;
+  const coversStart = h.from && h.from <= need;
+  if(coversStart && ((h.fetchedOn && h.fetchedOn >= last) || _finHistFxState === 'done')) return;
   // Only fetch what's missing: older start, or the days since the last fetch.
   const from = (!h.from || need < h.from) ? need : (_finHistFxKeys[_finHistFxKeys.length - 1] || need);
   _finHistFxState = 'loading';
@@ -10910,7 +10914,7 @@ function _finLoadHistFx(){
       h.fetchedOn = today;
       _finHistFxKeys = Object.keys(h.rates).sort();
       try{ localStorage.setItem(FIN_HIST_FX_LS, JSON.stringify(h)); }catch(_){}
-      _finHistFxState = 'idle';
+      _finHistFxState = 'done';
       _finRerenderPhp();
     })
     .catch(e => { console.error("Couldn't fetch daily PHP rates:", e); _finHistFxState = 'failed'; });
