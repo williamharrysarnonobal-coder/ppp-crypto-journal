@@ -10609,8 +10609,38 @@ function shiftFinDashMonth(dir){
 }
 
 function _finTxCurrency(t){
+  if(t && t._cur) return t._cur;
   const acc = FIN_ACCOUNTS.find(a => a.id === t.account_id);
   return acc?.currency || '—';
+}
+/* ONE CURRENCY IN EVERY FINANCE TOTAL (owner, 2026-11-28). Dashboard totals
+   used to keep only the main currency, so BPI/GCash (₱) transactions vanished
+   from the KPIs, calendar, charts and Needs vs Wants. Now they are converted
+   into the main currency at the rate locked to their date (same daily fixes
+   as the ≈ ₱ lines); today's rate only if that day has no fix yet.
+   _finAmtIn: amount of tx `t` in currency `to`, or null with no rate at all. */
+function _finAmtIn(t, amount, to){
+  const from = _finTxCurrency(t);
+  const a = Number(amount) || 0;
+  if(from === to) return a;
+  const rf = _finTxRate(from, t.tx_date), rt = _finTxRate(to, t.tx_date);
+  if(rf != null && rt != null && rt > 0) return a * rf / rt;
+  return _finConvert(a, from, to);
+}
+// Copies of `list` with `amount` in `to` (originals kept on `_src`). A tx
+// with no rate at all is left out, as before.
+function _finTxsIn(list, to){
+  const out = [];
+  list.forEach(t => {
+    if(_finTxCurrency(t) === to){ out.push(t); return; }
+    const v = _finAmtIn(t, t.amount, to);
+    if(v != null) out.push(Object.assign({}, t, { amount: v, _cur: to, _src: t }));
+  });
+  return out;
+}
+// Main currency of the whole Finance = currency with the most transactions.
+function _finMainCurrency(){
+  return _finPrimaryCurrencyForTxns(FIN_TXNS.filter(t => t.tx_type !== 'Transfer'));
 }
 
 function _populateFinDashAccountFilter(){
@@ -10640,11 +10670,14 @@ function renderFinDashboard(){
   // All time / Custom Range) — independent of the calendar's own ‹ › nav
   // below, which always browses one specific month no matter what this is
   // set to (a calendar is inherently "one month at a time").
-  const kpiTx = FIN_TXNS.filter(t => {
+  const kpiRaw = FIN_TXNS.filter(t => {
     if(!t.tx_date || t.tx_type === 'Transfer') return false;
     if(accFilterId && t.account_id !== accFilterId) return false;
     return _finDashChartPassesFilter(t);
   });
+  const kpiRawPrimary = _finPrimaryCurrencyForTxns(kpiRaw);
+  const kpiConverted = kpiRaw.filter(t => _finTxCurrency(t) !== kpiRawPrimary && (t.tx_type === 'Income' || t.tx_type === 'Expense'));
+  const kpiTx = _finTxsIn(kpiRaw, kpiRawPrimary);
   const kpiByCurrency = {};
   kpiTx.forEach(t => {
     const cur = _finTxCurrency(t);
@@ -10669,9 +10702,13 @@ function renderFinDashboard(){
     <div class="kpi"><div class="label">Expense (${escapeHtml(kpiPrimary)})</div><div class="value" style="color:var(--loss);">${finMoney(kp.expense, kpiPrimary)}</div>${_finPhpSpan(phpExp)}</div>
     <div class="kpi"><div class="label">Net (${escapeHtml(kpiPrimary)})</div><div class="value" style="color:${kpiNet >= 0 ? 'var(--win)' : 'var(--loss)'};">${finMoney(kpiNet, kpiPrimary)}</div>${phpNet != null && Math.abs(phpNet) >= 0.005 ? `<span class="fin-php-eq">≈ ${phpNet < 0 ? '−' : ''}${finMoney(Math.abs(phpNet), 'PHP')}</span>` : ''}</div>
   `;
-  const kpiOthers = kpiCurrencies.filter(c => c !== kpiPrimary);
-  document.getElementById('finDashOtherCurrencies').textContent = kpiOthers.length
-    ? `Also in this period: ${kpiOthers.map(c => { const o = kpiByCurrency[c]; return `${finMoney(o.income - o.expense, c)} net (${o.count} tx)`; }).join(' · ')}`
+  // Other-currency transactions are IN the totals above (converted); this
+  // line just says so, with their own-currency net.
+  const convByCur = {};
+  kpiConverted.forEach(t => { const c = _finTxCurrency(t); (convByCur[c] = convByCur[c] || { net: 0, n: 0 }); convByCur[c].net += t.tx_type === 'Income' ? (Number(t.amount) || 0) : -(Number(t.amount) || 0); convByCur[c].n++; });
+  const convCurs = Object.keys(convByCur);
+  document.getElementById('finDashOtherCurrencies').textContent = convCurs.length
+    ? `Includes ${convCurs.map(c => `${convByCur[c].n} ${c} transaction${convByCur[c].n === 1 ? '' : 's'} (${convByCur[c].net < 0 ? '−' : ''}${finMoney(Math.abs(convByCur[c].net), c)} net)`).join(' and ')}, converted to ${kpiPrimary} at the rate on their date.`
     : '';
 
   // Calendar grid always stays locked to whichever month the ‹ › nav is
@@ -10697,15 +10734,16 @@ function renderFinDashboard(){
   const currencies = Object.keys(byCurrency).sort((a,b) => byCurrency[b].count - byCurrency[a].count);
   const primary = currencies[0] || (FIN_ACCOUNTS[0]?.currency || 'PHP');
 
+  // Every currency counts, converted into `primary` (the popup still lists
+  // each transaction in its own currency via _src).
   const byDay = {};
-  monthTx.forEach(t => {
-    if(_finTxCurrency(t) !== primary) return;
+  _finTxsIn(monthTx, primary).forEach(t => {
     const d = new Date(t.tx_date + 'T00:00:00').getDate();
     if(!byDay[d]) byDay[d] = { income: 0, expense: 0, count: 0, txns: [] };
     if(t.tx_type === 'Income') byDay[d].income += Number(t.amount) || 0;
     if(t.tx_type === 'Expense') byDay[d].expense += Number(t.amount) || 0;
     byDay[d].count++;
-    byDay[d].txns.push(t);
+    byDay[d].txns.push(t._src || t);
   });
 
   const firstDow = new Date(y, m, 1).getDay();
@@ -11281,13 +11319,15 @@ function renderFinDashCharts(accFilterIdParam){
   const accFilterVal = document.getElementById('finDashAccountFilter')?.value || 'all';
   const accFilterId = accFilterIdParam !== undefined ? accFilterIdParam : (accFilterVal !== 'all' ? parseInt(accFilterVal, 10) : null);
 
-  const chartTx = FIN_TXNS.filter(t => {
+  let chartTx = FIN_TXNS.filter(t => {
     if(!t.tx_date || t.tx_type === 'Transfer') return false;
     if(accFilterId && t.account_id !== accFilterId) return false;
     return _finDashChartPassesFilter(t);
   });
 
   const primary = _finPrimaryCurrencyForTxns(chartTx);
+  // Other currencies converted at their date's locked rate (they used to be dropped).
+  chartTx = _finTxsIn(chartTx, primary);
   renderFinDashCategoryChart(chartTx, primary);
   renderFinDashSubcategoryChart(chartTx, primary);
   renderFinDashEquityChart(chartTx, primary);
@@ -11545,13 +11585,14 @@ function _finTrailingMonths(n, primary, accFilterId){
   const now = new Date();
   const start = new Date(now.getFullYear(), now.getMonth() - n, 1);
   const end = new Date(now.getFullYear(), now.getMonth(), 1);
-  return FIN_TXNS.filter(t => {
+  const list = FIN_TXNS.filter(t => {
     if(!t.tx_date || t.tx_type === 'Transfer') return false;
     if(accFilterId && t.account_id !== accFilterId) return false;
-    if(primary && _finTxCurrency(t) !== primary) return false;
     const d = new Date(t.tx_date + 'T00:00:00');
     return d >= start && d < end;
   });
+  // Other currencies converted at their date's locked rate (they used to be dropped).
+  return primary ? _finTxsIn(list, primary) : list;
 }
 
 // Did a real settlement land for this account's statement month? The Paid flow
@@ -11624,9 +11665,12 @@ function _finDisciplineMetrics(chartTx, primary, accFilterId){
   // Owed and limit are also money — mixing a PHP card's limit with an AED
   // card's balance would give a meaningless ratio, so this stays in the
   // primary currency too.
-  const creditAccs = FIN_ACCOUNTS.filter(a => a.account_class === 'Credit' && (!primary || a.currency === primary));
-  const totalOwed = creditAccs.reduce((s,a) => s + finOwedFor(a), 0);
-  const totalLimit = creditAccs.reduce((s,a) => s + (Number(a.credit_limit)||0), 0);
+  // Balances are "right now", so other currencies use today's rate; an
+  // account with no rate at all is left out.
+  const inPrimary = (v, a) => !primary || a.currency === primary ? v : _finConvert(v, a.currency, primary);
+  const creditAccs = FIN_ACCOUNTS.filter(a => a.account_class === 'Credit' && inPrimary(1, a) != null);
+  const totalOwed = creditAccs.reduce((s,a) => s + inPrimary(finOwedFor(a), a), 0);
+  const totalLimit = creditAccs.reduce((s,a) => s + inPrimary(Number(a.credit_limit)||0, a), 0);
   const utilizationPct = totalLimit > 0 ? (totalOwed / totalLimit * 100) : 0;
   const creditUtilizationScore = totalLimit > 0 ? Math.max(0, Math.min(100, Math.round(100 - utilizationPct))) : 100;
 
@@ -11636,8 +11680,8 @@ function _finDisciplineMetrics(chartTx, primary, accFilterId){
   // than a smaller daily spend, and logging honestly made the number worse.
   // Six months is the conventional target and maps to 100.
   const RUNWAY_TARGET_MONTHS = 6;
-  const liquidAccs = FIN_ACCOUNTS.filter(a => a.account_class !== 'Credit' && (!primary || a.currency === primary));
-  const liquidTotal = liquidAccs.reduce((s,a) => s + (Number(a.current_balance) || 0), 0);
+  const liquidAccs = FIN_ACCOUNTS.filter(a => a.account_class !== 'Credit' && inPrimary(1, a) != null);
+  const liquidTotal = liquidAccs.reduce((s,a) => s + inPrimary(Number(a.current_balance) || 0, a), 0);
   // Burn rate from the last 3 COMPLETE months — the current month is partial,
   // so including it would understate the monthly cost and overstate runway.
   const burnWindow = _finTrailingMonths(3, primary, accFilterId).filter(t => t.tx_type === 'Expense');
@@ -11884,7 +11928,8 @@ function renderFinDashTrendChart(accFilterId){
     return d >= rangeStart && d < rangeEnd;
   });
   const primary = _finPrimaryCurrencyForTxns(relevantTx);
-  const sameCurrency = relevantTx.filter(t => _finTxCurrency(t) === primary);
+  // Other currencies converted at their date's locked rate (they used to be dropped).
+  const sameCurrency = _finTxsIn(relevantTx, primary);
 
   const sumFor = (type, mo) => sameCurrency
     .filter(t => t.tx_type === type)
@@ -11978,33 +12023,26 @@ function _finDashCategorizedHtml(txns){
 
   const primary = _finPrimaryCurrencyForTxns(txns);
   const signed = t => t.tx_type === 'Expense' ? -(Number(t.amount) || 0) : (Number(t.amount) || 0);
-  // Subtotal PER CURRENCY (2026-11-28): a PHP-only category (BPI allowance,
-  // loan repayment in ₱) used to show "+0.00 AED" because only the main
-  // currency was summed. Transfer-only groups show no money total.
+  // Each category's subtotal is in the main currency, with other currencies
+  // converted at their date's locked rate (a ₱-only category used to read
+  // "+0.00 AED"). Rows below keep their own currency. Transfer-only
+  // categories show "transfer" instead of a money total.
   const byCat = {};
   txns.forEach(t => {
     const cat = t.category || 'Uncategorized';
-    if(!byCat[cat]) byCat[cat] = { items: [], byCur: {}, counted: {} };
+    if(!byCat[cat]) byCat[cat] = { items: [], total: 0, counted: [], has: false };
     byCat[cat].items.push(t);
     if(t.tx_type !== 'Transfer'){
-      const cur = _finTxCurrency(t);
-      byCat[cat].byCur[cur] = (byCat[cat].byCur[cur] || 0) + signed(t);
-      (byCat[cat].counted[cur] = byCat[cat].counted[cur] || []).push(t);
+      byCat[cat].has = true;
+      const c = _finTxsIn([t], primary)[0];
+      if(c){ byCat[cat].total += signed(c); byCat[cat].counted.push(c); }
     }
   });
-  // Sort by size in the main currency (other currencies converted when a rate is known).
-  const size = g => Object.entries(g.byCur).reduce((s, [cur, v]) => {
-    const c = cur === primary ? v : _finConvert(v, cur, primary);
-    return s + Math.abs(c == null ? 0 : c);
-  }, 0);
-  const catNames = Object.keys(byCat).sort((a,b) => size(byCat[b]) - size(byCat[a]));
+  const catNames = Object.keys(byCat).sort((a,b) => Math.abs(byCat[b].total) - Math.abs(byCat[a].total));
   const headTotal = group => {
-    const curs = Object.keys(group.byCur).sort((a, b) => (a === primary ? -1 : b === primary ? 1 : 0));
-    if(!curs.length) return `<span style="color:var(--muted);font-weight:400;">transfer</span>`;
-    return `<span style="text-align:right;">${curs.map(cur => {
-      const v = group.byCur[cur];
-      return `<div style="color:${v>=0?'var(--win)':'var(--loss)'};">${v>=0?'+':'−'}${finMoney(Math.abs(v), cur)}</div>${cur === 'PHP' ? '' : _finPhpSpan(_finTxPhpSum(group.counted[cur], signed))}`;
-    }).join('')}</span>`;
+    if(!group.has) return `<span style="color:var(--muted);font-weight:400;">transfer</span>`;
+    const v = group.total;
+    return `<span style="color:${v>=0?'var(--win)':'var(--loss)'};text-align:right;">${v>=0?'+':'−'}${finMoney(Math.abs(v), primary)}${primary === 'PHP' ? '' : _finPhpSpan(_finTxPhpSum(group.counted, signed))}</span>`;
   };
 
   return catNames.map(cat => {
@@ -14145,12 +14183,14 @@ async function loadFinanceBudgets(){
   renderFinanceBudgets();
 }
 
-function _finMonthCategorySpend(category){
+// In the budget's currency: a ₱2,000 expense used to count as 2,000 AED.
+// Other currencies are converted at their date's locked rate (2026-11-28).
+function _finMonthCategorySpend(category, cur){
   const now = new Date();
-  return FIN_TXNS
+  const list = FIN_TXNS
     .filter(t => t.tx_type === 'Expense' && t.category === category && t.tx_date)
-    .filter(t => { const d = new Date(t.tx_date + 'T00:00:00'); return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth(); })
-    .reduce((s,t) => s + (Number(t.amount) || 0), 0);
+    .filter(t => { const d = new Date(t.tx_date + 'T00:00:00'); return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth(); });
+  return (cur ? _finTxsIn(list, cur) : list).reduce((s,t) => s + (Number(t.amount) || 0), 0);
 }
 
 function renderFinanceBudgets(){
@@ -14175,7 +14215,7 @@ function renderFinanceBudgets(){
   _finLoadFxRates();
   const sorted = [...FIN_BUDGETS].sort((a,b) => a.category.localeCompare(b.category));
   list.innerHTML = sorted.map(b => {
-    const spent = _finMonthCategorySpend(b.category);
+    const spent = _finMonthCategorySpend(b.category, primaryCurrency);
     const pct = b.monthly_amount > 0 ? Math.min(100, Math.round(spent / b.monthly_amount * 100)) : 0;
     const barColor = pct >= 100 ? 'var(--loss)' : pct >= 80 ? 'var(--warn)' : 'var(--win)';
     const remaining = b.monthly_amount - spent;
@@ -17310,7 +17350,8 @@ function _finSavingsStreak(){
       return d.getFullYear() === cursor.getFullYear() && d.getMonth() === cursor.getMonth();
     });
     if(!monthTx.length) break;
-    const net = monthTx.reduce((s,t) => s + (t.tx_type === 'Income' ? (Number(t.amount)||0) : -(Number(t.amount)||0)), 0);
+    // Income − Expense only (a balance Correction is neither).
+    const net = _finTxsIn(monthTx, _finMainCurrency()).reduce((s,t) => s + (t.tx_type === 'Income' ? (Number(t.amount)||0) : t.tx_type === 'Expense' ? -(Number(t.amount)||0) : 0), 0);
     if(net <= 0) break;
     streak++;
     cursor = new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1);
@@ -17330,7 +17371,7 @@ function _finNeedsFocusedStreak(){
       return d.getFullYear() === cursor.getFullYear() && d.getMonth() === cursor.getMonth();
     });
     let needsTotal = 0, wantsTotal = 0;
-    monthExpenses.forEach(t => {
+    _finTxsIn(monthExpenses, _finMainCurrency()).forEach(t => {
       if(FIN_NEEDS_CATEGORIES.includes(t.category)) needsTotal += Number(t.amount) || 0;
       else if(FIN_WANTS_CATEGORIES.includes(t.category)) wantsTotal += Number(t.amount) || 0;
     });
@@ -17377,13 +17418,14 @@ function _finTopCategoryTrim(){
   if(!prevExpenses.length) return null;
 
   const byCat = {};
-  prevExpenses.forEach(t => { byCat[t.category] = (byCat[t.category] || 0) + (Number(t.amount) || 0); });
+  const mainCur = _finMainCurrency();
+  _finTxsIn(prevExpenses, mainCur).forEach(t => { byCat[t.category] = (byCat[t.category] || 0) + (Number(t.amount) || 0); });
   const topCat = Object.keys(byCat).reduce((a,b) => byCat[a] >= byCat[b] ? a : b);
   const prevAmount = byCat[topCat];
 
-  const thisMonthSameCat = FIN_TXNS
+  const thisMonthSameCat = _finTxsIn(FIN_TXNS
     .filter(t => t.tx_type === 'Expense' && t.category === topCat && t.tx_date)
-    .filter(t => { const d = new Date(t.tx_date + 'T00:00:00'); return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth(); })
+    .filter(t => { const d = new Date(t.tx_date + 'T00:00:00'); return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth(); }), mainCur)
     .reduce((s,t) => s + (Number(t.amount) || 0), 0);
 
   const reductionPct = prevAmount > 0 ? Math.round((prevAmount - thisMonthSameCat) / prevAmount * 100) : 0;
@@ -17424,7 +17466,7 @@ function _finBestSavingsRateMonth(){
   FIN_TXNS.forEach(t => { if(t.tx_date && t.tx_type !== 'Transfer') months.add(t.tx_date.slice(0,7)); });
   let best = 0;
   months.forEach(m => {
-    const monthTx = FIN_TXNS.filter(t => t.tx_date && t.tx_date.slice(0,7) === m && t.tx_type !== 'Transfer');
+    const monthTx = _finTxsIn(FIN_TXNS.filter(t => t.tx_date && t.tx_date.slice(0,7) === m && t.tx_type !== 'Transfer'), _finMainCurrency());
     const income = monthTx.filter(t => t.tx_type === 'Income').reduce((s,t) => s + (Number(t.amount)||0), 0);
     const expense = monthTx.filter(t => t.tx_type === 'Expense').reduce((s,t) => s + (Number(t.amount)||0), 0);
     if(income <= 0) return;
@@ -32864,7 +32906,9 @@ function _reportFinanceStats(start, end){
   // ONE currency only. Adding 500 dirhams to 500 pesos as bare numbers gives
   // 1000 of nothing, and the total was then labelled with a single currency
   // symbol as though it meant something. Same fix as the Discipline radar.
-  const txns = real.filter(t => _finTxCurrency(t) === currency);
+  // 2026-11-28: other currencies are converted at their date's locked rate
+  // instead of being skipped; only a tx with no rate at all is skipped.
+  const txns = _finTxsIn(real, currency);
   const skipped = real.length - txns.length;
 
   const income = txns.filter(t => t.tx_type === 'Income').reduce((s,t) => s + (Number(t.amount)||0), 0);

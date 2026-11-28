@@ -308,10 +308,18 @@ find/replace, try the LF form, then the CRLF form.
   with a real charge — owner skipped Claude in Sep; non-monthly = N payments). In a card bill, a monthly sub that already
   has a charge in that month counts 0 ("already in Transactions") — it was
   added on top of the real charge before (double bill).
-- Day/week/month **"— by category"** popup (`_finDashCategorizedHtml`,
-  2026-11-28): each category's subtotal is per currency (a ₱-only category
-  shows "−₱18,000.00", not "+0.00 AED"); transfer-only categories show
-  "transfer"; sorted by size converted to the main currency.
+- **One currency in every Finance total** (owner, 2026-11-28): other-currency
+  transactions (BPI/GCash ₱) are CONVERTED into the main currency at the rate
+  locked to their date (`_finAmtIn`, `_finTxsIn` → copies with `_cur`/`_src`;
+  same daily fixes as the ≈ ₱ lines, today's rate only if a day has no fix).
+  They used to be dropped (KPIs, calendar, category/subcategory charts,
+  equity, trend, Discipline radar, Reports) or added as if ₱ = AED (Budgets,
+  Finance Challenges streaks/best savings/top-category). KPI note now says
+  "Includes N PHP transactions (… net), converted to AED at the rate on their
+  date". Balances in the radar (credit use, runway) use today's rate. Popups
+  still list each transaction in its own currency. "— by category" shows
+  "transfer" for transfer-only categories. Savings streak counts Income −
+  Expense only (a Correction is neither).
 - `tests/sim-finance-bill.js` runs Paid/Undo end-to-end on the owner's real numbers.
 - **Credit card payments per month** chart on the Finance Dashboard (2026-11-26,
   `_finCardPayMonthly`, `renderFinCardPayments`, called from
