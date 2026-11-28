@@ -12594,7 +12594,7 @@ function openFinAccountDetailsModal(accountId, backToId){
     <div id="finRecList-${slug}" style="display:none;">
       ${recurringItems.length ? recurringItems.map(x => `
         <div class="fin-acc-details-row fin-rec-item">
-          <span>${escapeHtml(x.r.name || x.r.kind || 'Item')}${x.isInstallment ? `<span style="color:var(--muted);font-size:10.5px;margin-left:6px;">installment</span>` : ''}${!x.counted ? `<span style="color:var(--muted);font-size:10.5px;margin-left:6px;">${escapeHtml(x.r.cycle || '')} — not billed monthly</span>` : ''}</span>
+          <span>${escapeHtml(x.r.name || x.r.kind || 'Item')}${x.isInstallment ? `<span style="color:var(--muted);font-size:10.5px;margin-left:6px;">installment</span>` : ''}${!x.counted ? `<span style="color:var(--muted);font-size:10.5px;margin-left:6px;">${x.inTx ? 'already in Transactions' : escapeHtml(x.r.cycle || '') + ' — not billed monthly'}</span>` : ''}</span>
           <span${x.counted ? '' : ' style="color:var(--muted);"'}>${finMoney(x.amount, a.currency)}</span>
         </div>
       `).join('') : `<div class="fin-acc-details-row fin-rec-item"><span style="color:var(--muted);">No recurring items on this account.</span><span></span></div>`}
@@ -14422,14 +14422,49 @@ function _finRecBilledIn(accountId, monthDate){
   return FIN_RECURRING.filter(r => r.account_id === accountId && _finRecStartedBy(r, monthDate) && !_finRecEndedBefore(r, monthDate)
     && (!_finRecIsFullyPaid(r) || (billPaid && !!r.first_bill)));
 }
+// The real charges of a subscription: Expenses on its account whose
+// subcategory is the subscription's name, or whose description contains it
+// ("ANTHROPIC* CLAUDE SUB" → Claude). Oldest first.
+function _finSubTxns(r){
+  const name = String(r.name || '').trim().toUpperCase();
+  if(!name) return [];
+  return (typeof FIN_TXNS !== 'undefined' ? FIN_TXNS : [])
+    .filter(t => t.tx_type === 'Expense' && t.account_id === r.account_id
+      && (String(t.subcategory || '').trim().toUpperCase() === name || String(t.description || '').toUpperCase().includes(name)))
+    .sort((a, b) => String(a.tx_date).localeCompare(String(b.tx_date)));
+}
+function _finSameMonth(day, monthDate){
+  const d = new Date(String(day).slice(0, 10) + 'T00:00:00');
+  return d.getFullYear() === monthDate.getFullYear() && d.getMonth() === monthDate.getMonth();
+}
+// "Since Jul 2026 · 5 months · 309.46 AED paid (4 payments)". Months count
+// from the first bill (or the first charge if earlier) to this month,
+// inclusive; paid = sum of the real charges found by _finSubTxns.
+function _finSubSinceHtml(r){
+  const txs = _finSubTxns(r);
+  const starts = [r.first_bill, txs[0] && txs[0].tx_date].filter(Boolean).map(s => String(s).slice(0, 10)).sort();
+  if(!starts.length) return '';
+  const s = new Date(starts[0] + 'T00:00:00'), now = new Date();
+  if(isNaN(s.getTime()) || s > now) return '';
+  const months = (now.getFullYear() - s.getFullYear()) * 12 + (now.getMonth() - s.getMonth()) + 1;
+  const paid = txs.reduce((a, t) => a + (Number(t.amount) || 0), 0);
+  const since = s.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+  return `<div class="fin-sub-since">Since ${since} · ${months} month${months === 1 ? '' : 's'}`
+    + (txs.length ? ` · ${finMoney(paid, _finRecCur(r))} paid (${txs.length} payment${txs.length === 1 ? '' : 's'})` : '')
+    + `</div>`;
+}
 function _finMonthlyRecurringItems(accountId, monthDate){
   return _finRecBilledIn(accountId, monthDate)
     .map(r => {
       const isInstallment = r.kind === 'Installment';
+      // A subscription whose real charge for that month is already a card
+      // Expense is NOT added again (it would double the bill). Only a month
+      // with no charge logged yet uses the subscription price.
+      const inTx = !isInstallment && _finSubTxns(r).some(t => _finSameMonth(t.tx_date, monthDate));
       const amount = isInstallment
         ? (Number(r.total_amount) || 0) / Math.max(1, Number(r.total_payments) || 1)
-        : ((r.cycle || 'Monthly') === 'Monthly' ? (Number(r.price) || 0) : 0);
-      return { r, amount, isInstallment, counted: amount > 0 };
+        : (!inTx && (r.cycle || 'Monthly') === 'Monthly' ? (Number(r.price) || 0) : 0);
+      return { r, amount, isInstallment, inTx, counted: amount > 0 };
     })
     .sort((a,b) => b.amount - a.amount);
 }
@@ -14927,7 +14962,7 @@ function renderFinanceRecurring(){
     const dueCell = _finRecDueCellHtml(r, { alreadyPaid: cycleAlreadyPaid });
     return `
       <tr>
-        <td>${escapeHtml(r.name)}<div style="font-size:10.5px;color:var(--muted);">${escapeHtml(_finAccountName(r.account_id))}</div></td>
+        <td>${escapeHtml(r.name)}<div style="font-size:10.5px;color:var(--muted);">${escapeHtml(_finAccountName(r.account_id))}</div>${_finSubSinceHtml(r)}</td>
         <td>${finMoney(r.price, _finRecCur(r))}${_finPhpLine(r.price, _finRecCur(r))}</td>
         <td>${escapeHtml(r.cycle || 'Monthly')}</td>
         <td style="white-space:nowrap;">${dueCell}</td>
@@ -14953,6 +14988,7 @@ function renderFinanceRecurring(){
           <span class="pill pill-muted fin-acc-card-currency">${escapeHtml(r.cycle || 'Monthly')}</span>
         </div>
         <div class="account-card-balance">${finMoney(r.price, _finRecCur(r))}</div>${_finPhpLine(r.price, _finRecCur(r))}
+        ${_finSubSinceHtml(r)}
         <div style="font-size:12px;margin-top:8px;">Due: ${dueCell}</div>
         ${r.notes ? `<div style="font-size:12px;color:var(--muted);margin-top:8px;font-style:italic;">${escapeHtml(r.notes)}</div>` : ''}
         <div class="fin-acc-card-actions">

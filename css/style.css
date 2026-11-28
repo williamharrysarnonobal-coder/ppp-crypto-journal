@@ -6395,3 +6395,5 @@ body.mobile-mode .arbab-chat{height:calc(100vh - 330px);min-height:400px;}
 }.fin-inst-sum-pct{color:var(--ink);font-weight:700;}
 .fin-inst-sum-bar{height:4px;border-radius:2px;background:var(--rule);margin-top:6px;overflow:hidden;}
 .fin-inst-sum-bar i{display:block;height:100%;background:var(--accent);border-radius:2px;}
+/* Subscription: since / months / paid (2026-11-28). */
+.fin-sub-since{font-size:11px;color:var(--muted);margin-top:4px;line-height:1.35;}

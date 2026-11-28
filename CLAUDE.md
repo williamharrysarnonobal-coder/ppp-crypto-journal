@@ -300,6 +300,14 @@ find/replace, try the LF form, then the CRLF form.
   Total; only when all running installments share one currency). Monthly shows
   "N% of remaining" (Monthly ÷ Remaining), same one-currency rule.
   4 across on desktop, 2×2 on a phone.
+- **Subscriptions** (2026-11-28): owner's Claude (74 AED monthly, from Jul),
+  Netflix (71 monthly, from Oct), Cloudflare (39.64 yearly, from Jul) on ENBD U
+  by Emaar, added from his transactions. `_finSubTxns(r)` = the sub's real
+  charges (Expenses on its account whose subcategory = name or description
+  contains name). Each sub shows "Since Mon YYYY · N months · X paid (k
+  payments)" (`_finSubSinceHtml`). In a card bill, a monthly sub that already
+  has a charge in that month counts 0 ("already in Transactions") — it was
+  added on top of the real charge before (double bill).
 - `tests/sim-finance-bill.js` runs Paid/Undo end-to-end on the owner's real numbers.
 - **Credit card payments per month** chart on the Finance Dashboard (2026-11-26,
   `_finCardPayMonthly`, `renderFinCardPayments`, called from
