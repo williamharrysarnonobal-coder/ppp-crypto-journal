@@ -10938,7 +10938,10 @@ function _finHistFxData(){
 function _finIsoDay(d){ return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
 function _finLoadHistFx(){
   if(_finHistFxState === 'loading' || _finHistFxState === 'failed') return;
-  const dates = [...FIN_TXNS, ...(BUD_TXNS || [])].map(t => t.tx_date).filter(Boolean).sort();
+  // Budget: its rows AND each period's start (the set budget is locked to it).
+  let budStarts = [];
+  try{ budStarts = _budSettings().periods.map(p => ({ tx_date: p.start })); }catch(_){}
+  const dates = [...FIN_TXNS, ...(BUD_TXNS || []), ...budStarts].map(t => t.tx_date).filter(Boolean).sort();
   if(!dates.length) return;
   const h = _finHistFxData();
   const today = _finIsoDay(new Date());
@@ -13649,22 +13652,25 @@ function _renderBudCalendar(sc){
   const byDay = {};
   (BUD_TXNS || []).forEach(t => {
     if(!_budInScope(t, sc)) return;
-    const b = (byDay[t.tx_date] = byDay[t.tx_date] || { aed: 0, n: 0, bad: false, add: 0 });
-    const v = _budIn(t, 'AED');
-    if(_budIsTop(t)){ b.add += v || 0; return; }
+    const b = (byDay[t.tx_date] = byDay[t.tx_date] || { aed: 0, php: 0, n: 0, bad: false, phpBad: false, add: 0, addPhp: 0 });
+    const v = _budIn(t, 'AED'), vp = _budIn(t, 'PHP');
+    if(_budIsTop(t)){ b.add += v || 0; b.addPhp += vp || 0; return; }
     if(v == null) b.bad = true; else b.aed += v;
+    if(vp == null) b.phpBad = true; else b.php += vp;
     b.n++;
   });
   // Full amount on wide screens; a short one on phones (144, 1.2k) so it fits.
   const short = v => v >= 999.5 ? (v / 1000).toFixed(v >= 9950 ? 0 : 1).replace(/\.0$/, '') + 'k' : v >= 9.95 ? String(Math.round(v)) : (Math.round(v * 10) / 10).toFixed(1).replace(/\.0$/, '');
   const money = v => `<span class="bud-full">${finMoney(v, 'AED').replace(' AED', '')}</span><span class="bud-short">${short(v)}</span>`;
+  // ≈ ₱ under every amount (locked rate of each purchase's date).
+  const peso = (v, bad) => bad ? '' : `<div class="bud-cal-php"><span class="bud-full">≈ ${finMoney(v, 'PHP')}</span><span class="bud-short">₱${short(v)}</span></div>`;
   const todayIso = _finIsoDay(new Date());
   const first = new Date(sc.from + 'T00:00:00'), last = new Date(sc.to + 'T00:00:00');
   const start = new Date(first); start.setDate(start.getDate() - start.getDay());
   const end = new Date(last); end.setDate(end.getDate() + (6 - end.getDay()));
   let html = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => `<div class="cal-dow">${d}</div>`).join('') + '<div class="cal-dow" style="color:var(--accent);">Week</div>';
   for(const w = new Date(start); w <= end; ){
-    let wAed = 0, wN = 0, wFrom = null, wTo = null;
+    let wAed = 0, wPhp = 0, wPhpBad = false, wN = 0, wFrom = null, wTo = null;
     for(let i = 0; i < 7; i++, w.setDate(w.getDate() + 1)){
       const iso = _finIsoDay(w);
       if(iso < sc.from || iso > sc.to){ html += '<div class="cal-cell empty"></div>'; continue; }
@@ -13675,16 +13681,16 @@ function _renderBudCalendar(sc){
       const info = byDay[iso];
       const sel = _budRange && _budRange.from === iso && _budRange.to === iso;
       const today = iso === todayIso ? ' bud-today' : '';
-      const plus = info && info.add > 0 ? `<div class="bud-cal-add">+<span class="bud-full">${finMoney(info.add, 'AED').replace(' AED', '')}</span></div>` : '';
+      const plus = info && info.add > 0 ? `<div class="bud-cal-add">+<span class="bud-full">${finMoney(info.add, 'AED').replace(' AED', '')} <span class="bud-cal-add-php">(≈ ${finMoney(info.addPhp, 'PHP')})</span></span></div>` : '';
       if(info && (info.n || info.add)){
-        wAed += info.aed; wN += info.n;
+        wAed += info.aed; wPhp += info.php; wPhpBad = wPhpBad || info.phpBad; wN += info.n;
         const cls = info.n ? 'loss' : 'win';
-        html += `<div class="cal-cell ${cls}${sel ? ' bud-picked' : ''}${today}" onclick="pickBudRange('${iso}','${iso}')"><div class="d">${dn}</div>${info.n ? `<div class="p">${info.bad ? '—' : money(info.aed)}</div><div class="cal-count" style="font-size:10.5px;color:var(--muted);">${info.n} tx</div>` : ''}${plus}</div>`;
+        html += `<div class="cal-cell ${cls}${sel ? ' bud-picked' : ''}${today}" onclick="pickBudRange('${iso}','${iso}')"><div class="d">${dn}</div>${info.n ? `<div class="p">${info.bad ? '—' : money(info.aed)}</div>${peso(info.php, info.phpBad)}<div class="cal-count" style="font-size:10.5px;color:var(--muted);">${info.n} tx</div>` : ''}${plus}</div>`;
       }else html += `<div class="cal-cell${today}"><div class="d">${dn}</div></div>`;
     }
     const wsel = wFrom && _budRange && _budRange.from === wFrom && _budRange.to === wTo && wFrom !== wTo;
     html += wN
-      ? `<div class="cal-cell week-cell loss${wsel ? ' bud-picked' : ''}" onclick="pickBudRange('${wFrom}','${wTo}')"><div class="d" style="color:var(--accent);">Σ</div><div class="p">${money(wAed)}</div><div class="cal-count" style="font-size:10.5px;color:var(--muted);">${wN} tx</div></div>`
+      ? `<div class="cal-cell week-cell loss${wsel ? ' bud-picked' : ''}" onclick="pickBudRange('${wFrom}','${wTo}')"><div class="d" style="color:var(--accent);">Σ</div><div class="p">${money(wAed)}</div>${peso(wPhp, wPhpBad)}<div class="cal-count" style="font-size:10.5px;color:var(--muted);">${wN} tx</div></div>`
       : `<div class="cal-cell week-cell"><div class="d" style="color:var(--accent);">Σ</div><div class="cal-count" style="font-size:10.5px;color:var(--muted);">—</div></div>`;
   }
   grid.innerHTML = html;
@@ -13747,14 +13753,17 @@ async function loadBudget(){
   try{ _finLoadHistFx(); }catch(_){}
 }
 
-// Amount of a budget row in `to`, at the rate locked to its date (today's
-// rate only as a fallback before the daily fixes arrive). null = no rate.
+// Amount of a budget row in `to`, at the rate locked to its date. null = that
+// day's fix isn't loaded yet.
 function _budIn(t, to){
   const from = t.currency || 'AED', a = Number(t.amount) || 0;
   if(from === to) return a;
   const rf = _finTxRate(from, t.tx_date), rt = _finTxRate(to, t.tx_date);
+  // Locked only (owner: conversions never change). No fallback to today's
+  // rate — that would show one number now and another once the day's fix
+  // arrives. null until then; the page re-renders when the fixes land.
   if(rf != null && rt != null && rt > 0) return a * rf / rt;
-  return _finConvert(a, from, to);
+  return null;
 }
 function _budSum(list, to){
   let s = 0;
@@ -13835,7 +13844,16 @@ function _budScopeMoney(sc){
   const rows = (BUD_TXNS || []).filter(t => _budInScope(t, sc));
   const buys = _budBuys(rows), tops = rows.filter(_budIsTop);
   const spent = _budSum(buys, 'AED'), added = _budSum(tops, 'AED') || 0;
-  return { buys, tops, spent, added, budget: (sc.limit || 0) + added, hasBudget: !!sc.limit || tops.length > 0 };
+  return { buys, tops, spent, added, addedPhp: _budSum(tops, 'PHP'), spentPhp: _budSum(buys, 'PHP'), budget: (sc.limit || 0) + added, hasBudget: !!sc.limit || tops.length > 0 };
+}
+// ₱ of an AED amount at the rate LOCKED to `day` (owner: conversions never
+// change, each one uses its own day's rate). null until that day's fix is in.
+function _budPhpAt(aed, day){ const r = _finTxRate('AED', day); return r == null ? null : (Number(aed) || 0) * r; }
+function _budPhpSpan(v){ return v == null ? '' : `<span class="bud-php-i">≈ ${finMoney(v, 'PHP')}</span>`; }
+// "≈ ₱X" for a list of rows, each at the rate locked to its date.
+function _budPhpLocked(list){
+  const v = _budSum(list, 'PHP');
+  return v == null || !list.length ? '' : `<span class="bud-php-i">≈ ${finMoney(v, 'PHP')}</span>`;
 }
 function _budDaysBetween(a, b){ return Math.round((new Date(b + 'T00:00:00') - new Date(a + 'T00:00:00')) / 86400000); }
 function _budDefaultCat(){
@@ -13869,10 +13887,19 @@ function _budLimitHtml(sc){
   const today = _finIsoDay(new Date());
   const daysLeft = today > sc.to ? 0 : _budDaysBetween(today < sc.from ? sc.from : today, sc.to) + 1;
   const state = over ? 'over' : pct >= 80 ? 'warn' : 'ok';
+  // Every ₱ here is locked, so it never moves: the set budget at the rate of
+  // the period's START date, money added and purchases at their own dates.
+  // Left₱ = budget₱ + added₱ − spent₱; per day₱ = left₱ / days to go.
+  const baseP = sc.limit ? _budPhpAt(sc.limit, sc.from) : 0;
+  const budP = baseP == null || m.addedPhp == null ? null : baseP + m.addedPhp;
+  const leftP = budP == null || m.spentPhp == null ? null : budP - m.spentPhp;
+  const row = (k, aed, php, extra) => `<div class="bud-limit-r"><span>${k}</span><span class="bud-limit-v"><b>${finMoney(aed, 'AED')}</b>${_budPhpSpan(php)}${extra || ''}</span></div>`;
   return `${range}<div class="bud-limit ${state}">
       <div class="bud-limit-bar"><i style="width:${Math.min(100, pct).toFixed(1)}%"></i></div>
-      <div class="bud-limit-t"><b>${Math.round(pct)}%</b> of ${finMoney(m.budget, 'AED')}${m.added > 0 ? ` <span class="bud-limit-add">(${finMoney(sc.limit || 0, 'AED')} + ${finMoney(m.added, 'AED')} added)</span>` : ''}</div>
-      <div class="bud-limit-t">${over ? `<b>${finMoney(-left, 'AED')} over</b>` : `<b>${finMoney(left, 'AED')} left</b>`}${daysLeft > 0 ? ` · ${daysLeft} day${daysLeft === 1 ? '' : 's'} to go${over ? '' : ` · ~${finMoney(left / daysLeft, 'AED')}/day`}` : ''}</div>
+      <div class="bud-limit-t"><b>${Math.round(pct)}%</b> used${daysLeft > 0 ? ` · ${daysLeft} day${daysLeft === 1 ? '' : 's'} to go` : ''}</div>
+      ${row('Budget', m.budget, budP, m.added > 0 ? `<span class="bud-limit-add">${finMoney(sc.limit || 0, 'AED')} + ${finMoney(m.added, 'AED')} added</span>` : '')}
+      ${row(over ? 'Over' : 'Left', Math.abs(left), leftP == null ? null : Math.abs(leftP))}
+      ${daysLeft > 0 && !over ? row('Per day', left / daysLeft, leftP == null ? null : leftP / daysLeft) : ''}
       <div class="bud-limit-acts">${addBtn}</div>
     </div>`;
 }
@@ -13891,8 +13918,9 @@ function _renderBudBreakdown(list, label){
     const pct = total > 0 && r.aed != null ? r.aed / total * 100 : 0;
     const php = _budSum(r.items, 'PHP');
     const subs = {};
-    r.items.forEach(t => { if(t.subcategory){ const k = t.subcategory.trim(); subs[k] = (subs[k] || 0) + (_budIn(t, 'AED') || 0); } });
-    const subTxt = Object.entries(subs).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${escapeHtml(k)} ${finMoney(v, 'AED')}`).join(' · ');
+    r.items.forEach(t => { if(t.subcategory){ const k = t.subcategory.trim(); (subs[k] = subs[k] || []).push(t); } });
+    const subTxt = Object.entries(subs).map(([k, items]) => [k, _budSum(items, 'AED') || 0, items])
+      .sort((a, b) => b[1] - a[1]).map(([k, v, items]) => `${escapeHtml(k)} ${finMoney(v, 'AED')} ${_budPhpLocked(items)}`).join(' · ');
     return `<div class="bud-cat${r.cat === 'Uncategorized' ? ' none' : ''}">
         <div class="bud-cat-h"><span class="bud-cat-n">${escapeHtml(r.cat)} <em>${r.items.length}</em></span>
           <span class="bud-cat-v"><span class="bud-aed">${r.aed == null ? '—' : finMoney(r.aed, 'AED')}</span><span class="bud-php">${Math.round(pct)}%${php == null ? '' : ` · ≈ ${finMoney(php, 'PHP')}`}</span></span></div>
@@ -13944,7 +13972,7 @@ function renderBudPeriodList(){
     const now = today >= p.start && today <= p.end;
     return `<div class="bud-per${now ? ' now' : ''}">
         <div class="bud-per-main"><b>${escapeHtml(_budRangeLabel(p.start, p.end))}</b>${now ? '<span class="bud-per-now">Now</span>' : ''}
-          <div class="bud-per-sub">Budget ${p.limit ? finMoney(p.limit, 'AED') : '—'}${m.added > 0 ? ` + ${finMoney(m.added, 'AED')} added` : ''} · spent ${m.spent == null ? '—' : finMoney(m.spent, 'AED')}</div></div>
+          <div class="bud-per-sub">Budget ${p.limit ? `${finMoney(p.limit, 'AED')} ${_budPhpSpan(_budPhpAt(p.limit, p.start))}` : '—'}${m.added > 0 ? ` + ${finMoney(m.added, 'AED')} added ${_budPhpLocked(m.tops)}` : ''} · spent ${m.spent == null ? '—' : `${finMoney(m.spent, 'AED')} ${_budPhpLocked(m.buys)}`}</div></div>
         <span class="bud-per-acts"><button class="drawer-secondary-btn" onclick="editBudPeriod('${p.start}')">Edit</button><button class="drawer-secondary-btn" onclick="deleteBudPeriod('${p.start}')" aria-label="Delete period">✕</button></span>
       </div>`;
   }).join('');
@@ -14116,11 +14144,12 @@ function renderBudget(){
   const cur = _budScopeOf(today, scopes);
   const prev = cur ? scopes[scopes.indexOf(cur) + 1] || null : scopes.find(s => s.to < today) || null;
   const tile = (label, list, extra) => `<div class="bud-tile"><div class="bud-tile-k">${label}<button type="button" class="panel-share" title="Share as an image" aria-label="Share ${label}" onclick="shareBudTile(this, event)">${PANEL_SHARE_ICON}</button></div><div class="bud-tile-v">${_budTotalHtml(list)}</div><div class="bud-tile-s">${list.length} purchase${list.length === 1 ? '' : 's'}</div>${extra || ''}</div>`;
-  const addedAll = _budSum(all.filter(_budIsTop), 'AED') || 0;
+  const topsAll = all.filter(_budIsTop);
+  const addedAll = _budSum(topsAll, 'AED') || 0;
   sumEl.innerHTML = tile(`This ${word}`, cur ? _budBuys(all.filter(t => _budInScope(t, cur))) : [],
       cur ? _budLimitHtml(cur) : `<div class="bud-tile-s">No period covers today.</div><button class="bud-limit-set" onclick="openBudPeriodsModal()">Start a new period</button>`)
     + tile(`Last ${word}`, prev ? _budBuys(all.filter(t => _budInScope(t, prev))) : [], prev && prev.period ? `<div class="bud-tile-s">${escapeHtml(prev.label)}</div>` : '')
-    + tile('All time', buysAll, addedAll > 0 ? `<div class="bud-tile-s">${finMoney(addedAll, 'AED')} added in total</div>` : '');
+    + tile('All time', buysAll, addedAll > 0 ? `<div class="bud-tile-s">${finMoney(addedAll, 'AED')} ${_budPhpLocked(topsAll)} added in total</div>` : '');
 
   // Category filter: Finance's list + any category already used on a row.
   const catSel = document.getElementById('budCatFilter');
@@ -14183,7 +14212,7 @@ function renderBudget(){
     const buys = _budBuys(g.items), tops = g.items.filter(_budIsTop);
     const added = _budSum(tops, 'AED');
     return `<div class="bud-month">
-      <div class="bud-month-h"><span>${escapeHtml(g.label)} <em>${buys.length}</em></span><span class="bud-month-t">${_budTotalHtml(buys)}${added ? `<span class="bud-add">+${finMoney(added, 'AED')} added</span>` : ''}</span></div>
+      <div class="bud-month-h"><span>${escapeHtml(g.label)} <em>${buys.length}</em></span><span class="bud-month-t">${_budTotalHtml(buys)}${added ? `<span class="bud-add">+${finMoney(added, 'AED')} added</span>${_budPhpLocked(tops)}` : ''}</span></div>
       ${g.items.map(t => {
         const cur = t.currency || 'AED';
         const other = cur === 'PHP' ? 'AED' : 'PHP';

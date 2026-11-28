@@ -355,7 +355,13 @@ find/replace, try the LF form, then the CRLF form.
   falls in (budget = set budget + added), never counted as spending, green
   "+" rows/calendar marks. This-period tile: bar (green, accent ≥80%, red
   over) "N% of 750 (500 + 250 added)", left, days to go, per-day pace, "+ Add
-  money". **Every box has a share button** (owner): the 3 panels via
+  money". **₱ on every number, ALL locked** (owner: "hindi magbabago", each
+  uses its own day's rate): rows/totals/calendar day+week/subcategories/
+  added at the tx date (`_budIn`, NO fallback to today's rate — null until
+  the day's fix loads, then re-render); a period's set budget at its START
+  date (`_budPhpAt`; `_finLoadHistFx` also covers period starts); Left₱ =
+  budget₱ + added₱ − spent₱, Per day₱ = Left₱ / days to go. Never uses
+  `_finConvert`. **Every box has a share button** (owner): the 3 panels via
   `addPanelShareButtons`, the 3 total tiles via their own button
   (`shareBudTile` → `sharePanel`); Add/Easy Add, filters and the Add money /
   Start period links are filtered out of the picture.
