@@ -13700,6 +13700,13 @@ function pickBudRange(from, to){
   if(p && p.scrollIntoView) p.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 function clearBudRange(){ _budRange = null; renderBudget(); }
+// The three total tiles aren't .panel boxes, so they get their own share
+// button; same image maker as every other box (sharePanel).
+function shareBudTile(btn, e){
+  if(e){ e.preventDefault(); e.stopPropagation(); }
+  const tile = btn.closest('.bud-tile');
+  if(tile) sharePanel(tile, btn.parentElement);
+}
 // ‹ › : periods step through the saved periods; months can go to any month.
 function shiftBudMonth(step){
   const sel = document.getElementById('budMonthFilter');
@@ -14108,7 +14115,7 @@ function renderBudget(){
   const today = _finIsoDay(new Date());
   const cur = _budScopeOf(today, scopes);
   const prev = cur ? scopes[scopes.indexOf(cur) + 1] || null : scopes.find(s => s.to < today) || null;
-  const tile = (label, list, extra) => `<div class="bud-tile"><div class="bud-tile-k">${label}</div><div class="bud-tile-v">${_budTotalHtml(list)}</div><div class="bud-tile-s">${list.length} purchase${list.length === 1 ? '' : 's'}</div>${extra || ''}</div>`;
+  const tile = (label, list, extra) => `<div class="bud-tile"><div class="bud-tile-k">${label}<button type="button" class="panel-share" title="Share as an image" aria-label="Share ${label}" onclick="shareBudTile(this, event)">${PANEL_SHARE_ICON}</button></div><div class="bud-tile-v">${_budTotalHtml(list)}</div><div class="bud-tile-s">${list.length} purchase${list.length === 1 ? '' : 's'}</div>${extra || ''}</div>`;
   const addedAll = _budSum(all.filter(_budIsTop), 'AED') || 0;
   sumEl.innerHTML = tile(`This ${word}`, cur ? _budBuys(all.filter(t => _budInScope(t, cur))) : [],
       cur ? _budLimitHtml(cur) : `<div class="bud-tile-s">No period covers today.</div><button class="bud-limit-set" onclick="openBudPeriodsModal()">Start a new period</button>`)
@@ -36004,7 +36011,7 @@ async function sharePanel(panel, h){
       pixelRatio: Math.max(2, Math.min(4, 1200 / Math.max(1, panel.getBoundingClientRect().width))), cacheBust: true,
       backgroundColor: css.backgroundColor && css.backgroundColor !== 'rgba(0, 0, 0, 0)' ? css.backgroundColor : pageBg,
       // Budget: the Easy Add / + Add buttons and the filter row aren't part of the picture.
-      filter: n => !(n.classList && (n.classList.contains('panel-share') || n.classList.contains('dash-gear') || n.classList.contains('bud-actions') || n.classList.contains('bud-filters')))
+      filter: n => !(n.classList && (n.classList.contains('panel-share') || n.classList.contains('dash-gear') || n.classList.contains('bud-actions') || n.classList.contains('bud-filters') || n.classList.contains('bud-limit-acts') || n.classList.contains('bud-limit-set')))
     }).finally(() => { if(narrowed){ panel.style.width = oldWidth; panel.style.maxWidth = oldMax; } });
     const pad = 48, foot = 84;
     // Ang mababang box (hal. Discipline) ay hindi nagiging manipis na guhit:

@@ -6492,4 +6492,6 @@ body.mobile-mode .arbab-chat{height:calc(100vh - 330px);min-height:400px;}
 @media (max-width:640px){
   .bud-cal-add .bud-full{display:none;}
   .bud-cal-m{display:none;}
-}
+}.bud-tile-k{display:flex;align-items:center;justify-content:space-between;gap:6px;}
+.bud-tile .panel-share{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;margin:-4px -6px -4px 0;border-radius:7px;border:1px solid transparent;background:none;color:var(--muted);cursor:pointer;padding:0;opacity:.7;flex-shrink:0;}
+.bud-tile .panel-share:hover,.bud-tile .panel-share:focus-visible{opacity:1;color:var(--accent);border-color:var(--rule);background:var(--surface-2);outline:none;}

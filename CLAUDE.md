@@ -355,7 +355,10 @@ find/replace, try the LF form, then the CRLF form.
   falls in (budget = set budget + added), never counted as spending, green
   "+" rows/calendar marks. This-period tile: bar (green, accent ≥80%, red
   over) "N% of 750 (500 + 250 added)", left, days to go, per-day pace, "+ Add
-  money".
+  money". **Every box has a share button** (owner): the 3 panels via
+  `addPanelShareButtons`, the 3 total tiles via their own button
+  (`shareBudTile` → `sharePanel`); Add/Easy Add, filters and the Add money /
+  Start period links are filtered out of the picture.
 - `tests/sim-finance-bill.js` runs Paid/Undo end-to-end on the owner's real numbers.
 - **Credit card payments per month** chart on the Finance Dashboard (2026-11-26,
   `_finCardPayMonthly`, `renderFinCardPayments`, called from
