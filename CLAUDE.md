@@ -297,7 +297,8 @@ find/replace, try the LF form, then the CRLF form.
   Monthly / Remaining / Total of running installments + Completed (sum of fully
   paid totals), each with ≈ ₱ (today's rate); summed per currency, never mixed.
   Remaining also shows "N% left · M% paid" + a thin bar (Remaining ÷ running
-  Total; only when all running installments share one currency).
+  Total; only when all running installments share one currency). Monthly shows
+  "N% of remaining" (Monthly ÷ Remaining), same one-currency rule.
   4 across on desktop, 2×2 on a phone.
 - `tests/sim-finance-bill.js` runs Paid/Undo end-to-end on the owner's real numbers.
 - **Credit card payments per month** chart on the Finance Dashboard (2026-11-26,

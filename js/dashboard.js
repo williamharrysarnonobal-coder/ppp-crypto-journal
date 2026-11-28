@@ -14996,8 +14996,11 @@ function _renderFinInstSummary(insts, doneInsts){
   const pct = curs.length === 1 && total[curs[0]] > 0 ? Math.max(0, Math.min(100, remaining[curs[0]] / total[curs[0]] * 100)) : null;
   const remS = pct == null ? 'still to pay'
     : `<b class="fin-inst-sum-pct">${pct.toFixed(0)}% left</b> · ${(100 - pct).toFixed(0)}% paid<div class="fin-inst-sum-bar"><i style="width:${(100 - pct).toFixed(1)}%"></i></div>`;
+  // Monthly as a share of what's still left ("13% of remaining").
+  const mPct = curs.length === 1 && remaining[curs[0]] > 0 ? Math.min(100, monthly[curs[0]] / remaining[curs[0]] * 100) : null;
+  const monS = mPct == null ? `${n} running` : `<b class="fin-inst-sum-pct">${mPct < 1 ? mPct.toFixed(1) : mPct.toFixed(0)}% of remaining</b><br>${n} running`;
   el.innerHTML =
-    tile('Monthly', monthly, `${n} running`) +
+    tile('Monthly', monthly, monS) +
     tile('Remaining', remaining, remS) +
     tile('Total', total, 'of running installments') +
     tile('Completed', done, `${d} fully paid`);
