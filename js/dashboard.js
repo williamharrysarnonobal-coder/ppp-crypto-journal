@@ -11977,18 +11977,35 @@ function _finDashCategorizedHtml(txns){
   if(!txns.length) return '<div class="empty-state">No transactions.</div>';
 
   const primary = _finPrimaryCurrencyForTxns(txns);
+  const signed = t => t.tx_type === 'Expense' ? -(Number(t.amount) || 0) : (Number(t.amount) || 0);
+  // Subtotal PER CURRENCY (2026-11-28): a PHP-only category (BPI allowance,
+  // loan repayment in ₱) used to show "+0.00 AED" because only the main
+  // currency was summed. Transfer-only groups show no money total.
   const byCat = {};
   txns.forEach(t => {
     const cat = t.category || 'Uncategorized';
-    if(!byCat[cat]) byCat[cat] = { items: [], total: 0, counted: [] };
+    if(!byCat[cat]) byCat[cat] = { items: [], byCur: {}, counted: {} };
     byCat[cat].items.push(t);
-    if(t.tx_type !== 'Transfer' && _finTxCurrency(t) === primary){
-      byCat[cat].total += t.tx_type === 'Expense' ? -(Number(t.amount) || 0) : (Number(t.amount) || 0);
-      byCat[cat].counted.push(t);
+    if(t.tx_type !== 'Transfer'){
+      const cur = _finTxCurrency(t);
+      byCat[cat].byCur[cur] = (byCat[cat].byCur[cur] || 0) + signed(t);
+      (byCat[cat].counted[cur] = byCat[cat].counted[cur] || []).push(t);
     }
   });
-
-  const catNames = Object.keys(byCat).sort((a,b) => Math.abs(byCat[b].total) - Math.abs(byCat[a].total));
+  // Sort by size in the main currency (other currencies converted when a rate is known).
+  const size = g => Object.entries(g.byCur).reduce((s, [cur, v]) => {
+    const c = cur === primary ? v : _finConvert(v, cur, primary);
+    return s + Math.abs(c == null ? 0 : c);
+  }, 0);
+  const catNames = Object.keys(byCat).sort((a,b) => size(byCat[b]) - size(byCat[a]));
+  const headTotal = group => {
+    const curs = Object.keys(group.byCur).sort((a, b) => (a === primary ? -1 : b === primary ? 1 : 0));
+    if(!curs.length) return `<span style="color:var(--muted);font-weight:400;">transfer</span>`;
+    return `<span style="text-align:right;">${curs.map(cur => {
+      const v = group.byCur[cur];
+      return `<div style="color:${v>=0?'var(--win)':'var(--loss)'};">${v>=0?'+':'−'}${finMoney(Math.abs(v), cur)}</div>${cur === 'PHP' ? '' : _finPhpSpan(_finTxPhpSum(group.counted[cur], signed))}`;
+    }).join('')}</span>`;
+  };
 
   return catNames.map(cat => {
     const group = byCat[cat];
@@ -12013,7 +12030,7 @@ function _finDashCategorizedHtml(txns){
       <div style="margin-bottom:14px;">
         <div style="display:flex;justify-content:space-between;font-size:12px;font-weight:700;padding-bottom:4px;margin-bottom:3px;border-bottom:1px solid var(--rule);">
           <span>${escapeHtml(cat)}</span>
-          <span style="color:${group.total>=0?'var(--win)':'var(--loss)'};text-align:right;">${group.total>=0?'+':'−'}${finMoney(Math.abs(group.total), primary)}${_finPhpSpan(_finTxPhpSum(group.counted, t => t.tx_type === 'Expense' ? -(Number(t.amount) || 0) : (Number(t.amount) || 0)))}</span>
+          ${headTotal(group)}
         </div>
         ${itemsHtml}
       </div>

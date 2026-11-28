@@ -308,6 +308,10 @@ find/replace, try the LF form, then the CRLF form.
   with a real charge — owner skipped Claude in Sep; non-monthly = N payments). In a card bill, a monthly sub that already
   has a charge in that month counts 0 ("already in Transactions") — it was
   added on top of the real charge before (double bill).
+- Day/week/month **"— by category"** popup (`_finDashCategorizedHtml`,
+  2026-11-28): each category's subtotal is per currency (a ₱-only category
+  shows "−₱18,000.00", not "+0.00 AED"); transfer-only categories show
+  "transfer"; sorted by size converted to the main currency.
 - `tests/sim-finance-bill.js` runs Paid/Undo end-to-end on the owner's real numbers.
 - **Credit card payments per month** chart on the Finance Dashboard (2026-11-26,
   `_finCardPayMonthly`, `renderFinCardPayments`, called from
