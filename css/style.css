@@ -6382,3 +6382,14 @@ body.mobile-mode .arbab-chat{height:calc(100vh - 330px);min-height:400px;}
   }
   input::-webkit-date-and-time-value{text-align:left;margin:0;}
 }
+/* Installments totals strip (2026-11-28): Monthly / Remaining / Total / Completed. */
+.fin-inst-sum{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:0 0 14px;}
+.fin-inst-sum-t{background:var(--surface-2);border:1px solid var(--rule);border-radius:8px;padding:10px 12px;min-width:0;}
+.fin-inst-sum-k{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;}
+.fin-inst-sum-v{font-size:16px;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.fin-inst-sum-s{font-size:11px;color:var(--muted);margin-top:4px;}
+.fin-inst-sum-t:last-child .fin-inst-sum-v{color:var(--win);}
+@media (max-width: 640px){
+  .fin-inst-sum{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;}
+  .fin-inst-sum-v{font-size:14.5px;}
+}

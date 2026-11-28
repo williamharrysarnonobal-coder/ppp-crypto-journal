@@ -293,6 +293,10 @@ find/replace, try the LF form, then the CRLF form.
   that opens its payment history popup (`openFinPayHistory`: every Transfer into
   the card, newest first); it is not in the bill details. Recurring amounts use the paying
   account's currency (`_finRecCur`), not a hard-coded PHP.
+- **Installments totals strip** (2026-11-28, `_renderFinInstSummary`, `#finInstSummary`):
+  Monthly / Remaining / Total of running installments + Completed (sum of fully
+  paid totals), each with ≈ ₱ (today's rate); summed per currency, never mixed.
+  4 across on desktop, 2×2 on a phone.
 - `tests/sim-finance-bill.js` runs Paid/Undo end-to-end on the owner's real numbers.
 - **Credit card payments per month** chart on the Finance Dashboard (2026-11-26,
   `_finCardPayMonthly`, `renderFinCardPayments`, called from

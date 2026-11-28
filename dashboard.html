@@ -16,7 +16,7 @@
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Public+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.2"></script>
-<link rel="stylesheet" href="css/style.css?v=440">
+<link rel="stylesheet" href="css/style.css?v=441">
 </head>
 <body>
 
@@ -1669,6 +1669,7 @@
           <div class="panel" style="margin-bottom:20px;">
             <h2 style="display:flex;align-items:center;justify-content:space-between;gap:10px;">Installments <button class="poscalc-accent-btn btn-primary" onclick="openFinRecModal('Installment')">+ Add Installment</button></h2>
             <div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:-10px;margin-bottom:12px;">Credit card installments — gadgets, appliances, anything paid in fixed monthly parts.</div>
+            <div class="fin-inst-sum" id="finInstSummary" style="display:none;"></div>
             <div class="empty-state" id="finInstEmpty" style="display:none;">No installments yet.</div>
             <div class="journal-wrap" id="finInstWrap" style="display:none;">
               <table class="journal">
@@ -3113,7 +3114,7 @@
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=2"></script>
-<script src="js/dashboard.js?v=762"></script>
+<script src="js/dashboard.js?v=763"></script>
 <script src="js/pinlock.js?v=3"></script>
 <script src="js/arbab.js?v=4"></script>
 <script src="js/cmdcenter.js?v=3"></script>

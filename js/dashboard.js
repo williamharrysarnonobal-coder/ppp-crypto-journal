@@ -14840,6 +14840,7 @@ function renderFinanceRecurring(){
   const insts = allInsts.filter(r => !_finRecIsFullyPaid(r));
   const doneInsts = allInsts.filter(r => _finRecIsFullyPaid(r));
   _renderFinDoneInstallments(doneInsts);
+  _renderFinInstSummary(insts, doneInsts);
   const subs = FIN_RECURRING.filter(r => r.kind === 'Subscription');
 
   document.getElementById('finInstEmpty').style.display = insts.length ? 'none' : 'block';
@@ -14963,6 +14964,39 @@ function renderFinanceRecurring(){
       </div>
     `;
   }).join('');
+}
+
+// Totals strip at the top of Installments (2026-11-28, owner): running
+// Monthly / Remaining / Total, plus Completed, each in its own currency with
+// the ≈ ₱ line under it (today's rate, like the rows). Summed per currency,
+// never mixed.
+function _renderFinInstSummary(insts, doneInsts){
+  const el = document.getElementById('finInstSummary');
+  if(!el) return;
+  if(!insts.length && !doneInsts.length){ el.style.display = 'none'; el.innerHTML = ''; return; }
+  const add = (o, cur, v) => { o[cur] = (o[cur] || 0) + v; };
+  const monthly = {}, remaining = {}, total = {}, done = {};
+  insts.forEach(r => {
+    const cur = _finRecCur(r), amt = Number(r.total_amount) || 0;
+    const m = amt / Math.max(1, Number(r.total_payments) || 1);
+    add(monthly, cur, m);
+    add(remaining, cur, amt - m * (Number(r.payments_applied) || 0));
+    add(total, cur, amt);
+  });
+  doneInsts.forEach(r => add(done, _finRecCur(r), Number(r.total_amount) || 0));
+  const val = o => {
+    const curs = Object.keys(o);
+    if(!curs.length) return `<div class="fin-inst-sum-v">${finMoney(0, (FIN_ACCOUNTS[0] && FIN_ACCOUNTS[0].currency) || 'PHP')}</div>`;
+    return curs.map(c => `<div class="fin-inst-sum-v">${finMoney(o[c], c)}</div>${_finPhpLine(o[c], c)}`).join('');
+  };
+  const tile = (k, o, s) => `<div class="fin-inst-sum-t"><div class="fin-inst-sum-k">${k}</div>${val(o)}<div class="fin-inst-sum-s">${s}</div></div>`;
+  const n = insts.length, d = doneInsts.length;
+  el.innerHTML =
+    tile('Monthly', monthly, `${n} running`) +
+    tile('Remaining', remaining, 'still to pay') +
+    tile('Total', total, 'of running installments') +
+    tile('Completed', done, `${d} fully paid`);
+  el.style.display = '';
 }
 
 // Ang pera ng installment/subscription ay sa account na nagbabayad (hal. AED),
