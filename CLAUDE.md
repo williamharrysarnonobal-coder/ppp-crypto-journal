@@ -331,12 +331,19 @@ find/replace, try the LF form, then the CRLF form.
   Add form. Each row keeps its currency (AED/PHP); the other is shown via
   `_budIn` at the rate locked to tx_date (same daily fixes; `_finLoadHistFx`
   also covers BUD_TXNS dates). Gateable feature key `budget`.
-  Category + subcategory (2026-11-28): broad categories (`BUD_DEFAULT_CATS`,
-  owner: "hindi need sobrang specific"), subcategory is optional free text
-  with suggestions from past rows. Easy Add/Add guesses both from the same
-  store's last purchase (`_budGuessFor`). "Limit & categories" modal stores
-  `{limit (AED), categories}` in localStorage `tanaydana-budget-settings`,
-  synced via ui_prefs `budget_settings` — no SQL. This-month tile shows the
+  Category + subcategory (2026-11-28): the SAME lists as Finance
+  Transactions (`FINANCE_OPTIONS.expense_categories` /
+  `expense_subcategories`, edited in Finance › Configuration; owner wanted
+  them identical, not a separate palengke list). Subcategory is a select
+  like Finance's (row hidden when the category has none). Easy Add/Add
+  guesses both from the same store's last purchase (`_budGuessFor`), else
+  defaults to 🍽️ Food & Groceries › Grocery (`_budDefaultCat`). "Monthly
+  limit" modal stores `{limit}` (AED) in localStorage
+  `tanaydana-budget-settings`, synced via ui_prefs `budget_settings` — no
+  SQL. Calendar (same grid as Finance: Sun–Sat + Week Σ, AED at locked
+  rate, short amounts like "144"/"1.2k" on phones) follows the month filter
+  (All months → this month), ‹ › moves the month filter; tapping a day/week
+  narrows the list (`_budRange`, chip "Showing … ✕ Show all"). This-month tile shows the
   limit bar (green, accent ≥80%, red over) with left + per-day pace; "By
   category" panel follows the month filter (bars, %, ≈₱, subcategory
   amounts, Uncategorized last-ish by amount).

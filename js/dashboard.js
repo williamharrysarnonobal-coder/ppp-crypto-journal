@@ -13633,6 +13633,82 @@ function parseFinTxEasyAddSalaryText(raw){
    (_finTxRate), so totals never shift with today's rate. */
 var BUD_TXNS = null;            // null = not loaded yet
 let _budLoadError = null, _budEditingId = null;
+let _budRange = null;           // {from, to, label} from a tapped calendar day/week
+
+/* Calendar (owner, 2026-11-28): same grid as Finance's (Sun–Sat + Week Σ).
+   Each day = what was spent, in AED at the locked rate. It follows the month
+   filter (All months → this month); ‹ › moves the month filter. Tapping a
+   day or week narrows the list below to it. */
+function _renderBudCalendar(key){
+  const grid = document.getElementById('budCalGrid');
+  if(!grid) return;
+  const [y, m1] = key.split('-').map(Number), m = m1 - 1;
+  document.getElementById('budCalLabel').textContent = new Date(y, m, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  const byDay = {};
+  (BUD_TXNS || []).forEach(t => {
+    if(_budMonthKey(t.tx_date) !== key) return;
+    const d = Number(t.tx_date.slice(8, 10));
+    (byDay[d] = byDay[d] || { aed: 0, n: 0, bad: false });
+    const v = _budIn(t, 'AED');
+    if(v == null) byDay[d].bad = true; else byDay[d].aed += v;
+    byDay[d].n++;
+  });
+  const iso = d => `${key}-${String(d).padStart(2, '0')}`;
+  const firstDow = new Date(y, m, 1).getDay(), days = new Date(y, m + 1, 0).getDate();
+  const todayIso = _finIsoDay(new Date());
+  const cells = [];
+  for(let i = 0; i < firstDow; i++) cells.push(null);
+  for(let d = 1; d <= days; d++) cells.push(d);
+  while(cells.length % 7) cells.push(null);
+  // Full amount on wide screens; a short one on phones (144, 1.2k) so it fits.
+  const short = v => v >= 1000 ? (v / 1000).toFixed(v >= 10000 ? 0 : 1).replace(/\.0$/, '') + 'k' : v >= 100 ? String(Math.round(v)) : v.toFixed(v % 1 ? 1 : 0);
+  const money = v => `<span class="bud-full">${finMoney(v, 'AED').replace(' AED', '')}</span><span class="bud-short">${short(v)}</span>`;
+  let html = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => `<div class="cal-dow">${d}</div>`).join('') + '<div class="cal-dow" style="color:var(--accent);">Week</div>';
+  for(let i = 0; i < cells.length; i += 7){
+    const wk = cells.slice(i, i + 7);
+    let wAed = 0, wN = 0;
+    wk.forEach(d => {
+      if(d === null){ html += '<div class="cal-cell empty"></div>'; return; }
+      const info = byDay[d];
+      const sel = _budRange && _budRange.from === iso(d) && _budRange.to === iso(d);
+      const today = iso(d) === todayIso ? ' bud-today' : '';
+      if(info){
+        wAed += info.aed; wN += info.n;
+        html += `<div class="cal-cell loss${sel ? ' bud-picked' : ''}${today}" onclick="pickBudRange('${iso(d)}','${iso(d)}')"><div class="d">${d}</div><div class="p">${info.bad ? '—' : money(info.aed)}</div><div class="cal-count" style="font-size:10.5px;color:var(--muted);">${info.n} tx</div></div>`;
+      }else html += `<div class="cal-cell${today}"><div class="d">${d}</div></div>`;
+    });
+    const real = wk.filter(d => d !== null);
+    const from = iso(real[0]), to = iso(real[real.length - 1]);
+    const wsel = _budRange && _budRange.from === from && _budRange.to === to && from !== to;
+    html += wN
+      ? `<div class="cal-cell week-cell loss${wsel ? ' bud-picked' : ''}" onclick="pickBudRange('${from}','${to}')"><div class="d" style="color:var(--accent);">Σ</div><div class="p">${money(wAed)}</div><div class="cal-count" style="font-size:10.5px;color:var(--muted);">${wN} tx</div></div>`
+      : `<div class="cal-cell week-cell"><div class="d" style="color:var(--accent);">Σ</div><div class="cal-count" style="font-size:10.5px;color:var(--muted);">—</div></div>`;
+  }
+  grid.innerHTML = html;
+}
+function pickBudRange(from, to){
+  const same = _budRange && _budRange.from === from && _budRange.to === to;
+  if(same){ _budRange = null; renderBudget(); return; }
+  const f = new Date(from + 'T00:00:00'), t = new Date(to + 'T00:00:00');
+  const fmt = d => d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  _budRange = { from, to, label: from === to ? f.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }) : `${fmt(f)} – ${fmt(t)}` };
+  renderBudget();
+  const p = document.getElementById('budListPanel');
+  if(p && p.scrollIntoView) p.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+function clearBudRange(){ _budRange = null; renderBudget(); }
+function shiftBudMonth(step){
+  const sel = document.getElementById('budMonthFilter');
+  const cur = sel.value === 'all' ? _finIsoDay(new Date()).slice(0, 7) : sel.value;
+  const [y, m] = cur.split('-').map(Number);
+  const next = _finIsoDay(new Date(y, m - 1 + step, 1)).slice(0, 7);
+  if(![...sel.options].some(o => o.value === next)){
+    const o = document.createElement('option'); o.value = next; o.textContent = _budMonthLabel(next); sel.appendChild(o);
+  }
+  sel.value = next;
+  _budRange = null;
+  renderBudget();
+}
 
 async function loadBudget(){
   if(BUD_TXNS === null) renderBudget();
@@ -13677,21 +13753,26 @@ function _budTotalHtml(list){
     + (php == null || !list.length ? '' : `<span class="bud-php">≈ ${finMoney(php, 'PHP')}</span>`);
 }
 
-/* Settings (ui_prefs.budget_settings, synced): monthly limit in AED and the
-   category list. Kept broad on purpose (owner: "hindi need sobrang
-   specific"); detail goes in the optional free-text subcategory. */
-const BUD_DEFAULT_CATS = ['Meat & Fish', 'Fruits & Vegetables', 'Rice & Dry Goods', 'Household', 'Snacks & Drinks', 'Other'];
+/* Settings (ui_prefs.budget_settings, synced): monthly limit in AED.
+   Categories/subcategories are FINANCE's own expense lists (owner: "same
+   lang dapat gaya sa Finance Transactions"), edited in Finance ›
+   Configuration. A new store with no history defaults to Food & Groceries ›
+   Grocery. */
 function _budSettings(){
   let s = null;
   try{ s = JSON.parse(localStorage.getItem('tanaydana-budget-settings') || 'null'); }catch(_){}
   s = s && typeof s === 'object' ? s : {};
-  const cats = Array.isArray(s.categories) && s.categories.length ? s.categories : BUD_DEFAULT_CATS;
-  const limit = Number(s.limit) > 0 ? Number(s.limit) : null;
-  return { categories: cats.map(c => String(c).trim()).filter(Boolean), limit };
+  return { limit: Number(s.limit) > 0 ? Number(s.limit) : null };
 }
-// List order first, then categories only found on older rows.
+function _budDefaultCat(){
+  const cats = FINANCE_OPTIONS.expense_categories || [];
+  const cat = cats.find(c => /grocer/i.test(c)) || '';
+  const sub = cat ? ((FINANCE_OPTIONS.expense_subcategories[cat] || []).find(s => /^grocery$/i.test(s)) || '') : '';
+  return { category: cat, subcategory: sub };
+}
+// Finance's list first, then categories only found on older rows.
 function _budAllCategories(){
-  const list = _budSettings().categories;
+  const list = (FINANCE_OPTIONS.expense_categories || []).slice();
   const extra = [...new Set((BUD_TXNS || []).map(t => t.category).filter(c => c && !list.includes(c)))].sort();
   return [...list, ...extra];
 }
@@ -13746,7 +13827,6 @@ function _renderBudBreakdown(list, scope){
 function openBudSettingsModal(){
   const s = _budSettings();
   document.getElementById('budSetLimit').value = s.limit || '';
-  document.getElementById('budSetCats').value = s.categories.join('\n');
   document.getElementById('budSetError').textContent = '';
   document.getElementById('budSettingsModal').classList.add('open');
 }
@@ -13755,9 +13835,7 @@ function saveBudSettings(){
   const raw = document.getElementById('budSetLimit').value.trim();
   const limit = raw === '' ? null : parseFloat(raw);
   if(raw !== '' && !(limit > 0)){ document.getElementById('budSetError').textContent = 'Limit must be more than zero, or leave it blank.'; return; }
-  const cats = [...new Set(document.getElementById('budSetCats').value.split('\n').map(x => x.trim()).filter(Boolean))];
-  if(!cats.length){ document.getElementById('budSetError').textContent = 'Keep at least one category.'; return; }
-  try{ localStorage.setItem('tanaydana-budget-settings', JSON.stringify({ limit, categories: cats })); }catch(_){}
+  try{ localStorage.setItem('tanaydana-budget-settings', JSON.stringify({ limit })); }catch(_){}
   syncUIPrefsToProfile();
   closeBudSettingsModal();
   showToast('Saved');
@@ -13770,10 +13848,17 @@ function _budGuessFor(desc){
   return (BUD_TXNS || []).filter(t => t.category && String(t.description || '').trim().toUpperCase() === needle)
     .sort((a, b) => String(b.tx_date).localeCompare(String(a.tx_date)) || (b.id || 0) - (a.id || 0))[0] || null;
 }
-function onBudTxCategoryChange(){
+// Same as Finance's Add Transaction: subcategory list of the picked category,
+// row hidden when that category has none. `keep` = value to select (an old
+// one not in the list is kept as an option so editing never drops it).
+function onBudTxCategoryChange(keep){
   const cat = document.getElementById('budTxCategory').value;
-  const subs = [...new Set((BUD_TXNS || []).filter(t => t.category === cat && t.subcategory).map(t => t.subcategory.trim()))].sort();
-  document.getElementById('budTxSubList').innerHTML = subs.map(s => `<option value="${escapeHtml(s)}"></option>`).join('');
+  const subs = (cat && FINANCE_OPTIONS.expense_subcategories[cat] || []).slice();
+  if(keep && !subs.includes(keep)) subs.push(keep);
+  document.getElementById('budTxSubRow').style.display = subs.length ? '' : 'none';
+  const sel = document.getElementById('budTxSubcategory');
+  sel.innerHTML = '<option value="">— none —</option>' + subs.map(s => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join('');
+  sel.value = typeof keep === 'string' && subs.includes(keep) ? keep : '';
 }
 
 function renderBudget(){
@@ -13808,15 +13893,25 @@ function renderBudget(){
 
   // Month filter: every month that has a purchase, plus this month.
   const sel = document.getElementById('budMonthFilter');
-  const keys = [...new Set([thisKey, ...all.map(t => _budMonthKey(t.tx_date))])].filter(Boolean).sort().reverse();
   const prevVal = sel.dataset.init ? sel.value : 'all';
+  // The month you're on stays an option even with no purchases (calendar ‹ ›).
+  const keys = [...new Set([thisKey, prevVal, ...all.map(t => _budMonthKey(t.tx_date))])].filter(k => k && k !== 'all').sort().reverse();
   sel.innerHTML = '<option value="all">All months</option>' + keys.map(k => `<option value="${k}">${escapeHtml(_budMonthLabel(k))}</option>`).join('');
   sel.value = keys.includes(prevVal) || prevVal === 'all' ? prevVal : 'all';
   sel.dataset.init = '1';
 
+  _renderBudCalendar(sel.value === 'all' ? thisKey : sel.value);
+
   const q = (document.getElementById('budSearch').value || '').trim().toLowerCase();
   const inScope = t => sel.value === 'all' || _budMonthKey(t.tx_date) === sel.value;
+  // A tapped calendar day / week narrows the list (chip shows it, ✕ clears).
+  const rng = _budRange && (sel.value === 'all' || _budRange.from.slice(0, 7) === sel.value) ? _budRange : null;
+  if(!rng) _budRange = null;
+  const chip = document.getElementById('budRangeChip');
+  chip.style.display = rng ? '' : 'none';
+  chip.innerHTML = rng ? `<span>Showing <b>${escapeHtml(rng.label)}</b></span><button onclick="clearBudRange()" aria-label="Show all">✕ Show all</button>` : '';
   const rows = all.filter(t => inScope(t)
+    && (!rng || (t.tx_date >= rng.from && t.tx_date <= rng.to))
     && (catSel.value === 'all' || (catSel.value === '__none' ? !t.category : t.category === catSel.value))
     && (!q || `${t.description || ''} ${t.note || ''} ${t.category || ''} ${t.subcategory || ''}`.toLowerCase().includes(q)))
     .sort((a, b) => String(b.tx_date).localeCompare(String(a.tx_date)) || String(b.created_at || '').localeCompare(String(a.created_at || '')) || (b.id || 0) - (a.id || 0));
@@ -13899,15 +13994,16 @@ function openBudTxModal(id, prefill){
   document.getElementById('budTxDesc').value = v.description || '';
   document.getElementById('budTxNote').value = v.note || '';
   // Category: the row's own, else what this store was last time.
-  const guess = !row ? _budGuessFor(v.description) : null;
+  // New purchase with no history: Food & Groceries › Grocery.
+  const guess = !row ? (_budGuessFor(v.description) || (v.category ? null : _budDefaultCat())) : null;
   const cat = row ? (row.category || '') : (v.category || (guess && guess.category) || '');
+  const sub = row ? (row.subcategory || '') : (v.subcategory || (guess && guess.subcategory) || '');
   const cats = _budAllCategories();
   if(cat && !cats.includes(cat)) cats.push(cat);
   const catSel = document.getElementById('budTxCategory');
   catSel.innerHTML = '<option value="">— Pick a category —</option>' + cats.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
   catSel.value = cat;
-  document.getElementById('budTxSubcategory').value = row ? (row.subcategory || '') : (v.subcategory || (guess && guess.subcategory) || '');
-  onBudTxCategoryChange();
+  onBudTxCategoryChange(sub);
   document.getElementById('budTxModal').dataset.cardLast = v.card_last || '';
   document.getElementById('budTxError').textContent = '';
   document.getElementById('budTxDeleteBtn').style.display = row ? '' : 'none';
@@ -13926,7 +14022,7 @@ async function saveBudTx(){
     currency: document.getElementById('budTxCurrency').value === 'PHP' ? 'PHP' : 'AED',
     description: document.getElementById('budTxDesc').value.trim() || null,
     category: document.getElementById('budTxCategory').value || null,
-    subcategory: document.getElementById('budTxSubcategory').value.trim() || null,
+    subcategory: document.getElementById('budTxSubcategory').value || null,
     note: document.getElementById('budTxNote').value.trim() || null
   };
   if(!_budEditingId) payload.card_last = document.getElementById('budTxModal').dataset.cardLast || null;
