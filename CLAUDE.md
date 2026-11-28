@@ -369,6 +369,9 @@ find/replace, try the LF form, then the CRLF form.
   period/month, Avg per day, tops (`_budAllTimeHtml`). Share images: the
   page background is taken from body, else <html>, else #12141C — a
   transparent PNG turned white in the phone's viewer and hid the footer.
+  Add money lives only in the header (removed from the This period tile,
+  owner). Its rows are permanent history (own dated rows, kept until
+  deleted); category filter "Money added (history)" lists only them.
   **Every box has a share button** (owner): the 3 panels via
   `addPanelShareButtons`, the 3 total tiles via their own button
   (`shareBudTile` → `sharePanel`); Add/Easy Add, filters and the Add money /

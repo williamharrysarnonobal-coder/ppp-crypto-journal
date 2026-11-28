@@ -13876,10 +13876,9 @@ function _budRowSubHtml(t){
 // The current period vs its budget (set budget + money added): bar, % used,
 // left / over, days left and a daily pace, and the Add money button.
 function _budLimitHtml(sc){
-  const addBtn = `<button class="bud-limit-set" onclick="openBudTopupModal()">+ Add money</button>`;
   const range = sc.period ? `<div class="bud-tile-s">${escapeHtml(sc.label)}</div>` : '';
   const m = _budScopeMoney(sc);
-  if(!m.hasBudget) return range + (sc.period ? `<div class="bud-limit-acts">${addBtn}</div>` : `<button class="bud-limit-set" onclick="openBudPeriodsModal()">Start a budget period</button>`);
+  if(!m.hasBudget) return range + (sc.period ? '' : `<button class="bud-limit-set" onclick="openBudPeriodsModal()">Start a budget period</button>`);
   if(m.spent == null) return range;
   const pct = m.budget > 0 ? m.spent / m.budget * 100 : 100;
   const over = m.spent > m.budget;
@@ -13900,7 +13899,6 @@ function _budLimitHtml(sc){
       ${row('Budget', m.budget, budP, m.added > 0 ? `<span class="bud-limit-add">${finMoney(sc.limit || 0, 'AED')} + ${finMoney(m.added, 'AED')} added</span>` : '')}
       ${row(over ? 'Over' : 'Left', Math.abs(left), leftP == null ? null : Math.abs(leftP))}
       ${daysLeft > 0 && !over ? row('Can spend / day', left / daysLeft, leftP == null ? null : leftP / daysLeft) : ''}
-      <div class="bud-limit-acts">${addBtn}</div>
     </div>`;
 }
 /* Extra details on the total tiles (owner: "ikaw na bahala"). Every ₱ is
@@ -14225,7 +14223,9 @@ function renderBudget(){
   const hasNone = buysAll.some(t => !t.category);
   catSel.innerHTML = '<option value="all">All categories</option>'
     + _budAllCategories().map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')
-    + (hasNone ? '<option value="__none">Uncategorized</option>' : '');
+    + (hasNone ? '<option value="__none">Uncategorized</option>' : '')
+    // The history of every Add money, newest first (owner: "dapat historical").
+    + (all.some(_budIsTop) ? '<option value="__top">Money added (history)</option>' : '');
   catSel.value = [...catSel.options].some(o => o.value === prevCat) ? prevCat : 'all';
   catSel.dataset.init = '1';
 
@@ -14255,7 +14255,7 @@ function renderBudget(){
   chip.innerHTML = rng ? `<span>Showing <b>${escapeHtml(rng.label)}</b></span><button onclick="clearBudRange()" aria-label="Show all">✕ Show all</button>` : '';
   const rows = all.filter(t => inScope(t)
     && (!rng || (t.tx_date >= rng.from && t.tx_date <= rng.to))
-    && (catSel.value === 'all' || (!_budIsTop(t) && (catSel.value === '__none' ? !t.category : t.category === catSel.value)))
+    && (catSel.value === 'all' || (catSel.value === '__top' ? _budIsTop(t) : (!_budIsTop(t) && (catSel.value === '__none' ? !t.category : t.category === catSel.value))))
     && (!q || `${t.description || ''} ${t.note || ''} ${t.category || ''} ${t.subcategory || ''}`.toLowerCase().includes(q)))
     .sort((a, b) => String(b.tx_date).localeCompare(String(a.tx_date)) || String(b.created_at || '').localeCompare(String(a.created_at || '')) || (b.id || 0) - (a.id || 0));
 
