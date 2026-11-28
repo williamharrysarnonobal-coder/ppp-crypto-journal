@@ -361,7 +361,15 @@ find/replace, try the LF form, then the CRLF form.
   the day's fix loads, then re-render); a period's set budget at its START
   date (`_budPhpAt`; `_finLoadHistFx` also covers period starts); Left₱ =
   budget₱ + added₱ − spent₱, Per day₱ = Left₱ / days to go. Never uses
-  `_finConvert`. **Every box has a share button** (owner): the 3 panels via
+  `_finConvert`. "Can spend / day" = Left ÷ days to go (owner asked what
+  "Per day" meant; label renamed). Tile details (owner: "ikaw na bahala"):
+  This period "↑/↓ N% vs day N last period" (same number of days, fair
+  mid-period; `_budVsLastHtml`); Last period Budget, Saved/Over (% used),
+  Avg per day, Top category + Top store (`_budResultHtml`); All time Avg per
+  period/month, Avg per day, tops (`_budAllTimeHtml`). Share images: the
+  page background is taken from body, else <html>, else #12141C — a
+  transparent PNG turned white in the phone's viewer and hid the footer.
+  **Every box has a share button** (owner): the 3 panels via
   `addPanelShareButtons`, the 3 total tiles via their own button
   (`shareBudTile` → `sharePanel`); Add/Easy Add, filters and the Add money /
   Start period links are filtered out of the picture.

@@ -13899,9 +13899,77 @@ function _budLimitHtml(sc){
       <div class="bud-limit-t"><b>${Math.round(pct)}%</b> used${daysLeft > 0 ? ` · ${daysLeft} day${daysLeft === 1 ? '' : 's'} to go` : ''}</div>
       ${row('Budget', m.budget, budP, m.added > 0 ? `<span class="bud-limit-add">${finMoney(sc.limit || 0, 'AED')} + ${finMoney(m.added, 'AED')} added</span>` : '')}
       ${row(over ? 'Over' : 'Left', Math.abs(left), leftP == null ? null : Math.abs(leftP))}
-      ${daysLeft > 0 && !over ? row('Per day', left / daysLeft, leftP == null ? null : leftP / daysLeft) : ''}
+      ${daysLeft > 0 && !over ? row('Can spend / day', left / daysLeft, leftP == null ? null : leftP / daysLeft) : ''}
       <div class="bud-limit-acts">${addBtn}</div>
     </div>`;
+}
+/* Extra details on the total tiles (owner: "ikaw na bahala"). Every ₱ is
+   locked the same way as the rest of the page. */
+function _budStatRow(k, aed, php, extra, cls){
+  return `<div class="bud-limit-r${cls ? ' ' + cls : ''}"><span>${k}</span><span class="bud-limit-v"><b>${aed == null ? '—' : finMoney(aed, 'AED')}</b>${_budPhpSpan(php)}${extra || ''}</span></div>`;
+}
+// Biggest category / store by AED spent.
+function _budTopOf(buys, keyOf){
+  const g = {};
+  buys.forEach(t => { const k = keyOf(t); if(k) (g[k] = g[k] || []).push(t); });
+  let best = null;
+  Object.entries(g).forEach(([k, items]) => { const v = _budSum(items, 'AED'); if(v != null && (!best || v > best.aed)) best = { name: k, aed: v, php: _budSum(items, 'PHP'), n: items.length }; });
+  return best;
+}
+function _budTopsHtml(buys){
+  if(!buys.length) return '';
+  const cat = _budTopOf(buys, t => t.category || 'Uncategorized');
+  const store = _budTopOf(buys, t => String(t.description || '').trim().toUpperCase());
+  const line = (k, b) => b ? `<div class="bud-top-r"><span>${k}</span><b>${escapeHtml(b.name)}</b><span class="bud-top-v">${finMoney(b.aed, 'AED')}${b.php == null ? '' : ` · ≈ ${finMoney(b.php, 'PHP')}`} · ${b.n}×</span></div>` : '';
+  return `<div class="bud-tops">${line('Top category', cat)}${line('Top store', store)}</div>`;
+}
+function _budAvgDay(buys, days){
+  const aed = _budSum(buys, 'AED'), php = _budSum(buys, 'PHP');
+  return days > 0 ? _budStatRow('Avg per day', aed == null ? null : aed / days, php == null ? null : php / days) : '';
+}
+// A finished (or any) period: budget vs spent → saved / over, % used.
+function _budResultHtml(sc){
+  const m = _budScopeMoney(sc);
+  const days = _budDaysBetween(sc.from, sc.to) + 1;
+  let out = '';
+  if(m.hasBudget && m.spent != null){
+    const baseP = sc.limit ? _budPhpAt(sc.limit, sc.from) : 0;
+    const budP = baseP == null || m.addedPhp == null ? null : baseP + m.addedPhp;
+    const diffP = budP == null || m.spentPhp == null ? null : budP - m.spentPhp;
+    const diff = m.budget - m.spent;
+    const pct = m.budget > 0 ? Math.round(m.spent / m.budget * 100) : 100;
+    out += _budStatRow('Budget', m.budget, budP, m.added > 0 ? `<span class="bud-limit-add">${finMoney(sc.limit || 0, 'AED')} + ${finMoney(m.added, 'AED')} added</span>` : '');
+    out += _budStatRow(diff >= 0 ? 'Saved' : 'Over', Math.abs(diff), diffP == null ? null : Math.abs(diffP), `<span class="bud-limit-add">${pct}% used</span>`, diff >= 0 ? 'good' : 'bad');
+  }
+  return out + _budAvgDay(m.buys, days) + _budTopsHtml(m.buys);
+}
+// This period vs the SAME number of days into the last one (fair while the
+// current period is still running).
+function _budVsLastHtml(cur, prev){
+  if(!cur || !prev) return '';
+  const today = _finIsoDay(new Date());
+  const n = _budDaysBetween(cur.from, today < cur.to ? today : cur.to) + 1;
+  if(n <= 0) return '';
+  const cutoff = _finIsoDay(new Date(new Date(prev.from + 'T00:00:00').getTime() + (n - 1) * 86400000));
+  const nowS = _budSum(_budBuys((BUD_TXNS || []).filter(t => _budInScope(t, cur) && t.tx_date <= today)), 'AED');
+  const thenS = _budSum(_budBuys((BUD_TXNS || []).filter(t => _budInScope(t, prev) && t.tx_date <= cutoff)), 'AED');
+  if(nowS == null || thenS == null) return '';
+  if(thenS <= 0) return nowS > 0 ? `<div class="bud-vs">Nothing spent by day ${n} last ${cur.period ? 'period' : 'month'}</div>` : '';
+  const pct = Math.round((nowS - thenS) / thenS * 100);
+  const word = cur.period ? 'period' : 'month';
+  return pct === 0 ? `<div class="bud-vs">Same as day ${n} last ${word}</div>`
+    : `<div class="bud-vs ${pct > 0 ? 'up' : 'down'}">${pct > 0 ? '↑' : '↓'} ${Math.abs(pct)}% vs day ${n} last ${word} (${finMoney(thenS, 'AED')})</div>`;
+}
+function _budAllTimeHtml(buys, scopes){
+  if(!buys.length) return '';
+  const first = buys.map(t => t.tx_date).sort()[0];
+  const today = _finIsoDay(new Date());
+  const days = _budDaysBetween(first, today > first ? today : first) + 1;
+  // Average per period / month that has any purchase.
+  const used = scopes.filter(s => buys.some(t => _budInScope(t, s)));
+  const aed = _budSum(buys, 'AED'), php = _budSum(buys, 'PHP');
+  const per = used.length ? _budStatRow(`Avg per ${scopes[0] && scopes[0].period ? 'period' : 'month'}`, aed == null ? null : aed / used.length, php == null ? null : php / used.length, `<span class="bud-limit-add">${used.length} ${scopes[0] && scopes[0].period ? 'period' : 'month'}${used.length === 1 ? '' : 's'}</span>`) : '';
+  return per + _budAvgDay(buys, days) + _budTopsHtml(buys);
 }
 function _renderBudBreakdown(list, label){
   const el = document.getElementById('budBreakdown');
@@ -14147,9 +14215,9 @@ function renderBudget(){
   const topsAll = all.filter(_budIsTop);
   const addedAll = _budSum(topsAll, 'AED') || 0;
   sumEl.innerHTML = tile(`This ${word}`, cur ? _budBuys(all.filter(t => _budInScope(t, cur))) : [],
-      cur ? _budLimitHtml(cur) : `<div class="bud-tile-s">No period covers today.</div><button class="bud-limit-set" onclick="openBudPeriodsModal()">Start a new period</button>`)
-    + tile(`Last ${word}`, prev ? _budBuys(all.filter(t => _budInScope(t, prev))) : [], prev && prev.period ? `<div class="bud-tile-s">${escapeHtml(prev.label)}</div>` : '')
-    + tile('All time', buysAll, addedAll > 0 ? `<div class="bud-tile-s">${finMoney(addedAll, 'AED')} ${_budPhpLocked(topsAll)} added in total</div>` : '');
+      cur ? _budVsLastHtml(cur, prev) + _budLimitHtml(cur) : `<div class="bud-tile-s">No period covers today.</div><button class="bud-limit-set" onclick="openBudPeriodsModal()">Start a new period</button>`)
+    + tile(`Last ${word}`, prev ? _budBuys(all.filter(t => _budInScope(t, prev))) : [], prev ? `<div class="bud-tile-s">${escapeHtml(prev.label)}</div><div class="bud-limit">${_budResultHtml(prev)}</div>` : '')
+    + tile('All time', buysAll, (addedAll > 0 ? `<div class="bud-tile-s">${finMoney(addedAll, 'AED')} ${_budPhpLocked(topsAll)} added in total</div>` : '') + `<div class="bud-limit">${_budAllTimeHtml(buysAll, scopes)}</div>`);
 
   // Category filter: Finance's list + any category already used on a row.
   const catSel = document.getElementById('budCatFilter');
@@ -36034,7 +36102,10 @@ async function sharePanel(panel, h){
     const oldWidth = panel.style.width, oldMax = panel.style.maxWidth;
     if(narrowed){ panel.style.width = Math.max(460, Math.round(r0.height * 1.9)) + 'px'; panel.style.maxWidth = 'none'; }
     const css = getComputedStyle(panel);
-    const pageBg = getComputedStyle(document.body).backgroundColor || '#12141C';
+    // The body can be transparent (the colour sits on <html>); a transparent
+    // image turns white in a phone's photo viewer and the footer text vanished.
+    const solid = el => { const c = getComputedStyle(el).backgroundColor; return c && c !== 'transparent' && !/rgba\(.*,\s*0\)$/.test(c) ? c : null; };
+    const pageBg = solid(document.body) || solid(document.documentElement) || '#12141C';
     const shot = await window.htmlToImage.toCanvas(panel, {
       // Hindi bababa sa ~1200px ang lapad ng larawan, kahit makitid ang box.
       pixelRatio: Math.max(2, Math.min(4, 1200 / Math.max(1, panel.getBoundingClientRect().width))), cacheBust: true,
