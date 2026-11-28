@@ -6372,3 +6372,13 @@ body.mobile-mode .arbab-chat{height:calc(100vh - 330px);min-height:400px;}
   .yo-month.quiet .yo-m-head{margin-bottom:4px;}
   .yo-month.quiet .yo-m-foot{margin-top:4px;}
 }
+/* iPhone Safari date boxes (2026-11-28): the native date input keeps its own
+   minimum width and centred text, so a width:100% box ran past the modal's
+   right edge. iOS only (-webkit-touch-callout), desktop pickers untouched. */
+@supports (-webkit-touch-callout: none){
+  input[type="date"], input[type="month"], input[type="time"], input[type="datetime-local"]{
+    -webkit-appearance:none;appearance:none;display:block;min-width:0;max-width:100%;box-sizing:border-box;
+    min-height:calc(1.25em + 18px);
+  }
+  input::-webkit-date-and-time-value{text-align:left;margin:0;}
+}
