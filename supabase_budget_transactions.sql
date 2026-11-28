@@ -12,8 +12,14 @@ create table if not exists budget_transactions (
   description text,                          -- merchant, e.g. RED DIAMOND, ABU DHABI
   note text,
   card_last text,                            -- from the bank alert, e.g. 6334
+  category text,                             -- e.g. Meat & Fish (list lives in ui_prefs.budget_settings)
+  subcategory text,                          -- optional, free text, e.g. Chicken
   created_at timestamptz not null default now()
 );
+
+-- Safe to re-run: adds the category columns if the table was made before them.
+alter table budget_transactions add column if not exists category text;
+alter table budget_transactions add column if not exists subcategory text;
 
 create index if not exists budget_transactions_user_date on budget_transactions (user_id, tx_date desc);
 

@@ -16,7 +16,7 @@
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Public+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.2"></script>
-<link rel="stylesheet" href="css/style.css?v=444">
+<link rel="stylesheet" href="css/style.css?v=445">
 </head>
 <body>
 
@@ -1512,15 +1512,21 @@
         <h1>Budget</h1>
         <div class="sub">Family market tracker. Copy the bank alert, then tap Easy Add.</div>
       </div>
+      <div class="filters"><button class="drawer-secondary-btn" onclick="openBudSettingsModal()">Limit &amp; categories</button></div>
     </header>
     <div class="bud-sum" id="budSummary"></div>
     <div class="panel">
       <h2 class="bud-head">Transactions <span class="bud-actions"><button class="poscalc-accent-btn" onclick="openBudEasyAddModal()">Easy Add</button><button class="poscalc-accent-btn btn-primary" onclick="openBudTxModal()">+ Add</button></span></h2>
       <div class="bud-filters">
-        <input type="text" id="budSearch" placeholder="Search store or note…" oninput="renderBudget()">
+        <input type="text" id="budSearch" placeholder="Search store, category or note…" oninput="renderBudget()">
         <select id="budMonthFilter" onchange="renderBudget()" aria-label="Month"></select>
+        <select id="budCatFilter" onchange="renderBudget()" aria-label="Category"></select>
       </div>
       <div id="budList"><div class="empty-state">Loading…</div></div>
+    </div>
+    <div class="panel" id="budBreakdownPanel">
+      <h2 class="bud-head">By category <span class="bud-break-sub" id="budBreakdownLabel"></span></h2>
+      <div id="budBreakdown"></div>
     </div>
   </div>
 
@@ -2156,6 +2162,24 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="budSettingsModal" onclick="if(event.target===this) closeBudSettingsModal()">
+  <div class="modal-box" style="position:relative;max-height:88vh;overflow-y:auto;">
+    <button class="modal-close" onclick="closeBudSettingsModal()">✕</button>
+    <h3>Limit &amp; categories</h3>
+    <div class="field-row" style="margin-top:14px;">
+      <label>Monthly limit (AED)</label>
+      <input id="budSetLimit" type="number" step="any" inputmode="decimal" placeholder="e.g. 1500 (blank = no limit)">
+    </div>
+    <div class="field-row">
+      <label>Categories (one per line)</label>
+      <textarea id="budSetCats" rows="8" style="width:100%;padding:10px 12px;background:var(--surface-2);border:1px solid var(--rule);border-radius:6px;color:var(--ink);font-size:13px;resize:vertical;"></textarea>
+    </div>
+    <div class="modal-sub" style="margin-top:4px;">Removing a category here doesn't change purchases that already use it.</div>
+    <div id="budSetError" class="auth-error"></div>
+    <button class="ai-btn" style="margin-top:14px;width:100%;" onclick="saveBudSettings()">Save</button>
+  </div>
+</div>
+
 <div class="modal-overlay" id="budTxModal" onclick="if(event.target===this) closeBudTxModal()">
   <div class="modal-box" style="position:relative;">
     <button class="modal-close" onclick="closeBudTxModal()">✕</button>
@@ -2176,8 +2200,17 @@
       <input id="budTxDesc" placeholder="e.g. RED DIAMOND">
     </div>
     <div class="field-row">
+      <label>Category</label>
+      <select id="budTxCategory" onchange="onBudTxCategoryChange()"></select>
+    </div>
+    <div class="field-row">
+      <label>Subcategory (optional)</label>
+      <input id="budTxSubcategory" list="budTxSubList" placeholder="e.g. Chicken" autocomplete="off">
+      <datalist id="budTxSubList"></datalist>
+    </div>
+    <div class="field-row">
       <label>Note (optional)</label>
-      <input id="budTxNote" placeholder="e.g. fish, vegetables">
+      <input id="budTxNote" placeholder="e.g. for Sunday lunch">
     </div>
     <div id="budTxError" class="auth-error"></div>
     <button class="ai-btn" style="margin-top:14px;width:100%;" id="budTxSaveBtn" onclick="saveBudTx()">Save</button>
@@ -3175,7 +3208,7 @@
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=2"></script>
-<script src="js/dashboard.js?v=770"></script>
+<script src="js/dashboard.js?v=771"></script>
 <script src="js/pinlock.js?v=3"></script>
 <script src="js/arbab.js?v=4"></script>
 <script src="js/cmdcenter.js?v=3"></script>

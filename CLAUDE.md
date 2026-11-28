@@ -331,6 +331,15 @@ find/replace, try the LF form, then the CRLF form.
   Add form. Each row keeps its currency (AED/PHP); the other is shown via
   `_budIn` at the rate locked to tx_date (same daily fixes; `_finLoadHistFx`
   also covers BUD_TXNS dates). Gateable feature key `budget`.
+  Category + subcategory (2026-11-28): broad categories (`BUD_DEFAULT_CATS`,
+  owner: "hindi need sobrang specific"), subcategory is optional free text
+  with suggestions from past rows. Easy Add/Add guesses both from the same
+  store's last purchase (`_budGuessFor`). "Limit & categories" modal stores
+  `{limit (AED), categories}` in localStorage `tanaydana-budget-settings`,
+  synced via ui_prefs `budget_settings` — no SQL. This-month tile shows the
+  limit bar (green, accent ≥80%, red over) with left + per-day pace; "By
+  category" panel follows the month filter (bars, %, ≈₱, subcategory
+  amounts, Uncategorized last-ish by amount).
 - `tests/sim-finance-bill.js` runs Paid/Undo end-to-end on the owner's real numbers.
 - **Credit card payments per month** chart on the Finance Dashboard (2026-11-26,
   `_finCardPayMonthly`, `renderFinCardPayments`, called from

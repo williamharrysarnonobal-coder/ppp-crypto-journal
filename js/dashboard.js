@@ -448,7 +448,9 @@ const UI_PREF_LS_KEYS = {
   // When the last backup was made (the app's Backup button, or the laptop's
   // weekly_backup.py → Google Drive, 2026-11-26), so the "never backed up"
   // reminder is right on every device.
-  last_backup: 'tanaydana-last-backup'
+  last_backup: 'tanaydana-last-backup',
+  // Budget page (palengke): monthly limit + category list, same on every device.
+  budget_settings: 'tanaydana-budget-settings'
   /* Ang on/off ng bawat klase ng notification (⚙ sa 🔔, kasama ang High impact
      news) ay PER DEVICE na, hindi sinasabay sa account (pinili niya): naka-off
      ang Trade Alerts sa telepono pero naka-on sa laptop, halimbawa. Dati ay
@@ -538,6 +540,7 @@ function applyUIPrefsFromProfile(){
     // dahil ang bawat numero sa pahina ay nakadepende rito.
     if(changedKeys.includes('real_money_only')){ _syncRealMoneyBoxes(); applyFilters(); }
     if(changedKeys.includes('tag_kinds')){ _loadTagKinds(); applyFilters(); }
+    if(changedKeys.includes('budget_settings') && currentView === 'budget') renderBudget();
     if(currentView === 'settings') renderSettingsPage();
     if(currentView === 'config'){ renderColumnConfigUI(); renderOptionsEditor(); renderFormFieldConfigUI(); }
   }finally{
@@ -9354,7 +9357,7 @@ const DB_CHECKS = [
   { file:'supabase_position_setups_upscale_order.sql', what:'Upscale order on a setup (Order Placed, Cancel)', table:'position_setups', col:'upscale_order_id' },
   { file:'supabase_trading_accounts_upscale_api.sql', what:'Upscale API key on My Accounts', table:'trading_accounts', col:'upscale_account_id,upscale_account_label' },
   { file:'supabase_news_results_sent.sql', what:'News result to Telegram (US High impact)', table:'news_results_sent', col:'key' },
-  { file:'supabase_budget_transactions.sql', what:'Budget (family market tracker)', table:'budget_transactions', col:'tx_date,amount,currency' }
+  { file:'supabase_budget_transactions.sql', what:'Budget (family market tracker)', table:'budget_transactions', col:'tx_date,amount,currency,category,subcategory' }
 ];
 async function _dbHasColumns(table, cols){
   try{
@@ -13674,6 +13677,105 @@ function _budTotalHtml(list){
     + (php == null || !list.length ? '' : `<span class="bud-php">≈ ${finMoney(php, 'PHP')}</span>`);
 }
 
+/* Settings (ui_prefs.budget_settings, synced): monthly limit in AED and the
+   category list. Kept broad on purpose (owner: "hindi need sobrang
+   specific"); detail goes in the optional free-text subcategory. */
+const BUD_DEFAULT_CATS = ['Meat & Fish', 'Fruits & Vegetables', 'Rice & Dry Goods', 'Household', 'Snacks & Drinks', 'Other'];
+function _budSettings(){
+  let s = null;
+  try{ s = JSON.parse(localStorage.getItem('tanaydana-budget-settings') || 'null'); }catch(_){}
+  s = s && typeof s === 'object' ? s : {};
+  const cats = Array.isArray(s.categories) && s.categories.length ? s.categories : BUD_DEFAULT_CATS;
+  const limit = Number(s.limit) > 0 ? Number(s.limit) : null;
+  return { categories: cats.map(c => String(c).trim()).filter(Boolean), limit };
+}
+// List order first, then categories only found on older rows.
+function _budAllCategories(){
+  const list = _budSettings().categories;
+  const extra = [...new Set((BUD_TXNS || []).map(t => t.category).filter(c => c && !list.includes(c)))].sort();
+  return [...list, ...extra];
+}
+function _budRowSubHtml(t){
+  const cat = t.category ? `<span class="bud-chip">${escapeHtml(t.category)}${t.subcategory ? ` › ${escapeHtml(t.subcategory)}` : ''}</span>` : '';
+  const note = t.note ? `<span class="bud-row-note-t">${escapeHtml(t.note)}</span>` : '';
+  return cat || note ? `<div class="bud-row-note">${cat}${note}</div>` : '';
+}
+// This month vs the limit: bar, % used, left / over, and a daily pace.
+function _budLimitHtml(list, now){
+  const { limit } = _budSettings();
+  if(!limit) return `<button class="bud-limit-set" onclick="openBudSettingsModal()">Set a monthly limit</button>`;
+  const spent = _budSum(list, 'AED');
+  if(spent == null) return '';
+  const pct = spent / limit * 100;
+  const over = spent > limit;
+  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const daysLeft = daysInMonth - now.getDate() + 1;
+  const left = limit - spent;
+  const state = over ? 'over' : pct >= 80 ? 'warn' : 'ok';
+  return `<div class="bud-limit ${state}">
+      <div class="bud-limit-bar"><i style="width:${Math.min(100, pct).toFixed(1)}%"></i></div>
+      <div class="bud-limit-t"><b>${Math.round(pct)}%</b> of ${finMoney(limit, 'AED')}</div>
+      <div class="bud-limit-t">${over ? `<b>${finMoney(-left, 'AED')} over</b>` : `${finMoney(left, 'AED')} left · ~${finMoney(left / daysLeft, 'AED')}/day`}</div>
+    </div>`;
+}
+function _renderBudBreakdown(list, scope){
+  const el = document.getElementById('budBreakdown');
+  const lab = document.getElementById('budBreakdownLabel');
+  if(!el) return;
+  lab.textContent = scope === 'all' ? 'All time' : _budMonthLabel(scope);
+  if(!list.length){ el.innerHTML = '<div class="empty-state">No purchases in this period.</div>'; return; }
+  const total = _budSum(list, 'AED');
+  const groups = {};
+  list.forEach(t => { const k = t.category || 'Uncategorized'; (groups[k] = groups[k] || []).push(t); });
+  const rows = Object.entries(groups).map(([cat, items]) => ({ cat, items, aed: _budSum(items, 'AED') }))
+    .sort((a, b) => (b.aed || 0) - (a.aed || 0));
+  el.innerHTML = rows.map(r => {
+    const pct = total > 0 && r.aed != null ? r.aed / total * 100 : 0;
+    const php = _budSum(r.items, 'PHP');
+    const subs = {};
+    r.items.forEach(t => { if(t.subcategory){ const k = t.subcategory.trim(); subs[k] = (subs[k] || 0) + (_budIn(t, 'AED') || 0); } });
+    const subTxt = Object.entries(subs).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${escapeHtml(k)} ${finMoney(v, 'AED')}`).join(' · ');
+    return `<div class="bud-cat${r.cat === 'Uncategorized' ? ' none' : ''}">
+        <div class="bud-cat-h"><span class="bud-cat-n">${escapeHtml(r.cat)} <em>${r.items.length}</em></span>
+          <span class="bud-cat-v"><span class="bud-aed">${r.aed == null ? '—' : finMoney(r.aed, 'AED')}</span><span class="bud-php">${Math.round(pct)}%${php == null ? '' : ` · ≈ ${finMoney(php, 'PHP')}`}</span></span></div>
+        <div class="bud-cat-bar"><i style="width:${pct.toFixed(1)}%"></i></div>
+        ${subTxt ? `<div class="bud-cat-subs">${subTxt}</div>` : ''}
+      </div>`;
+  }).join('');
+}
+function openBudSettingsModal(){
+  const s = _budSettings();
+  document.getElementById('budSetLimit').value = s.limit || '';
+  document.getElementById('budSetCats').value = s.categories.join('\n');
+  document.getElementById('budSetError').textContent = '';
+  document.getElementById('budSettingsModal').classList.add('open');
+}
+function closeBudSettingsModal(){ document.getElementById('budSettingsModal').classList.remove('open'); }
+function saveBudSettings(){
+  const raw = document.getElementById('budSetLimit').value.trim();
+  const limit = raw === '' ? null : parseFloat(raw);
+  if(raw !== '' && !(limit > 0)){ document.getElementById('budSetError').textContent = 'Limit must be more than zero, or leave it blank.'; return; }
+  const cats = [...new Set(document.getElementById('budSetCats').value.split('\n').map(x => x.trim()).filter(Boolean))];
+  if(!cats.length){ document.getElementById('budSetError').textContent = 'Keep at least one category.'; return; }
+  try{ localStorage.setItem('tanaydana-budget-settings', JSON.stringify({ limit, categories: cats })); }catch(_){}
+  syncUIPrefsToProfile();
+  closeBudSettingsModal();
+  showToast('Saved');
+  renderBudget();
+}
+// Same store bought before → same category/subcategory (latest wins).
+function _budGuessFor(desc){
+  const needle = String(desc || '').trim().toUpperCase();
+  if(!needle) return null;
+  return (BUD_TXNS || []).filter(t => t.category && String(t.description || '').trim().toUpperCase() === needle)
+    .sort((a, b) => String(b.tx_date).localeCompare(String(a.tx_date)) || (b.id || 0) - (a.id || 0))[0] || null;
+}
+function onBudTxCategoryChange(){
+  const cat = document.getElementById('budTxCategory').value;
+  const subs = [...new Set((BUD_TXNS || []).filter(t => t.category === cat && t.subcategory).map(t => t.subcategory.trim()))].sort();
+  document.getElementById('budTxSubList').innerHTML = subs.map(s => `<option value="${escapeHtml(s)}"></option>`).join('');
+}
+
 function renderBudget(){
   const listEl = document.getElementById('budList');
   const sumEl = document.getElementById('budSummary');
@@ -13689,8 +13791,20 @@ function renderBudget(){
   const thisKey = _finIsoDay(now).slice(0, 7);
   const prevKey = _finIsoDay(new Date(now.getFullYear(), now.getMonth() - 1, 1)).slice(0, 7);
   const inMonth = k => all.filter(t => _budMonthKey(t.tx_date) === k);
-  const tile = (label, list) => `<div class="bud-tile"><div class="bud-tile-k">${label}</div><div class="bud-tile-v">${_budTotalHtml(list)}</div><div class="bud-tile-s">${list.length} purchase${list.length === 1 ? '' : 's'}</div></div>`;
-  sumEl.innerHTML = tile('This month', inMonth(thisKey)) + tile('Last month', inMonth(prevKey)) + tile('All time', all);
+  const tile = (label, list, extra) => `<div class="bud-tile"><div class="bud-tile-k">${label}</div><div class="bud-tile-v">${_budTotalHtml(list)}</div><div class="bud-tile-s">${list.length} purchase${list.length === 1 ? '' : 's'}</div>${extra || ''}</div>`;
+  sumEl.innerHTML = tile('This month', inMonth(thisKey), _budLimitHtml(inMonth(thisKey), now))
+    + tile('Last month', inMonth(prevKey)) + tile('All time', all);
+
+  // Category filter: the list + any category already used on a row.
+  const catSel = document.getElementById('budCatFilter');
+  const prevCat = catSel.dataset.init ? catSel.value : 'all';
+  const usedCats = _budAllCategories();
+  const hasNone = all.some(t => !t.category);
+  catSel.innerHTML = '<option value="all">All categories</option>'
+    + usedCats.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')
+    + (hasNone ? '<option value="__none">Uncategorized</option>' : '');
+  catSel.value = [...catSel.options].some(o => o.value === prevCat) ? prevCat : 'all';
+  catSel.dataset.init = '1';
 
   // Month filter: every month that has a purchase, plus this month.
   const sel = document.getElementById('budMonthFilter');
@@ -13701,8 +13815,13 @@ function renderBudget(){
   sel.dataset.init = '1';
 
   const q = (document.getElementById('budSearch').value || '').trim().toLowerCase();
-  const rows = all.filter(t => (sel.value === 'all' || _budMonthKey(t.tx_date) === sel.value)
-    && (!q || `${t.description || ''} ${t.note || ''}`.toLowerCase().includes(q)));
+  const inScope = t => sel.value === 'all' || _budMonthKey(t.tx_date) === sel.value;
+  const rows = all.filter(t => inScope(t)
+    && (catSel.value === 'all' || (catSel.value === '__none' ? !t.category : t.category === catSel.value))
+    && (!q || `${t.description || ''} ${t.note || ''} ${t.category || ''} ${t.subcategory || ''}`.toLowerCase().includes(q)))
+    .sort((a, b) => String(b.tx_date).localeCompare(String(a.tx_date)) || String(b.created_at || '').localeCompare(String(a.created_at || '')) || (b.id || 0) - (a.id || 0));
+
+  _renderBudBreakdown(all.filter(inScope), sel.value);
 
   if(!all.length){
     listEl.innerHTML = '<div class="empty-state">No purchases yet. Copy a bank alert, then tap Easy Add.</div>';
@@ -13726,7 +13845,7 @@ function renderBudget(){
         const d = new Date(t.tx_date + 'T00:00:00');
         return `<div class="bud-row" onclick="openBudTxModal(${Number(t.id)})" onkeydown="if(event.key==='Enter')openBudTxModal(${Number(t.id)})" role="button" tabindex="0">
           <div class="bud-row-date"><b>${d.getDate()}</b><span>${escapeHtml(d.toLocaleDateString(undefined, { weekday: 'short' }))}</span></div>
-          <div class="bud-row-main"><div class="bud-row-desc">${escapeHtml(t.description || 'Purchase')}</div>${t.note ? `<div class="bud-row-note">${escapeHtml(t.note)}</div>` : ''}</div>
+          <div class="bud-row-main"><div class="bud-row-desc">${escapeHtml(t.description || 'Purchase')}</div>${_budRowSubHtml(t)}</div>
           <div class="bud-row-amt"><span class="bud-aed">${finMoney(t.amount, cur)}</span>${ov == null ? '' : `<span class="bud-php">≈ ${finMoney(ov, other)}</span>`}</div>
         </div>`;
       }).join('')}
@@ -13779,6 +13898,16 @@ function openBudTxModal(id, prefill){
   document.getElementById('budTxCurrency').value = v.currency === 'PHP' ? 'PHP' : 'AED';
   document.getElementById('budTxDesc').value = v.description || '';
   document.getElementById('budTxNote').value = v.note || '';
+  // Category: the row's own, else what this store was last time.
+  const guess = !row ? _budGuessFor(v.description) : null;
+  const cat = row ? (row.category || '') : (v.category || (guess && guess.category) || '');
+  const cats = _budAllCategories();
+  if(cat && !cats.includes(cat)) cats.push(cat);
+  const catSel = document.getElementById('budTxCategory');
+  catSel.innerHTML = '<option value="">— Pick a category —</option>' + cats.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+  catSel.value = cat;
+  document.getElementById('budTxSubcategory').value = row ? (row.subcategory || '') : (v.subcategory || (guess && guess.subcategory) || '');
+  onBudTxCategoryChange();
   document.getElementById('budTxModal').dataset.cardLast = v.card_last || '';
   document.getElementById('budTxError').textContent = '';
   document.getElementById('budTxDeleteBtn').style.display = row ? '' : 'none';
@@ -13796,6 +13925,8 @@ async function saveBudTx(){
     amount: Math.round(amount * 100) / 100,
     currency: document.getElementById('budTxCurrency').value === 'PHP' ? 'PHP' : 'AED',
     description: document.getElementById('budTxDesc').value.trim() || null,
+    category: document.getElementById('budTxCategory').value || null,
+    subcategory: document.getElementById('budTxSubcategory').value.trim() || null,
     note: document.getElementById('budTxNote').value.trim() || null
   };
   if(!_budEditingId) payload.card_last = document.getElementById('budTxModal').dataset.cardLast || null;
