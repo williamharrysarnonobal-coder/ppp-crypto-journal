@@ -9357,7 +9357,7 @@ const DB_CHECKS = [
   { file:'supabase_position_setups_upscale_order.sql', what:'Upscale order on a setup (Order Placed, Cancel)', table:'position_setups', col:'upscale_order_id' },
   { file:'supabase_trading_accounts_upscale_api.sql', what:'Upscale API key on My Accounts', table:'trading_accounts', col:'upscale_account_id,upscale_account_label' },
   { file:'supabase_news_results_sent.sql', what:'News result to Telegram (US High impact)', table:'news_results_sent', col:'key' },
-  { file:'supabase_budget_transactions.sql', what:'Budget (family market tracker)', table:'budget_transactions', col:'tx_date,amount,currency,category,subcategory' }
+  { file:'supabase_budget_transactions.sql', what:'Budget (family market tracker)', table:'budget_transactions', col:'tx_date,amount,currency,category,subcategory,kind' }
 ];
 async function _dbHasColumns(table, cols){
   try{
@@ -13636,52 +13636,55 @@ let _budLoadError = null, _budEditingId = null;
 let _budRange = null;           // {from, to, label} from a tapped calendar day/week
 
 /* Calendar (owner, 2026-11-28): same grid as Finance's (Sun–Sat + Week Σ).
-   Each day = what was spent, in AED at the locked rate. It follows the month
-   filter (All months → this month); ‹ › moves the month filter. Tapping a
-   day or week narrows the list below to it. */
-function _renderBudCalendar(key){
+   It shows ONE scope — a budget period (payday to payday, can cross months)
+   or, with no periods set, a calendar month. Each day = what was spent, in
+   AED at the locked rate; a day with money added shows a green "+".
+   It follows the period filter (All → the period covering today); ‹ ›
+   moves the filter. Tapping a day or week narrows the list below to it. */
+function _renderBudCalendar(sc){
   const grid = document.getElementById('budCalGrid');
-  if(!grid) return;
-  const [y, m1] = key.split('-').map(Number), m = m1 - 1;
-  document.getElementById('budCalLabel').textContent = new Date(y, m, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  if(!grid || !sc) return;
+  // Short label (no year) so the title row fits a phone; the filter has the year.
+  document.getElementById('budCalLabel').textContent = sc.period ? `${_budDayLabel(sc.from)} – ${_budDayLabel(sc.to)}` : sc.label;
   const byDay = {};
   (BUD_TXNS || []).forEach(t => {
-    if(_budMonthKey(t.tx_date) !== key) return;
-    const d = Number(t.tx_date.slice(8, 10));
-    (byDay[d] = byDay[d] || { aed: 0, n: 0, bad: false });
+    if(!_budInScope(t, sc)) return;
+    const b = (byDay[t.tx_date] = byDay[t.tx_date] || { aed: 0, n: 0, bad: false, add: 0 });
     const v = _budIn(t, 'AED');
-    if(v == null) byDay[d].bad = true; else byDay[d].aed += v;
-    byDay[d].n++;
+    if(_budIsTop(t)){ b.add += v || 0; return; }
+    if(v == null) b.bad = true; else b.aed += v;
+    b.n++;
   });
-  const iso = d => `${key}-${String(d).padStart(2, '0')}`;
-  const firstDow = new Date(y, m, 1).getDay(), days = new Date(y, m + 1, 0).getDate();
-  const todayIso = _finIsoDay(new Date());
-  const cells = [];
-  for(let i = 0; i < firstDow; i++) cells.push(null);
-  for(let d = 1; d <= days; d++) cells.push(d);
-  while(cells.length % 7) cells.push(null);
   // Full amount on wide screens; a short one on phones (144, 1.2k) so it fits.
-  const short = v => v >= 1000 ? (v / 1000).toFixed(v >= 10000 ? 0 : 1).replace(/\.0$/, '') + 'k' : v >= 100 ? String(Math.round(v)) : v.toFixed(v % 1 ? 1 : 0);
+  const short = v => v >= 999.5 ? (v / 1000).toFixed(v >= 9950 ? 0 : 1).replace(/\.0$/, '') + 'k' : v >= 9.95 ? String(Math.round(v)) : (Math.round(v * 10) / 10).toFixed(1).replace(/\.0$/, '');
   const money = v => `<span class="bud-full">${finMoney(v, 'AED').replace(' AED', '')}</span><span class="bud-short">${short(v)}</span>`;
+  const todayIso = _finIsoDay(new Date());
+  const first = new Date(sc.from + 'T00:00:00'), last = new Date(sc.to + 'T00:00:00');
+  const start = new Date(first); start.setDate(start.getDate() - start.getDay());
+  const end = new Date(last); end.setDate(end.getDate() + (6 - end.getDay()));
   let html = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => `<div class="cal-dow">${d}</div>`).join('') + '<div class="cal-dow" style="color:var(--accent);">Week</div>';
-  for(let i = 0; i < cells.length; i += 7){
-    const wk = cells.slice(i, i + 7);
-    let wAed = 0, wN = 0;
-    wk.forEach(d => {
-      if(d === null){ html += '<div class="cal-cell empty"></div>'; return; }
-      const info = byDay[d];
-      const sel = _budRange && _budRange.from === iso(d) && _budRange.to === iso(d);
-      const today = iso(d) === todayIso ? ' bud-today' : '';
-      if(info){
+  for(const w = new Date(start); w <= end; ){
+    let wAed = 0, wN = 0, wFrom = null, wTo = null;
+    for(let i = 0; i < 7; i++, w.setDate(w.getDate() + 1)){
+      const iso = _finIsoDay(w);
+      if(iso < sc.from || iso > sc.to){ html += '<div class="cal-cell empty"></div>'; continue; }
+      wFrom = wFrom || iso; wTo = iso;
+      const n = w.getDate();
+      // A period crosses months: the 1st (and the first day) show the month.
+      const dn = n === 1 || iso === sc.from ? `<span class="bud-cal-m">${w.toLocaleDateString('en-US', { month: 'short' })}</span> ${n}` : n;
+      const info = byDay[iso];
+      const sel = _budRange && _budRange.from === iso && _budRange.to === iso;
+      const today = iso === todayIso ? ' bud-today' : '';
+      const plus = info && info.add > 0 ? `<div class="bud-cal-add">+<span class="bud-full">${finMoney(info.add, 'AED').replace(' AED', '')}</span></div>` : '';
+      if(info && (info.n || info.add)){
         wAed += info.aed; wN += info.n;
-        html += `<div class="cal-cell loss${sel ? ' bud-picked' : ''}${today}" onclick="pickBudRange('${iso(d)}','${iso(d)}')"><div class="d">${d}</div><div class="p">${info.bad ? '—' : money(info.aed)}</div><div class="cal-count" style="font-size:10.5px;color:var(--muted);">${info.n} tx</div></div>`;
-      }else html += `<div class="cal-cell${today}"><div class="d">${d}</div></div>`;
-    });
-    const real = wk.filter(d => d !== null);
-    const from = iso(real[0]), to = iso(real[real.length - 1]);
-    const wsel = _budRange && _budRange.from === from && _budRange.to === to && from !== to;
+        const cls = info.n ? 'loss' : 'win';
+        html += `<div class="cal-cell ${cls}${sel ? ' bud-picked' : ''}${today}" onclick="pickBudRange('${iso}','${iso}')"><div class="d">${dn}</div>${info.n ? `<div class="p">${info.bad ? '—' : money(info.aed)}</div><div class="cal-count" style="font-size:10.5px;color:var(--muted);">${info.n} tx</div>` : ''}${plus}</div>`;
+      }else html += `<div class="cal-cell${today}"><div class="d">${dn}</div></div>`;
+    }
+    const wsel = wFrom && _budRange && _budRange.from === wFrom && _budRange.to === wTo && wFrom !== wTo;
     html += wN
-      ? `<div class="cal-cell week-cell loss${wsel ? ' bud-picked' : ''}" onclick="pickBudRange('${from}','${to}')"><div class="d" style="color:var(--accent);">Σ</div><div class="p">${money(wAed)}</div><div class="cal-count" style="font-size:10.5px;color:var(--muted);">${wN} tx</div></div>`
+      ? `<div class="cal-cell week-cell loss${wsel ? ' bud-picked' : ''}" onclick="pickBudRange('${wFrom}','${wTo}')"><div class="d" style="color:var(--accent);">Σ</div><div class="p">${money(wAed)}</div><div class="cal-count" style="font-size:10.5px;color:var(--muted);">${wN} tx</div></div>`
       : `<div class="cal-cell week-cell"><div class="d" style="color:var(--accent);">Σ</div><div class="cal-count" style="font-size:10.5px;color:var(--muted);">—</div></div>`;
   }
   grid.innerHTML = html;
@@ -13697,15 +13700,24 @@ function pickBudRange(from, to){
   if(p && p.scrollIntoView) p.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 function clearBudRange(){ _budRange = null; renderBudget(); }
+// ‹ › : periods step through the saved periods; months can go to any month.
 function shiftBudMonth(step){
   const sel = document.getElementById('budMonthFilter');
-  const cur = sel.value === 'all' ? _finIsoDay(new Date()).slice(0, 7) : sel.value;
-  const [y, m] = cur.split('-').map(Number);
-  const next = _finIsoDay(new Date(y, m - 1 + step, 1)).slice(0, 7);
-  if(![...sel.options].some(o => o.value === next)){
-    const o = document.createElement('option'); o.value = next; o.textContent = _budMonthLabel(next); sel.appendChild(o);
+  const scopes = _budScopes();
+  const cur = sel.value === 'all' ? _budDefaultScope(scopes) : _budScopeByKey(sel.value, scopes);
+  let next = null;
+  if(_budSettings().periods.length){
+    const i = scopes.findIndex(s => s.key === (cur && cur.key));
+    next = scopes[i - step] || null;            // newest first, so › is i − 1
+    if(!next){ showToast(step > 0 ? 'No newer period yet' : 'No older period'); return; }
+  }else{
+    const [y, m] = (cur ? cur.key : _finIsoDay(new Date()).slice(0, 7)).split('-').map(Number);
+    next = _budMonthScope(_finIsoDay(new Date(y, m - 1 + step, 1)).slice(0, 7));
   }
-  sel.value = next;
+  if(![...sel.options].some(o => o.value === next.key)){
+    const o = document.createElement('option'); o.value = next.key; o.textContent = next.label; sel.appendChild(o);
+  }
+  sel.value = next.key;
   _budRange = null;
   renderBudget();
 }
@@ -13753,17 +13765,72 @@ function _budTotalHtml(list){
     + (php == null || !list.length ? '' : `<span class="bud-php">≈ ${finMoney(php, 'PHP')}</span>`);
 }
 
-/* Settings (ui_prefs.budget_settings, synced): monthly limit in AED.
+/* Budget periods (owner 2026-11-28: "depende sa sahod"). Each period has its
+   own Start, End and budget (AED), set by hand in "Budget periods" — payday
+   moves, so nothing is automatic. Stored in localStorage
+   tanaydana-budget-settings = { periods:[{start,end,limit}] }, synced via
+   ui_prefs budget_settings (no SQL). With no periods, everything falls back
+   to calendar months (no budget).
+   Money added (rows with kind 'topup', "Add money") is its own record with
+   its date; it raises the budget of the period its date falls in and is
+   never counted as spending.
    Categories/subcategories are FINANCE's own expense lists (owner: "same
    lang dapat gaya sa Finance Transactions"), edited in Finance ›
    Configuration. A new store with no history defaults to Food & Groceries ›
    Grocery. */
+const BUD_SETTINGS_LS = 'tanaydana-budget-settings';
+const _budIsoRe = /^\d{4}-\d{2}-\d{2}$/;
 function _budSettings(){
   let s = null;
-  try{ s = JSON.parse(localStorage.getItem('tanaydana-budget-settings') || 'null'); }catch(_){}
+  try{ s = JSON.parse(localStorage.getItem(BUD_SETTINGS_LS) || 'null'); }catch(_){}
   s = s && typeof s === 'object' ? s : {};
-  return { limit: Number(s.limit) > 0 ? Number(s.limit) : null };
+  const periods = (Array.isArray(s.periods) ? s.periods : [])
+    .filter(p => p && _budIsoRe.test(p.start) && _budIsoRe.test(p.end) && p.end >= p.start)
+    .map(p => ({ start: p.start, end: p.end, limit: Number(p.limit) > 0 ? Math.round(Number(p.limit) * 100) / 100 : null }))
+    .sort((a, b) => b.start.localeCompare(a.start));
+  return { periods };
 }
+function _budSaveSettings(s){
+  try{ localStorage.setItem(BUD_SETTINGS_LS, JSON.stringify({ periods: s.periods })); }catch(_){}
+  syncUIPrefsToProfile();
+}
+function _budIsTop(t){ return t && t.kind === 'topup'; }
+function _budBuys(list){ return list.filter(t => !_budIsTop(t)); }
+function _budInScope(t, sc){ return !!t.tx_date && t.tx_date >= sc.from && t.tx_date <= sc.to; }
+function _budDayLabel(iso, withYear){
+  return new Date(iso + 'T00:00:00').toLocaleDateString(undefined, withYear ? { month: 'short', day: 'numeric', year: 'numeric' } : { month: 'short', day: 'numeric' });
+}
+function _budRangeLabel(from, to){ return `${_budDayLabel(from)} – ${_budDayLabel(to, true)}`; }
+function _budMonthScope(key){
+  const [y, m] = key.split('-').map(Number);
+  return { key, from: key + '-01', to: _finIsoDay(new Date(y, m, 0)), limit: null, label: _budMonthLabel(key), period: false };
+}
+// Newest first.
+function _budScopes(){
+  const { periods } = _budSettings();
+  if(periods.length) return periods.map(p => ({ key: 'p:' + p.start, from: p.start, to: p.end, limit: p.limit, label: _budRangeLabel(p.start, p.end), period: true }));
+  const thisKey = _finIsoDay(new Date()).slice(0, 7);
+  return [...new Set([thisKey, ...(BUD_TXNS || []).map(t => _budMonthKey(t.tx_date))])].filter(Boolean).sort().reverse().map(_budMonthScope);
+}
+function _budScopeOf(day, scopes){ return (scopes || _budScopes()).find(s => day >= s.from && day <= s.to) || null; }
+function _budScopeByKey(key, scopes){
+  const hit = (scopes || _budScopes()).find(s => s.key === key);
+  if(hit) return hit;
+  return /^\d{4}-\d{2}$/.test(key) ? _budMonthScope(key) : null;
+}
+// What "All" shows on the calendar: the period covering today, else the
+// newest one; months → this month.
+function _budDefaultScope(scopes){
+  scopes = scopes || _budScopes();
+  return _budScopeOf(_finIsoDay(new Date()), scopes) || scopes[0] || _budMonthScope(_finIsoDay(new Date()).slice(0, 7));
+}
+function _budScopeMoney(sc){
+  const rows = (BUD_TXNS || []).filter(t => _budInScope(t, sc));
+  const buys = _budBuys(rows), tops = rows.filter(_budIsTop);
+  const spent = _budSum(buys, 'AED'), added = _budSum(tops, 'AED') || 0;
+  return { buys, tops, spent, added, budget: (sc.limit || 0) + added, hasBudget: !!sc.limit || tops.length > 0 };
+}
+function _budDaysBetween(a, b){ return Math.round((new Date(b + 'T00:00:00') - new Date(a + 'T00:00:00')) / 86400000); }
 function _budDefaultCat(){
   const cats = FINANCE_OPTIONS.expense_categories || [];
   const cat = cats.find(c => /grocer/i.test(c)) || '';
@@ -13781,29 +13848,32 @@ function _budRowSubHtml(t){
   const note = t.note ? `<span class="bud-row-note-t">${escapeHtml(t.note)}</span>` : '';
   return cat || note ? `<div class="bud-row-note">${cat}${note}</div>` : '';
 }
-// This month vs the limit: bar, % used, left / over, and a daily pace.
-function _budLimitHtml(list, now){
-  const { limit } = _budSettings();
-  if(!limit) return `<button class="bud-limit-set" onclick="openBudSettingsModal()">Set a monthly limit</button>`;
-  const spent = _budSum(list, 'AED');
-  if(spent == null) return '';
-  const pct = spent / limit * 100;
-  const over = spent > limit;
-  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-  const daysLeft = daysInMonth - now.getDate() + 1;
-  const left = limit - spent;
+// The current period vs its budget (set budget + money added): bar, % used,
+// left / over, days left and a daily pace, and the Add money button.
+function _budLimitHtml(sc){
+  const addBtn = `<button class="bud-limit-set" onclick="openBudTopupModal()">+ Add money</button>`;
+  const range = sc.period ? `<div class="bud-tile-s">${escapeHtml(sc.label)}</div>` : '';
+  const m = _budScopeMoney(sc);
+  if(!m.hasBudget) return range + (sc.period ? `<div class="bud-limit-acts">${addBtn}</div>` : `<button class="bud-limit-set" onclick="openBudPeriodsModal()">Start a budget period</button>`);
+  if(m.spent == null) return range;
+  const pct = m.budget > 0 ? m.spent / m.budget * 100 : 100;
+  const over = m.spent > m.budget;
+  const left = m.budget - m.spent;
+  const today = _finIsoDay(new Date());
+  const daysLeft = today > sc.to ? 0 : _budDaysBetween(today < sc.from ? sc.from : today, sc.to) + 1;
   const state = over ? 'over' : pct >= 80 ? 'warn' : 'ok';
-  return `<div class="bud-limit ${state}">
+  return `${range}<div class="bud-limit ${state}">
       <div class="bud-limit-bar"><i style="width:${Math.min(100, pct).toFixed(1)}%"></i></div>
-      <div class="bud-limit-t"><b>${Math.round(pct)}%</b> of ${finMoney(limit, 'AED')}</div>
-      <div class="bud-limit-t">${over ? `<b>${finMoney(-left, 'AED')} over</b>` : `${finMoney(left, 'AED')} left · ~${finMoney(left / daysLeft, 'AED')}/day`}</div>
+      <div class="bud-limit-t"><b>${Math.round(pct)}%</b> of ${finMoney(m.budget, 'AED')}${m.added > 0 ? ` <span class="bud-limit-add">(${finMoney(sc.limit || 0, 'AED')} + ${finMoney(m.added, 'AED')} added)</span>` : ''}</div>
+      <div class="bud-limit-t">${over ? `<b>${finMoney(-left, 'AED')} over</b>` : `<b>${finMoney(left, 'AED')} left</b>`}${daysLeft > 0 ? ` · ${daysLeft} day${daysLeft === 1 ? '' : 's'} to go${over ? '' : ` · ~${finMoney(left / daysLeft, 'AED')}/day`}` : ''}</div>
+      <div class="bud-limit-acts">${addBtn}</div>
     </div>`;
 }
-function _renderBudBreakdown(list, scope){
+function _renderBudBreakdown(list, label){
   const el = document.getElementById('budBreakdown');
   const lab = document.getElementById('budBreakdownLabel');
   if(!el) return;
-  lab.textContent = scope === 'all' ? 'All time' : _budMonthLabel(scope);
+  lab.textContent = label;
   if(!list.length){ el.innerHTML = '<div class="empty-state">No purchases in this period.</div>'; return; }
   const total = _budSum(list, 'AED');
   const groups = {};
@@ -13824,22 +13894,181 @@ function _renderBudBreakdown(list, scope){
       </div>`;
   }).join('');
 }
-function openBudSettingsModal(){
-  const s = _budSettings();
-  document.getElementById('budSetLimit').value = s.limit || '';
-  document.getElementById('budSetError').textContent = '';
+
+/* ---- Budget periods modal ---- */
+let _budPerEditing = null;      // start date of the period being edited
+function _budAddMonth(iso){     // start + 1 month − 1 day (Nov 27 → Dec 26)
+  const d = new Date(iso + 'T00:00:00');
+  const e = new Date(d.getFullYear(), d.getMonth() + 1, d.getDate());
+  if(e.getDate() !== d.getDate()) e.setDate(0);   // Jan 31 → Feb 28/29
+  e.setDate(e.getDate() - 1);
+  return _finIsoDay(e);
+}
+function openBudPeriodsModal(){
+  _budResetPeriodForm();
+  renderBudPeriodList();
   document.getElementById('budSettingsModal').classList.add('open');
 }
 function closeBudSettingsModal(){ document.getElementById('budSettingsModal').classList.remove('open'); }
-function saveBudSettings(){
-  const raw = document.getElementById('budSetLimit').value.trim();
-  const limit = raw === '' ? null : parseFloat(raw);
-  if(raw !== '' && !(limit > 0)){ document.getElementById('budSetError').textContent = 'Limit must be more than zero, or leave it blank.'; return; }
-  try{ localStorage.setItem('tanaydana-budget-settings', JSON.stringify({ limit })); }catch(_){}
-  syncUIPrefsToProfile();
-  closeBudSettingsModal();
-  showToast('Saved');
+function _budResetPeriodForm(){
+  _budPerEditing = null;
+  const { periods } = _budSettings();
+  const latest = periods[0];
+  const start = latest ? _finIsoDay(new Date(new Date(latest.end + 'T00:00:00').getTime() + 86400000)) : _finIsoDay(new Date());
+  document.getElementById('budPerFormTitle').textContent = 'New period';
+  document.getElementById('budPerStart').value = start;
+  document.getElementById('budPerEnd').value = _budAddMonth(start);
+  document.getElementById('budPerLimit').value = latest && latest.limit ? latest.limit : '';
+  document.getElementById('budPerCancel').style.display = 'none';
+  document.getElementById('budSetError').textContent = '';
+}
+function onBudPerStartChange(){
+  const s = document.getElementById('budPerStart').value;
+  if(s && !_budPerEditing) document.getElementById('budPerEnd').value = _budAddMonth(s);
+}
+function renderBudPeriodList(){
+  const el = document.getElementById('budPeriodList');
+  const { periods } = _budSettings();
+  const today = _finIsoDay(new Date());
+  if(!periods.length){ el.innerHTML = '<div class="empty-state" style="padding:10px 0;">No periods yet. Until you add one, totals follow calendar months.</div>'; return; }
+  el.innerHTML = periods.map(p => {
+    const sc = { from: p.start, to: p.end, limit: p.limit, period: true };
+    const m = _budScopeMoney(sc);
+    const now = today >= p.start && today <= p.end;
+    return `<div class="bud-per${now ? ' now' : ''}">
+        <div class="bud-per-main"><b>${escapeHtml(_budRangeLabel(p.start, p.end))}</b>${now ? '<span class="bud-per-now">Now</span>' : ''}
+          <div class="bud-per-sub">Budget ${p.limit ? finMoney(p.limit, 'AED') : '—'}${m.added > 0 ? ` + ${finMoney(m.added, 'AED')} added` : ''} · spent ${m.spent == null ? '—' : finMoney(m.spent, 'AED')}</div></div>
+        <span class="bud-per-acts"><button class="drawer-secondary-btn" onclick="editBudPeriod('${p.start}')">Edit</button><button class="drawer-secondary-btn" onclick="deleteBudPeriod('${p.start}')" aria-label="Delete period">✕</button></span>
+      </div>`;
+  }).join('');
+}
+function editBudPeriod(start){
+  const p = _budSettings().periods.find(x => x.start === start);
+  if(!p) return;
+  _budPerEditing = start;
+  document.getElementById('budPerFormTitle').textContent = 'Edit period';
+  document.getElementById('budPerStart').value = p.start;
+  document.getElementById('budPerEnd').value = p.end;
+  document.getElementById('budPerLimit').value = p.limit || '';
+  document.getElementById('budPerCancel').style.display = '';
+  document.getElementById('budSetError').textContent = '';
+}
+async function deleteBudPeriod(start){
+  const s = _budSettings();
+  const p = s.periods.find(x => x.start === start);
+  if(!p) return;
+  const ok = await customConfirm(`Remove the period ${_budRangeLabel(p.start, p.end)}? Purchases and money added stay; only the period and its budget go.`, 'Remove');
+  if(!ok) return;
+  s.periods = s.periods.filter(x => x.start !== start);
+  _budSaveSettings(s);
+  if(_budPerEditing === start) _budResetPeriodForm();
+  renderBudPeriodList();
   renderBudget();
+}
+function saveBudPeriod(){
+  const err = document.getElementById('budSetError');
+  const start = document.getElementById('budPerStart').value, end = document.getElementById('budPerEnd').value;
+  const raw = document.getElementById('budPerLimit').value.trim();
+  const limit = raw === '' ? null : parseFloat(raw);
+  if(!_budIsoRe.test(start) || !_budIsoRe.test(end)){ err.textContent = 'Pick a start and an end date.'; return; }
+  if(end < start){ err.textContent = 'End must be on or after the start.'; return; }
+  if(raw !== '' && !(limit > 0)){ err.textContent = 'Budget must be more than zero, or leave it blank.'; return; }
+  const s = _budSettings();
+  const others = s.periods.filter(x => x.start !== _budPerEditing);
+  const clash = others.find(o => !(end < o.start || start > o.end));
+  if(clash){ err.textContent = `Overlaps ${_budRangeLabel(clash.start, clash.end)}. Change the dates so periods don't overlap.`; return; }
+  s.periods = [...others, { start, end, limit: limit ? Math.round(limit * 100) / 100 : null }];
+  _budSaveSettings(s);
+  showToast(_budPerEditing ? 'Period updated' : 'Period added');
+  _budResetPeriodForm();
+  renderBudPeriodList();
+  _budRange = null;
+  renderBudget();
+}
+
+/* ---- Add money (kind 'topup') ---- */
+let _budTopEditingId = null;
+function openBudTopupModal(id){
+  const row = id != null ? (BUD_TXNS || []).find(t => t.id === id) : null;
+  _budTopEditingId = row ? row.id : null;
+  document.getElementById('budTopTitle').textContent = row ? 'Edit money added' : 'Add money';
+  document.getElementById('budTopDate').value = row ? row.tx_date : _finIsoDay(new Date());
+  document.getElementById('budTopAmount').value = row ? row.amount : '';
+  document.getElementById('budTopCurrency').value = row && row.currency === 'PHP' ? 'PHP' : 'AED';
+  document.getElementById('budTopNote').value = row ? (row.note || '') : '';
+  document.getElementById('budTopError').textContent = '';
+  document.getElementById('budTopDeleteBtn').style.display = row ? '' : 'none';
+  onBudTopDateChange();
+  document.getElementById('budTopModal').classList.add('open');
+}
+function closeBudTopModal(){ document.getElementById('budTopModal').classList.remove('open'); }
+function onBudTopDateChange(){
+  const d = document.getElementById('budTopDate').value;
+  const sc = d && _budSettings().periods.length ? _budScopeOf(d) : null;
+  document.getElementById('budTopSub').textContent = !_budSettings().periods.length
+    ? 'Recorded with its date.'
+    : sc ? `Adds to the budget of ${sc.label}.` : 'No period covers this date yet. It is saved, and counts once a period covers it.';
+}
+async function _budWriteRow(id, payload){
+  const res = await fetch(id ? `${SUPABASE_URL}/rest/v1/budget_transactions?id=eq.${id}` : `${SUPABASE_URL}/rest/v1/budget_transactions`, {
+    method: id ? 'PATCH' : 'POST',
+    headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}`, "Content-Type": "application/json", "Prefer": "return=minimal" },
+    body: JSON.stringify(payload)
+  });
+  if(!res.ok) throw new Error(await res.text());
+}
+function _budSaveErrText(e){
+  return /does not exist|could not find|42P01|42703|PGRST20/i.test(String(e && e.message))
+    ? 'Run supabase_budget_transactions.sql in Supabase first.'
+    : "Couldn't save. Check your connection and try again.";
+}
+async function saveBudTopup(){
+  const err = document.getElementById('budTopError');
+  err.textContent = '';
+  const amount = parseFloat(document.getElementById('budTopAmount').value);
+  if(!amount || amount <= 0){ err.textContent = 'Please enter an amount greater than zero.'; return; }
+  const payload = {
+    kind: 'topup',
+    tx_date: document.getElementById('budTopDate').value || _finIsoDay(new Date()),
+    amount: Math.round(amount * 100) / 100,
+    currency: document.getElementById('budTopCurrency').value === 'PHP' ? 'PHP' : 'AED',
+    description: 'Money added',
+    note: document.getElementById('budTopNote').value.trim() || null
+  };
+  const btn = document.getElementById('budTopSaveBtn');
+  btn.disabled = true; btn.textContent = 'Saving…';
+  try{
+    const wasEdit = !!_budTopEditingId;
+    await _budWriteRow(_budTopEditingId, payload);
+    closeBudTopModal();
+    showToast(wasEdit ? 'Updated' : `Added ${finMoney(payload.amount, payload.currency)}`);
+    await loadBudget();
+  }catch(e){
+    console.error("Couldn't save money added:", e);
+    err.textContent = _budSaveErrText(e);
+  }finally{ btn.disabled = false; btn.textContent = 'Save'; }
+}
+async function _budDeleteRow(row, errId, close){
+  const what = _budIsTop(row) ? `money added on ${_budDayLabel(row.tx_date, true)}` : (row.description || 'this purchase');
+  const ok = await customConfirm(`Delete ${what} (${finMoney(row.amount, row.currency || 'AED')})? This can't be undone.`, 'Delete');
+  if(!ok) return;
+  try{
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/budget_transactions?id=eq.${row.id}`, {
+      method: 'DELETE',
+      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}` }
+    });
+    if(!res.ok) throw new Error(await res.text());
+    close();
+    showToast('Deleted');
+    await loadBudget();
+  }catch(e){
+    console.error("Couldn't delete budget row:", e);
+    document.getElementById(errId).textContent = "Couldn't delete. Try again.";
+  }
+}
+function deleteBudTopup(){
+  const row = (BUD_TXNS || []).find(t => t.id === _budTopEditingId);
+  if(row) _budDeleteRow(row, 'budTopError', closeBudTopModal);
 }
 // Same store bought before → same category/subcategory (latest wins).
 function _budGuessFor(desc){
@@ -13872,51 +14101,61 @@ function renderBudget(){
     return;
   }
   const all = BUD_TXNS;
-  const now = new Date();
-  const thisKey = _finIsoDay(now).slice(0, 7);
-  const prevKey = _finIsoDay(new Date(now.getFullYear(), now.getMonth() - 1, 1)).slice(0, 7);
-  const inMonth = k => all.filter(t => _budMonthKey(t.tx_date) === k);
+  const buysAll = _budBuys(all);
+  const periodsOn = _budSettings().periods.length > 0;
+  const word = periodsOn ? 'period' : 'month';
+  const scopes = _budScopes();
+  const today = _finIsoDay(new Date());
+  const cur = _budScopeOf(today, scopes);
+  const prev = cur ? scopes[scopes.indexOf(cur) + 1] || null : scopes.find(s => s.to < today) || null;
   const tile = (label, list, extra) => `<div class="bud-tile"><div class="bud-tile-k">${label}</div><div class="bud-tile-v">${_budTotalHtml(list)}</div><div class="bud-tile-s">${list.length} purchase${list.length === 1 ? '' : 's'}</div>${extra || ''}</div>`;
-  sumEl.innerHTML = tile('This month', inMonth(thisKey), _budLimitHtml(inMonth(thisKey), now))
-    + tile('Last month', inMonth(prevKey)) + tile('All time', all);
+  const addedAll = _budSum(all.filter(_budIsTop), 'AED') || 0;
+  sumEl.innerHTML = tile(`This ${word}`, cur ? _budBuys(all.filter(t => _budInScope(t, cur))) : [],
+      cur ? _budLimitHtml(cur) : `<div class="bud-tile-s">No period covers today.</div><button class="bud-limit-set" onclick="openBudPeriodsModal()">Start a new period</button>`)
+    + tile(`Last ${word}`, prev ? _budBuys(all.filter(t => _budInScope(t, prev))) : [], prev && prev.period ? `<div class="bud-tile-s">${escapeHtml(prev.label)}</div>` : '')
+    + tile('All time', buysAll, addedAll > 0 ? `<div class="bud-tile-s">${finMoney(addedAll, 'AED')} added in total</div>` : '');
 
-  // Category filter: the list + any category already used on a row.
+  // Category filter: Finance's list + any category already used on a row.
   const catSel = document.getElementById('budCatFilter');
   const prevCat = catSel.dataset.init ? catSel.value : 'all';
-  const usedCats = _budAllCategories();
-  const hasNone = all.some(t => !t.category);
+  const hasNone = buysAll.some(t => !t.category);
   catSel.innerHTML = '<option value="all">All categories</option>'
-    + usedCats.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')
+    + _budAllCategories().map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')
     + (hasNone ? '<option value="__none">Uncategorized</option>' : '');
   catSel.value = [...catSel.options].some(o => o.value === prevCat) ? prevCat : 'all';
   catSel.dataset.init = '1';
 
-  // Month filter: every month that has a purchase, plus this month.
+  // Period / month filter. A month you moved to with ‹ › stays an option.
   const sel = document.getElementById('budMonthFilter');
-  const prevVal = sel.dataset.init ? sel.value : 'all';
-  // The month you're on stays an option even with no purchases (calendar ‹ ›).
-  const keys = [...new Set([thisKey, prevVal, ...all.map(t => _budMonthKey(t.tx_date))])].filter(k => k && k !== 'all').sort().reverse();
-  sel.innerHTML = '<option value="all">All months</option>' + keys.map(k => `<option value="${k}">${escapeHtml(_budMonthLabel(k))}</option>`).join('');
-  sel.value = keys.includes(prevVal) || prevVal === 'all' ? prevVal : 'all';
+  let want = sel.dataset.init ? sel.value : 'all';
+  const opts = scopes.slice();
+  if(want !== 'all' && !opts.some(s => s.key === want)){
+    const extra = periodsOn ? null : _budScopeByKey(want, scopes);
+    if(extra) opts.push(extra); else want = 'all';
+  }
+  opts.sort((a, b) => b.from.localeCompare(a.from));
+  sel.innerHTML = `<option value="all">All ${word}s</option>` + opts.map(s => `<option value="${escapeHtml(s.key)}">${escapeHtml(s.label)}</option>`).join('');
+  sel.value = want;
   sel.dataset.init = '1';
+  const scope = sel.value === 'all' ? null : _budScopeByKey(sel.value, opts);
 
-  _renderBudCalendar(sel.value === 'all' ? thisKey : sel.value);
+  _renderBudCalendar(scope || _budDefaultScope(scopes));
 
   const q = (document.getElementById('budSearch').value || '').trim().toLowerCase();
-  const inScope = t => sel.value === 'all' || _budMonthKey(t.tx_date) === sel.value;
+  const inScope = t => !scope || _budInScope(t, scope);
   // A tapped calendar day / week narrows the list (chip shows it, ✕ clears).
-  const rng = _budRange && (sel.value === 'all' || _budRange.from.slice(0, 7) === sel.value) ? _budRange : null;
+  const rng = _budRange && (!scope || (_budRange.from >= scope.from && _budRange.to <= scope.to)) ? _budRange : null;
   if(!rng) _budRange = null;
   const chip = document.getElementById('budRangeChip');
   chip.style.display = rng ? '' : 'none';
   chip.innerHTML = rng ? `<span>Showing <b>${escapeHtml(rng.label)}</b></span><button onclick="clearBudRange()" aria-label="Show all">✕ Show all</button>` : '';
   const rows = all.filter(t => inScope(t)
     && (!rng || (t.tx_date >= rng.from && t.tx_date <= rng.to))
-    && (catSel.value === 'all' || (catSel.value === '__none' ? !t.category : t.category === catSel.value))
+    && (catSel.value === 'all' || (!_budIsTop(t) && (catSel.value === '__none' ? !t.category : t.category === catSel.value)))
     && (!q || `${t.description || ''} ${t.note || ''} ${t.category || ''} ${t.subcategory || ''}`.toLowerCase().includes(q)))
     .sort((a, b) => String(b.tx_date).localeCompare(String(a.tx_date)) || String(b.created_at || '').localeCompare(String(a.created_at || '')) || (b.id || 0) - (a.id || 0));
 
-  _renderBudBreakdown(all.filter(inScope), sel.value);
+  _renderBudBreakdown(_budBuys(all.filter(inScope)), scope ? scope.label : 'All time');
 
   if(!all.length){
     listEl.innerHTML = '<div class="empty-state">No purchases yet. Copy a bank alert, then tap Easy Add.</div>';
@@ -13924,27 +14163,35 @@ function renderBudget(){
   }
   if(!rows.length){ listEl.innerHTML = '<div class="empty-state">Nothing matches.</div>'; return; }
 
+  // Grouped by period (or month); rows outside every period group by month.
   const groups = [];
   rows.forEach(t => {
-    const k = _budMonthKey(t.tx_date);
+    const sc = _budScopeOf(t.tx_date, scopes) || _budMonthScope(_budMonthKey(t.tx_date));
+    const label = sc.period || !periodsOn ? sc.label : `${sc.label} · no period`;
     let g = groups[groups.length - 1];
-    if(!g || g.key !== k){ g = { key: k, items: [] }; groups.push(g); }
+    if(!g || g.key !== sc.key){ g = { key: sc.key, label, items: [] }; groups.push(g); }
     g.items.push(t);
   });
-  listEl.innerHTML = groups.map(g => `<div class="bud-month">
-      <div class="bud-month-h"><span>${escapeHtml(_budMonthLabel(g.key))} <em>${g.items.length}</em></span><span class="bud-month-t">${_budTotalHtml(g.items)}</span></div>
+  listEl.innerHTML = groups.map(g => {
+    const buys = _budBuys(g.items), tops = g.items.filter(_budIsTop);
+    const added = _budSum(tops, 'AED');
+    return `<div class="bud-month">
+      <div class="bud-month-h"><span>${escapeHtml(g.label)} <em>${buys.length}</em></span><span class="bud-month-t">${_budTotalHtml(buys)}${added ? `<span class="bud-add">+${finMoney(added, 'AED')} added</span>` : ''}</span></div>
       ${g.items.map(t => {
         const cur = t.currency || 'AED';
         const other = cur === 'PHP' ? 'AED' : 'PHP';
         const ov = _budIn(t, other);
         const d = new Date(t.tx_date + 'T00:00:00');
-        return `<div class="bud-row" onclick="openBudTxModal(${Number(t.id)})" onkeydown="if(event.key==='Enter')openBudTxModal(${Number(t.id)})" role="button" tabindex="0">
+        const top = _budIsTop(t);
+        const open = top ? `openBudTopupModal(${Number(t.id)})` : `openBudTxModal(${Number(t.id)})`;
+        return `<div class="bud-row${top ? ' bud-row-top' : ''}" onclick="${open}" onkeydown="if(event.key==='Enter')${open}" role="button" tabindex="0">
           <div class="bud-row-date"><b>${d.getDate()}</b><span>${escapeHtml(d.toLocaleDateString(undefined, { weekday: 'short' }))}</span></div>
-          <div class="bud-row-main"><div class="bud-row-desc">${escapeHtml(t.description || 'Purchase')}</div>${_budRowSubHtml(t)}</div>
-          <div class="bud-row-amt"><span class="bud-aed">${finMoney(t.amount, cur)}</span>${ov == null ? '' : `<span class="bud-php">≈ ${finMoney(ov, other)}</span>`}</div>
+          <div class="bud-row-main"><div class="bud-row-desc">${top ? 'Money added' : escapeHtml(t.description || 'Purchase')}</div>${top ? (t.note ? `<div class="bud-row-note"><span class="bud-row-note-t">${escapeHtml(t.note)}</span></div>` : '') : _budRowSubHtml(t)}</div>
+          <div class="bud-row-amt"><span class="bud-aed">${top ? '+' : ''}${finMoney(t.amount, cur)}</span>${ov == null ? '' : `<span class="bud-php">≈ ${finMoney(ov, other)}</span>`}</div>
         </div>`;
       }).join('')}
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 
 /* Easy Add. Same bank alerts as Finance, debit or credit card:

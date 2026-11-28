@@ -20,6 +20,8 @@ create table if not exists budget_transactions (
 -- Safe to re-run: adds the category columns if the table was made before them.
 alter table budget_transactions add column if not exists category text;
 alter table budget_transactions add column if not exists subcategory text;
+-- 'purchase' (spending) or 'topup' (money added to the period's budget, with its date).
+alter table budget_transactions add column if not exists kind text not null default 'purchase';
 
 create index if not exists budget_transactions_user_date on budget_transactions (user_id, tx_date desc);
 

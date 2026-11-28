@@ -337,16 +337,25 @@ find/replace, try the LF form, then the CRLF form.
   them identical, not a separate palengke list). Subcategory is a select
   like Finance's (row hidden when the category has none). Easy Add/Add
   guesses both from the same store's last purchase (`_budGuessFor`), else
-  defaults to 🍽️ Food & Groceries › Grocery (`_budDefaultCat`). "Monthly
-  limit" modal stores `{limit}` (AED) in localStorage
-  `tanaydana-budget-settings`, synced via ui_prefs `budget_settings` — no
-  SQL. Calendar (same grid as Finance: Sun–Sat + Week Σ, AED at locked
-  rate, short amounts like "144"/"1.2k" on phones) follows the month filter
-  (All months → this month), ‹ › moves the month filter; tapping a day/week
-  narrows the list (`_budRange`, chip "Showing … ✕ Show all"). This-month tile shows the
-  limit bar (green, accent ≥80%, red over) with left + per-day pace; "By
-  category" panel follows the month filter (bars, %, ≈₱, subcategory
-  amounts, Uncategorized last-ish by amount).
+  defaults to 🍽️ Food & Groceries › Grocery (`_budDefaultCat`).
+  **Budget periods** (owner: budget runs payday to payday, "depende sa
+  sahod"): set BY HAND in the "Budget periods" modal — Start, End, Budget
+  (AED); new one defaults to the day after the last end, +1 month −1 day,
+  last budget; overlaps refused. Stored as `{periods:[{start,end,limit}]}`
+  in localStorage `tanaydana-budget-settings`, synced via ui_prefs
+  `budget_settings` (no SQL). With NO periods everything falls back to
+  calendar months with no budget. A "scope" (`_budScopes`, newest first) is
+  a period or a month; "This/Last period" tiles, the filter (All periods +
+  each period), "By category", the list grouping and the Calendar all use
+  it. Calendar draws only the scope's days (can cross months; short label
+  without year; short amounts "144"/"1.2k" on phones); ‹ › steps through
+  periods; tapping a day/week narrows the list (`_budRange`).
+  **Add money** (`kind = 'topup'` rows, same table; SQL adds `kind`): its own
+  record with date, amount, note; raises the budget of the period its date
+  falls in (budget = set budget + added), never counted as spending, green
+  "+" rows/calendar marks. This-period tile: bar (green, accent ≥80%, red
+  over) "N% of 750 (500 + 250 added)", left, days to go, per-day pace, "+ Add
+  money".
 - `tests/sim-finance-bill.js` runs Paid/Undo end-to-end on the owner's real numbers.
 - **Credit card payments per month** chart on the Finance Dashboard (2026-11-26,
   `_finCardPayMonthly`, `renderFinCardPayments`, called from

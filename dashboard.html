@@ -16,7 +16,7 @@
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Public+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.2"></script>
-<link rel="stylesheet" href="css/style.css?v=447">
+<link rel="stylesheet" href="css/style.css?v=448">
 </head>
 <body>
 
@@ -1512,7 +1512,7 @@
         <h1>Budget</h1>
         <div class="sub">Family market tracker. Copy the bank alert, then tap Easy Add.</div>
       </div>
-      <div class="filters"><button class="drawer-secondary-btn" onclick="openBudSettingsModal()">Monthly limit</button></div>
+      <div class="filters"><button class="drawer-secondary-btn" onclick="openBudPeriodsModal()">Budget periods</button><button class="drawer-secondary-btn" onclick="openBudTopupModal()">+ Add money</button></div>
     </header>
     <div class="bud-sum" id="budSummary"></div>
     <div class="panel bud-cal-panel">
@@ -2176,14 +2176,50 @@
 <div class="modal-overlay" id="budSettingsModal" onclick="if(event.target===this) closeBudSettingsModal()">
   <div class="modal-box" style="position:relative;max-height:88vh;overflow-y:auto;">
     <button class="modal-close" onclick="closeBudSettingsModal()">✕</button>
-    <h3>Monthly limit</h3>
-    <div class="field-row" style="margin-top:14px;">
-      <label>Monthly limit (AED)</label>
-      <input id="budSetLimit" type="number" step="any" inputmode="decimal" placeholder="e.g. 1500 (blank = no limit)">
+    <h3>Budget periods</h3>
+    <div class="modal-sub">Set each period from payday to payday, with its budget. Money you add during a period goes on top of it.</div>
+    <div id="budPeriodList" style="margin-top:12px;"></div>
+    <div class="bud-per-form">
+      <div class="bud-per-form-t" id="budPerFormTitle">New period</div>
+      <div class="bud-per-dates">
+        <div class="field-row"><label>Start</label><input id="budPerStart" type="date" onchange="onBudPerStartChange()"></div>
+        <div class="field-row"><label>End</label><input id="budPerEnd" type="date"></div>
+      </div>
+      <div class="field-row">
+        <label>Budget (AED)</label>
+        <input id="budPerLimit" type="number" step="any" inputmode="decimal" placeholder="e.g. 1500">
+      </div>
+      <div id="budSetError" class="auth-error"></div>
+      <button class="ai-btn" style="margin-top:10px;width:100%;" onclick="saveBudPeriod()">Save period</button>
+      <button class="drawer-secondary-btn" style="margin-top:8px;width:100%;display:none;" id="budPerCancel" onclick="_budResetPeriodForm()">Cancel edit</button>
     </div>
-    <div class="modal-sub" style="margin-top:4px;">Categories are the same as Finance. Edit them in Finance › Configuration.</div>
-    <div id="budSetError" class="auth-error"></div>
-    <button class="ai-btn" style="margin-top:14px;width:100%;" onclick="saveBudSettings()">Save</button>
+    <div class="modal-sub" style="margin-top:10px;">Categories are the same as Finance. Edit them in Finance › Configuration.</div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="budTopModal" onclick="if(event.target===this) closeBudTopModal()">
+  <div class="modal-box" style="position:relative;">
+    <button class="modal-close" onclick="closeBudTopModal()">✕</button>
+    <h3 id="budTopTitle">Add money</h3>
+    <div class="modal-sub" id="budTopSub"></div>
+    <div class="field-row" style="margin-top:14px;">
+      <label>Date</label>
+      <input id="budTopDate" type="date" onchange="onBudTopDateChange()">
+    </div>
+    <div class="field-row">
+      <label>Amount</label>
+      <div class="bud-amt-row">
+        <input id="budTopAmount" type="number" step="any" inputmode="decimal" placeholder="e.g. 300">
+        <select id="budTopCurrency" aria-label="Currency"><option value="AED">AED</option><option value="PHP">PHP</option></select>
+      </div>
+    </div>
+    <div class="field-row">
+      <label>Note (optional)</label>
+      <input id="budTopNote" placeholder="e.g. extra from salary">
+    </div>
+    <div id="budTopError" class="auth-error"></div>
+    <button class="ai-btn" style="margin-top:14px;width:100%;" id="budTopSaveBtn" onclick="saveBudTopup()">Save</button>
+    <button class="drawer-secondary-btn" style="margin-top:8px;width:100%;display:none;" id="budTopDeleteBtn" onclick="deleteBudTopup()">Delete</button>
   </div>
 </div>
 
@@ -3214,7 +3250,7 @@
 
 <script src="js/supabase.js"></script>
 <script src="js/auth.js?v=2"></script>
-<script src="js/dashboard.js?v=773"></script>
+<script src="js/dashboard.js?v=774"></script>
 <script src="js/pinlock.js?v=3"></script>
 <script src="js/arbab.js?v=4"></script>
 <script src="js/cmdcenter.js?v=3"></script>
