@@ -14437,21 +14437,25 @@ function _finSameMonth(day, monthDate){
   const d = new Date(String(day).slice(0, 10) + 'T00:00:00');
   return d.getFullYear() === monthDate.getFullYear() && d.getMonth() === monthDate.getMonth();
 }
-// "Since Jul 2026 · 5 months · 309.46 AED paid (4 payments)". Months count
-// from the first bill (or the first charge if earlier) to this month,
-// inclusive; paid = sum of the real charges found by _finSubTxns.
+// "Since Jul 2026 · 4 months paid · 309.46 AED total": months with a real
+// charge (from _finSubTxns), not calendar months since the start.
 function _finSubSinceHtml(r){
   const txs = _finSubTxns(r);
   const starts = [r.first_bill, txs[0] && txs[0].tx_date].filter(Boolean).map(s => String(s).slice(0, 10)).sort();
   if(!starts.length) return '';
   const s = new Date(starts[0] + 'T00:00:00'), now = new Date();
   if(isNaN(s.getTime()) || s > now) return '';
-  const months = (now.getFullYear() - s.getFullYear()) * 12 + (now.getMonth() - s.getMonth()) + 1;
   const paid = txs.reduce((a, t) => a + (Number(t.amount) || 0), 0);
   const since = s.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
-  return `<div class="fin-sub-since">Since ${since} · ${months} month${months === 1 ? '' : 's'}`
-    + (txs.length ? ` · ${finMoney(paid, _finRecCur(r))} paid (${txs.length} payment${txs.length === 1 ? '' : 's'})` : '')
-    + `</div>`;
+  const cur = _finRecCur(r);
+  // Months subscribed = months that actually have a charge (a skipped month,
+  // e.g. no Claude in Sep, doesn't count). Non-monthly: count of payments.
+  if(!txs.length) return `<div class="fin-sub-since">Since ${since} · no payment yet</div>`;
+  if((r.cycle || 'Monthly') === 'Monthly'){
+    const months = new Set(txs.map(t => String(t.tx_date).slice(0, 7))).size;
+    return `<div class="fin-sub-since">Since ${since} · ${months} month${months === 1 ? '' : 's'} paid · ${finMoney(paid, cur)} total</div>`;
+  }
+  return `<div class="fin-sub-since">Since ${since} · ${txs.length} payment${txs.length === 1 ? '' : 's'} · ${finMoney(paid, cur)} total</div>`;
 }
 function _finMonthlyRecurringItems(accountId, monthDate){
   return _finRecBilledIn(accountId, monthDate)
