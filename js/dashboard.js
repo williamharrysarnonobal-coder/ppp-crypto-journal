@@ -870,7 +870,7 @@ function switchView(view){
   if(view === 'hours') openMarketHours();
   if(view === 'dashboard' && typeof addPanelShareButtons === 'function') setTimeout(() => addPanelShareButtons(document.getElementById('view-dashboard')), 300);
   if(view === 'finance') renderFinance();
-  if(view === 'budget') loadBudget();
+  if(view === 'budget'){ loadBudget(); if(typeof addPanelShareButtons === 'function') addPanelShareButtons(document.getElementById('view-budget')); }
   if(view === 'salary'){
     fillSalaryInputs();
     renderSalaryGoal();
@@ -35756,7 +35756,8 @@ async function sharePanel(panel, h){
       // Hindi bababa sa ~1200px ang lapad ng larawan, kahit makitid ang box.
       pixelRatio: Math.max(2, Math.min(4, 1200 / Math.max(1, panel.getBoundingClientRect().width))), cacheBust: true,
       backgroundColor: css.backgroundColor && css.backgroundColor !== 'rgba(0, 0, 0, 0)' ? css.backgroundColor : pageBg,
-      filter: n => !(n.classList && (n.classList.contains('panel-share') || n.classList.contains('dash-gear')))
+      // Budget: the Easy Add / + Add buttons and the filter row aren't part of the picture.
+      filter: n => !(n.classList && (n.classList.contains('panel-share') || n.classList.contains('dash-gear') || n.classList.contains('bud-actions') || n.classList.contains('bud-filters')))
     }).finally(() => { if(narrowed){ panel.style.width = oldWidth; panel.style.maxWidth = oldMax; } });
     const pad = 48, foot = 84;
     // Ang mababang box (hal. Discipline) ay hindi nagiging manipis na guhit:

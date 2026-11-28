@@ -6472,4 +6472,4 @@ body.mobile-mode .arbab-chat{height:calc(100vh - 330px);min-height:400px;}
   .bud-cal-panel .bud-full{display:none;}
   .bud-cal-panel .bud-short{display:inline;}
   .bud-cal-panel .cal-cell .p{font-size:11px;}
-}
+}.bud-head .bud-break-sub,.bud-head .bud-actions{margin-left:auto;}
