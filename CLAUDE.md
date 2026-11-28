@@ -320,6 +320,17 @@ find/replace, try the LF form, then the CRLF form.
   still list each transaction in its own currency. "— by category" shows
   "transfer" for transfer-only categories. Savings streak counts Income −
   Expense only (a Correction is neither).
+- **Budget page** (sidebar › Money › Budget, view `budget`, owner 2026-11-28):
+  the family's palengke tracker. Its OWN table `budget_transactions`
+  (supabase_budget_transactions.sql, run by the owner; in DB_CHECKS,
+  BACKUP_TABLES, weekly_backup.py) — never mixed into Finance totals or
+  balances. For now just a list (month groups, This/Last month/All time
+  tiles, search, month filter; tap a row to edit/delete) + Easy Add, which
+  auto-pastes the copied bank alert (`parseBudAlert`: debit OR credit card
+  "Purchase of AED … at …", "Payment of AED … to …") and opens the prefilled
+  Add form. Each row keeps its currency (AED/PHP); the other is shown via
+  `_budIn` at the rate locked to tx_date (same daily fixes; `_finLoadHistFx`
+  also covers BUD_TXNS dates). Gateable feature key `budget`.
 - `tests/sim-finance-bill.js` runs Paid/Undo end-to-end on the owner's real numbers.
 - **Credit card payments per month** chart on the Finance Dashboard (2026-11-26,
   `_finCardPayMonthly`, `renderFinCardPayments`, called from

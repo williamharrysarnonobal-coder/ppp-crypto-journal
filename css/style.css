@@ -6397,3 +6397,39 @@ body.mobile-mode .arbab-chat{height:calc(100vh - 330px);min-height:400px;}
 .fin-inst-sum-bar i{display:block;height:100%;background:var(--accent);border-radius:2px;}
 /* Subscription: since / months / paid (2026-11-28). */
 .fin-sub-since{font-size:11px;color:var(--muted);margin-top:4px;line-height:1.35;}
+
+/* Budget (family market tracker, 2026-11-28) */
+.bud-sum{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:16px;}
+.bud-tile{background:var(--surface);border:1px solid var(--rule);border-radius:10px;padding:12px 14px;min-width:0;}
+.bud-tile-k{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);}
+.bud-tile-v{display:flex;flex-direction:column;margin-top:4px;}
+.bud-tile-v .bud-aed{font-size:18px;font-weight:600;font-variant-numeric:tabular-nums;}
+.bud-tile-s{font-size:11px;color:var(--muted);margin-top:4px;}
+.bud-aed{font-variant-numeric:tabular-nums;}
+.bud-php{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums;}
+.bud-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;}
+.bud-actions{display:flex;gap:8px;}
+.bud-filters{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;}
+.bud-filters input{flex:1;min-width:0;max-width:260px;}
+.bud-filters select{max-width:180px;}
+.bud-month{margin-bottom:14px;}
+.bud-month-h{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;padding:6px 2px 8px;border-bottom:1px solid var(--rule);font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);}
+.bud-month-h em{font-style:normal;font-weight:500;opacity:.8;margin-left:4px;}
+.bud-month-t{display:flex;flex-direction:column;align-items:flex-end;text-transform:none;letter-spacing:0;}
+.bud-month-t .bud-aed{color:var(--ink);font-size:13px;}
+.bud-row{display:grid;grid-template-columns:40px minmax(0,1fr) auto;gap:10px;align-items:center;padding:10px 2px;border-bottom:1px solid var(--rule);cursor:pointer;}
+.bud-row:hover,.bud-row:focus-visible{background:var(--surface-2);outline:none;}
+.bud-row-date{display:flex;flex-direction:column;align-items:center;line-height:1.1;}
+.bud-row-date b{font-size:16px;font-variant-numeric:tabular-nums;}
+.bud-row-date span{font-size:10px;color:var(--muted);text-transform:uppercase;}
+.bud-row-desc{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.bud-row-note{font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.bud-row-amt{display:flex;flex-direction:column;align-items:flex-end;font-size:13px;font-weight:600;}
+.bud-amt-row{display:flex;gap:8px;}
+.bud-amt-row input{flex:1;min-width:0;}
+.bud-amt-row select{width:auto;flex:0 0 auto;}
+@media (max-width:640px){
+  .bud-sum{grid-template-columns:repeat(2,minmax(0,1fr));}
+  .bud-sum .bud-tile:last-child{grid-column:1 / -1;}
+  .bud-filters input,.bud-filters select{max-width:none;flex:1 1 140px;}
+}

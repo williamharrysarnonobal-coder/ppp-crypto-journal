@@ -19,7 +19,8 @@ from bot_secrets import SUPABASE_URL, SUPABASE_SERVICE_KEY
 OWNER_ID = "de907681-6970-4f87-bd46-9c30eb807b0b"
 TABLES = ["trading_journal", "position_setups", "trading_accounts", "daily_plans", "mood_entries",
           "notebook_entries", "finance_accounts", "finance_transactions", "finance_budgets",
-          "finance_recurring", "achievements", "user_profile", "app_visits", "playbooks", "arbab_messages"]
+          "finance_recurring", "achievements", "user_profile", "app_visits", "playbooks", "arbab_messages",
+          "budget_transactions"]
 DEST = r"G:\My Drive\Tanaydana Backups"
 KEEP = 12
 LOG = r"C:\Users\Lenovo\Documents\BTC_BOT\backup.log"

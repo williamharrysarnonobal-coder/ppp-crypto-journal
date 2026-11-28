@@ -20,6 +20,7 @@ const GATEABLE_FEATURES = [
   { key: 'challenges', label: 'Challenges' },
   { key: 'news', label: 'Calendar' },
   { key: 'finance', label: 'Finance' },
+  { key: 'budget', label: 'Budget' },
   { key: 'salary', label: 'Payslip vs P&L' }
 ];
 let DISABLED_FEATURES = new Set();
@@ -866,6 +867,7 @@ function switchView(view){
   if(view === 'hours') openMarketHours();
   if(view === 'dashboard' && typeof addPanelShareButtons === 'function') setTimeout(() => addPanelShareButtons(document.getElementById('view-dashboard')), 300);
   if(view === 'finance') renderFinance();
+  if(view === 'budget') loadBudget();
   if(view === 'salary'){
     fillSalaryInputs();
     renderSalaryGoal();
@@ -9276,7 +9278,7 @@ setTimeout(recordAppVisit, 3000);
    na API key ay inaalis — hindi ito kailangan sa isang backup at hindi dapat
    nakakalat sa isang file. */
 const BACKUP_TABLES = [TABLE_NAME, 'position_setups', 'trading_accounts', 'daily_plans', 'mood_entries',
-  'notebook_entries', 'finance_accounts', 'finance_transactions', 'finance_budgets', 'finance_recurring', 'achievements', 'user_profile', 'app_visits', 'playbooks', 'arbab_messages'];
+  'notebook_entries', 'finance_accounts', 'finance_transactions', 'finance_budgets', 'finance_recurring', 'achievements', 'user_profile', 'app_visits', 'playbooks', 'arbab_messages', 'budget_transactions'];
 async function _fetchAllRows(table){
   const rows = [];
   const page = 1000;
@@ -9351,7 +9353,8 @@ const DB_CHECKS = [
   { file:'supabase_trading_journal_add_post_stop_profit.sql', what:'Post-Stop Profit on trades', table:'trading_journal', col:'post_stop_profit_result' },
   { file:'supabase_position_setups_upscale_order.sql', what:'Upscale order on a setup (Order Placed, Cancel)', table:'position_setups', col:'upscale_order_id' },
   { file:'supabase_trading_accounts_upscale_api.sql', what:'Upscale API key on My Accounts', table:'trading_accounts', col:'upscale_account_id,upscale_account_label' },
-  { file:'supabase_news_results_sent.sql', what:'News result to Telegram (US High impact)', table:'news_results_sent', col:'key' }
+  { file:'supabase_news_results_sent.sql', what:'News result to Telegram (US High impact)', table:'news_results_sent', col:'key' },
+  { file:'supabase_budget_transactions.sql', what:'Budget (family market tracker)', table:'budget_transactions', col:'tx_date,amount,currency' }
 ];
 async function _dbHasColumns(table, cols){
   try{
@@ -10932,7 +10935,7 @@ function _finHistFxData(){
 function _finIsoDay(d){ return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
 function _finLoadHistFx(){
   if(_finHistFxState === 'loading' || _finHistFxState === 'failed') return;
-  const dates = FIN_TXNS.map(t => t.tx_date).filter(Boolean).sort();
+  const dates = [...FIN_TXNS, ...(BUD_TXNS || [])].map(t => t.tx_date).filter(Boolean).sort();
   if(!dates.length) return;
   const h = _finHistFxData();
   const today = _finIsoDay(new Date());
@@ -10962,6 +10965,7 @@ function _finLoadHistFx(){
 }
 function _finRerenderPhp(){
   [renderFinDashboard, renderFinanceTransactions, renderFinanceAccounts, renderFinanceBudgets, renderFinanceRecurring].forEach(f => { try{ f(); }catch(_){} });
+  try{ if(currentView === 'budget') renderBudget(); }catch(_){}
   try{
     if(_finHistoryShownAccId != null && document.getElementById('finAccountDetailsModal')?.classList.contains('open')) renderFinAccountHistory(_finHistoryShownAccId);
   }catch(_){}
@@ -13615,6 +13619,230 @@ function parseFinTxEasyAddSalaryText(raw){
   const m = raw.match(/salary of\s+[a-z]{2,4}\s*([\d,]+\.?\d*)\s+has been credited into your account\s+[\dx]+\.\s*the available balance/i);
   if(!m) return null;
   return { amount: parseFloat(m[1].replace(/,/g,'')) };
+}
+
+/* ======================== BUDGET (palengke) ========================
+   Owner, 2026-11-28: the family's market tracker. Its own table
+   (budget_transactions, supabase_budget_transactions.sql), never mixed into
+   Finance totals or balances. For now: a list of purchases + Easy Add, which
+   auto-pastes the copied bank alert like Finance's. Each row keeps its own
+   currency (AED/PHP); the other is shown at the rate LOCKED to its date
+   (_finTxRate), so totals never shift with today's rate. */
+var BUD_TXNS = null;            // null = not loaded yet
+let _budLoadError = null, _budEditingId = null;
+
+async function loadBudget(){
+  if(BUD_TXNS === null) renderBudget();
+  try{
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/budget_transactions?select=*&order=tx_date.desc,created_at.desc`, {
+      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}` }
+    });
+    if(!res.ok) throw new Error(await res.text());
+    BUD_TXNS = await res.json();
+    _budLoadError = null;
+  }catch(e){
+    console.error("Couldn't load budget transactions:", e);
+    _budLoadError = /does not exist|could not find|42P01|PGRST20/i.test(String(e.message)) ? 'missing' : 'failed';
+    if(BUD_TXNS === null) BUD_TXNS = [];
+  }
+  renderBudget();
+  try{ _finLoadHistFx(); }catch(_){}
+}
+
+// Amount of a budget row in `to`, at the rate locked to its date (today's
+// rate only as a fallback before the daily fixes arrive). null = no rate.
+function _budIn(t, to){
+  const from = t.currency || 'AED', a = Number(t.amount) || 0;
+  if(from === to) return a;
+  const rf = _finTxRate(from, t.tx_date), rt = _finTxRate(to, t.tx_date);
+  if(rf != null && rt != null && rt > 0) return a * rf / rt;
+  return _finConvert(a, from, to);
+}
+function _budSum(list, to){
+  let s = 0;
+  for(const t of list){ const v = _budIn(t, to); if(v == null) return null; s += v; }
+  return s;
+}
+function _budMonthKey(day){ return String(day || '').slice(0, 7); }
+function _budMonthLabel(key){
+  const [y, m] = key.split('-').map(Number);
+  return new Date(y, m - 1, 1).toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+}
+function _budTotalHtml(list){
+  const aed = _budSum(list, 'AED'), php = _budSum(list, 'PHP');
+  return `<span class="bud-aed">${aed == null ? '—' : finMoney(aed, 'AED')}</span>`
+    + (php == null || !list.length ? '' : `<span class="bud-php">≈ ${finMoney(php, 'PHP')}</span>`);
+}
+
+function renderBudget(){
+  const listEl = document.getElementById('budList');
+  const sumEl = document.getElementById('budSummary');
+  if(!listEl || !sumEl) return;
+  if(BUD_TXNS === null){ listEl.innerHTML = '<div class="empty-state">Loading…</div>'; sumEl.innerHTML = ''; return; }
+  if(_budLoadError === 'missing'){
+    sumEl.innerHTML = '';
+    listEl.innerHTML = '<div class="empty-state">Budget isn\'t set up in the database yet. Run <code>supabase_budget_transactions.sql</code> in the Supabase SQL Editor, then reload.</div>';
+    return;
+  }
+  const all = BUD_TXNS;
+  const now = new Date();
+  const thisKey = _finIsoDay(now).slice(0, 7);
+  const prevKey = _finIsoDay(new Date(now.getFullYear(), now.getMonth() - 1, 1)).slice(0, 7);
+  const inMonth = k => all.filter(t => _budMonthKey(t.tx_date) === k);
+  const tile = (label, list) => `<div class="bud-tile"><div class="bud-tile-k">${label}</div><div class="bud-tile-v">${_budTotalHtml(list)}</div><div class="bud-tile-s">${list.length} purchase${list.length === 1 ? '' : 's'}</div></div>`;
+  sumEl.innerHTML = tile('This month', inMonth(thisKey)) + tile('Last month', inMonth(prevKey)) + tile('All time', all);
+
+  // Month filter: every month that has a purchase, plus this month.
+  const sel = document.getElementById('budMonthFilter');
+  const keys = [...new Set([thisKey, ...all.map(t => _budMonthKey(t.tx_date))])].filter(Boolean).sort().reverse();
+  const prevVal = sel.dataset.init ? sel.value : 'all';
+  sel.innerHTML = '<option value="all">All months</option>' + keys.map(k => `<option value="${k}">${escapeHtml(_budMonthLabel(k))}</option>`).join('');
+  sel.value = keys.includes(prevVal) || prevVal === 'all' ? prevVal : 'all';
+  sel.dataset.init = '1';
+
+  const q = (document.getElementById('budSearch').value || '').trim().toLowerCase();
+  const rows = all.filter(t => (sel.value === 'all' || _budMonthKey(t.tx_date) === sel.value)
+    && (!q || `${t.description || ''} ${t.note || ''}`.toLowerCase().includes(q)));
+
+  if(!all.length){
+    listEl.innerHTML = '<div class="empty-state">No purchases yet. Copy a bank alert, then tap Easy Add.</div>';
+    return;
+  }
+  if(!rows.length){ listEl.innerHTML = '<div class="empty-state">Nothing matches.</div>'; return; }
+
+  const groups = [];
+  rows.forEach(t => {
+    const k = _budMonthKey(t.tx_date);
+    let g = groups[groups.length - 1];
+    if(!g || g.key !== k){ g = { key: k, items: [] }; groups.push(g); }
+    g.items.push(t);
+  });
+  listEl.innerHTML = groups.map(g => `<div class="bud-month">
+      <div class="bud-month-h"><span>${escapeHtml(_budMonthLabel(g.key))} <em>${g.items.length}</em></span><span class="bud-month-t">${_budTotalHtml(g.items)}</span></div>
+      ${g.items.map(t => {
+        const cur = t.currency || 'AED';
+        const other = cur === 'PHP' ? 'AED' : 'PHP';
+        const ov = _budIn(t, other);
+        const d = new Date(t.tx_date + 'T00:00:00');
+        return `<div class="bud-row" onclick="openBudTxModal(${Number(t.id)})" onkeydown="if(event.key==='Enter')openBudTxModal(${Number(t.id)})" role="button" tabindex="0">
+          <div class="bud-row-date"><b>${d.getDate()}</b><span>${escapeHtml(d.toLocaleDateString(undefined, { weekday: 'short' }))}</span></div>
+          <div class="bud-row-main"><div class="bud-row-desc">${escapeHtml(t.description || 'Purchase')}</div>${t.note ? `<div class="bud-row-note">${escapeHtml(t.note)}</div>` : ''}</div>
+          <div class="bud-row-amt"><span class="bud-aed">${finMoney(t.amount, cur)}</span>${ov == null ? '' : `<span class="bud-php">≈ ${finMoney(ov, other)}</span>`}</div>
+        </div>`;
+      }).join('')}
+    </div>`).join('');
+}
+
+/* Easy Add. Same bank alerts as Finance, debit or credit card:
+   "Purchase of AED 44.00 with Debit Card ending 6334 at RED DIAMOND, ABU DHABI. Avl Balance is AED 882.55."
+   "Payment of AED 69.60 to TABBY with Credit Card ending 8491. Avl Cr. Limit is AED 15,685.32." */
+function parseBudAlert(raw){
+  const s = String(raw || '').replace(/\s+/g, ' ').trim();
+  const num = x => parseFloat(String(x).replace(/,/g, ''));
+  let m = s.match(/purchase of\s+([a-z]{3})\s*([\d,]+\.?\d*)\s+with\s+(?:debit|credit)\s+card\s+ending\s+(\d{3,6})\s+at\s+(.+?)\.\s*(?:avl|available)\b/i);
+  if(m) return { currency: m[1].toUpperCase(), amount: num(m[2]), cardLast: m[3].slice(-4), merchant: m[4].trim() };
+  m = s.match(/payment of\s+([a-z]{3})\s*([\d,]+\.?\d*)\s+to\s+(.+?)\s+with\s+(?:debit|credit)\s+card\s+ending\s+(\d{3,6})/i);
+  if(m) return { currency: m[1].toUpperCase(), amount: num(m[2]), cardLast: m[4].slice(-4), merchant: m[3].trim() };
+  return null;
+}
+function openBudEasyAddModal(){
+  document.getElementById('budEasyAddInput').value = '';
+  document.getElementById('budEasyAddError').textContent = '';
+  document.getElementById('budEasyAddModal').classList.add('open');
+  // Still inside the tap, which the clipboard API needs. Only a real alert goes in.
+  if(!navigator.clipboard || !navigator.clipboard.readText) return;
+  let p;
+  try{ p = navigator.clipboard.readText(); }catch(e){ return; }
+  Promise.resolve(p).then(txt => {
+    const t = String(txt || '').trim();
+    const box = document.getElementById('budEasyAddInput');
+    if(!t || box.value.trim() || !document.getElementById('budEasyAddModal').classList.contains('open')) return;
+    if(parseBudAlert(t)) box.value = t;
+  }).catch(() => {});
+}
+function closeBudEasyAddModal(){ document.getElementById('budEasyAddModal').classList.remove('open'); }
+function proceedBudEasyAdd(){
+  const err = document.getElementById('budEasyAddError');
+  const p = parseBudAlert(document.getElementById('budEasyAddInput').value);
+  if(!p || !(p.amount > 0)){ err.textContent = "Couldn't read that. Paste the full purchase alert from the bank."; return; }
+  closeBudEasyAddModal();
+  openBudTxModal(null, { amount: p.amount, currency: p.currency === 'PHP' ? 'PHP' : 'AED', description: p.merchant, card_last: p.cardLast });
+}
+
+function openBudTxModal(id, prefill){
+  const row = id != null ? (BUD_TXNS || []).find(t => t.id === id) : null;
+  _budEditingId = row ? row.id : null;
+  const v = row || prefill || {};
+  document.getElementById('budTxModalTitle').textContent = row ? 'Edit Purchase' : 'Add Purchase';
+  document.getElementById('budTxDate').value = v.tx_date || _finIsoDay(new Date());
+  document.getElementById('budTxAmount').value = v.amount != null ? v.amount : '';
+  document.getElementById('budTxCurrency').value = v.currency === 'PHP' ? 'PHP' : 'AED';
+  document.getElementById('budTxDesc').value = v.description || '';
+  document.getElementById('budTxNote').value = v.note || '';
+  document.getElementById('budTxModal').dataset.cardLast = v.card_last || '';
+  document.getElementById('budTxError').textContent = '';
+  document.getElementById('budTxDeleteBtn').style.display = row ? '' : 'none';
+  document.getElementById('budTxModal').classList.add('open');
+}
+function closeBudTxModal(){ document.getElementById('budTxModal').classList.remove('open'); }
+
+async function saveBudTx(){
+  const err = document.getElementById('budTxError');
+  err.textContent = '';
+  const amount = parseFloat(document.getElementById('budTxAmount').value);
+  if(!amount || amount <= 0){ err.textContent = 'Please enter an amount greater than zero.'; return; }
+  const payload = {
+    tx_date: document.getElementById('budTxDate').value || _finIsoDay(new Date()),
+    amount: Math.round(amount * 100) / 100,
+    currency: document.getElementById('budTxCurrency').value === 'PHP' ? 'PHP' : 'AED',
+    description: document.getElementById('budTxDesc').value.trim() || null,
+    note: document.getElementById('budTxNote').value.trim() || null
+  };
+  if(!_budEditingId) payload.card_last = document.getElementById('budTxModal').dataset.cardLast || null;
+  const btn = document.getElementById('budTxSaveBtn');
+  btn.disabled = true; btn.textContent = 'Saving…';
+  try{
+    const url = _budEditingId
+      ? `${SUPABASE_URL}/rest/v1/budget_transactions?id=eq.${_budEditingId}`
+      : `${SUPABASE_URL}/rest/v1/budget_transactions`;
+    const res = await fetch(url, {
+      method: _budEditingId ? 'PATCH' : 'POST',
+      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}`, "Content-Type": "application/json", "Prefer": "return=minimal" },
+      body: JSON.stringify(payload)
+    });
+    if(!res.ok) throw new Error(await res.text());
+    const wasEdit = !!_budEditingId;
+    closeBudTxModal();
+    showToast(wasEdit ? 'Purchase updated' : 'Purchase added');
+    await loadBudget();
+  }catch(e){
+    console.error("Couldn't save budget purchase:", e);
+    err.textContent = /does not exist|could not find|42P01|PGRST20/i.test(String(e.message))
+      ? 'Run supabase_budget_transactions.sql in Supabase first.'
+      : "Couldn't save. Check your connection and try again.";
+  }finally{
+    btn.disabled = false; btn.textContent = 'Save';
+  }
+}
+
+async function deleteBudTx(){
+  const row = (BUD_TXNS || []).find(t => t.id === _budEditingId);
+  if(!row) return;
+  const ok = await customConfirm(`Delete ${row.description || 'this purchase'} (${finMoney(row.amount, row.currency || 'AED')})? This can't be undone.`, 'Delete');
+  if(!ok) return;
+  try{
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/budget_transactions?id=eq.${row.id}`, {
+      method: 'DELETE',
+      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${USER_ACCESS_TOKEN}` }
+    });
+    if(!res.ok) throw new Error(await res.text());
+    closeBudTxModal();
+    showToast('Purchase deleted');
+    await loadBudget();
+  }catch(e){
+    console.error("Couldn't delete budget purchase:", e);
+    document.getElementById('budTxError').textContent = "Couldn't delete. Try again.";
+  }
 }
 
 // Keyword guess against the user's OWN expense categories (Configuration) —
