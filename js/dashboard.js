@@ -13469,6 +13469,31 @@ function openFinTxEasyAddModal(){
   if(btn) btn.textContent = 'Proceed';
   onFinTxEasyAddFormatChange();
   document.getElementById('finTxEasyAddModal').classList.add('open');
+  _finEasyAddAutoPaste();
+}
+
+// Opening Easy Add drops the copied bank alert straight into the box (still
+// inside the button tap, which the clipboard API needs; iPhone shows its own
+// small "Paste" bubble). Only text that one of the parsers recognises is put
+// in, so a random copied link never fills the box.
+function _finEasyAddLooksLikeAlert(t){
+  try{
+    return !!(parseFinTxEasyAddText(t) || parseFinTxEasyAddRefundText(t) || parseFinTxEasyAddSalaryText(t));
+  }catch(e){ return false; }
+}
+function _finEasyAddAutoPaste(){
+  if(!navigator.clipboard || !navigator.clipboard.readText) return;
+  let p;
+  try{ p = navigator.clipboard.readText(); }catch(e){ return; }
+  Promise.resolve(p).then(txt => {
+    const t = String(txt || '').trim();
+    const box = document.getElementById('finTxEasyAddInput');
+    if(!t || !box || box.value.trim()) return;
+    if(!document.getElementById('finTxEasyAddModal').classList.contains('open')) return;
+    if(document.getElementById('finTxEasyAddFormat').value !== 'text') return;
+    if(!_finEasyAddLooksLikeAlert(t)) return;
+    box.value = t;
+  }).catch(() => {});
 }
 
 function closeFinTxEasyAddModal(){

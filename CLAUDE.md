@@ -379,6 +379,10 @@ find/replace, try the LF form, then the CRLF form.
   `parseFinTxEasyAddRefundText`, 2026-11-10: Income on that card, category
   "Refund / Reimbursement", description "MERCHANT (refund)") and salary.
   The card is matched by `card_number` (last 4). `tests/sim-finrefund.js`.
+  **Auto-paste** (2026-11-28, `_finEasyAddAutoPaste`): opening Easy Add reads
+  the clipboard inside the button tap and fills the Text box, only when one of
+  those parsers recognises it (iPhone shows its own "Paste" bubble to tap).
+  Denied/empty clipboard = box stays empty, nothing else changes.
 
 ## TradeLocker (e.g. Goat Funded Trader)
 
