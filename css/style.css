@@ -6392,4 +6392,6 @@ body.mobile-mode .arbab-chat{height:calc(100vh - 330px);min-height:400px;}
 @media (max-width: 640px){
   .fin-inst-sum{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;}
   .fin-inst-sum-v{font-size:14.5px;}
-}
+}.fin-inst-sum-pct{color:var(--ink);font-weight:700;}
+.fin-inst-sum-bar{height:4px;border-radius:2px;background:var(--rule);margin-top:6px;overflow:hidden;}
+.fin-inst-sum-bar i{display:block;height:100%;background:var(--accent);border-radius:2px;}

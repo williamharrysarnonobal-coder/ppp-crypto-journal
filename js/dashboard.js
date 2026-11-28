@@ -14991,9 +14991,14 @@ function _renderFinInstSummary(insts, doneInsts){
   };
   const tile = (k, o, s) => `<div class="fin-inst-sum-t"><div class="fin-inst-sum-k">${k}</div>${val(o)}<div class="fin-inst-sum-s">${s}</div></div>`;
   const n = insts.length, d = doneInsts.length;
+  // % left of the running total (one currency only; mixed currencies can't be added).
+  const curs = Object.keys(total);
+  const pct = curs.length === 1 && total[curs[0]] > 0 ? Math.max(0, Math.min(100, remaining[curs[0]] / total[curs[0]] * 100)) : null;
+  const remS = pct == null ? 'still to pay'
+    : `<b class="fin-inst-sum-pct">${pct.toFixed(0)}% left</b> · ${(100 - pct).toFixed(0)}% paid<div class="fin-inst-sum-bar"><i style="width:${(100 - pct).toFixed(1)}%"></i></div>`;
   el.innerHTML =
     tile('Monthly', monthly, `${n} running`) +
-    tile('Remaining', remaining, 'still to pay') +
+    tile('Remaining', remaining, remS) +
     tile('Total', total, 'of running installments') +
     tile('Completed', done, `${d} fully paid`);
   el.style.display = '';
